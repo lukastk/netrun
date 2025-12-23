@@ -49,13 +49,13 @@ pub struct Node {
     pub out_salvo_conditions: HashMap<SalvoConditionName, SalvoCondition>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub enum PortType {
     Input,
     Output,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct PortRef {
     pub node_name: NodeName,
     pub port_type: PortType,
@@ -67,7 +67,7 @@ pub struct Edge {
     pub buffer_size: u32,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq, Hash)]
 pub struct EdgeRef {
     pub source: PortRef,
     pub target: PortRef,
