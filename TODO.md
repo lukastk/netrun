@@ -181,10 +181,10 @@ This document tracks remaining tasks for the `netrun-core` library.
 
 ### Testing
 
-- [ ] **Integration tests not running**
-  - The `tests/` directory at the workspace root contains ~54 integration tests (graph_api.rs, net_api.rs, workflow.rs)
-  - These are not being executed because the workspace root has no package that includes them
-  - Fix: Move `tests/` into `core/tests/` so the core crate picks them up
+- [x] **Integration tests not running**
+  - The `tests/` directory at the workspace root contained ~54 integration tests (graph_api.rs, net_api.rs, workflow.rs)
+  - These were not being executed because the workspace root had no package that included them
+  - Fixed: Moved `tests/` into `core/tests/` - now all 89 tests run (33 unit + 54 integration + 2 doc tests)
 
 ### Python Bindings
 

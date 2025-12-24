@@ -154,11 +154,15 @@ netrun-core/
 ├── Cargo.toml              # Workspace root
 ├── core/                   # Core Rust library
 │   ├── Cargo.toml
-│   └── src/
-│       ├── lib.rs          # Module exports
-│       ├── _utils.rs       # Utility functions (timestamps)
-│       ├── graph.rs        # Graph topology types and salvo condition evaluation
-│       └── net.rs          # Network runtime state and actions
+│   ├── src/
+│   │   ├── lib.rs          # Module exports
+│   │   ├── _utils.rs       # Utility functions (timestamps)
+│   │   ├── graph.rs        # Graph topology types and salvo condition evaluation
+│   │   └── net.rs          # Network runtime state and actions
+│   └── tests/              # Integration tests
+│       ├── graph_api.rs    # Graph construction and validation tests
+│       ├── net_api.rs      # Net operations tests
+│       └── workflow.rs     # End-to-end workflow tests
 ├── python/                 # Python bindings (PyO3)
 │   ├── Cargo.toml          # PyO3 crate configuration
 │   ├── pyproject.toml      # Maturin build configuration
@@ -172,8 +176,7 @@ netrun-core/
 │   │       ├── __init__.py # Re-exports from native extension
 │   │       └── __init__.pyi # Type stubs for IDE support
 │   └── examples/           # Python examples
-├── examples/               # Rust examples
-└── tests/                  # Rust integration tests
+└── examples/               # Rust examples
 ```
 
 ## Python Bindings
