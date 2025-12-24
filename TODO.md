@@ -48,11 +48,15 @@ This document tracks remaining tasks for the `netrun-core` library.
   - Emits `EpochCancelled` and `PacketConsumed` events
   - Returns `CancelledEpoch(epoch, destroyed_packet_ids)`
 
-- [ ] **Implement `create_and_start_epoch`**
+- [x] **Implement `create_and_start_epoch`**
   - Allow external code to manually create an epoch with a specified salvo
-  - Validate that provided packets exist and are in appropriate locations
-  - Move packets into the new epoch
-  - Immediately transition to `Running` state
+  - Validates node exists
+  - Validates all input ports in salvo exist on the node
+  - Validates all packets exist and are at the correct input ports
+  - Creates epoch in Running state (skips Startable)
+  - Moves packets from input ports into the epoch
+  - Creates output port location entries
+  - Emits EpochCreated, PacketMoved, and EpochStarted events
 
 ## Medium Priority
 
