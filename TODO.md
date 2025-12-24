@@ -6,11 +6,11 @@ This document tracks remaining tasks for the `netrun-core` library.
 
 ### Graph Construction & Validation
 
-- [ ] **Create `Graph` constructor**
+- [x] **Create `Graph` constructor**
   - Implement `Graph::new()` that takes nodes and edges
-  - Populate `nodes_by_name` index in constructor
+  - Removed redundant `nodes_by_name` field (nodes already keyed by name)
   - Populate `edges_by_tail` index in constructor
-  - Consider adding `edges_by_head` index for efficient lookup of edges targeting input ports
+  - Added `edges_by_head` index for efficient lookup of edges targeting input ports
 
 - [ ] **Implement `Graph::validate()`**
   - Validate that all edges reference existing nodes and ports
@@ -91,9 +91,9 @@ This document tracks remaining tasks for the `netrun-core` library.
   - Add more context to error messages
   - Consider whether panics should be errors instead
 
-- [ ] **Fix unused field warning**
-  - `Graph.nodes_by_name` is defined but never read
-  - Either use it or remove it
+- [x] **Fix unused field warning**
+  - `Graph.nodes_by_name` was defined but never read
+  - Removed it (nodes already stored in HashMap keyed by name)
 
 ## Low Priority
 

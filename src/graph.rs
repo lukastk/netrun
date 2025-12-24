@@ -128,15 +128,48 @@ pub struct Graph {
     nodes: HashMap<NodeName, Node>,
     edges: HashMap<EdgeRef, Edge>,
 
-    nodes_by_name: HashMap<NodeName, Node>,
     edges_by_tail: HashMap<PortRef, EdgeRef>,
+    edges_by_head: HashMap<PortRef, EdgeRef>,
 }
 
 impl Graph {
+    /// Creates a new Graph from a list of nodes and edges.
+    ///
+    /// Builds internal indexes for efficient edge lookups by source (tail) and target (head) ports.
+    pub fn new(nodes: Vec<Node>, edges: Vec<(EdgeRef, Edge)>) -> Self {
+        let nodes_map: HashMap<NodeName, Node> = nodes
+            .into_iter()
+            .map(|node| (node.name.clone(), node))
+            .collect();
+
+        let mut edges_map: HashMap<EdgeRef, Edge> = HashMap::new();
+        let mut edges_by_tail: HashMap<PortRef, EdgeRef> = HashMap::new();
+        let mut edges_by_head: HashMap<PortRef, EdgeRef> = HashMap::new();
+
+        for (edge_ref, edge) in edges {
+            edges_by_tail.insert(edge_ref.source.clone(), edge_ref.clone());
+            edges_by_head.insert(edge_ref.target.clone(), edge_ref.clone());
+            edges_map.insert(edge_ref, edge);
+        }
+
+        Graph {
+            nodes: nodes_map,
+            edges: edges_map,
+            edges_by_tail,
+            edges_by_head,
+        }
+    }
+
     pub fn nodes(&self) -> &HashMap<NodeName, Node> { &self.nodes }
     pub fn edges(&self) -> &HashMap<EdgeRef, Edge> { &self.edges }
 
+    /// Returns the edge that has the given output port as its source (tail).
     pub fn get_edge_by_tail(&self, output_port_ref: &PortRef) -> Option<&EdgeRef> {
         self.edges_by_tail.get(output_port_ref)
+    }
+
+    /// Returns the edge that has the given input port as its target (head).
+    pub fn get_edge_by_head(&self, input_port_ref: &PortRef) -> Option<&EdgeRef> {
+        self.edges_by_head.get(input_port_ref)
     }
 }
