@@ -101,6 +101,7 @@ pub enum NetActionResponseData {
     Packet(PacketID),
     StartedEpoch(Epoch),
     FinishedEpoch(Epoch),
+    CancelledEpoch(Epoch, Vec<PacketID>),
     None,
 }
 
@@ -462,7 +463,71 @@ impl Net {
     }
 
     fn cancel_epoch(&mut self, epoch_id: &EpochID) -> NetActionResponse {
-        panic!("Not implemented")
+        // Check if epoch exists
+        let epoch = if let Some(epoch) = self._epochs.get(epoch_id) {
+            epoch.clone()
+        } else {
+            return NetActionResponse::Error(NetActionError::EpochNotFound {
+                message: "Epoch not found".to_string()
+            });
+        };
+
+        let mut events: Vec<NetEvent> = Vec::new();
+        let mut destroyed_packets: Vec<PacketID> = Vec::new();
+
+        // Collect packets inside the epoch (Node location)
+        let epoch_location = PacketLocation::Node(epoch_id.clone());
+        if let Some(packet_ids) = self._packets_by_location.get(&epoch_location) {
+            destroyed_packets.extend(packet_ids.iter().cloned());
+        }
+
+        // Collect packets in the epoch's output ports
+        let node = self.graph.nodes().get(&epoch.node_name)
+            .expect("Epoch references non-existent node");
+        for port_name in node.out_ports.keys() {
+            let output_port_location = PacketLocation::OutputPort(epoch_id.clone(), port_name.clone());
+            if let Some(packet_ids) = self._packets_by_location.get(&output_port_location) {
+                destroyed_packets.extend(packet_ids.iter().cloned());
+            }
+        }
+
+        // Remove packets from _packets and _packets_by_location, emit events
+        for packet_id in &destroyed_packets {
+            let packet = self._packets.remove(packet_id)
+                .expect("Packet in location map not found in packets map");
+            if let Some(packets_at_location) = self._packets_by_location.get_mut(&packet.location) {
+                packets_at_location.shift_remove(packet_id);
+            }
+            events.push(NetEvent::PacketConsumed(get_utc_now(), packet_id.clone()));
+        }
+
+        // Remove output port location entries for this epoch
+        for port_name in node.out_ports.keys() {
+            let output_port_location = PacketLocation::OutputPort(epoch_id.clone(), port_name.clone());
+            self._packets_by_location.remove(&output_port_location);
+        }
+
+        // Remove the epoch's node location entry
+        self._packets_by_location.remove(&epoch_location);
+
+        // Update _startable_epochs if epoch was startable
+        self._startable_epochs.remove(epoch_id);
+
+        // Update _node_to_epochs
+        if let Some(epoch_ids) = self._node_to_epochs.get_mut(&epoch.node_name) {
+            epoch_ids.retain(|id| id != epoch_id);
+        }
+
+        // Remove epoch from _epochs
+        let epoch = self._epochs.remove(epoch_id)
+            .expect("Epoch should exist");
+
+        events.push(NetEvent::EpochCancelled(get_utc_now(), epoch_id.clone()));
+
+        NetActionResponse::Success(
+            NetActionResponseData::CancelledEpoch(epoch, destroyed_packets),
+            events
+        )
     }
 
     fn create_and_start_epoch(&mut self, node_name: &NodeName, salvo: &Salvo) -> NetActionResponse {
