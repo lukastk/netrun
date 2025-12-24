@@ -19,6 +19,7 @@ module-name = "netrun_core"
 
 [dependency-groups]
 dev = [
+    "jupyterlab>=4.3.8",
     "maturin>=1.10.2",
     "python-ulid>=1.1.0",
     "typing-extensions>=4.13.2",
