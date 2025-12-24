@@ -40,12 +40,13 @@ This document tracks remaining tasks for the `netrun-core` library.
 
 ### Implement Missing NetActions
 
-- [ ] **Implement `cancel_epoch`**
-  - Define semantics: what happens to packets inside the epoch?
-  - Should packets be destroyed? Returned to input ports? Moved to OutsideNet?
-  - Update `_startable_epochs` if epoch was startable
-  - Update `_node_to_epochs`
-  - Emit `EpochCancelled` event
+- [x] **Implement `cancel_epoch`**
+  - Packets inside the epoch are destroyed (removed from network)
+  - Collects packets from both Node location and output ports
+  - Updates `_startable_epochs` if epoch was startable
+  - Updates `_node_to_epochs`
+  - Emits `EpochCancelled` and `PacketConsumed` events
+  - Returns `CancelledEpoch(epoch, destroyed_packet_ids)`
 
 - [ ] **Implement `create_and_start_epoch`**
   - Allow external code to manually create an epoch with a specified salvo
