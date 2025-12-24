@@ -65,23 +65,68 @@ pub enum NetAction {
     SendOutputSalvo(EpochID, SalvoConditionName),
 }
 
-#[derive(Debug)]
+/// Errors that can occur when performing a NetAction
+#[derive(Debug, thiserror::Error)]
 pub enum NetActionError {
-    PacketNotFound {message: String},
-    EpochNotFound {message: String},
-    EpochNotRunning {message: String},
-    EpochNotStartable {message: String},
-    CannotFinishNonEmptyEpoch {message: String},
-    PacketNotInNode {message: String},
-    OutputPortNotFound {message: String},
-    OutputSalvoConditionNotFound {message: String},
-    MaxOutputSalvosReached {message: String},
-    SalvoConditionNotMet {message: String},
-    OutputPortFull {message: String},
-    CannotPutPacketIntoUnconnectedOutputPort {message: String},
-    NodeNotFound {message: String},
-    PacketNotAtInputPort {message: String},
-    InputPortNotFound {message: String},
+    /// Packet with the given ID was not found in the network
+    #[error("packet not found: {packet_id}")]
+    PacketNotFound { packet_id: PacketID },
+
+    /// Epoch with the given ID was not found
+    #[error("epoch not found: {epoch_id}")]
+    EpochNotFound { epoch_id: EpochID },
+
+    /// Epoch exists but is not in Running state
+    #[error("epoch {epoch_id} is not running")]
+    EpochNotRunning { epoch_id: EpochID },
+
+    /// Epoch exists but is not in Startable state
+    #[error("epoch {epoch_id} is not startable")]
+    EpochNotStartable { epoch_id: EpochID },
+
+    /// Cannot finish epoch because it still contains packets
+    #[error("cannot finish epoch {epoch_id}: epoch still contains packets")]
+    CannotFinishNonEmptyEpoch { epoch_id: EpochID },
+
+    /// Packet is not inside the specified epoch's node location
+    #[error("packet {packet_id} is not inside epoch {epoch_id}")]
+    PacketNotInNode { packet_id: PacketID, epoch_id: EpochID },
+
+    /// Output port does not exist on the node
+    #[error("output port '{port_name}' not found on node for epoch {epoch_id}")]
+    OutputPortNotFound { port_name: PortName, epoch_id: EpochID },
+
+    /// Output salvo condition does not exist on the node
+    #[error("output salvo condition '{condition_name}' not found on node for epoch {epoch_id}")]
+    OutputSalvoConditionNotFound { condition_name: SalvoConditionName, epoch_id: EpochID },
+
+    /// Maximum number of output salvos reached for this condition
+    #[error("max output salvos reached for condition '{condition_name}' on epoch {epoch_id}")]
+    MaxOutputSalvosReached { condition_name: SalvoConditionName, epoch_id: EpochID },
+
+    /// Output salvo condition is not satisfied
+    #[error("salvo condition '{condition_name}' not met for epoch {epoch_id}")]
+    SalvoConditionNotMet { condition_name: SalvoConditionName, epoch_id: EpochID },
+
+    /// Output port has reached its capacity
+    #[error("output port '{port_name}' is full for epoch {epoch_id}")]
+    OutputPortFull { port_name: PortName, epoch_id: EpochID },
+
+    /// Cannot send packets to an output port that has no connected edge
+    #[error("output port '{port_name}' on node '{node_name}' is not connected to any edge")]
+    CannotPutPacketIntoUnconnectedOutputPort { port_name: PortName, node_name: NodeName },
+
+    /// Node with the given name was not found in the graph
+    #[error("node not found: '{node_name}'")]
+    NodeNotFound { node_name: NodeName },
+
+    /// Packet is not at the expected input port
+    #[error("packet {packet_id} is not at input port '{port_name}' of node '{node_name}'")]
+    PacketNotAtInputPort { packet_id: PacketID, port_name: PortName, node_name: NodeName },
+
+    /// Input port does not exist on the node
+    #[error("input port '{port_name}' not found on node '{node_name}'")]
+    InputPortNotFound { port_name: PortName, node_name: NodeName },
 }
 
 #[derive(Debug)]
@@ -356,12 +401,12 @@ impl Net {
         if let Some(epoch_id) = maybe_epoch_id {
             if !self._epochs.contains_key(&epoch_id) {
                 return NetActionResponse::Error(NetActionError::EpochNotFound {
-                    message: "Cannot create packet in non-existent epoch".to_string(),
+                    epoch_id: epoch_id.clone(),
                 });
             }
             if !matches!(self._epochs[&epoch_id].state, EpochState::Running) {
                 return NetActionResponse::Error(NetActionError::EpochNotRunning {
-                    message: "Cannot create packet in non-running epoch".to_string(),
+                    epoch_id: epoch_id.clone(),
                 });
             }
         }
@@ -394,7 +439,7 @@ impl Net {
     fn consume_packet(&mut self, packet_id: &PacketID) -> NetActionResponse {
         if !self._packets.contains_key(packet_id) {
             return NetActionResponse::Error(NetActionError::PacketNotFound {
-                message: "Packet not found".to_string()
+                packet_id: packet_id.clone(),
             });
         }
 
@@ -423,7 +468,7 @@ impl Net {
         if let Some(epoch) = self._epochs.get_mut(epoch_id) {
             if !self._startable_epochs.contains(epoch_id) {
                 return NetActionResponse::Error(NetActionError::EpochNotStartable {
-                    message: "Epoch not ready to start".to_string()
+                    epoch_id: epoch_id.clone(),
                 });
             }
             debug_assert!(matches!(epoch.state, EpochState::Startable),
@@ -436,7 +481,7 @@ impl Net {
             )
         } else {
             return NetActionResponse::Error(NetActionError::EpochNotFound {
-                message: "Epoch not found".to_string()
+                epoch_id: epoch_id.clone(),
             });
         }
     }
@@ -449,7 +494,7 @@ impl Net {
                 if let Some(packets) = self._packets_by_location.get(&epoch_loc) {
                     if packets.len() > 0 {
                         return NetActionResponse::Error(NetActionError::CannotFinishNonEmptyEpoch {
-                            message: "All packets must have either been consumed or left the node by the end of the epoch".to_string()
+                            epoch_id: epoch_id.clone(),
                         });
                     }
 
@@ -465,12 +510,12 @@ impl Net {
                 }
             } else {
                 return NetActionResponse::Error(NetActionError::EpochNotRunning {
-                    message: "Epoch not running".to_string()
+                    epoch_id: epoch_id.clone(),
                 });
             }
         } else {
             return NetActionResponse::Error(NetActionError::EpochNotFound {
-                message: "Epoch not found".to_string()
+                epoch_id: epoch_id.clone(),
             });
         }
     }
@@ -481,7 +526,7 @@ impl Net {
             epoch.clone()
         } else {
             return NetActionResponse::Error(NetActionError::EpochNotFound {
-                message: "Epoch not found".to_string()
+                epoch_id: epoch_id.clone(),
             });
         };
 
@@ -549,7 +594,7 @@ impl Net {
             Some(node) => node,
             None => {
                 return NetActionResponse::Error(NetActionError::NodeNotFound {
-                    message: format!("Node '{}' not found", node_name)
+                    node_name: node_name.clone(),
                 });
             }
         };
@@ -559,7 +604,8 @@ impl Net {
             // Validate input port exists
             if !node.in_ports.contains_key(port_name) {
                 return NetActionResponse::Error(NetActionError::InputPortNotFound {
-                    message: format!("Input port '{}' not found on node '{}'", port_name, node_name)
+                    port_name: port_name.clone(),
+                    node_name: node_name.clone(),
                 });
             }
 
@@ -568,7 +614,7 @@ impl Net {
                 Some(packet) => packet,
                 None => {
                     return NetActionResponse::Error(NetActionError::PacketNotFound {
-                        message: format!("Packet '{}' not found", packet_id)
+                        packet_id: packet_id.clone(),
                     });
                 }
             };
@@ -577,10 +623,9 @@ impl Net {
             let expected_location = PacketLocation::InputPort(node_name.clone(), port_name.clone());
             if packet.location != expected_location {
                 return NetActionResponse::Error(NetActionError::PacketNotAtInputPort {
-                    message: format!(
-                        "Packet '{}' is not at input port '{}' of node '{}'. Current location: {:?}",
-                        packet_id, port_name, node_name, packet.location
-                    )
+                    packet_id: packet_id.clone(),
+                    port_name: port_name.clone(),
+                    node_name: node_name.clone(),
                 });
             }
         }
@@ -635,13 +680,16 @@ impl Net {
             if let PacketLocation::Node(epoch_id) = packet.location {
                 (epoch_id, packet.location.clone())
             } else {
+                // We don't know the epoch_id since the packet isn't in a node
+                // Use a placeholder - this is an edge case where we can't provide full context
                 return NetActionResponse::Error(NetActionError::PacketNotInNode {
-                    message: "Packet must be inside a node for it to be loaded into an output port".to_string()
+                    packet_id: packet_id.clone(),
+                    epoch_id: Ulid::nil(), // Placeholder since packet isn't in any epoch
                 })
             }
         } else {
             return NetActionResponse::Error(NetActionError::PacketNotFound {
-                message: "Packet not found".to_string()
+                packet_id: packet_id.clone(),
             });
         };
 
@@ -653,7 +701,8 @@ impl Net {
 
         if !node.out_ports.contains_key(port_name) {
             return NetActionResponse::Error(NetActionError::OutputPortNotFound {
-                message: "Port not found".to_string()
+                port_name: port_name.clone(),
+                epoch_id: epoch_id.clone(),
             })
         }
 
@@ -665,7 +714,8 @@ impl Net {
         if let PortSlotSpec::Finite(num_slots) = port.slots_spec {
             if num_slots >= port_packets.len() as u64 {
                 return NetActionResponse::Error(NetActionError::OutputPortFull {
-                    message: "Output port is full".to_string()
+                    port_name: port_name.clone(),
+                    epoch_id: epoch_id.clone(),
                 })
             }
         }
@@ -684,7 +734,7 @@ impl Net {
             epoch
         } else {
             return NetActionResponse::Error(NetActionError::EpochNotFound {
-                message: "Epoch not found".to_string()
+                epoch_id: epoch_id.clone(),
             });
         };
 
@@ -697,14 +747,16 @@ impl Net {
             salvo_condition
         } else {
             return NetActionResponse::Error(NetActionError::OutputSalvoConditionNotFound {
-                message: "Salvo condition not found".to_string()
+                condition_name: salvo_condition_name.clone(),
+                epoch_id: epoch_id.clone(),
             });
         };
 
         // Check if max salvos reached (max_salvos = 0 means unlimited)
         if salvo_condition.max_salvos > 0 && epoch.out_salvos.len() as u64 >= salvo_condition.max_salvos {
             return NetActionResponse::Error(NetActionError::MaxOutputSalvosReached {
-                message: "Salvo condition reached max".to_string()
+                condition_name: salvo_condition_name.clone(),
+                epoch_id: epoch_id.clone(),
             });
         }
 
@@ -720,7 +772,8 @@ impl Net {
             .collect();
         if !evaluate_salvo_condition(&salvo_condition.term, &port_packet_counts, &node.out_ports) {
             return NetActionResponse::Error(NetActionError::SalvoConditionNotMet {
-                message: "Salvo condition not met".to_string()
+                condition_name: salvo_condition_name.clone(),
+                epoch_id: epoch_id.clone(),
             });
         }
 
@@ -734,7 +787,8 @@ impl Net {
                 edge_ref.clone()
             } else {
                 return NetActionResponse::Error(NetActionError::CannotPutPacketIntoUnconnectedOutputPort {
-                    message: format!("Output port '{}' of node '{}' is not connected", port_name, node.name.clone())
+                    port_name: port_name.clone(),
+                    node_name: node.name.clone(),
                 });
             };
             let new_location = PacketLocation::Edge(edge_ref.clone());

@@ -107,31 +107,37 @@ fn collect_ports_from_term(term: &SalvoConditionTerm, ports: &mut HashSet<PortNa
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+/// Errors that can occur during graph validation
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, thiserror::Error)]
 pub enum GraphValidationError {
     /// Edge references a node that doesn't exist
+    #[error("edge {edge_source} -> {edge_target} references non-existent node '{missing_node}'")]
     EdgeReferencesNonexistentNode {
         edge_source: PortRef,
         edge_target: PortRef,
         missing_node: NodeName,
     },
     /// Edge references a port that doesn't exist on the node
+    #[error("edge {edge_source} -> {edge_target} references non-existent port {missing_port}")]
     EdgeReferencesNonexistentPort {
         edge_source: PortRef,
         edge_target: PortRef,
         missing_port: PortRef,
     },
     /// Edge source is not an output port
+    #[error("edge source {edge_source} must be an output port")]
     EdgeSourceNotOutputPort {
         edge_source: PortRef,
         edge_target: PortRef,
     },
     /// Edge target is not an input port
+    #[error("edge target {edge_target} must be an input port")]
     EdgeTargetNotInputPort {
         edge_source: PortRef,
         edge_target: PortRef,
     },
     /// SalvoCondition.ports references a port that doesn't exist
+    #[error("{condition_type} salvo condition '{condition_name}' on node '{node_name}' references non-existent port '{missing_port}'", condition_type = if *is_input_condition { "input" } else { "output" })]
     SalvoConditionReferencesNonexistentPort {
         node_name: NodeName,
         condition_name: SalvoConditionName,
@@ -139,6 +145,7 @@ pub enum GraphValidationError {
         missing_port: PortName,
     },
     /// SalvoCondition.term references a port that doesn't exist
+    #[error("{condition_type} salvo condition '{condition_name}' on node '{node_name}' has term referencing non-existent port '{missing_port}'", condition_type = if *is_input_condition { "input" } else { "output" })]
     SalvoConditionTermReferencesNonexistentPort {
         node_name: NodeName,
         condition_name: SalvoConditionName,
@@ -146,12 +153,14 @@ pub enum GraphValidationError {
         missing_port: PortName,
     },
     /// Input salvo condition has max_salvos != 1
+    #[error("input salvo condition '{condition_name}' on node '{node_name}' has max_salvos={max_salvos}, but must be 1")]
     InputSalvoConditionInvalidMaxSalvos {
         node_name: NodeName,
         condition_name: SalvoConditionName,
         max_salvos: u64,
     },
     /// Duplicate edge (same source and target)
+    #[error("duplicate edge: {edge_source} -> {edge_target}")]
     DuplicateEdge {
         edge_source: PortRef,
         edge_target: PortRef,
@@ -180,6 +189,16 @@ pub struct PortRef {
     pub node_name: NodeName,
     pub port_type: PortType,
     pub port_name: PortName,
+}
+
+impl std::fmt::Display for PortRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let port_type_str = match self.port_type {
+            PortType::Input => "in",
+            PortType::Output => "out",
+        };
+        write!(f, "{}.{}.{}", self.node_name, port_type_str, self.port_name)
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

@@ -96,10 +96,13 @@ This document tracks remaining tasks for the `netrun-core` library.
 - [x] **Add `Clone` derive to `Port`**
   - Added Clone derive as part of serde implementation
 
-- [ ] **Review error handling**
-  - Consider using `thiserror` for better error types
-  - Add more context to error messages
-  - Consider whether panics should be errors instead
+- [x] **Review error handling**
+  - Added `thiserror` dependency for implementing `std::error::Error` trait
+  - Restructured `NetActionError` with structured data fields (IDs, names) instead of message strings
+  - Added `#[error("...")]` annotations with descriptive error messages
+  - Implemented `Display` for `PortRef` to support error formatting
+  - Added `thiserror::Error` derive to `GraphValidationError`
+  - Note: Panics are kept for internal invariant violations (e.g., inconsistent state) as this is idiomatic Rust
 
 - [x] **Fix unused field warning**
   - `Graph.nodes_by_name` was defined but never read
