@@ -62,11 +62,14 @@ This document tracks remaining tasks for the `netrun-core` library.
 
 ### Testing
 
-- [ ] **Create unit tests for graph validation**
+- [x] **Create unit tests for graph validation**
   - Test valid graphs pass validation
   - Test invalid port references are caught
   - Test invalid edge references are caught
   - Test max_salvos validation for input salvos
+  - Test edge source/target port type validation
+  - Test salvo condition port/term validation
+  - Test complex nested salvo condition terms
 
 - [ ] **Create integration tests for Net operations**
   - Test packet creation and consumption
