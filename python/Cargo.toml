@@ -1,0 +1,13 @@
+[package]
+name = "netrun-core-python"
+version = "0.1.0"
+edition = "2024"
+
+[lib]
+name = "netrun_core"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.23", features = ["extension-module", "abi3-py38"] }
+netrun-core = { path = "../core" }
+ulid = { workspace = true }
