@@ -110,7 +110,6 @@ Actions produce events that track what happened:
 - `EpochCreated`, `EpochStarted`, `EpochFinished`, `EpochCancelled`
 - `PacketMoved`
 - `InputSalvoTriggered`, `OutputSalvoTriggered`
-- `NodeEnabled`, `NodeDisabled`
 
 ## Typical Usage Pattern
 

@@ -1,67 +1,132 @@
+//! Runtime state and operations for flow-based development networks.
+//!
+//! This module provides the [`Net`] type which tracks the runtime state of a network,
+//! including packet locations, epoch lifecycles, and provides actions to control packet flow.
+//!
+//! All mutations to the network state go through [`Net::do_action`] which accepts a
+//! [`NetAction`] and returns a [`NetActionResponse`] containing any events that occurred.
+
 use crate::_utils::get_utc_now;
 use crate::graph::{EdgeRef, Graph, NodeName, Port, PortSlotSpec, PortName, PortType, PortRef, SalvoConditionName, SalvoConditionTerm, evaluate_salvo_condition};
 use indexmap::IndexSet;
 use std::collections::{HashMap, HashSet};
 use ulid::Ulid;
 
+/// Unique identifier for a packet (ULID).
 pub type PacketID = Ulid;
+
+/// Unique identifier for an epoch (ULID).
 pub type EpochID = Ulid;
 
+/// Where a packet is located in the network.
+///
+/// Packets move through these locations as they flow through the network:
+/// - Start outside the net or get created inside an epoch
+/// - Move to edges, then to input ports
+/// - Get consumed into epochs via salvo conditions
+/// - Can be loaded into output ports and sent back to edges
 #[derive(Debug, PartialEq, Eq, Hash, Clone)]
 pub enum PacketLocation {
+    /// Inside an epoch (either startable or running).
     Node(EpochID),
+    /// Waiting at a node's input port.
     InputPort(NodeName, PortName),
+    /// Loaded into an epoch's output port, ready to be sent.
     OutputPort(EpochID, PortName),
+    /// In transit on an edge between nodes.
     Edge(EdgeRef),
+    /// External to the network (not yet injected or already extracted).
     OutsideNet,
 }
 
+/// A unit that flows through the network.
 #[derive(Debug)]
 pub struct Packet {
+    /// Unique identifier for this packet.
     pub id: PacketID,
+    /// Current location of this packet.
     pub location: PacketLocation,
 }
 
+/// A collection of packets that enter or exit a node together.
+///
+/// Salvos are created when salvo conditions are satisfied:
+/// - Input salvos are created when packets at input ports trigger an epoch
+/// - Output salvos are created when packets at output ports are sent out
 #[derive(Debug, Clone)]
 pub struct Salvo {
+    /// The name of the salvo condition that was triggered.
     pub salvo_condition: SalvoConditionName,
+    /// The packets in this salvo, paired with their port names.
     pub packets: Vec<(PortName, PacketID)>,
 }
 
+/// The lifecycle state of an epoch.
 #[derive(Debug, Clone, PartialEq)]
 pub enum EpochState {
+    /// Epoch is created but not yet started. External code must call StartEpoch.
     Startable,
+    /// Epoch is actively running. Packets can be created, loaded, and sent.
     Running,
+    /// Epoch has completed. No further operations are allowed.
     Finished,
 }
 
+/// An execution instance of a node.
+///
+/// A single node can have multiple simultaneous epochs. Each epoch tracks
+/// which packets entered (in_salvo), which have been sent out (out_salvos),
+/// and its current lifecycle state.
 #[derive(Debug, Clone)]
 pub struct Epoch {
+    /// Unique identifier for this epoch.
     pub id: EpochID,
+    /// The node this epoch is executing on.
     pub node_name: NodeName,
-    pub in_salvo: Salvo,        // Salvo received by this epoch
-    pub out_salvos: Vec<Salvo>, // Salvos sent out from this epoch
+    /// The salvo of packets that triggered this epoch.
+    pub in_salvo: Salvo,
+    /// Salvos that have been sent out from this epoch.
+    pub out_salvos: Vec<Salvo>,
+    /// Current lifecycle state.
     pub state: EpochState,
 }
 
 impl Epoch {
+    /// Returns the timestamp when this epoch was created (milliseconds since Unix epoch).
     pub fn start_time(&self) -> u64 {
         self.id.timestamp_ms()
     }
 }
 
-pub type EventUTC = i128; // Milliseconds
+/// Timestamp in milliseconds (UTC).
+pub type EventUTC = i128;
 
+/// An action that can be performed on the network.
+///
+/// All mutations to [`Net`] state must go through these actions via [`Net::do_action`].
+/// This ensures all operations are tracked and produce appropriate events.
 #[derive(Debug)]
 pub enum NetAction {
+    /// Run automatic packet flow until no more progress can be made.
+    /// Moves packets from edges to input ports and triggers input salvo conditions.
     RunNetUntilBlocked,
+    /// Create a new packet, optionally inside an epoch.
+    /// If `None`, packet is created outside the network.
     CreatePacket(Option<EpochID>),
+    /// Remove a packet from the network entirely.
     ConsumePacket(PacketID),
+    /// Transition a startable epoch to running state.
     StartEpoch(EpochID),
+    /// Complete a running epoch. Fails if epoch still contains packets.
     FinishEpoch(EpochID),
+    /// Cancel an epoch and destroy all packets inside it.
     CancelEpoch(EpochID),
+    /// Manually create and start an epoch with specified packets.
+    /// Bypasses the normal salvo condition triggering mechanism.
     CreateAndStartEpoch(NodeName, Salvo),
+    /// Move a packet from inside an epoch to one of its output ports.
     LoadPacketIntoOutputPort(PacketID, PortName),
+    /// Send packets from output ports onto edges according to a salvo condition.
     SendOutputSalvo(EpochID, SalvoConditionName),
     /// Transport a packet to a new location.
     /// Restrictions:
@@ -150,38 +215,67 @@ pub enum NetActionError {
     EdgeNotFound { edge_ref: EdgeRef },
 }
 
+/// An event that occurred during a network action.
+///
+/// Events provide a complete audit trail of all state changes in the network.
+/// Each event includes a timestamp and relevant identifiers.
 #[derive(Debug, Clone)]
 pub enum NetEvent {
+    /// A new packet was created.
     PacketCreated(EventUTC, PacketID),
+    /// A packet was removed from the network.
     PacketConsumed(EventUTC, PacketID),
+    /// A new epoch was created (in Startable state).
     EpochCreated(EventUTC, EpochID),
+    /// An epoch transitioned from Startable to Running.
     EpochStarted(EventUTC, EpochID),
+    /// An epoch completed successfully.
     EpochFinished(EventUTC, EpochID),
+    /// An epoch was cancelled.
     EpochCancelled(EventUTC, EpochID),
+    /// A packet moved to a new location.
     PacketMoved(EventUTC, PacketID, PacketLocation),
+    /// An input salvo condition was triggered, creating an epoch.
     InputSalvoTriggered(EventUTC, EpochID, SalvoConditionName),
+    /// An output salvo condition was triggered, sending packets.
     OutputSalvoTriggered(EventUTC, EpochID, SalvoConditionName),
-    NodeEnabled(EventUTC, NodeName),
-    NodeDisabled(EventUTC, NodeName),
 }
 
+/// Data returned by a successful network action.
 #[derive(Debug)]
 pub enum NetActionResponseData {
+    /// A packet ID (returned by CreatePacket).
     Packet(PacketID),
+    /// The started epoch (returned by StartEpoch, CreateAndStartEpoch).
     StartedEpoch(Epoch),
+    /// The finished epoch (returned by FinishEpoch).
     FinishedEpoch(Epoch),
+    /// The cancelled epoch and IDs of destroyed packets (returned by CancelEpoch).
     CancelledEpoch(Epoch, Vec<PacketID>),
+    /// No specific data (returned by RunNetUntilBlocked, ConsumePacket, etc.).
     None,
 }
 
+/// The result of performing a network action.
 #[derive(Debug)]
 pub enum NetActionResponse {
+    /// Action succeeded, with optional data and a list of events that occurred.
     Success(NetActionResponseData, Vec<NetEvent>),
+    /// Action failed with an error.
     Error(NetActionError),
 }
 
+/// The runtime state of a flow-based network.
+///
+/// A `Net` is created from a [`Graph`] and tracks:
+/// - All packets and their locations
+/// - All epochs and their states
+/// - Which epochs are startable
+///
+/// All mutations must go through [`Net::do_action`] to ensure proper event tracking.
 #[derive(Debug)]
 pub struct Net {
+    /// The graph topology this network is running on.
     pub graph: Graph,
     _packets: HashMap<PacketID, Packet>,
     _packets_by_location: HashMap<PacketLocation, IndexSet<PacketID>>,
@@ -392,6 +486,14 @@ impl Net {
                         // Create a location entry for packets inside the epoch
                         let epoch_location = PacketLocation::Node(epoch_id.clone());
                         self._packets_by_location.insert(epoch_location.clone(), IndexSet::new());
+
+                        // Create output port location entries for this epoch
+                        let node = self.graph.nodes().get(&candidate.target_node_name)
+                            .expect("Node not found for epoch creation");
+                        for port_name in node.out_ports.keys() {
+                            let output_port_location = PacketLocation::OutputPort(epoch_id.clone(), port_name.clone());
+                            self._packets_by_location.insert(output_port_location, IndexSet::new());
+                        }
 
                         // Move packets from input ports into the epoch
                         for (pid, _port_name) in &packets_to_move {
@@ -971,6 +1073,37 @@ impl Net {
         )
     }
 
+    /// Perform an action on the network.
+    ///
+    /// This is the primary way to mutate the network state. All actions produce
+    /// a response containing either success data and events, or an error.
+    ///
+    /// # Example
+    ///
+    /// ```
+    /// use netrun_core::net::{Net, NetAction, NetActionResponse, NetActionResponseData};
+    /// use netrun_core::graph::{Graph, Node, Port, PortSlotSpec};
+    /// use std::collections::HashMap;
+    ///
+    /// let node = Node {
+    ///     name: "A".to_string(),
+    ///     in_ports: HashMap::new(),
+    ///     out_ports: HashMap::new(),
+    ///     in_salvo_conditions: HashMap::new(),
+    ///     out_salvo_conditions: HashMap::new(),
+    /// };
+    /// let graph = Graph::new(vec![node], vec![]);
+    /// let mut net = Net::new(graph);
+    ///
+    /// // Create a packet outside the network
+    /// let response = net.do_action(&NetAction::CreatePacket(None));
+    /// match response {
+    ///     NetActionResponse::Success(NetActionResponseData::Packet(id), events) => {
+    ///         println!("Created packet {}", id);
+    ///     }
+    ///     _ => panic!("Expected success"),
+    /// }
+    /// ```
     pub fn do_action(&mut self, action: &NetAction) -> NetActionResponse {
         match action {
             NetAction::RunNetUntilBlocked => self.run_until_blocked(),
