@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 pub type PortName = String;
 
@@ -85,8 +85,76 @@ pub type SalvoConditionName = String;
 #[derive(Debug)]
 pub struct SalvoCondition {
     pub max_salvos: u64, // 0 = unlimited
-    pub ports: Vec<PortName>, // TODO: Validate that the ports exist
+    pub ports: Vec<PortName>,
     pub term: SalvoConditionTerm,
+}
+
+/// Extracts all port names referenced in a SalvoConditionTerm.
+fn collect_ports_from_term(term: &SalvoConditionTerm, ports: &mut HashSet<PortName>) {
+    match term {
+        SalvoConditionTerm::Port { port_name, .. } => {
+            ports.insert(port_name.clone());
+        }
+        SalvoConditionTerm::And(terms) | SalvoConditionTerm::Or(terms) => {
+            for t in terms {
+                collect_ports_from_term(t, ports);
+            }
+        }
+        SalvoConditionTerm::Not(inner) => {
+            collect_ports_from_term(inner, ports);
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+pub enum GraphValidationError {
+    /// Edge references a node that doesn't exist
+    EdgeReferencesNonexistentNode {
+        edge_source: PortRef,
+        edge_target: PortRef,
+        missing_node: NodeName,
+    },
+    /// Edge references a port that doesn't exist on the node
+    EdgeReferencesNonexistentPort {
+        edge_source: PortRef,
+        edge_target: PortRef,
+        missing_port: PortRef,
+    },
+    /// Edge source is not an output port
+    EdgeSourceNotOutputPort {
+        edge_source: PortRef,
+        edge_target: PortRef,
+    },
+    /// Edge target is not an input port
+    EdgeTargetNotInputPort {
+        edge_source: PortRef,
+        edge_target: PortRef,
+    },
+    /// SalvoCondition.ports references a port that doesn't exist
+    SalvoConditionReferencesNonexistentPort {
+        node_name: NodeName,
+        condition_name: SalvoConditionName,
+        is_input_condition: bool,
+        missing_port: PortName,
+    },
+    /// SalvoCondition.term references a port that doesn't exist
+    SalvoConditionTermReferencesNonexistentPort {
+        node_name: NodeName,
+        condition_name: SalvoConditionName,
+        is_input_condition: bool,
+        missing_port: PortName,
+    },
+    /// Input salvo condition has max_salvos != 1
+    InputSalvoConditionInvalidMaxSalvos {
+        node_name: NodeName,
+        condition_name: SalvoConditionName,
+        max_salvos: u64,
+    },
+    /// Duplicate edge (same source and target)
+    DuplicateEdge {
+        edge_source: PortRef,
+        edge_target: PortRef,
+    },
 }
 
 pub type NodeName = String;
@@ -171,5 +239,156 @@ impl Graph {
     /// Returns the edge that has the given input port as its target (head).
     pub fn get_edge_by_head(&self, input_port_ref: &PortRef) -> Option<&EdgeRef> {
         self.edges_by_head.get(input_port_ref)
+    }
+
+    /// Validates the graph structure.
+    ///
+    /// Returns a list of all validation errors found. An empty list means the graph is valid.
+    pub fn validate(&self) -> Vec<GraphValidationError> {
+        let mut errors = Vec::new();
+
+        // Track seen edges to detect duplicates
+        let mut seen_edges: HashSet<(&PortRef, &PortRef)> = HashSet::new();
+
+        // Validate edges
+        for edge_ref in self.edges.keys() {
+            let source = &edge_ref.source;
+            let target = &edge_ref.target;
+
+            // Check for duplicate edges
+            if !seen_edges.insert((source, target)) {
+                errors.push(GraphValidationError::DuplicateEdge {
+                    edge_source: source.clone(),
+                    edge_target: target.clone(),
+                });
+                continue;
+            }
+
+            // Validate source node exists
+            let source_node = match self.nodes.get(&source.node_name) {
+                Some(node) => node,
+                None => {
+                    errors.push(GraphValidationError::EdgeReferencesNonexistentNode {
+                        edge_source: source.clone(),
+                        edge_target: target.clone(),
+                        missing_node: source.node_name.clone(),
+                    });
+                    continue;
+                }
+            };
+
+            // Validate target node exists
+            let target_node = match self.nodes.get(&target.node_name) {
+                Some(node) => node,
+                None => {
+                    errors.push(GraphValidationError::EdgeReferencesNonexistentNode {
+                        edge_source: source.clone(),
+                        edge_target: target.clone(),
+                        missing_node: target.node_name.clone(),
+                    });
+                    continue;
+                }
+            };
+
+            // Validate source is an output port
+            if source.port_type != PortType::Output {
+                errors.push(GraphValidationError::EdgeSourceNotOutputPort {
+                    edge_source: source.clone(),
+                    edge_target: target.clone(),
+                });
+            } else if !source_node.out_ports.contains_key(&source.port_name) {
+                errors.push(GraphValidationError::EdgeReferencesNonexistentPort {
+                    edge_source: source.clone(),
+                    edge_target: target.clone(),
+                    missing_port: source.clone(),
+                });
+            }
+
+            // Validate target is an input port
+            if target.port_type != PortType::Input {
+                errors.push(GraphValidationError::EdgeTargetNotInputPort {
+                    edge_source: source.clone(),
+                    edge_target: target.clone(),
+                });
+            } else if !target_node.in_ports.contains_key(&target.port_name) {
+                errors.push(GraphValidationError::EdgeReferencesNonexistentPort {
+                    edge_source: source.clone(),
+                    edge_target: target.clone(),
+                    missing_port: target.clone(),
+                });
+            }
+        }
+
+        // Validate nodes and their salvo conditions
+        for (node_name, node) in &self.nodes {
+            // Validate input salvo conditions
+            for (cond_name, condition) in &node.in_salvo_conditions {
+                // Input salvo conditions must have max_salvos == 1
+                if condition.max_salvos != 1 {
+                    errors.push(GraphValidationError::InputSalvoConditionInvalidMaxSalvos {
+                        node_name: node_name.clone(),
+                        condition_name: cond_name.clone(),
+                        max_salvos: condition.max_salvos,
+                    });
+                }
+
+                // Validate ports in condition.ports exist as input ports
+                for port_name in &condition.ports {
+                    if !node.in_ports.contains_key(port_name) {
+                        errors.push(GraphValidationError::SalvoConditionReferencesNonexistentPort {
+                            node_name: node_name.clone(),
+                            condition_name: cond_name.clone(),
+                            is_input_condition: true,
+                            missing_port: port_name.clone(),
+                        });
+                    }
+                }
+
+                // Validate ports in condition.term exist as input ports
+                let mut term_ports = HashSet::new();
+                collect_ports_from_term(&condition.term, &mut term_ports);
+                for port_name in term_ports {
+                    if !node.in_ports.contains_key(&port_name) {
+                        errors.push(GraphValidationError::SalvoConditionTermReferencesNonexistentPort {
+                            node_name: node_name.clone(),
+                            condition_name: cond_name.clone(),
+                            is_input_condition: true,
+                            missing_port: port_name,
+                        });
+                    }
+                }
+            }
+
+            // Validate output salvo conditions
+            for (cond_name, condition) in &node.out_salvo_conditions {
+                // Validate ports in condition.ports exist as output ports
+                for port_name in &condition.ports {
+                    if !node.out_ports.contains_key(port_name) {
+                        errors.push(GraphValidationError::SalvoConditionReferencesNonexistentPort {
+                            node_name: node_name.clone(),
+                            condition_name: cond_name.clone(),
+                            is_input_condition: false,
+                            missing_port: port_name.clone(),
+                        });
+                    }
+                }
+
+                // Validate ports in condition.term exist as output ports
+                let mut term_ports = HashSet::new();
+                collect_ports_from_term(&condition.term, &mut term_ports);
+                for port_name in term_ports {
+                    if !node.out_ports.contains_key(&port_name) {
+                        errors.push(GraphValidationError::SalvoConditionTermReferencesNonexistentPort {
+                            node_name: node_name.clone(),
+                            condition_name: cond_name.clone(),
+                            is_input_condition: false,
+                            missing_port: port_name,
+                        });
+                    }
+                }
+            }
+        }
+
+        errors
     }
 }
