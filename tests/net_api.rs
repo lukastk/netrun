@@ -365,10 +365,10 @@ fn test_get_epoch() {
     let graph = common::linear_graph_3();
     let mut net = Net::new(graph);
 
-    // Create packet and place at input port
+    // Create packet and transport to input port
     let packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
     let input_port_loc = PacketLocation::InputPort("B".to_string(), "in".to_string());
-    net.place_packet_at_location(&packet_id, input_port_loc).unwrap();
+    net.do_action(&NetAction::TransportPacketToLocation(packet_id.clone(), input_port_loc));
 
     // Create and start epoch
     let salvo = Salvo {
@@ -398,7 +398,7 @@ fn test_get_startable_epochs() {
     // Initially no startable epochs
     assert!(net.get_startable_epochs().is_empty());
 
-    // Create packet and place on edge
+    // Create packet and transport to edge
     let packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
     let edge_loc = PacketLocation::Edge(EdgeRef {
         source: PortRef {
@@ -412,7 +412,7 @@ fn test_get_startable_epochs() {
             port_name: "in".to_string(),
         },
     });
-    net.place_packet_at_location(&packet_id, edge_loc).unwrap();
+    net.do_action(&NetAction::TransportPacketToLocation(packet_id.clone(), edge_loc));
 
     // Run until blocked
     net.do_action(&NetAction::RunNetUntilBlocked);
@@ -454,16 +454,16 @@ fn test_get_packets_at_location() {
 }
 
 #[test]
-fn test_place_packet_at_location() {
+fn test_transport_packet_to_location() {
     let graph = common::linear_graph_3();
     let mut net = Net::new(graph);
 
     let packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
 
-    // Place at input port
+    // Transport to input port
     let input_port = PacketLocation::InputPort("B".to_string(), "in".to_string());
-    let result = net.place_packet_at_location(&packet_id, input_port.clone());
-    assert!(result.is_ok());
+    let result = net.do_action(&NetAction::TransportPacketToLocation(packet_id.clone(), input_port.clone()));
+    assert!(matches!(result, NetActionResponse::Success(_, _)));
 
     // Verify packet is at new location
     let packet = net.get_packet(&packet_id).unwrap();
@@ -473,13 +473,13 @@ fn test_place_packet_at_location() {
 }
 
 #[test]
-fn test_place_packet_at_location_fails_for_nonexistent_packet() {
+fn test_transport_packet_to_location_fails_for_nonexistent_packet() {
     let graph = common::linear_graph_3();
     let mut net = Net::new(graph);
 
     let fake_id = ulid::Ulid::new();
     let input_port = PacketLocation::InputPort("B".to_string(), "in".to_string());
 
-    let result = net.place_packet_at_location(&fake_id, input_port);
-    assert!(result.is_err());
+    let result = net.do_action(&NetAction::TransportPacketToLocation(fake_id, input_port));
+    assert!(matches!(result, NetActionResponse::Error(NetActionError::PacketNotFound { .. })));
 }
