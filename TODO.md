@@ -21,10 +21,11 @@ This document tracks remaining tasks for the `netrun-core` library.
   - Validate no duplicate edges (same source and target)
   - Note: Port name uniqueness within a node is inherently enforced by using HashMap<PortName, Port>
 
-- [ ] **Make `Graph` serializable**
+- [x] **Make `Graph` serializable**
   - Add `serde` dependency
   - Derive `Serialize` and `Deserialize` for all graph types
-  - Consider JSON schema generation for external tooling
+  - Graph serializes via GraphData helper (indexes are rebuilt on deserialize)
+  - Note: Using ulid 1.1.0 due to compatibility issues with Rust 1.93 beta
 
 ### Net Construction
 
@@ -79,12 +80,12 @@ This document tracks remaining tasks for the `netrun-core` library.
 
 ### Code Quality
 
-- [ ] **Add `Clone` derive to `SalvoConditionTerm` and `PortState`**
-  - Remove the manual `clone_salvo_condition_term` helper function in `net.rs`
-  - This would simplify the `run_until_blocked` implementation
+- [x] **Add `Clone` derive to `SalvoConditionTerm` and `PortState`**
+  - Removed the manual `clone_salvo_condition_term` helper function in `net.rs`
+  - Added Clone derive to all graph types as part of serde implementation
 
-- [ ] **Add `Clone` derive to `Port`**
-  - Currently manually cloning `Port` in `run_until_blocked`
+- [x] **Add `Clone` derive to `Port`**
+  - Added Clone derive as part of serde implementation
 
 - [ ] **Review error handling**
   - Consider using `thiserror` for better error types

@@ -1,5 +1,5 @@
 use crate::_utils::get_utc_now;
-use crate::graph::{EdgeRef, Graph, NodeName, Port, PortSlotSpec, PortName, PortType, PortRef, PortState, SalvoConditionName, SalvoConditionTerm, evaluate_salvo_condition};
+use crate::graph::{EdgeRef, Graph, NodeName, Port, PortSlotSpec, PortName, PortType, PortRef, SalvoConditionName, SalvoConditionTerm, evaluate_salvo_condition};
 use indexmap::IndexSet;
 use std::collections::{HashMap, HashSet};
 use std::panic;
@@ -122,35 +122,6 @@ pub struct Net<'a> {
     _node_to_epochs: HashMap<NodeName, Vec<EpochID>>,
 }
 
-// Helper function to clone SalvoConditionTerm (needed to avoid borrow issues)
-fn clone_salvo_condition_term(term: &SalvoConditionTerm) -> SalvoConditionTerm {
-    match term {
-        SalvoConditionTerm::Port { port_name, state } => SalvoConditionTerm::Port {
-            port_name: port_name.clone(),
-            state: match state {
-                PortState::Empty => PortState::Empty,
-                PortState::Full => PortState::Full,
-                PortState::NonEmpty => PortState::NonEmpty,
-                PortState::NonFull => PortState::NonFull,
-                PortState::Equals(n) => PortState::Equals(*n),
-                PortState::LessThan(n) => PortState::LessThan(*n),
-                PortState::GreaterThan(n) => PortState::GreaterThan(*n),
-                PortState::EqualsOrLessThan(n) => PortState::EqualsOrLessThan(*n),
-                PortState::EqualsOrGreaterThan(n) => PortState::EqualsOrGreaterThan(*n),
-            },
-        },
-        SalvoConditionTerm::And(terms) => SalvoConditionTerm::And(
-            terms.iter().map(clone_salvo_condition_term).collect()
-        ),
-        SalvoConditionTerm::Or(terms) => SalvoConditionTerm::Or(
-            terms.iter().map(clone_salvo_condition_term).collect()
-        ),
-        SalvoConditionTerm::Not(inner) => SalvoConditionTerm::Not(
-            Box::new(clone_salvo_condition_term(inner))
-        ),
-    }
-}
-
 impl Net<'_> {
     fn move_packet(&mut self, packet_id: &PacketID, new_location: PacketLocation) {
         let packet = self._packets.get_mut(&packet_id).unwrap();
@@ -247,14 +218,14 @@ impl Net<'_> {
                 struct SalvoConditionData {
                     name: SalvoConditionName,
                     ports: Vec<PortName>,
-                    term: crate::graph::SalvoConditionTerm,
+                    term: SalvoConditionTerm,
                 }
 
                 let salvo_conditions: Vec<SalvoConditionData> = node.in_salvo_conditions.iter()
                     .map(|(name, cond)| SalvoConditionData {
                         name: name.clone(),
                         ports: cond.ports.clone(),
-                        term: clone_salvo_condition_term(&cond.term),
+                        term: cond.term.clone(),
                     })
                     .collect();
 
