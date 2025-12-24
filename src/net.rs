@@ -173,65 +173,64 @@ impl Net<'_> {
         loop {
             let mut made_progress = false;
 
-            // Step 1: Find all packets on edges and collect info needed to move them
-            // We collect everything we need before mutating to avoid borrow issues
-            let packets_on_edges: Vec<(PacketID, EdgeRef)> = self._packets.iter()
-                .filter_map(|(packet_id, packet)| {
-                    if let PacketLocation::Edge(edge_ref) = &packet.location {
-                        Some((packet_id.clone(), edge_ref.clone()))
-                    } else {
-                        None
-                    }
-                })
-                .collect();
-
-            // Determine which packets can move and collect all necessary data
-            struct MoveCandidate {
+            // Collect all edge locations and their first packet (FIFO)
+            // We need to extract data before mutating to avoid borrow issues
+            struct EdgeMoveCandidate {
                 packet_id: PacketID,
                 target_node_name: NodeName,
                 input_port_location: PacketLocation,
+                can_move: bool,
             }
 
-            let mut move_candidates: Vec<MoveCandidate> = Vec::new();
+            let mut edge_candidates: Vec<EdgeMoveCandidate> = Vec::new();
 
-            for (packet_id, edge_ref) in packets_on_edges {
-                let target_node_name = edge_ref.target.node_name.clone();
-                let target_port_name = edge_ref.target.port_name.clone();
+            // Iterate through all edge locations in _packets_by_location
+            for (location, packets) in &self._packets_by_location {
+                if let PacketLocation::Edge(edge_ref) = location {
+                    // Get the first packet (FIFO order)
+                    if let Some(first_packet_id) = packets.first() {
+                        let target_node_name = edge_ref.target.node_name.clone();
+                        let target_port_name = edge_ref.target.port_name.clone();
 
-                // Check if the target input port has space
-                let node = self.graph.nodes().get(&target_node_name)
-                    .expect("Edge targets a non-existent node");
-                let port = node.in_ports.get(&target_port_name)
-                    .expect("Edge targets a non-existent input port");
+                        // Check if the target input port has space
+                        let node = self.graph.nodes().get(&target_node_name)
+                            .expect("Edge targets a non-existent node");
+                        let port = node.in_ports.get(&target_port_name)
+                            .expect("Edge targets a non-existent input port");
 
-                let input_port_location = PacketLocation::InputPort(target_node_name.clone(), target_port_name.clone());
-                let current_count = self._packets_by_location
-                    .get(&input_port_location)
-                    .map(|packets| packets.len() as u64)
-                    .unwrap();
+                        let input_port_location = PacketLocation::InputPort(target_node_name.clone(), target_port_name.clone());
+                        let current_count = self._packets_by_location
+                            .get(&input_port_location)
+                            .map(|packets| packets.len() as u64)
+                            .unwrap_or(0);
 
-                let can_move = match port.slots_spec {
-                    PortSlotSpec::Infinite => true,
-                    PortSlotSpec::Finite(max_slots) => current_count < max_slots,
-                };
+                        let can_move = match port.slots_spec {
+                            PortSlotSpec::Infinite => true,
+                            PortSlotSpec::Finite(max_slots) => current_count < max_slots,
+                        };
 
-                if can_move {
-                    move_candidates.push(MoveCandidate {
-                        packet_id,
-                        target_node_name,
-                        input_port_location,
-                    });
+                        edge_candidates.push(EdgeMoveCandidate {
+                            packet_id: first_packet_id.clone(),
+                            target_node_name,
+                            input_port_location,
+                            can_move,
+                        });
+                    }
                 }
             }
 
-            // Process one move at a time (to properly check salvo conditions after each move)
-            if let Some(candidate) = move_candidates.into_iter().next() {
+            // Process each edge that can move a packet
+            for candidate in edge_candidates {
+                if !candidate.can_move {
+                    continue;
+                }
+
                 // Move the packet to the input port
                 self.move_packet(&candidate.packet_id, candidate.input_port_location.clone());
                 all_events.push(NetEvent::PacketMoved(get_utc_now(), candidate.packet_id.clone(), candidate.input_port_location.clone()));
                 made_progress = true;
 
-                // Step 2: After moving a packet, check input salvo conditions on the target node
+                // Check input salvo conditions on the target node
                 // Extract all needed data from the graph first
                 let node = self.graph.nodes().get(&candidate.target_node_name)
                     .expect("Edge targets a non-existent node");
@@ -259,7 +258,6 @@ impl Net<'_> {
                     })
                     .collect();
 
-                // Now we can work with self mutably
                 // Check salvo conditions in order - first satisfied one wins
                 for salvo_cond_data in salvo_conditions {
                     // Calculate packet counts for all input ports
@@ -328,7 +326,7 @@ impl Net<'_> {
                         all_events.push(NetEvent::EpochCreated(get_utc_now(), epoch_id.clone()));
                         all_events.push(NetEvent::InputSalvoTriggered(get_utc_now(), epoch_id.clone(), salvo_cond_data.name.clone()));
 
-                        // Only one salvo condition can trigger per check, break after first match
+                        // Only one salvo condition can trigger per node per iteration
                         break;
                     }
                 }
