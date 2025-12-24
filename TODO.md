@@ -58,6 +58,29 @@ This document tracks remaining tasks for the `netrun-core` library.
   - Creates output port location entries
   - Emits EpochCreated, PacketMoved, and EpochStarted events
 
+### API Design
+
+- [ ] **Enforce all Net mutations go through NetAction/do_action**
+  - Principle: All external operations on Net must use `do_action(NetAction)` so that:
+    - External code can track exactly what operations have been performed
+    - All operations return the list of `NetEvent`s that transpired
+  - Audit current public API and remove/make private any methods that mutate Net directly
+  - Current violations to address:
+    - `place_packet_at_location()` - should become a NetAction
+  - Update affected tests to use `do_action()` instead of direct method calls
+
+- [ ] **Add `TransportPacketToLocation` NetAction**
+  - Allows moving an existing packet to any location:
+    - Input port (with capacity check - fail if port is full)
+    - Output port of an epoch
+    - Any edge
+    - OutsideNet
+  - Restrictions:
+    - Cannot move packets into a Running epoch (only Startable epochs allowed)
+    - Cannot move packets out of a Running epoch (only Startable epochs allowed)
+  - This replaces direct injection and provides a unified way to set up packet locations
+  - Emits `PacketMoved` event
+
 ## Medium Priority
 
 ### Testing
@@ -87,6 +110,14 @@ This document tracks remaining tasks for the `netrun-core` library.
   - Helper functions for creating ports, nodes, edges, and salvo conditions
   - Self-tests to verify fixtures create valid graphs
 
+- [x] **Create public API integration tests (tests/ directory)**
+  - Test Graph construction, validation, and accessors (19 tests)
+  - Test Net construction and all NetActions via do_action() (26 tests)
+  - Test end-to-end workflows (packet flow through multi-node graphs) (9 tests)
+  - Test error handling returns correct error types
+  - Test serialization/deserialization of Graph types
+  - Added public accessor methods: `get_packet()`, `get_epoch()`, `get_startable_epochs()`, `packet_count_at()`, `get_packets_at_location()`, `place_packet_at_location()`
+
 ### Code Quality
 
 - [x] **Add `Clone` derive to `SalvoConditionTerm` and `PortState`**
@@ -112,14 +143,18 @@ This document tracks remaining tasks for the `netrun-core` library.
 
 ### Features
 
-- [ ] **Add `Net::get_packets_at_location()`**
+- [x] **Add `Net::get_packets_at_location()`**
   - Convenient accessor for querying packet locations
+  - Implemented along with `packet_count_at()` and `place_packet_at_location()`
 
-- [ ] **Add `Net::get_epoch()`**
+- [x] **Add `Net::get_epoch()`**
   - Convenient accessor for querying epoch state
 
-- [ ] **Add `Net::get_startable_epochs()`**
+- [x] **Add `Net::get_startable_epochs()`**
   - Return list of epochs ready to be started
+
+- [x] **Add `Net::get_packet()`**
+  - Look up a packet by ID
 
 - [ ] **Consider adding `NodeEnabled`/`NodeDisabled` events**
   - Events exist in `NetEvent` but are never emitted
@@ -145,7 +180,13 @@ This document tracks remaining tasks for the `netrun-core` library.
 
 - [x] Should `OutsideNet` packets be tracked in `_packets_by_location`?
   - Yes, `OutsideNet` is initialized in `Net::new()` and packets created outside the net are tracked there
-- [ ] What is the expected behavior when a graph is modified after a Net is created?
-- [ ] Should there be a way to "inject" packets directly into input ports (bypassing edges)?
-- [ ] How should the library handle infinite loops in the graph?
-- [ ] Should there be rate limiting or cycle detection in `run_until_blocked`?
+- [x] What is the expected behavior when a graph is modified after a Net is created?
+  - Graph is immutable by design (no mutation methods). If a different topology is needed, create a new Net.
+- [x] Should there be a way to "inject" packets directly into input ports (bypassing edges)?
+  - Yes, via the new `TransportPacketToLocation` NetAction (see High Priority > API Design)
+- [x] How should the library handle infinite loops in the graph?
+  - Not an issue. `run_until_blocked` only moves packets Edge→InputPort and triggers salvo conditions.
+  - Completing a cycle requires external actions (StartEpoch, LoadPacketIntoOutputPort, SendOutputSalvo).
+  - Therefore `run_until_blocked` is bounded by the number of packets on edges and is guaranteed to terminate.
+- [x] Should there be rate limiting or cycle detection in `run_until_blocked`?
+  - No, not needed. See above - the function always terminates.

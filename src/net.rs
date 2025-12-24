@@ -129,7 +129,7 @@ pub enum NetActionError {
     InputPortNotFound { port_name: PortName, node_name: NodeName },
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum NetEvent {
     PacketCreated(EventUTC, PacketID),
     PacketConsumed(EventUTC, PacketID),
@@ -833,16 +833,73 @@ impl Net {
         }
     }
 
-    // Test helper: get packet count at a location
-    #[cfg(test)]
+    // ========== Public Accessors ==========
+
+    /// Get the number of packets at a given location.
     pub fn packet_count_at(&self, location: &PacketLocation) -> usize {
         self._packets_by_location.get(location).map(|s| s.len()).unwrap_or(0)
     }
 
-    // Test helper: get all startable epoch IDs
+    /// Get all packets at a given location.
+    pub fn get_packets_at_location(&self, location: &PacketLocation) -> Vec<PacketID> {
+        self._packets_by_location
+            .get(location)
+            .map(|s| s.iter().cloned().collect())
+            .unwrap_or_default()
+    }
+
+    /// Get an epoch by ID.
+    pub fn get_epoch(&self, epoch_id: &EpochID) -> Option<&Epoch> {
+        self._epochs.get(epoch_id)
+    }
+
+    /// Get all startable epoch IDs.
+    pub fn get_startable_epochs(&self) -> Vec<EpochID> {
+        self._startable_epochs.iter().cloned().collect()
+    }
+
+    /// Get a packet by ID.
+    pub fn get_packet(&self, packet_id: &PacketID) -> Option<&Packet> {
+        self._packets.get(packet_id)
+    }
+
+    /// Place a packet at a specific location (for testing/setup purposes).
+    /// The packet must already exist and be at OutsideNet location.
+    pub fn place_packet_at_location(&mut self, packet_id: &PacketID, location: PacketLocation) -> Result<(), NetActionError> {
+        let packet = self._packets.get(packet_id).ok_or(NetActionError::PacketNotFound {
+            packet_id: packet_id.clone(),
+        })?;
+
+        let current_location = packet.location.clone();
+        if current_location != PacketLocation::OutsideNet {
+            return Err(NetActionError::PacketNotInNode {
+                packet_id: packet_id.clone(),
+                epoch_id: Ulid::nil(),
+            });
+        }
+
+        // Remove from OutsideNet
+        self._packets_by_location
+            .get_mut(&PacketLocation::OutsideNet)
+            .map(|s| s.shift_remove(packet_id));
+
+        // Add to new location
+        self._packets_by_location
+            .entry(location.clone())
+            .or_insert_with(IndexSet::new)
+            .insert(packet_id.clone());
+
+        // Update packet location
+        self._packets.get_mut(packet_id).unwrap().location = location;
+
+        Ok(())
+    }
+
+    // ========== Internal Test Helpers ==========
+
     #[cfg(test)]
     pub fn startable_epoch_ids(&self) -> Vec<EpochID> {
-        self._startable_epochs.iter().cloned().collect()
+        self.get_startable_epochs()
     }
 }
 
