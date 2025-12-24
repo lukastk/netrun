@@ -188,10 +188,10 @@ This document tracks remaining tasks for the `netrun-core` library.
 
 ### Python Bindings
 
-- [ ] **`SalvoConditionNotMet` mapped to wrong exception**
-  - In `python/src/errors.rs`, `NetActionError::SalvoConditionNotMet` is mapped to `SalvoConditionNotFoundError`
-  - This conflates "condition not found" with "condition not met" - different error semantics
-  - Fix: Add a dedicated `SalvoConditionNotMetError` exception class
+- [x] **`SalvoConditionNotMet` mapped to wrong exception**
+  - In `python/src/errors.rs`, `NetActionError::SalvoConditionNotMet` was mapped to `SalvoConditionNotFoundError`
+  - This conflated "condition not found" with "condition not met" - different error semantics
+  - Fixed: Added dedicated `SalvoConditionNotMetError` exception class
 
 ## Questions to Resolve
 

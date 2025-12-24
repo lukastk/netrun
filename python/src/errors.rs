@@ -15,6 +15,7 @@ create_exception!(netrun_core, PacketNotInNodeError, NetrunError);
 create_exception!(netrun_core, OutputPortNotFoundError, NetrunError);
 create_exception!(netrun_core, OutputPortFullError, NetrunError);
 create_exception!(netrun_core, SalvoConditionNotFoundError, NetrunError);
+create_exception!(netrun_core, SalvoConditionNotMetError, NetrunError);
 create_exception!(netrun_core, MaxSalvosExceededError, NetrunError);
 create_exception!(netrun_core, NodeNotFoundError, NetrunError);
 create_exception!(netrun_core, PacketNotAtInputPortError, NetrunError);
@@ -37,6 +38,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("OutputPortNotFoundError", m.py().get_type::<OutputPortNotFoundError>())?;
     m.add("OutputPortFullError", m.py().get_type::<OutputPortFullError>())?;
     m.add("SalvoConditionNotFoundError", m.py().get_type::<SalvoConditionNotFoundError>())?;
+    m.add("SalvoConditionNotMetError", m.py().get_type::<SalvoConditionNotMetError>())?;
     m.add("MaxSalvosExceededError", m.py().get_type::<MaxSalvosExceededError>())?;
     m.add("NodeNotFoundError", m.py().get_type::<NodeNotFoundError>())?;
     m.add("PacketNotAtInputPortError", m.py().get_type::<PacketNotAtInputPortError>())?;
@@ -103,7 +105,7 @@ pub fn net_action_error_to_py_err(err: netrun_core::net::NetActionError) -> PyEr
             ))
         }
         NetActionError::SalvoConditionNotMet { epoch_id, condition_name } => {
-            SalvoConditionNotFoundError::new_err(format!(
+            SalvoConditionNotMetError::new_err(format!(
                 "Salvo condition '{}' not met for epoch {}",
                 condition_name, epoch_id
             ))
