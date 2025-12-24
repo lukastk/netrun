@@ -79,6 +79,9 @@ pub enum NetActionError {
     SalvoConditionNotMet {message: String},
     OutputPortFull {message: String},
     CannotPutPacketIntoUnconnectedOutputPort {message: String},
+    NodeNotFound {message: String},
+    PacketNotAtInputPort {message: String},
+    InputPortNotFound {message: String},
 }
 
 #[derive(Debug)]
@@ -531,7 +534,90 @@ impl Net {
     }
 
     fn create_and_start_epoch(&mut self, node_name: &NodeName, salvo: &Salvo) -> NetActionResponse {
-        panic!("Not implemented")
+        // Validate node exists
+        let node = match self.graph.nodes().get(node_name) {
+            Some(node) => node,
+            None => {
+                return NetActionResponse::Error(NetActionError::NodeNotFound {
+                    message: format!("Node '{}' not found", node_name)
+                });
+            }
+        };
+
+        // Validate all packets in salvo
+        for (port_name, packet_id) in &salvo.packets {
+            // Validate input port exists
+            if !node.in_ports.contains_key(port_name) {
+                return NetActionResponse::Error(NetActionError::InputPortNotFound {
+                    message: format!("Input port '{}' not found on node '{}'", port_name, node_name)
+                });
+            }
+
+            // Validate packet exists
+            let packet = match self._packets.get(packet_id) {
+                Some(packet) => packet,
+                None => {
+                    return NetActionResponse::Error(NetActionError::PacketNotFound {
+                        message: format!("Packet '{}' not found", packet_id)
+                    });
+                }
+            };
+
+            // Validate packet is at the input port of this node
+            let expected_location = PacketLocation::InputPort(node_name.clone(), port_name.clone());
+            if packet.location != expected_location {
+                return NetActionResponse::Error(NetActionError::PacketNotAtInputPort {
+                    message: format!(
+                        "Packet '{}' is not at input port '{}' of node '{}'. Current location: {:?}",
+                        packet_id, port_name, node_name, packet.location
+                    )
+                });
+            }
+        }
+
+        let mut events: Vec<NetEvent> = Vec::new();
+
+        // Create the epoch
+        let epoch_id = Ulid::new();
+        let epoch = Epoch {
+            id: epoch_id.clone(),
+            node_name: node_name.clone(),
+            in_salvo: salvo.clone(),
+            out_salvos: Vec::new(),
+            state: EpochState::Running,
+        };
+
+        // Register the epoch
+        self._epochs.insert(epoch_id.clone(), epoch.clone());
+        self._node_to_epochs
+            .entry(node_name.clone())
+            .or_insert_with(Vec::new)
+            .push(epoch_id.clone());
+
+        // Create location entry for packets inside the epoch
+        let epoch_location = PacketLocation::Node(epoch_id.clone());
+        self._packets_by_location.insert(epoch_location.clone(), IndexSet::new());
+
+        // Create output port location entries for this epoch
+        for port_name in node.out_ports.keys() {
+            let output_port_location = PacketLocation::OutputPort(epoch_id.clone(), port_name.clone());
+            self._packets_by_location.insert(output_port_location, IndexSet::new());
+        }
+
+        events.push(NetEvent::EpochCreated(get_utc_now(), epoch_id.clone()));
+
+        // Move packets from input ports into the epoch
+        for (_, packet_id) in &salvo.packets {
+            self.move_packet(packet_id, epoch_location.clone());
+            events.push(NetEvent::PacketMoved(get_utc_now(), packet_id.clone(), epoch_location.clone()));
+        }
+
+        events.push(NetEvent::EpochStarted(get_utc_now(), epoch_id.clone()));
+
+        NetActionResponse::Success(
+            NetActionResponseData::StartedEpoch(epoch),
+            events
+        )
     }
 
     fn load_packet_into_output_port(&mut self, packet_id: &PacketID, port_name: &String) -> NetActionResponse {
