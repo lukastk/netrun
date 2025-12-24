@@ -95,6 +95,7 @@ print(f"Startable epochs: {len(startable)}")
 
 See the `examples/` directory for complete examples:
 
+### Python Scripts
 - `linear_flow.py` - Simple A -> B -> C packet flow
 - `diamond_flow.py` - Branching and merging with synchronization
 
@@ -103,6 +104,16 @@ Run examples:
 ```bash
 python examples/linear_flow.py
 python examples/diamond_flow.py
+```
+
+### Jupyter Notebooks
+- `linear_flow.ipynb` - Interactive walkthrough of linear packet flow
+- `diamond_flow.ipynb` - Interactive walkthrough of branching/merging with synchronization
+
+Run notebooks:
+
+```bash
+jupyter notebook examples/linear_flow.ipynb
 ```
 
 ## API Overview
