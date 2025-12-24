@@ -145,12 +145,57 @@ Actions produce events that track what happened:
 - **Deterministic**: Salvo conditions are checked in order; first match wins
 - **Action-based mutations**: All `Net` state changes must go through `do_action(NetAction)` to ensure event tracking and auditability
 
-## File Structure
+## Repository Structure
+
+This is a Cargo workspace with two crates:
 
 ```
-src/
-├── lib.rs       # Module exports
-├── _utils.rs    # Utility functions (timestamps)
-├── graph.rs     # Graph topology types and salvo condition evaluation
-└── net.rs       # Network runtime state and actions
+netrun-core/
+├── Cargo.toml              # Workspace root
+├── core/                   # Core Rust library
+│   ├── Cargo.toml
+│   └── src/
+│       ├── lib.rs          # Module exports
+│       ├── _utils.rs       # Utility functions (timestamps)
+│       ├── graph.rs        # Graph topology types and salvo condition evaluation
+│       └── net.rs          # Network runtime state and actions
+├── python/                 # Python bindings (PyO3)
+│   ├── Cargo.toml          # PyO3 crate configuration
+│   ├── pyproject.toml      # Maturin build configuration
+│   ├── src/
+│   │   ├── lib.rs          # PyO3 module root
+│   │   ├── errors.rs       # Python exception hierarchy
+│   │   ├── graph.rs        # Graph type bindings
+│   │   └── net.rs          # Net type bindings
+│   ├── python/
+│   │   └── netrun_core/    # Python package
+│   │       ├── __init__.py # Re-exports from native extension
+│   │       └── __init__.pyi # Type stubs for IDE support
+│   └── examples/           # Python examples
+├── examples/               # Rust examples
+└── tests/                  # Rust integration tests
 ```
+
+## Python Bindings
+
+The `python/` directory contains PyO3 bindings that expose the full API to Python:
+
+### Building
+
+```bash
+cd python
+uv venv .venv && uv sync
+uv run maturin develop
+```
+
+### Usage
+
+```python
+from netrun_core import Graph, Node, Net, NetAction, Port, PortSlotSpec
+
+# Create graph, build network, run simulation
+net = Net(graph)
+response, events = net.do_action(NetAction.run_net_until_blocked())
+```
+
+See `python/README.md` for full documentation and examples.
