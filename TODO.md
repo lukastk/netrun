@@ -156,21 +156,26 @@ This document tracks remaining tasks for the `netrun-core` library.
 - [x] **Add `Net::get_packet()`**
   - Look up a packet by ID
 
-- [ ] **Consider adding `NodeEnabled`/`NodeDisabled` events**
-  - Events exist in `NetEvent` but are never emitted
-  - Define semantics for node enabling/disabling
+- [x] **Consider adding `NodeEnabled`/`NodeDisabled` events**
+  - Decided to remove them - they were dead code
+  - External code can implement enable/disable logic by controlling when to call StartEpoch
 
-- [ ] **Add logging/tracing**
-  - Consider adding `tracing` for debugging support
+- [x] **Add logging/tracing**
+  - Decided: Not needed currently
+  - NetEvent already provides complete observability for external consumers
+  - Can be added later if internal debugging becomes an issue
 
 ### Documentation
 
-- [ ] **Add rustdoc comments to all public types and functions**
+- [x] **Add rustdoc comments to all public types and functions**
+  - Added module-level docs to graph.rs and net.rs
+  - Documented all public types, enums, and their variants
+  - Added doc examples for Graph and Net::do_action
 
-- [ ] **Add examples directory**
-  - Simple linear flow example
-  - Branching/merging flow example
-  - Multi-epoch example
+- [x] **Add examples directory**
+  - `examples/linear_flow.rs` - Simple A -> B -> C flow demonstrating epoch lifecycle
+  - `examples/diamond_flow.rs` - Branching/merging flow demonstrating synchronization
+  - Fixed bug: output port locations weren't initialized when epochs created via run_until_blocked
 
 - [ ] **Consider adding architecture diagram**
   - Visual representation of packet flow

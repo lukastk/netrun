@@ -1,40 +1,81 @@
+//! Graph topology types for flow-based development networks.
+//!
+//! This module defines the static structure of a network: nodes, ports, edges,
+//! and the conditions that govern packet flow (salvo conditions).
+
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
+/// The name of a port on a node.
 pub type PortName = String;
 
+/// Specifies the capacity of a port (how many packets it can hold).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PortSlotSpec {
+    /// Port can hold unlimited packets.
     Infinite,
+    /// Port can hold at most this many packets.
     Finite(u64),
 }
 
+/// A port on a node where packets can enter or exit.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Port {
+    /// The capacity specification for this port.
     pub slots_spec: PortSlotSpec,
 }
 
+/// A predicate on the state of a port, used in salvo conditions.
+///
+/// These predicates test the current packet count at a port against
+/// various conditions like empty, full, or numeric comparisons.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum PortState {
-    Empty,                    // 'E'
-    Full,                     // 'F'
-    NonEmpty,                 // '!E'
-    NonFull,                  // '!F'
-    Equals(u64),              // '='
-    LessThan(u64),            // '<'
-    GreaterThan(u64),         // '>'
-    EqualsOrLessThan(u64),    // '<='
-    EqualsOrGreaterThan(u64), // '>='
+    /// Port has zero packets.
+    Empty,
+    /// Port is at capacity (always false for infinite ports).
+    Full,
+    /// Port has at least one packet.
+    NonEmpty,
+    /// Port is below capacity (always true for infinite ports).
+    NonFull,
+    /// Port has exactly this many packets.
+    Equals(u64),
+    /// Port has fewer than this many packets.
+    LessThan(u64),
+    /// Port has more than this many packets.
+    GreaterThan(u64),
+    /// Port has at most this many packets.
+    EqualsOrLessThan(u64),
+    /// Port has at least this many packets.
+    EqualsOrGreaterThan(u64),
 }
 
+/// A boolean expression over port states, used to define when salvos can trigger.
+///
+/// This forms a simple expression tree that can combine port state checks
+/// with logical operators (And, Or, Not).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum SalvoConditionTerm {
+    /// Check if a specific port matches a state predicate.
     Port { port_name: String, state: PortState },
+    /// All sub-terms must be true.
     And(Vec<Self>),
+    /// At least one sub-term must be true.
     Or(Vec<Self>),
+    /// The sub-term must be false.
     Not(Box<Self>),
 }
 
+/// Evaluates a salvo condition term against the current port packet counts.
+///
+/// # Arguments
+/// * `term` - The condition term to evaluate
+/// * `port_packet_counts` - Map of port names to their current packet counts
+/// * `ports` - Map of port names to their definitions (needed for capacity checks)
+///
+/// # Returns
+/// `true` if the condition is satisfied, `false` otherwise.
 pub fn evaluate_salvo_condition(
     term: &SalvoConditionTerm,
     port_packet_counts: &HashMap<PortName, u64>,
@@ -81,12 +122,23 @@ pub fn evaluate_salvo_condition(
     }
 }
 
+/// The name of a salvo condition.
 pub type SalvoConditionName = String;
 
+/// A condition that defines when packets can trigger an epoch or be sent.
+///
+/// Salvo conditions are attached to nodes and control the flow of packets:
+/// - **Input salvo conditions**: Define when packets at input ports can trigger a new epoch
+/// - **Output salvo conditions**: Define when packets at output ports can be sent out
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SalvoCondition {
-    pub max_salvos: u64, // 0 = unlimited
+    /// Maximum number of times this condition can trigger per epoch.
+    /// For input salvo conditions, this must be 1.
+    /// For output salvo conditions, 0 means unlimited.
+    pub max_salvos: u64,
+    /// The ports whose packets are included when this condition triggers.
     pub ports: Vec<PortName>,
+    /// The boolean condition that must be satisfied for this salvo to trigger.
     pub term: SalvoConditionTerm,
 }
 
@@ -167,27 +219,48 @@ pub enum GraphValidationError {
     },
 }
 
+/// The name of a node in the graph.
 pub type NodeName = String;
 
+/// A processing unit in the graph with input and output ports.
+///
+/// Nodes are the fundamental building blocks of a flow-based network.
+/// They have:
+/// - Input ports where packets arrive
+/// - Output ports where packets are sent
+/// - Input salvo conditions that define when arriving packets trigger an epoch
+/// - Output salvo conditions that define when output packets can be sent
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Node {
+    /// The unique name of this node.
     pub name: NodeName,
+    /// Input ports where packets can arrive.
     pub in_ports: HashMap<PortName, Port>,
+    /// Output ports where packets can be sent.
     pub out_ports: HashMap<PortName, Port>,
+    /// Conditions that trigger new epochs when satisfied by packets at input ports.
     pub in_salvo_conditions: HashMap<SalvoConditionName, SalvoCondition>,
+    /// Conditions that must be satisfied to send packets from output ports.
     pub out_salvo_conditions: HashMap<SalvoConditionName, SalvoCondition>,
 }
 
+/// Whether a port is for input or output.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum PortType {
+    /// An input port (packets flow into the node).
     Input,
+    /// An output port (packets flow out of the node).
     Output,
 }
 
+/// A reference to a specific port on a specific node.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct PortRef {
+    /// The name of the node containing this port.
     pub node_name: NodeName,
+    /// Whether this is an input or output port.
     pub port_type: PortType,
+    /// The name of the port on the node.
     pub port_name: PortName,
 }
 
@@ -201,13 +274,21 @@ impl std::fmt::Display for PortRef {
     }
 }
 
+/// A connection between two ports in the graph.
+///
+/// Edges connect output ports to input ports, allowing packets to flow
+/// between nodes. Currently edges have no additional properties beyond
+/// their endpoints.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Edge {
 }
 
+/// A reference to an edge, identified by its source and target ports.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct EdgeRef {
+    /// The output port where this edge originates.
     pub source: PortRef,
+    /// The input port where this edge terminates.
     pub target: PortRef,
 }
 
@@ -217,6 +298,45 @@ impl std::fmt::Display for EdgeRef {
     }
 }
 
+/// The static topology of a flow-based network.
+///
+/// A Graph defines the structure of a network: which nodes exist, how they're
+/// connected, and what conditions govern packet flow. The graph is immutable
+/// after creation.
+///
+/// # Example
+///
+/// ```
+/// use netrun_core::graph::{Graph, Node, Edge, EdgeRef, PortRef, PortType, Port, PortSlotSpec};
+/// use std::collections::HashMap;
+///
+/// // Create a simple A -> B graph
+/// let node_a = Node {
+///     name: "A".to_string(),
+///     in_ports: HashMap::new(),
+///     out_ports: [("out".to_string(), Port { slots_spec: PortSlotSpec::Infinite })].into(),
+///     in_salvo_conditions: HashMap::new(),
+///     out_salvo_conditions: HashMap::new(),
+/// };
+/// let node_b = Node {
+///     name: "B".to_string(),
+///     in_ports: [("in".to_string(), Port { slots_spec: PortSlotSpec::Infinite })].into(),
+///     out_ports: HashMap::new(),
+///     in_salvo_conditions: HashMap::new(),
+///     out_salvo_conditions: HashMap::new(),
+/// };
+///
+/// let edge = (
+///     EdgeRef {
+///         source: PortRef { node_name: "A".to_string(), port_type: PortType::Output, port_name: "out".to_string() },
+///         target: PortRef { node_name: "B".to_string(), port_type: PortType::Input, port_name: "in".to_string() },
+///     },
+///     Edge {},
+/// );
+///
+/// let graph = Graph::new(vec![node_a, node_b], vec![edge]);
+/// assert!(graph.validate().is_empty());
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(from = "GraphData", into = "GraphData")]
 pub struct Graph {
@@ -279,7 +399,10 @@ impl Graph {
         }
     }
 
+    /// Returns a reference to all nodes in the graph, keyed by name.
     pub fn nodes(&self) -> &HashMap<NodeName, Node> { &self.nodes }
+
+    /// Returns a reference to all edges in the graph, keyed by their endpoints.
     pub fn edges(&self) -> &HashMap<EdgeRef, Edge> { &self.edges }
 
     /// Returns the edge that has the given output port as its source (tail).
