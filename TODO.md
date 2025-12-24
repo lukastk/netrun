@@ -79,9 +79,10 @@ This document tracks remaining tasks for the `netrun-core` library.
   - Test multiple simultaneous epochs on same node
   - Test that FIFO behaviour in the movement of packets is maintained.
 
-- [ ] **Create test fixtures**
-  - Helper functions to create common graph patterns
-  - Helper functions to set up test scenarios
+- [x] **Create test fixtures**
+  - Helper functions to create common graph patterns (linear, branching, merging, diamond)
+  - Helper functions for creating ports, nodes, edges, and salvo conditions
+  - Self-tests to verify fixtures create valid graphs
 
 ### Code Quality
 
