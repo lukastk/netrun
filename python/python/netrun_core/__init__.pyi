@@ -42,7 +42,11 @@ class OutputPortFullError(NetrunError):
     ...
 
 class SalvoConditionNotFoundError(NetrunError):
-    """Salvo condition not found or not met."""
+    """Salvo condition with the given name was not found."""
+    ...
+
+class SalvoConditionNotMetError(NetrunError):
+    """Salvo condition exists but its term is not satisfied."""
     ...
 
 class MaxSalvosExceededError(NetrunError):
@@ -440,6 +444,7 @@ __all__ = [
     "OutputPortNotFoundError",
     "OutputPortFullError",
     "SalvoConditionNotFoundError",
+    "SalvoConditionNotMetError",
     "MaxSalvosExceededError",
     "NodeNotFoundError",
     "PacketNotAtInputPortError",

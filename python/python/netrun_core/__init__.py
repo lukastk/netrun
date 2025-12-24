@@ -13,6 +13,7 @@ __all__ = [
     "OutputPortNotFoundError",
     "OutputPortFullError",
     "SalvoConditionNotFoundError",
+    "SalvoConditionNotMetError",
     "MaxSalvosExceededError",
     "NodeNotFoundError",
     "PacketNotAtInputPortError",
