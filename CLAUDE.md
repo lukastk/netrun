@@ -157,5 +157,5 @@ Run this command to notify the user by sound in these situations:
 - When needing permission to proceed
 
 ```bash
-afplay /System/Library/Sounds/Funk.aiff
+afplay /System/Library/Sounds/Ping.aiff
 ```
