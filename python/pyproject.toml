@@ -16,3 +16,10 @@ classifiers = [
 features = ["pyo3/extension-module"]
 python-source = "python"
 module-name = "netrun_core"
+
+[dependency-groups]
+dev = [
+    "maturin>=1.10.2",
+    "python-ulid>=1.1.0",
+    "typing-extensions>=4.13.2",
+]
