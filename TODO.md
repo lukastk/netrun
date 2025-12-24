@@ -1,0 +1,137 @@
+# TODO
+
+This document tracks remaining tasks for the `netrun-core` library.
+
+## High Priority
+
+### Graph Construction & Validation
+
+- [ ] **Create `Graph` constructor**
+  - Implement `Graph::new()` that takes nodes and edges
+  - Populate `nodes_by_name` index in constructor
+  - Populate `edges_by_tail` index in constructor
+  - Consider adding `edges_by_head` index for efficient lookup of edges targeting input ports
+
+- [ ] **Implement `Graph::validate()`**
+  - Validate that all edges reference existing nodes and ports
+  - Validate that edge sources are output ports and targets are input ports
+  - Validate that `SalvoCondition.ports` only reference ports that exist on the node
+  - Validate that `SalvoCondition.term` only references ports that exist on the node
+  - Validate that `SalvoCondition.max_salvos == 1` for all input salvo conditions
+  - Validate no duplicate edges (same source and target)
+  - Validate port names are unique within a node's input/output ports
+
+- [ ] **Make `Graph` serializable**
+  - Add `serde` dependency
+  - Derive `Serialize` and `Deserialize` for all graph types
+  - Consider JSON schema generation for external tooling
+
+### Net Construction
+
+- [ ] **Create `Net` constructor**
+  - Implement `Net::new(graph: Graph)`
+  - Initialize `_packets_by_location` with empty `IndexSet` for:
+    - Every edge in the graph
+    - Every input port of every node
+    - Every output port of every node (per-epoch, so maybe not at construction?)
+  - Initialize `_packets`, `_epochs`, `_startable_epochs`, `_node_to_epochs` as empty
+  - Consider whether `_ports` cache is needed or can be removed
+
+### Implement Missing NetActions
+
+- [ ] **Implement `cancel_epoch`**
+  - Define semantics: what happens to packets inside the epoch?
+  - Should packets be destroyed? Returned to input ports? Moved to OutsideNet?
+  - Update `_startable_epochs` if epoch was startable
+  - Update `_node_to_epochs`
+  - Emit `EpochCancelled` event
+
+- [ ] **Implement `create_and_start_epoch`**
+  - Allow external code to manually create an epoch with a specified salvo
+  - Validate that provided packets exist and are in appropriate locations
+  - Move packets into the new epoch
+  - Immediately transition to `Running` state
+
+## Medium Priority
+
+### Testing
+
+- [ ] **Create unit tests for graph validation**
+  - Test valid graphs pass validation
+  - Test invalid port references are caught
+  - Test invalid edge references are caught
+  - Test max_salvos validation for input salvos
+
+- [ ] **Create integration tests for Net operations**
+  - Test packet creation and consumption
+  - Test epoch lifecycle (create → start → finish)
+  - Test `run_until_blocked` with simple linear graphs
+  - Test `run_until_blocked` with branching graphs
+  - Test `run_until_blocked` with port capacity limits
+  - Test salvo condition evaluation (AND, OR, NOT combinations)
+  - Test output salvo sending
+  - Test multiple simultaneous epochs on same node
+  - Test that FIFO behaviour in the movement of packets is maintained.
+
+- [ ] **Create test fixtures**
+  - Helper functions to create common graph patterns
+  - Helper functions to set up test scenarios
+
+### Code Quality
+
+- [ ] **Add `Clone` derive to `SalvoConditionTerm` and `PortState`**
+  - Remove the manual `clone_salvo_condition_term` helper function in `net.rs`
+  - This would simplify the `run_until_blocked` implementation
+
+- [ ] **Add `Clone` derive to `Port`**
+  - Currently manually cloning `Port` in `run_until_blocked`
+
+- [ ] **Review error handling**
+  - Consider using `thiserror` for better error types
+  - Add more context to error messages
+  - Consider whether panics should be errors instead
+
+- [ ] **Fix unused field warning**
+  - `Graph.nodes_by_name` is defined but never read
+  - Either use it or remove it
+
+## Low Priority
+
+### Features
+
+- [ ] **Add `Net::get_packets_at_location()`**
+  - Convenient accessor for querying packet locations
+
+- [ ] **Add `Net::get_epoch()`**
+  - Convenient accessor for querying epoch state
+
+- [ ] **Add `Net::get_startable_epochs()`**
+  - Return list of epochs ready to be started
+
+- [ ] **Consider adding `NodeEnabled`/`NodeDisabled` events**
+  - Events exist in `NetEvent` but are never emitted
+  - Define semantics for node enabling/disabling
+
+- [ ] **Add logging/tracing**
+  - Consider adding `tracing` for debugging support
+
+### Documentation
+
+- [ ] **Add rustdoc comments to all public types and functions**
+
+- [ ] **Add examples directory**
+  - Simple linear flow example
+  - Branching/merging flow example
+  - Multi-epoch example
+
+- [ ] **Consider adding architecture diagram**
+  - Visual representation of packet flow
+  - State machine diagram for epoch lifecycle
+
+## Questions to Resolve
+
+- [ ] Should `OutsideNet` packets be tracked in `_packets_by_location`?
+- [ ] What is the expected behavior when a graph is modified after a Net is created?
+- [ ] Should there be a way to "inject" packets directly into input ports (bypassing edges)?
+- [ ] How should the library handle infinite loops in the graph?
+- [ ] Should there be rate limiting or cycle detection in `run_until_blocked`?
