@@ -177,9 +177,21 @@ This document tracks remaining tasks for the `netrun-core` library.
   - `examples/diamond_flow.rs` - Branching/merging flow demonstrating synchronization
   - Fixed bug: output port locations weren't initialized when epochs created via run_until_blocked
 
-- [ ] **Consider adding architecture diagram**
-  - Visual representation of packet flow
-  - State machine diagram for epoch lifecycle
+## Outstanding Issues
+
+### Testing
+
+- [ ] **Integration tests not running**
+  - The `tests/` directory at the workspace root contains ~54 integration tests (graph_api.rs, net_api.rs, workflow.rs)
+  - These are not being executed because the workspace root has no package that includes them
+  - Fix: Move `tests/` into `core/tests/` so the core crate picks them up
+
+### Python Bindings
+
+- [ ] **`SalvoConditionNotMet` mapped to wrong exception**
+  - In `python/src/errors.rs`, `NetActionError::SalvoConditionNotMet` is mapped to `SalvoConditionNotFoundError`
+  - This conflates "condition not found" with "condition not met" - different error semantics
+  - Fix: Add a dedicated `SalvoConditionNotMetError` exception class
 
 ## Questions to Resolve
 
