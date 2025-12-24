@@ -148,3 +148,14 @@ src/
 ├── graph.rs     # Graph topology types and salvo condition evaluation
 └── net.rs       # Network runtime state and actions
 ```
+
+## IMPORTANT: Sound Notification
+
+Run this command to notify the user by sound in these situations:
+- After finishing responding to a request or running a command
+- When asking questions or needing clarification
+- When needing permission to proceed
+
+```bash
+afplay /System/Library/Sounds/Funk.aiff
+```
