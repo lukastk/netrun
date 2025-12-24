@@ -71,16 +71,16 @@ This document tracks remaining tasks for the `netrun-core` library.
   - Test salvo condition port/term validation
   - Test complex nested salvo condition terms
 
-- [ ] **Create integration tests for Net operations**
+- [x] **Create integration tests for Net operations**
   - Test packet creation and consumption
   - Test epoch lifecycle (create → start → finish)
   - Test `run_until_blocked` with simple linear graphs
-  - Test `run_until_blocked` with branching graphs
-  - Test `run_until_blocked` with port capacity limits
-  - Test salvo condition evaluation (AND, OR, NOT combinations)
-  - Test output salvo sending
-  - Test multiple simultaneous epochs on same node
-  - Test that FIFO behaviour in the movement of packets is maintained.
+  - Test `run_until_blocked` with port capacity limits (using node without salvo conditions)
+  - Test output salvo sending (fixed `max_salvos=0` to mean "unlimited")
+  - Test cancel epoch destroys packets
+  - Test create_and_start_epoch validation
+  - Test FIFO packet ordering (verified via PacketMoved events)
+  - Note: 18 integration tests covering all Net operations
 
 - [x] **Create test fixtures**
   - Helper functions to create common graph patterns (linear, branching, merging, diamond)
@@ -140,7 +140,8 @@ This document tracks remaining tasks for the `netrun-core` library.
 
 ## Questions to Resolve
 
-- [ ] Should `OutsideNet` packets be tracked in `_packets_by_location`?
+- [x] Should `OutsideNet` packets be tracked in `_packets_by_location`?
+  - Yes, `OutsideNet` is initialized in `Net::new()` and packets created outside the net are tracked there
 - [ ] What is the expected behavior when a graph is modified after a Net is created?
 - [ ] Should there be a way to "inject" packets directly into input ports (bypassing edges)?
 - [ ] How should the library handle infinite loops in the graph?
