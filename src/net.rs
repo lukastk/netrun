@@ -2,7 +2,6 @@ use crate::_utils::get_utc_now;
 use crate::graph::{EdgeRef, Graph, NodeName, Port, PortSlotSpec, PortName, PortType, PortRef, SalvoConditionName, SalvoConditionTerm, evaluate_salvo_condition};
 use indexmap::IndexSet;
 use std::collections::{HashMap, HashSet};
-use std::panic;
 use ulid::Ulid;
 
 pub type PacketID = Ulid;
@@ -112,17 +111,50 @@ pub enum NetActionResponse {
 }
 
 #[derive(Debug)]
-pub struct Net<'a> {
+pub struct Net {
     pub graph: Graph,
     _packets: HashMap<PacketID, Packet>,
     _packets_by_location: HashMap<PacketLocation, IndexSet<PacketID>>,
-    _ports: HashMap<PortRef, &'a Port>,
     _epochs: HashMap<EpochID, Epoch>,
     _startable_epochs: HashSet<EpochID>,
     _node_to_epochs: HashMap<NodeName, Vec<EpochID>>,
 }
 
-impl Net<'_> {
+impl Net {
+    /// Creates a new Net from a Graph.
+    ///
+    /// Initializes packet location tracking for all edges and input ports.
+    pub fn new(graph: Graph) -> Self {
+        let mut packets_by_location: HashMap<PacketLocation, IndexSet<PacketID>> = HashMap::new();
+
+        // Initialize empty packet sets for all edges
+        for edge_ref in graph.edges().keys() {
+            packets_by_location.insert(PacketLocation::Edge(edge_ref.clone()), IndexSet::new());
+        }
+
+        // Initialize empty packet sets for all input ports
+        for (node_name, node) in graph.nodes() {
+            for port_name in node.in_ports.keys() {
+                packets_by_location.insert(
+                    PacketLocation::InputPort(node_name.clone(), port_name.clone()),
+                    IndexSet::new(),
+                );
+            }
+        }
+
+        // Note: Output port locations are created per-epoch when epochs are created
+        // Note: Node locations (inside epochs) are created when epochs are created
+
+        Net {
+            graph,
+            _packets: HashMap::new(),
+            _packets_by_location: packets_by_location,
+            _epochs: HashMap::new(),
+            _startable_epochs: HashSet::new(),
+            _node_to_epochs: HashMap::new(),
+        }
+    }
+
     fn move_packet(&mut self, packet_id: &PacketID, new_location: PacketLocation) {
         let packet = self._packets.get_mut(&packet_id).unwrap();
         let packets_at_old_location = self._packets_by_location.get_mut(&packet.location)

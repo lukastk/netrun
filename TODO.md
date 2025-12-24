@@ -29,14 +29,14 @@ This document tracks remaining tasks for the `netrun-core` library.
 
 ### Net Construction
 
-- [ ] **Create `Net` constructor**
+- [x] **Create `Net` constructor**
   - Implement `Net::new(graph: Graph)`
   - Initialize `_packets_by_location` with empty `IndexSet` for:
     - Every edge in the graph
     - Every input port of every node
-    - Every output port of every node (per-epoch, so maybe not at construction?)
+    - Output port locations created per-epoch when epochs are created
   - Initialize `_packets`, `_epochs`, `_startable_epochs`, `_node_to_epochs` as empty
-  - Consider whether `_ports` cache is needed or can be removed
+  - Removed unused `_ports` cache and lifetime parameter from Net
 
 ### Implement Missing NetActions
 
