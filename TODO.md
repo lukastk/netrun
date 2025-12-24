@@ -12,14 +12,14 @@ This document tracks remaining tasks for the `netrun-core` library.
   - Populate `edges_by_tail` index in constructor
   - Added `edges_by_head` index for efficient lookup of edges targeting input ports
 
-- [ ] **Implement `Graph::validate()`**
+- [x] **Implement `Graph::validate()`**
   - Validate that all edges reference existing nodes and ports
   - Validate that edge sources are output ports and targets are input ports
   - Validate that `SalvoCondition.ports` only reference ports that exist on the node
   - Validate that `SalvoCondition.term` only references ports that exist on the node
   - Validate that `SalvoCondition.max_salvos == 1` for all input salvo conditions
   - Validate no duplicate edges (same source and target)
-  - Validate port names are unique within a node's input/output ports
+  - Note: Port name uniqueness within a node is inherently enforced by using HashMap<PortName, Port>
 
 - [ ] **Make `Graph` serializable**
   - Add `serde` dependency
