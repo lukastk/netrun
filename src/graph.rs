@@ -211,6 +211,12 @@ pub struct EdgeRef {
     pub target: PortRef,
 }
 
+impl std::fmt::Display for EdgeRef {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{} -> {}", self.source, self.target)
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(from = "GraphData", into = "GraphData")]
 pub struct Graph {

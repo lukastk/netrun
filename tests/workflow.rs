@@ -64,9 +64,9 @@ fn test_complete_linear_flow_a_to_b() {
     // 1. Create a packet
     let packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
 
-    // 2. Place packet on edge A->B using public API
+    // 2. Transport packet to edge A->B
     let edge_a_b = PacketLocation::Edge(edge_ref("A", "out", "B", "in"));
-    net.place_packet_at_location(&packet_id, edge_a_b).expect("Failed to place packet");
+    net.do_action(&NetAction::TransportPacketToLocation(packet_id.clone(), edge_a_b));
 
     // 3. Run until blocked - packet should move to input port and trigger epoch
     let response = net.do_action(&NetAction::RunNetUntilBlocked);
@@ -98,10 +98,10 @@ fn test_linear_flow_with_output_salvo() {
     let graph = common::linear_graph_3();
     let mut net = Net::new(graph);
 
-    // 1. Create packet and place at B's input port
+    // 1. Create packet and transport to B's input port
     let input_packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
     let input_port_loc = PacketLocation::InputPort("B".to_string(), "in".to_string());
-    net.place_packet_at_location(&input_packet_id, input_port_loc).expect("Failed to place packet");
+    net.do_action(&NetAction::TransportPacketToLocation(input_packet_id.clone(), input_port_loc));
 
     // 2. Manually create and start epoch at B
     let salvo = Salvo {
@@ -152,8 +152,8 @@ fn test_branching_flow() {
     let edge_a_b = PacketLocation::Edge(edge_ref("A", "out1", "B", "in"));
     let edge_a_c = PacketLocation::Edge(edge_ref("A", "out2", "C", "in"));
 
-    net.place_packet_at_location(&packet1, edge_a_b).expect("Failed to place packet");
-    net.place_packet_at_location(&packet2, edge_a_c).expect("Failed to place packet");
+    net.do_action(&NetAction::TransportPacketToLocation(packet1.clone(), edge_a_b));
+    net.do_action(&NetAction::TransportPacketToLocation(packet2.clone(), edge_a_c));
 
     // Run until blocked
     net.do_action(&NetAction::RunNetUntilBlocked);
@@ -182,7 +182,7 @@ fn test_merging_flow_both_inputs_required() {
     // Place packet only on edge A->C
     let packet1 = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
     let edge_a_c = PacketLocation::Edge(edge_ref("A", "out", "C", "in1"));
-    net.place_packet_at_location(&packet1, edge_a_c).expect("Failed to place packet");
+    net.do_action(&NetAction::TransportPacketToLocation(packet1.clone(), edge_a_c));
 
     // Run until blocked
     net.do_action(&NetAction::RunNetUntilBlocked);
@@ -194,7 +194,7 @@ fn test_merging_flow_both_inputs_required() {
     // Now add packet from B
     let packet2 = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
     let edge_b_c = PacketLocation::Edge(edge_ref("B", "out", "C", "in2"));
-    net.place_packet_at_location(&packet2, edge_b_c).expect("Failed to place packet");
+    net.do_action(&NetAction::TransportPacketToLocation(packet2.clone(), edge_b_c));
 
     // Run again
     net.do_action(&NetAction::RunNetUntilBlocked);
@@ -221,8 +221,8 @@ fn test_diamond_flow_synchronization() {
     let edge_a_b = PacketLocation::Edge(edge_ref("A", "out1", "B", "in"));
     let edge_a_c = PacketLocation::Edge(edge_ref("A", "out2", "C", "in"));
 
-    net.place_packet_at_location(&packet1, edge_a_b).expect("Failed to place packet");
-    net.place_packet_at_location(&packet2, edge_a_c).expect("Failed to place packet");
+    net.do_action(&NetAction::TransportPacketToLocation(packet1.clone(), edge_a_b));
+    net.do_action(&NetAction::TransportPacketToLocation(packet2.clone(), edge_a_c));
 
     // Run until blocked
     net.do_action(&NetAction::RunNetUntilBlocked);
@@ -247,10 +247,10 @@ fn test_cancel_epoch_workflow() {
     let graph = common::linear_graph_3();
     let mut net = Net::new(graph);
 
-    // Create and place packet
+    // Create and transport packet
     let packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
     let input_port_loc = PacketLocation::InputPort("B".to_string(), "in".to_string());
-    net.place_packet_at_location(&packet_id, input_port_loc).expect("Failed to place packet");
+    net.do_action(&NetAction::TransportPacketToLocation(packet_id.clone(), input_port_loc));
 
     // Create and start epoch
     let salvo = Salvo {
@@ -292,7 +292,7 @@ fn test_multiple_sequential_epochs_on_same_node() {
     // Process first packet through B
     let packet1 = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
     let input_port_loc = PacketLocation::InputPort("B".to_string(), "in".to_string());
-    net.place_packet_at_location(&packet1, input_port_loc.clone()).expect("Failed to place packet");
+    net.do_action(&NetAction::TransportPacketToLocation(packet1.clone(), input_port_loc.clone()));
 
     let salvo1 = Salvo {
         salvo_condition: "manual".to_string(),
@@ -308,7 +308,7 @@ fn test_multiple_sequential_epochs_on_same_node() {
 
     // Process second packet through B
     let packet2 = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
-    net.place_packet_at_location(&packet2, input_port_loc).expect("Failed to place packet");
+    net.do_action(&NetAction::TransportPacketToLocation(packet2.clone(), input_port_loc));
 
     let salvo2 = Salvo {
         salvo_condition: "manual".to_string(),
@@ -339,9 +339,9 @@ fn test_packet_location_tracking() {
     let packet = net.get_packet(&packet_id).unwrap();
     assert_eq!(packet.location, PacketLocation::OutsideNet);
 
-    // Place on edge
+    // Transport to edge
     let edge_loc = PacketLocation::Edge(edge_ref("A", "out", "B", "in"));
-    net.place_packet_at_location(&packet_id, edge_loc.clone()).expect("Failed to place packet");
+    net.do_action(&NetAction::TransportPacketToLocation(packet_id.clone(), edge_loc.clone()));
 
     // Verify location updated
     let packet = net.get_packet(&packet_id).unwrap();
@@ -369,7 +369,7 @@ fn test_get_packets_at_location() {
 
     // Move one to edge
     let edge_loc = PacketLocation::Edge(edge_ref("A", "out", "B", "in"));
-    net.place_packet_at_location(&packet1, edge_loc.clone()).expect("Failed to place packet");
+    net.do_action(&NetAction::TransportPacketToLocation(packet1.clone(), edge_loc.clone()));
 
     // Verify locations
     let outside_packets = net.get_packets_at_location(&PacketLocation::OutsideNet);

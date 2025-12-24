@@ -82,6 +82,11 @@ When `RunNetUntilBlocked` is called, the network automatically:
 
 ### Manual Actions (`NetAction`)
 
+**Important**: All mutations to the `Net` state must go through `do_action(NetAction)`. This ensures:
+- All operations return the list of `NetEvent`s that transpired
+- External code can track exactly what operations have been performed
+- Consistent event-driven architecture
+
 External code controls the network through actions:
 
 | Action | Description |
@@ -91,10 +96,11 @@ External code controls the network through actions:
 | `ConsumePacket(PacketID)` | Remove a packet from the network |
 | `StartEpoch(EpochID)` | Transition a `Startable` epoch to `Running` |
 | `FinishEpoch(EpochID)` | Complete a `Running` epoch (must be empty of packets) |
-| `CancelEpoch(EpochID)` | Cancel an epoch (not yet implemented) |
-| `CreateAndStartEpoch(NodeName, Salvo)` | Manually create and start an epoch (not yet implemented) |
+| `CancelEpoch(EpochID)` | Cancel an epoch and destroy its packets |
+| `CreateAndStartEpoch(NodeName, Salvo)` | Manually create and start an epoch with specified packets |
 | `LoadPacketIntoOutputPort(PacketID, PortName)` | Move a packet from inside an epoch to its output port |
 | `SendOutputSalvo(EpochID, SalvoConditionName)` | Send packets from output ports onto edges |
+| `TransportPacketToLocation(PacketID, PacketLocation)` | Move a packet to any location (with restrictions on running epochs) |
 
 ### Events (`NetEvent`)
 
@@ -138,6 +144,7 @@ Actions produce events that track what happened:
 - **Event-driven**: All state changes produce events for observability
 - **Explicit control**: External code explicitly starts epochs and sends salvos
 - **Deterministic**: Salvo conditions are checked in order; first match wins
+- **Action-based mutations**: All `Net` state changes must go through `do_action(NetAction)` to ensure event tracking and auditability
 
 ## File Structure
 

@@ -60,16 +60,14 @@ This document tracks remaining tasks for the `netrun-core` library.
 
 ### API Design
 
-- [ ] **Enforce all Net mutations go through NetAction/do_action**
+- [x] **Enforce all Net mutations go through NetAction/do_action**
   - Principle: All external operations on Net must use `do_action(NetAction)` so that:
     - External code can track exactly what operations have been performed
     - All operations return the list of `NetEvent`s that transpired
-  - Audit current public API and remove/make private any methods that mutate Net directly
-  - Current violations to address:
-    - `place_packet_at_location()` - should become a NetAction
-  - Update affected tests to use `do_action()` instead of direct method calls
+  - Audited public API and removed `place_packet_at_location()` method
+  - Updated all tests to use `do_action(NetAction::TransportPacketToLocation(...))` instead
 
-- [ ] **Add `TransportPacketToLocation` NetAction**
+- [x] **Add `TransportPacketToLocation` NetAction**
   - Allows moving an existing packet to any location:
     - Input port (with capacity check - fail if port is full)
     - Output port of an epoch
@@ -80,6 +78,8 @@ This document tracks remaining tasks for the `netrun-core` library.
     - Cannot move packets out of a Running epoch (only Startable epochs allowed)
   - This replaces direct injection and provides a unified way to set up packet locations
   - Emits `PacketMoved` event
+  - Added new error variants: `InputPortFull`, `CannotMovePacketFromRunningEpoch`, `CannotMovePacketIntoRunningEpoch`, `EdgeNotFound`
+  - Added `Display` impl for `EdgeRef`
 
 ## Medium Priority
 
@@ -116,7 +116,7 @@ This document tracks remaining tasks for the `netrun-core` library.
   - Test end-to-end workflows (packet flow through multi-node graphs) (9 tests)
   - Test error handling returns correct error types
   - Test serialization/deserialization of Graph types
-  - Added public accessor methods: `get_packet()`, `get_epoch()`, `get_startable_epochs()`, `packet_count_at()`, `get_packets_at_location()`, `place_packet_at_location()`
+  - Added public accessor methods: `get_packet()`, `get_epoch()`, `get_startable_epochs()`, `packet_count_at()`, `get_packets_at_location()`
 
 ### Code Quality
 
@@ -145,7 +145,7 @@ This document tracks remaining tasks for the `netrun-core` library.
 
 - [x] **Add `Net::get_packets_at_location()`**
   - Convenient accessor for querying packet locations
-  - Implemented along with `packet_count_at()` and `place_packet_at_location()`
+  - Implemented along with `packet_count_at()`
 
 - [x] **Add `Net::get_epoch()`**
   - Convenient accessor for querying epoch state
