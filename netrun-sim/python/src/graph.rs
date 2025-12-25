@@ -737,20 +737,6 @@ impl Graph {
             self.inner.edges().len()
         )
     }
-
-    /// Serialize the graph to a JSON string.
-    fn to_json(&self) -> PyResult<String> {
-        serde_json::to_string_pretty(&self.inner)
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Serialization error: {}", e)))
-    }
-
-    /// Deserialize a graph from a JSON string.
-    #[staticmethod]
-    fn from_json(json_str: &str) -> PyResult<Self> {
-        let inner: CoreGraph = serde_json::from_str(json_str)
-            .map_err(|e| pyo3::exceptions::PyValueError::new_err(format!("Deserialization error: {}", e)))?;
-        Ok(Graph { inner })
-    }
 }
 
 impl Graph {
