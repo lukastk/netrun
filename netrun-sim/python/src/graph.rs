@@ -1,12 +1,12 @@
 use pyo3::prelude::*;
-use pyo3::types::{PyDict, PyList};
+use pyo3::types::PyList;
 use std::collections::HashMap;
 
 use crate::errors::GraphValidationError as PyGraphValidationError;
 
 // Re-export core types for internal use
 use netrun_sim::graph::{
-    Edge as CoreEdge, EdgeRef as CoreEdgeRef, Graph as CoreGraph, Node as CoreNode,
+    Edge as CoreEdge, Graph as CoreGraph, Node as CoreNode,
     Port as CorePort, PortName, PortRef as CorePortRef, PortSlotSpec as CorePortSlotSpec,
     PortState as CorePortState, PortType as CorePortType, SalvoCondition as CoreSalvoCondition,
     SalvoConditionTerm as CoreSalvoConditionTerm,
@@ -446,33 +446,10 @@ impl PortRef {
     }
 }
 
-/// An edge in the graph (currently has no properties).
-#[pyclass]
-#[derive(Clone)]
-pub struct Edge {}
-
-#[pymethods]
-impl Edge {
-    #[new]
-    fn new() -> Self {
-        Edge {}
-    }
-
-    fn __repr__(&self) -> String {
-        "Edge()".to_string()
-    }
-}
-
-impl Edge {
-    pub fn to_core(&self) -> CoreEdge {
-        CoreEdge {}
-    }
-}
-
-/// Reference to an edge by its source and target ports.
+/// A connection between two ports in the graph.
 #[pyclass]
 #[derive(Clone, PartialEq, Eq, Hash)]
-pub struct EdgeRef {
+pub struct Edge {
     #[pyo3(get)]
     pub source: PortRef,
     #[pyo3(get)]
@@ -480,21 +457,21 @@ pub struct EdgeRef {
 }
 
 #[pymethods]
-impl EdgeRef {
+impl Edge {
     #[new]
     fn new(source: PortRef, target: PortRef) -> Self {
-        EdgeRef { source, target }
+        Edge { source, target }
     }
 
     fn __repr__(&self) -> String {
-        format!("EdgeRef({}, {})", self.source.__repr__(), self.target.__repr__())
+        format!("Edge({}, {})", self.source.__repr__(), self.target.__repr__())
     }
 
     fn __str__(&self) -> String {
         format!("{} -> {}", self.source.__str__(), self.target.__str__())
     }
 
-    fn __eq__(&self, other: &EdgeRef) -> bool {
+    fn __eq__(&self, other: &Edge) -> bool {
         self == other
     }
 
@@ -506,18 +483,18 @@ impl EdgeRef {
     }
 }
 
-impl EdgeRef {
-    pub fn to_core(&self) -> CoreEdgeRef {
-        CoreEdgeRef {
+impl Edge {
+    pub fn to_core(&self) -> CoreEdge {
+        CoreEdge {
             source: self.source.to_core(),
             target: self.target.to_core(),
         }
     }
 
-    pub fn from_core(er: &CoreEdgeRef) -> Self {
-        EdgeRef {
-            source: PortRef::from_core(&er.source),
-            target: PortRef::from_core(&er.target),
+    pub fn from_core(edge: &CoreEdge) -> Self {
+        Edge {
+            source: PortRef::from_core(&edge.source),
+            target: PortRef::from_core(&edge.target),
         }
     }
 }
@@ -690,11 +667,11 @@ pub struct Graph {
 #[pymethods]
 impl Graph {
     #[new]
-    fn new(nodes: Vec<Node>, edges: Vec<(EdgeRef, Edge)>) -> Self {
+    fn new(nodes: Vec<Node>, edges: Vec<Edge>) -> Self {
         let core_nodes: Vec<CoreNode> = nodes.into_iter().map(|n| n.to_core()).collect();
-        let core_edges: Vec<(CoreEdgeRef, CoreEdge)> = edges
+        let core_edges: Vec<CoreEdge> = edges
             .into_iter()
-            .map(|(er, e)| (er.to_core(), e.to_core()))
+            .map(|e| e.to_core())
             .collect();
         Graph {
             inner: CoreGraph::new(core_nodes, core_edges),
@@ -710,13 +687,13 @@ impl Graph {
             .collect()
     }
 
-    /// Returns a dict of all edges, keyed by EdgeRef.
-    fn edges(&self, py: Python<'_>) -> PyResult<Py<PyDict>> {
-        let dict = PyDict::new(py);
-        for (er, _e) in self.inner.edges().iter() {
-            dict.set_item(EdgeRef::from_core(er), Edge {})?;
+    /// Returns a list of all edges.
+    fn edges(&self, py: Python<'_>) -> PyResult<Py<PyList>> {
+        let list = PyList::empty(py);
+        for edge in self.inner.edges().iter() {
+            list.append(Edge::from_core(edge))?;
         }
-        Ok(dict.unbind())
+        Ok(list.unbind())
     }
 
     /// Validate the graph and return a list of errors.
@@ -755,7 +732,6 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PortType>()?;
     m.add_class::<PortRef>()?;
     m.add_class::<Edge>()?;
-    m.add_class::<EdgeRef>()?;
     m.add_class::<SalvoCondition>()?;
     m.add_class::<Node>()?;
     m.add_class::<Graph>()?;

@@ -2,7 +2,7 @@
 
 mod common;
 
-use netrun_sim::graph::{EdgeRef, PortRef, PortType};
+use netrun_sim::graph::{Edge, PortRef, PortType};
 use netrun_sim::net::{
     Epoch, EpochState, Net, NetAction, NetActionResponse, NetActionResponseData,
     NetEvent, PacketLocation, Salvo,
@@ -38,8 +38,8 @@ fn get_events(response: &NetActionResponse) -> Vec<NetEvent> {
     }
 }
 
-fn edge_ref(source_node: &str, source_port: &str, target_node: &str, target_port: &str) -> EdgeRef {
-    EdgeRef {
+fn make_edge(source_node: &str, source_port: &str, target_node: &str, target_port: &str) -> Edge {
+    Edge {
         source: PortRef {
             node_name: source_node.to_string(),
             port_type: PortType::Output,
@@ -65,7 +65,7 @@ fn test_complete_linear_flow_a_to_b() {
     let packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
 
     // 2. Transport packet to edge A->B
-    let edge_a_b = PacketLocation::Edge(edge_ref("A", "out", "B", "in"));
+    let edge_a_b = PacketLocation::Edge(make_edge("A", "out", "B", "in"));
     net.do_action(&NetAction::TransportPacketToLocation(packet_id.clone(), edge_a_b));
 
     // 3. Run until blocked - packet should move to input port and trigger epoch
@@ -130,7 +130,7 @@ fn test_linear_flow_with_output_salvo() {
     assert!(matches!(response, NetActionResponse::Success(_, _)));
 
     // 7. Verify packet is now on edge B->C using public API
-    let edge_b_c = PacketLocation::Edge(edge_ref("B", "out", "C", "in"));
+    let edge_b_c = PacketLocation::Edge(make_edge("B", "out", "C", "in"));
     assert_eq!(net.packet_count_at(&edge_b_c), 1);
 
     // 8. Finish the epoch
@@ -149,8 +149,8 @@ fn test_branching_flow() {
     let packet1 = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
     let packet2 = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
 
-    let edge_a_b = PacketLocation::Edge(edge_ref("A", "out1", "B", "in"));
-    let edge_a_c = PacketLocation::Edge(edge_ref("A", "out2", "C", "in"));
+    let edge_a_b = PacketLocation::Edge(make_edge("A", "out1", "B", "in"));
+    let edge_a_c = PacketLocation::Edge(make_edge("A", "out2", "C", "in"));
 
     net.do_action(&NetAction::TransportPacketToLocation(packet1.clone(), edge_a_b));
     net.do_action(&NetAction::TransportPacketToLocation(packet2.clone(), edge_a_c));
@@ -181,7 +181,7 @@ fn test_merging_flow_both_inputs_required() {
 
     // Place packet only on edge A->C
     let packet1 = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
-    let edge_a_c = PacketLocation::Edge(edge_ref("A", "out", "C", "in1"));
+    let edge_a_c = PacketLocation::Edge(make_edge("A", "out", "C", "in1"));
     net.do_action(&NetAction::TransportPacketToLocation(packet1.clone(), edge_a_c));
 
     // Run until blocked
@@ -193,7 +193,7 @@ fn test_merging_flow_both_inputs_required() {
 
     // Now add packet from B
     let packet2 = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
-    let edge_b_c = PacketLocation::Edge(edge_ref("B", "out", "C", "in2"));
+    let edge_b_c = PacketLocation::Edge(make_edge("B", "out", "C", "in2"));
     net.do_action(&NetAction::TransportPacketToLocation(packet2.clone(), edge_b_c));
 
     // Run again
@@ -218,8 +218,8 @@ fn test_diamond_flow_synchronization() {
     let packet1 = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
     let packet2 = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
 
-    let edge_a_b = PacketLocation::Edge(edge_ref("A", "out1", "B", "in"));
-    let edge_a_c = PacketLocation::Edge(edge_ref("A", "out2", "C", "in"));
+    let edge_a_b = PacketLocation::Edge(make_edge("A", "out1", "B", "in"));
+    let edge_a_c = PacketLocation::Edge(make_edge("A", "out2", "C", "in"));
 
     net.do_action(&NetAction::TransportPacketToLocation(packet1.clone(), edge_a_b));
     net.do_action(&NetAction::TransportPacketToLocation(packet2.clone(), edge_a_c));
@@ -340,7 +340,7 @@ fn test_packet_location_tracking() {
     assert_eq!(packet.location, PacketLocation::OutsideNet);
 
     // Transport to edge
-    let edge_loc = PacketLocation::Edge(edge_ref("A", "out", "B", "in"));
+    let edge_loc = PacketLocation::Edge(make_edge("A", "out", "B", "in"));
     net.do_action(&NetAction::TransportPacketToLocation(packet_id.clone(), edge_loc.clone()));
 
     // Verify location updated
@@ -368,7 +368,7 @@ fn test_get_packets_at_location() {
     assert!(outside_packets.contains(&packet2));
 
     // Move one to edge
-    let edge_loc = PacketLocation::Edge(edge_ref("A", "out", "B", "in"));
+    let edge_loc = PacketLocation::Edge(make_edge("A", "out", "B", "in"));
     net.do_action(&NetAction::TransportPacketToLocation(packet1.clone(), edge_loc.clone()));
 
     // Verify locations

@@ -2,7 +2,7 @@
 
 mod common;
 
-use netrun_sim::graph::{EdgeRef, PortRef, PortType};
+use netrun_sim::graph::{Edge, PortRef, PortType};
 use netrun_sim::net::{
     Epoch, Net, NetAction, NetActionError, NetActionResponse,
     NetActionResponseData, NetEvent, PacketLocation, Salvo,
@@ -400,7 +400,7 @@ fn test_get_startable_epochs() {
 
     // Create packet and transport to edge
     let packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
-    let edge_loc = PacketLocation::Edge(EdgeRef {
+    let edge_loc = PacketLocation::Edge(Edge {
         source: PortRef {
             node_name: "A".to_string(),
             port_type: PortType::Output,

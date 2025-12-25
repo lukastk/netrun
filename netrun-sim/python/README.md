@@ -33,7 +33,7 @@ pip install ../target/wheels/netrun_sim-*.whl
 
 ```python
 from netrun_sim import (
-    Graph, Node, Edge, EdgeRef, Net, NetAction, NetActionResponseData,
+    Graph, Node, Edge, Net, NetAction, NetActionResponseData,
     Port, PortRef, PortType, PortSlotSpec, PortState,
     SalvoCondition, SalvoConditionTerm, PacketLocation,
 )
@@ -55,12 +55,9 @@ node_b = Node(
     },
 )
 
-edge = (
-    EdgeRef(
-        PortRef("A", PortType.Output, "out"),
-        PortRef("B", PortType.Input, "in"),
-    ),
-    Edge(),
+edge = Edge(
+    PortRef("A", PortType.Output, "out"),
+    PortRef("B", PortType.Input, "in"),
 )
 
 graph = Graph([node_a, node_b], [edge])
@@ -76,7 +73,7 @@ packet_id = response.packet_id
 
 # Place packet on edge A -> B
 edge_loc = PacketLocation.edge(
-    EdgeRef(
+    Edge(
         PortRef("A", PortType.Output, "out"),
         PortRef("B", PortType.Input, "in"),
     )
@@ -126,8 +123,7 @@ jupyter notebook examples/linear_flow.ipynb
 | `Node` | Processing unit with ports and salvo conditions |
 | `Port` | Connection point with capacity specification |
 | `PortRef` | Reference to a specific port on a node |
-| `Edge` | Connection between ports |
-| `EdgeRef` | Reference to an edge by endpoints |
+| `Edge` | Connection between two ports (source and target) |
 | `PortSlotSpec` | Port capacity (`.infinite()` or `.finite(n)`) |
 | `PortState` | Predicate for salvo conditions |
 | `SalvoCondition` | Rule for triggering epochs or sending packets |

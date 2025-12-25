@@ -2,7 +2,7 @@ use pyo3::prelude::*;
 use pyo3::types::PyList;
 
 use crate::errors::net_action_error_to_py_err;
-use crate::graph::{EdgeRef, Graph};
+use crate::graph::{Edge, Graph};
 
 use netrun_sim::net::{
     Epoch as CoreEpoch, EpochState as CoreEpochState, Net as CoreNet, NetAction as CoreNetAction,
@@ -71,9 +71,9 @@ impl PacketLocation {
 
     /// Create an Edge location.
     #[staticmethod]
-    fn edge(edge_ref: EdgeRef) -> Self {
+    fn edge(edge: Edge) -> Self {
         PacketLocation {
-            inner: CorePacketLocation::Edge(edge_ref.to_core()),
+            inner: CorePacketLocation::Edge(edge.to_core()),
         }
     }
 

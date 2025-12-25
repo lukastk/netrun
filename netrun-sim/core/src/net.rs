@@ -7,7 +7,7 @@
 //! [`NetAction`] and returns a [`NetActionResponse`] containing any events that occurred.
 
 use crate::_utils::get_utc_now;
-use crate::graph::{EdgeRef, Graph, NodeName, Port, PortSlotSpec, PortName, PortType, PortRef, SalvoConditionName, SalvoConditionTerm, evaluate_salvo_condition};
+use crate::graph::{Edge, Graph, NodeName, Port, PortSlotSpec, PortName, PortType, PortRef, SalvoConditionName, SalvoConditionTerm, evaluate_salvo_condition};
 use indexmap::IndexSet;
 use std::collections::{HashMap, HashSet};
 use ulid::Ulid;
@@ -34,7 +34,7 @@ pub enum PacketLocation {
     /// Loaded into an epoch's output port, ready to be sent.
     OutputPort(EpochID, PortName),
     /// In transit on an edge between nodes.
-    Edge(EdgeRef),
+    Edge(Edge),
     /// External to the network (not yet injected or already extracted).
     OutsideNet,
 }
@@ -211,8 +211,8 @@ pub enum NetActionError {
     CannotMovePacketIntoRunningEpoch { packet_id: PacketID, epoch_id: EpochID },
 
     /// Edge does not exist in the graph
-    #[error("edge not found: {edge_ref}")]
-    EdgeNotFound { edge_ref: EdgeRef },
+    #[error("edge not found: {edge}")]
+    EdgeNotFound { edge: Edge },
 }
 
 /// An event that occurred during a network action.
@@ -292,8 +292,8 @@ impl Net {
         let mut packets_by_location: HashMap<PacketLocation, IndexSet<PacketID>> = HashMap::new();
 
         // Initialize empty packet sets for all edges
-        for edge_ref in graph.edges().keys() {
-            packets_by_location.insert(PacketLocation::Edge(edge_ref.clone()), IndexSet::new());
+        for edge in graph.edges() {
+            packets_by_location.insert(PacketLocation::Edge(edge.clone()), IndexSet::new());
         }
 
         // Initialize empty packet sets for all input ports
@@ -1051,11 +1051,11 @@ impl Net {
                     });
                 }
             }
-            PacketLocation::Edge(edge_ref) => {
+            PacketLocation::Edge(edge) => {
                 // Check edge exists in graph
-                if !self.graph.edges().contains_key(edge_ref) {
+                if !self.graph.edges().contains(edge) {
                     return NetActionResponse::Error(NetActionError::EdgeNotFound {
-                        edge_ref: edge_ref.clone(),
+                        edge: edge.clone(),
                     });
                 }
             }
@@ -1224,7 +1224,7 @@ mod tests {
         let packet_id = get_packet_id(&response);
 
         // Manually place packet on edge (simulating it came from node A)
-        let edge_location = PacketLocation::Edge(EdgeRef {
+        let edge_location = PacketLocation::Edge(Edge {
             source: PortRef {
                 node_name: "A".to_string(),
                 port_type: PortType::Output,
@@ -1341,7 +1341,7 @@ mod tests {
 
         // Create packet on edge A->B
         let packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
-        let edge_location = PacketLocation::Edge(EdgeRef {
+        let edge_location = PacketLocation::Edge(Edge {
             source: PortRef {
                 node_name: "A".to_string(),
                 port_type: PortType::Output,
@@ -1391,7 +1391,7 @@ mod tests {
         let mut net = Net::new(graph);
 
         // Create two packets on edge A->B
-        let edge_location = PacketLocation::Edge(EdgeRef {
+        let edge_location = PacketLocation::Edge(Edge {
             source: PortRef {
                 node_name: "A".to_string(),
                 port_type: PortType::Output,
@@ -1431,7 +1431,7 @@ mod tests {
         let graph = linear_graph_3();
         let mut net = Net::new(graph);
 
-        let edge_location = PacketLocation::Edge(EdgeRef {
+        let edge_location = PacketLocation::Edge(Edge {
             source: PortRef {
                 node_name: "A".to_string(),
                 port_type: PortType::Output,
@@ -1541,7 +1541,7 @@ mod tests {
         assert!(matches!(response, NetActionResponse::Success(NetActionResponseData::None, _)));
 
         // Packet should now be on edge B->C
-        let edge_loc = PacketLocation::Edge(EdgeRef {
+        let edge_loc = PacketLocation::Edge(Edge {
             source: PortRef {
                 node_name: "B".to_string(),
                 port_type: PortType::Output,
