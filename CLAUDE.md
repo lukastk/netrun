@@ -1,12 +1,60 @@
-# Flow-Based Development Runtime Core (netrun-core)
+# netrun - Flow-Based Development Runtime
 
-This document provides a comprehensive overview of the `netrun-core` library, a Rust implementation of a flow-based development (FBD) runtime simulation engine.
+This repository contains the **netrun** project, a flow-based development (FBD) runtime system.
+
+## Project Structure
+
+The project is split into two main components:
+
+### netrun-core (Simulation Engine)
+
+`netrun-core` is a Rust library that simulates the flow of packets through a network of interconnected nodes. It does **not** execute actual node logic or manage packet data—instead, it tracks packet locations, validates flow conditions, and manages the lifecycle of node executions (called "epochs").
+
+This separation of concerns allows the actual execution and data storage to be implemented independently of the flow mechanics.
+
+### netrun (Runtime) - *Coming Soon*
+
+`netrun` is a pure Python package built on top of `netrun-core`. It provides:
+- Actual node execution logic
+- Packet data storage and management
+- Higher-level APIs for building flow-based applications
+
+## Repository Structure
+
+```
+repo/
+├── CLAUDE.md               # This file
+├── README.md               # Project README
+├── netrun-core/            # Simulation engine
+│   ├── Cargo.toml          # Rust workspace root
+│   ├── core/               # Rust library
+│   │   ├── Cargo.toml
+│   │   ├── src/
+│   │   │   ├── lib.rs      # Module exports
+│   │   │   ├── _utils.rs   # Utility functions
+│   │   │   ├── graph.rs    # Graph topology types
+│   │   │   └── net.rs      # Network runtime state
+│   │   ├── tests/          # Integration tests
+│   │   └── examples/       # Rust examples
+│   └── python/             # Python bindings (PyO3)
+│       ├── Cargo.toml      # PyO3 crate
+│       ├── pyproject.toml  # Maturin config
+│       ├── src/            # Rust binding code
+│       ├── python/         # Python package
+│       │   └── netrun_core/
+│       └── examples/       # Python examples
+└── netrun/                 # Runtime (pure Python) - TBD
+    └── ...
+```
+
+---
+
+# netrun-core Documentation
 
 ## Overview
 
-This library simulates the flow of packets through a network of interconnected nodes. It does **not** execute actual node logic or manage packet data—instead, it tracks packet locations, validates flow conditions, and manages the lifecycle of node executions (called "epochs").
+The `netrun-core` library simulates packet flow through a network. It is designed to be used by external code (like `netrun`) that:
 
-The library is designed to be used by external code that:
 1. Defines the graph topology (nodes, ports, edges)
 2. Handles actual node execution logic
 3. Manages packet data/payloads
@@ -145,62 +193,24 @@ Actions produce events that track what happened:
 - **Deterministic**: Salvo conditions are checked in order; first match wins
 - **Action-based mutations**: All `Net` state changes must go through `do_action(NetAction)` to ensure event tracking and auditability
 
-## Repository Structure
+## Building and Testing
 
-This is a Cargo workspace with two crates:
-
-```
-netrun-core/
-├── Cargo.toml              # Workspace root
-├── core/                   # Core Rust library
-│   ├── Cargo.toml
-│   ├── src/
-│   │   ├── lib.rs          # Module exports
-│   │   ├── _utils.rs       # Utility functions (timestamps)
-│   │   ├── graph.rs        # Graph topology types and salvo condition evaluation
-│   │   └── net.rs          # Network runtime state and actions
-│   ├── tests/              # Integration tests
-│   │   ├── graph_api.rs    # Graph construction and validation tests
-│   │   ├── net_api.rs      # Net operations tests
-│   │   └── workflow.rs     # End-to-end workflow tests
-│   └── examples/           # Rust examples
-│       ├── linear_flow.rs  # Simple A -> B -> C flow
-│       └── diamond_flow.rs # Branching/merging flow
-├── python/                 # Python bindings (PyO3)
-│   ├── Cargo.toml          # PyO3 crate configuration
-│   ├── pyproject.toml      # Maturin build configuration
-│   ├── src/
-│   │   ├── lib.rs          # PyO3 module root
-│   │   ├── errors.rs       # Python exception hierarchy
-│   │   ├── graph.rs        # Graph type bindings
-│   │   └── net.rs          # Net type bindings
-│   ├── python/
-│   │   └── netrun_core/    # Python package
-│   │       ├── __init__.py # Re-exports from native extension
-│   │       └── __init__.pyi # Type stubs for IDE support
-│   └── examples/           # Python examples
-```
-
-## Python Bindings
-
-The `python/` directory contains PyO3 bindings that expose the full API to Python:
-
-### Building
+### Rust Library
 
 ```bash
-cd python
+cd netrun-core
+cargo build -p netrun-core
+cargo test -p netrun-core
+cargo run -p netrun-core --example linear_flow
+```
+
+### Python Bindings
+
+```bash
+cd netrun-core/python
 uv venv .venv && uv sync
 uv run maturin develop
+uv run python examples/linear_flow.py
 ```
 
-### Usage
-
-```python
-from netrun_core import Graph, Node, Net, NetAction, Port, PortSlotSpec
-
-# Create graph, build network, run simulation
-net = Net(graph)
-response, events = net.do_action(NetAction.run_net_until_blocked())
-```
-
-See `python/README.md` for full documentation and examples.
+See `netrun-core/python/README.md` for full Python documentation.
