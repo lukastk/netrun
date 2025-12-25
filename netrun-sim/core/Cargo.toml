@@ -1,7 +1,10 @@
 [package]
 name = "netrun-sim"
+description = "A flow-based development (FBD) simulation engine."
 version = "0.1.0"
 edition = "2024"
+license-file = "../../LICENSE"
+repository = "https://github.com/lukastk/netrun/"
 
 [dependencies]
 indexmap = "2.12.1"
