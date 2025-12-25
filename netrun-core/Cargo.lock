@@ -151,6 +151,7 @@ version = "0.1.0"
 dependencies = [
  "netrun-core",
  "pyo3",
+ "serde_json",
  "ulid",
 ]
 
