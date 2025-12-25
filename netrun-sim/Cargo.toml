@@ -1,0 +1,8 @@
+[workspace]
+members = ["core", "python"]
+default-members = ["core"]
+resolver = "3"
+
+# Share dependencies across workspace
+[workspace.dependencies]
+ulid = "=1.1.0"
