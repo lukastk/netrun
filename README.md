@@ -20,14 +20,14 @@ netrun-core/
 ├── core/                   # Core Rust library
 │   ├── Cargo.toml
 │   ├── src/
-│   └── tests/              # Integration tests
-├── python/                 # Python bindings (PyO3)
-│   ├── Cargo.toml
-│   ├── pyproject.toml
-│   ├── src/
-│   ├── python/netrun_core/ # Python package
-│   └── examples/
-└── examples/               # Rust examples
+│   ├── tests/              # Integration tests
+│   └── examples/           # Rust examples
+└── python/                 # Python bindings (PyO3)
+    ├── Cargo.toml
+    ├── pyproject.toml
+    ├── src/
+    ├── python/netrun_core/ # Python package
+    └── examples/
 ```
 
 ## Requirements
@@ -113,10 +113,10 @@ uv run python examples/diamond_flow.py
 
 ```bash
 # Linear flow: A -> B -> C
-cargo run --example linear_flow
+cargo run -p netrun-core --example linear_flow
 
 # Diamond flow: A -> B,C -> D (branching and synchronization)
-cargo run --example diamond_flow
+cargo run -p netrun-core --example diamond_flow
 ```
 
 ### Python Examples
