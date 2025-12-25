@@ -201,13 +201,7 @@ class PortRef:
 
 
 class Edge:
-    """An edge in the graph."""
-
-    def __init__(self) -> None: ...
-
-
-class EdgeRef:
-    """Reference to an edge by its source and target ports."""
+    """A connection between two ports in the graph."""
 
     def __init__(self, source: PortRef, target: PortRef) -> None: ...
 
@@ -260,10 +254,10 @@ class Node:
 class Graph:
     """The static topology of a flow-based network."""
 
-    def __init__(self, nodes: List[Node], edges: List[Tuple[EdgeRef, Edge]]) -> None: ...
+    def __init__(self, nodes: List[Node], edges: List[Edge]) -> None: ...
 
     def nodes(self) -> Dict[str, Node]: ...
-    def edges(self) -> Dict[EdgeRef, Edge]: ...
+    def edges(self) -> List[Edge]: ...
     def validate(self) -> List[GraphValidationError]: ...
 
 
@@ -282,7 +276,7 @@ class PacketLocation:
     def output_port(epoch_id: Union[ULID, str], port_name: str) -> PacketLocation: ...
 
     @staticmethod
-    def edge(edge_ref: EdgeRef) -> PacketLocation: ...
+    def edge(edge: Edge) -> PacketLocation: ...
 
     @staticmethod
     def outside_net() -> PacketLocation: ...
@@ -465,7 +459,6 @@ __all__ = [
     "PortType",
     "PortRef",
     "Edge",
-    "EdgeRef",
     "SalvoCondition",
     "Node",
     "Graph",

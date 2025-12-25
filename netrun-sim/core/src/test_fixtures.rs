@@ -3,7 +3,7 @@
 //! This module provides utilities for testing the netrun-sim library.
 
 use crate::graph::{
-    Edge, EdgeRef, Node, Port, PortName, PortRef, PortSlotSpec, PortState, PortType,
+    Edge, Node, Port, PortName, PortRef, PortSlotSpec, PortState, PortType,
     SalvoCondition, SalvoConditionTerm, Graph,
 };
 use std::collections::HashMap;
@@ -113,8 +113,8 @@ pub fn edge(
     source_port: &str,
     target_node: &str,
     target_port: &str,
-) -> (EdgeRef, Edge) {
-    let edge_ref = EdgeRef {
+) -> Edge {
+    Edge {
         source: PortRef {
             node_name: source_node.to_string(),
             port_type: PortType::Output,
@@ -125,8 +125,7 @@ pub fn edge(
             port_type: PortType::Input,
             port_name: target_port.to_string(),
         },
-    };
-    (edge_ref, Edge {})
+    }
 }
 
 /// Creates a simple linear graph: A -> B -> C

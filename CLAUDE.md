@@ -93,7 +93,7 @@ enum PacketLocation {
     Node(EpochID),           // Inside a running/startable epoch
     InputPort(NodeName, PortName),  // Waiting at a node's input port
     OutputPort(EpochID, PortName),  // Loaded into an epoch's output port
-    Edge(EdgeRef),           // In transit between nodes
+    Edge(Edge),              // In transit between nodes
     OutsideNet,              // External to the network
 }
 ```

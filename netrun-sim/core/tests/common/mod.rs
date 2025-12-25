@@ -5,7 +5,7 @@
 #![allow(dead_code)]
 
 use netrun_sim::graph::{
-    Edge, EdgeRef, Graph, Node, Port, PortName, PortRef, PortSlotSpec, PortType,
+    Edge, Graph, Node, Port, PortName, PortRef, PortSlotSpec, PortType,
     SalvoCondition, SalvoConditionTerm, PortState,
 };
 use std::collections::HashMap;
@@ -111,8 +111,8 @@ pub fn edge(
     source_port: &str,
     target_node: &str,
     target_port: &str,
-) -> (EdgeRef, Edge) {
-    let edge_ref = EdgeRef {
+) -> Edge {
+    Edge {
         source: PortRef {
             node_name: source_node.to_string(),
             port_type: PortType::Output,
@@ -123,8 +123,7 @@ pub fn edge(
             port_type: PortType::Input,
             port_name: target_port.to_string(),
         },
-    };
-    (edge_ref, Edge {})
+    }
 }
 
 /// Creates a simple linear graph: A -> B -> C

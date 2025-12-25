@@ -10,7 +10,6 @@ This example demonstrates:
 
 from netrun_sim import (
     Edge,
-    EdgeRef,
     Graph,
     Net,
     NetAction,
@@ -59,14 +58,11 @@ def create_node(name: str, in_ports: list[str], out_ports: list[str]) -> Node:
     )
 
 
-def create_edge(src_node: str, src_port: str, tgt_node: str, tgt_port: str) -> tuple[EdgeRef, Edge]:
+def create_edge(src_node: str, src_port: str, tgt_node: str, tgt_port: str) -> Edge:
     """Create an edge between two ports."""
-    return (
-        EdgeRef(
-            PortRef(src_node, PortType.Output, src_port),
-            PortRef(tgt_node, PortType.Input, tgt_port),
-        ),
-        Edge(),
+    return Edge(
+        PortRef(src_node, PortType.Output, src_port),
+        PortRef(tgt_node, PortType.Input, tgt_port),
     )
 
 
@@ -99,7 +95,7 @@ def main():
 
     # Transport packet to the edge A -> B
     edge_a_b = PacketLocation.edge(
-        EdgeRef(
+        Edge(
             PortRef("A", PortType.Output, "out"),
             PortRef("B", PortType.Input, "in"),
         )

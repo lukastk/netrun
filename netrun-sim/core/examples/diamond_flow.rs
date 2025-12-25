@@ -13,7 +13,7 @@
 //! - Synchronization: D's epoch only triggers when both inputs are present
 
 use netrun_sim::graph::{
-    Edge, EdgeRef, Graph, Node, Port, PortRef, PortSlotSpec, PortState, PortType,
+    Edge, Graph, Node, Port, PortRef, PortSlotSpec, PortState, PortType,
     SalvoCondition, SalvoConditionTerm,
 };
 use netrun_sim::net::{
@@ -190,26 +190,23 @@ fn create_simple_node(name: &str) -> Node {
     }
 }
 
-fn create_edge(src_node: &str, src_port: &str, tgt_node: &str, tgt_port: &str) -> (EdgeRef, Edge) {
-    (
-        EdgeRef {
-            source: PortRef {
-                node_name: src_node.to_string(),
-                port_type: PortType::Output,
-                port_name: src_port.to_string(),
-            },
-            target: PortRef {
-                node_name: tgt_node.to_string(),
-                port_type: PortType::Input,
-                port_name: tgt_port.to_string(),
-            },
+fn create_edge(src_node: &str, src_port: &str, tgt_node: &str, tgt_port: &str) -> Edge {
+    Edge {
+        source: PortRef {
+            node_name: src_node.to_string(),
+            port_type: PortType::Output,
+            port_name: src_port.to_string(),
         },
-        Edge {},
-    )
+        target: PortRef {
+            node_name: tgt_node.to_string(),
+            port_type: PortType::Input,
+            port_name: tgt_port.to_string(),
+        },
+    }
 }
 
 fn edge_location(src_node: &str, src_port: &str, tgt_node: &str, tgt_port: &str) -> PacketLocation {
-    PacketLocation::Edge(EdgeRef {
+    PacketLocation::Edge(Edge {
         source: PortRef {
             node_name: src_node.to_string(),
             port_type: PortType::Output,

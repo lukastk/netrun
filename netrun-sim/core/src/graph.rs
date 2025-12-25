@@ -276,22 +276,16 @@ impl std::fmt::Display for PortRef {
 /// A connection between two ports in the graph.
 ///
 /// Edges connect output ports to input ports, allowing packets to flow
-/// between nodes. Currently edges have no additional properties beyond
-/// their endpoints.
-#[derive(Debug, Clone)]
-pub struct Edge {
-}
-
-/// A reference to an edge, identified by its source and target ports.
+/// between nodes.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
-pub struct EdgeRef {
+pub struct Edge {
     /// The output port where this edge originates.
     pub source: PortRef,
     /// The input port where this edge terminates.
     pub target: PortRef,
 }
 
-impl std::fmt::Display for EdgeRef {
+impl std::fmt::Display for Edge {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{} -> {}", self.source, self.target)
     }
@@ -306,7 +300,7 @@ impl std::fmt::Display for EdgeRef {
 /// # Example
 ///
 /// ```
-/// use netrun_sim::graph::{Graph, Node, Edge, EdgeRef, PortRef, PortType, Port, PortSlotSpec};
+/// use netrun_sim::graph::{Graph, Node, Edge, PortRef, PortType, Port, PortSlotSpec};
 /// use std::collections::HashMap;
 ///
 /// // Create a simple A -> B graph
@@ -325,13 +319,10 @@ impl std::fmt::Display for EdgeRef {
 ///     out_salvo_conditions: HashMap::new(),
 /// };
 ///
-/// let edge = (
-///     EdgeRef {
-///         source: PortRef { node_name: "A".to_string(), port_type: PortType::Output, port_name: "out".to_string() },
-///         target: PortRef { node_name: "B".to_string(), port_type: PortType::Input, port_name: "in".to_string() },
-///     },
-///     Edge {},
-/// );
+/// let edge = Edge {
+///     source: PortRef { node_name: "A".to_string(), port_type: PortType::Output, port_name: "out".to_string() },
+///     target: PortRef { node_name: "B".to_string(), port_type: PortType::Input, port_name: "in".to_string() },
+/// };
 ///
 /// let graph = Graph::new(vec![node_a, node_b], vec![edge]);
 /// assert!(graph.validate().is_empty());
@@ -339,34 +330,34 @@ impl std::fmt::Display for EdgeRef {
 #[derive(Debug, Clone)]
 pub struct Graph {
     nodes: HashMap<NodeName, Node>,
-    edges: HashMap<EdgeRef, Edge>,
-    edges_by_tail: HashMap<PortRef, EdgeRef>,
-    edges_by_head: HashMap<PortRef, EdgeRef>,
+    edges: HashSet<Edge>,
+    edges_by_tail: HashMap<PortRef, Edge>,
+    edges_by_head: HashMap<PortRef, Edge>,
 }
 
 impl Graph {
     /// Creates a new Graph from a list of nodes and edges.
     ///
     /// Builds internal indexes for efficient edge lookups by source (tail) and target (head) ports.
-    pub fn new(nodes: Vec<Node>, edges: Vec<(EdgeRef, Edge)>) -> Self {
+    pub fn new(nodes: Vec<Node>, edges: Vec<Edge>) -> Self {
         let nodes_map: HashMap<NodeName, Node> = nodes
             .into_iter()
             .map(|node| (node.name.clone(), node))
             .collect();
 
-        let mut edges_map: HashMap<EdgeRef, Edge> = HashMap::new();
-        let mut edges_by_tail: HashMap<PortRef, EdgeRef> = HashMap::new();
-        let mut edges_by_head: HashMap<PortRef, EdgeRef> = HashMap::new();
+        let mut edges_set: HashSet<Edge> = HashSet::new();
+        let mut edges_by_tail: HashMap<PortRef, Edge> = HashMap::new();
+        let mut edges_by_head: HashMap<PortRef, Edge> = HashMap::new();
 
-        for (edge_ref, edge) in edges {
-            edges_by_tail.insert(edge_ref.source.clone(), edge_ref.clone());
-            edges_by_head.insert(edge_ref.target.clone(), edge_ref.clone());
-            edges_map.insert(edge_ref, edge);
+        for edge in edges {
+            edges_by_tail.insert(edge.source.clone(), edge.clone());
+            edges_by_head.insert(edge.target.clone(), edge.clone());
+            edges_set.insert(edge);
         }
 
         Graph {
             nodes: nodes_map,
-            edges: edges_map,
+            edges: edges_set,
             edges_by_tail,
             edges_by_head,
         }
@@ -375,16 +366,16 @@ impl Graph {
     /// Returns a reference to all nodes in the graph, keyed by name.
     pub fn nodes(&self) -> &HashMap<NodeName, Node> { &self.nodes }
 
-    /// Returns a reference to all edges in the graph, keyed by their endpoints.
-    pub fn edges(&self) -> &HashMap<EdgeRef, Edge> { &self.edges }
+    /// Returns a reference to all edges in the graph.
+    pub fn edges(&self) -> &HashSet<Edge> { &self.edges }
 
     /// Returns the edge that has the given output port as its source (tail).
-    pub fn get_edge_by_tail(&self, output_port_ref: &PortRef) -> Option<&EdgeRef> {
+    pub fn get_edge_by_tail(&self, output_port_ref: &PortRef) -> Option<&Edge> {
         self.edges_by_tail.get(output_port_ref)
     }
 
     /// Returns the edge that has the given input port as its target (head).
-    pub fn get_edge_by_head(&self, input_port_ref: &PortRef) -> Option<&EdgeRef> {
+    pub fn get_edge_by_head(&self, input_port_ref: &PortRef) -> Option<&Edge> {
         self.edges_by_head.get(input_port_ref)
     }
 
@@ -398,9 +389,9 @@ impl Graph {
         let mut seen_edges: HashSet<(&PortRef, &PortRef)> = HashSet::new();
 
         // Validate edges
-        for edge_ref in self.edges.keys() {
-            let source = &edge_ref.source;
-            let target = &edge_ref.target;
+        for edge in &self.edges {
+            let source = &edge.source;
+            let target = &edge.target;
 
             // Check for duplicate edges
             if !seen_edges.insert((source, target)) {
@@ -584,22 +575,19 @@ mod tests {
         }
     }
 
-    fn edge(src_node: &str, src_port: &str, tgt_node: &str, tgt_port: &str) -> (EdgeRef, Edge) {
-        (
-            EdgeRef {
-                source: PortRef {
-                    node_name: src_node.to_string(),
-                    port_type: PortType::Output,
-                    port_name: src_port.to_string(),
-                },
-                target: PortRef {
-                    node_name: tgt_node.to_string(),
-                    port_type: PortType::Input,
-                    port_name: tgt_port.to_string(),
-                },
+    fn edge(src_node: &str, src_port: &str, tgt_node: &str, tgt_port: &str) -> Edge {
+        Edge {
+            source: PortRef {
+                node_name: src_node.to_string(),
+                port_type: PortType::Output,
+                port_name: src_port.to_string(),
             },
-            Edge {},
-        )
+            target: PortRef {
+                node_name: tgt_node.to_string(),
+                port_type: PortType::Input,
+                port_name: tgt_port.to_string(),
+            },
+        }
     }
 
     #[test]
@@ -700,21 +688,18 @@ mod tests {
             simple_node("B", vec!["in"], vec![]),
         ];
         // Edge from input port (wrong type)
-        let edges = vec![(
-            EdgeRef {
-                source: PortRef {
-                    node_name: "A".to_string(),
-                    port_type: PortType::Input, // Wrong!
-                    port_name: "in".to_string(),
-                },
-                target: PortRef {
-                    node_name: "B".to_string(),
-                    port_type: PortType::Input,
-                    port_name: "in".to_string(),
-                },
+        let edges = vec![Edge {
+            source: PortRef {
+                node_name: "A".to_string(),
+                port_type: PortType::Input, // Wrong!
+                port_name: "in".to_string(),
             },
-            Edge {},
-        )];
+            target: PortRef {
+                node_name: "B".to_string(),
+                port_type: PortType::Input,
+                port_name: "in".to_string(),
+            },
+        }];
         let graph = Graph::new(nodes, edges);
 
         let errors = graph.validate();
@@ -728,21 +713,18 @@ mod tests {
             simple_node("B", vec!["in"], vec!["out"]),
         ];
         // Edge to output port (wrong type)
-        let edges = vec![(
-            EdgeRef {
-                source: PortRef {
-                    node_name: "A".to_string(),
-                    port_type: PortType::Output,
-                    port_name: "out".to_string(),
-                },
-                target: PortRef {
-                    node_name: "B".to_string(),
-                    port_type: PortType::Output, // Wrong!
-                    port_name: "out".to_string(),
-                },
+        let edges = vec![Edge {
+            source: PortRef {
+                node_name: "A".to_string(),
+                port_type: PortType::Output,
+                port_name: "out".to_string(),
             },
-            Edge {},
-        )];
+            target: PortRef {
+                node_name: "B".to_string(),
+                port_type: PortType::Output, // Wrong!
+                port_name: "out".to_string(),
+            },
+        }];
         let graph = Graph::new(nodes, edges);
 
         let errors = graph.validate();

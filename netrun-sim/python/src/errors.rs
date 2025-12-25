@@ -143,8 +143,8 @@ pub fn net_action_error_to_py_err(err: netrun_sim::net::NetActionError) -> PyErr
                 packet_id, epoch_id
             ))
         }
-        NetActionError::EdgeNotFound { edge_ref } => {
-            EdgeNotFoundError::new_err(format!("Edge not found: {}", edge_ref))
+        NetActionError::EdgeNotFound { edge } => {
+            EdgeNotFoundError::new_err(format!("Edge not found: {}", edge))
         }
         NetActionError::CannotPutPacketIntoUnconnectedOutputPort { port_name, node_name } => {
             UnconnectedOutputPortError::new_err(format!(
