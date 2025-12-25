@@ -6,9 +6,9 @@ A flow-based development (FBD) runtime system.
 
 This repository contains two main components:
 
-- **netrun-core**: A Rust library (with Python bindings) that simulates packet flow through a network. It handles flow mechanics, packet locations, and epoch lifecycles—but not actual execution or data storage.
+- **netrun-sim**: A Rust library (with Python bindings) that simulates packet flow through a network. It handles flow mechanics, packet locations, and epoch lifecycles—but not actual execution or data storage.
 
-- **netrun**: A pure Python runtime (coming soon) built on `netrun-core` that handles actual node execution and packet data management.
+- **netrun**: A pure Python runtime (coming soon) built on `netrun-sim` that handles actual node execution and packet data management.
 
 This separation allows the execution and storage layers to be implemented independently of the flow logic.
 
@@ -18,7 +18,7 @@ This separation allows the execution and storage layers to be implemented indepe
 repo/
 ├── CLAUDE.md               # Detailed documentation
 ├── README.md               # This file
-├── netrun-core/            # Simulation engine
+├── netrun-sim/            # Simulation engine
 │   ├── Cargo.toml          # Rust workspace root
 │   ├── core/               # Rust library
 │   │   ├── src/
@@ -26,7 +26,7 @@ repo/
 │   │   └── examples/
 │   └── python/             # Python bindings (PyO3)
 │       ├── pyproject.toml
-│       ├── python/netrun_core/
+│       ├── python/netrun_sim/
 │       └── examples/
 └── netrun/                 # Runtime (coming soon)
 ```
@@ -42,15 +42,15 @@ repo/
 ### Rust Library
 
 ```bash
-cd netrun-core
-cargo build -p netrun-core
-cargo build -p netrun-core --release
+cd netrun-sim
+cargo build -p netrun-sim
+cargo build -p netrun-sim --release
 ```
 
 ### Python Bindings
 
 ```bash
-cd netrun-core/python
+cd netrun-sim/python
 uv venv .venv && uv sync
 uv run maturin develop
 ```
@@ -59,11 +59,11 @@ uv run maturin develop
 
 ```bash
 # Rust tests
-cd netrun-core
-cargo test -p netrun-core
+cd netrun-sim
+cargo test -p netrun-sim
 
 # Python examples
-cd netrun-core/python
+cd netrun-sim/python
 uv run python examples/linear_flow.py
 uv run python examples/diamond_flow.py
 ```
@@ -73,15 +73,15 @@ uv run python examples/diamond_flow.py
 ### Rust
 
 ```bash
-cd netrun-core
-cargo run -p netrun-core --example linear_flow
-cargo run -p netrun-core --example diamond_flow
+cd netrun-sim
+cargo run -p netrun-sim --example linear_flow
+cargo run -p netrun-sim --example diamond_flow
 ```
 
 ### Python
 
 ```bash
-cd netrun-core/python
+cd netrun-sim/python
 uv run python examples/linear_flow.py
 uv run python examples/diamond_flow.py
 ```
@@ -89,7 +89,7 @@ uv run python examples/diamond_flow.py
 ## Documentation
 
 - [CLAUDE.md](CLAUDE.md) - Detailed architecture and API documentation
-- [netrun-core/python/README.md](netrun-core/python/README.md) - Python bindings documentation
+- [netrun-sim/python/README.md](netrun-sim/python/README.md) - Python bindings documentation
 
 ## License
 

@@ -6,15 +6,15 @@ This repository contains the **netrun** project, a flow-based development (FBD) 
 
 The project is split into two main components:
 
-### netrun-core (Simulation Engine)
+### netrun-sim (Simulation Engine)
 
-`netrun-core` is a Rust library that simulates the flow of packets through a network of interconnected nodes. It does **not** execute actual node logic or manage packet data—instead, it tracks packet locations, validates flow conditions, and manages the lifecycle of node executions (called "epochs").
+`netrun-sim` is a Rust library that simulates the flow of packets through a network of interconnected nodes. It does **not** execute actual node logic or manage packet data—instead, it tracks packet locations, validates flow conditions, and manages the lifecycle of node executions (called "epochs").
 
 This separation of concerns allows the actual execution and data storage to be implemented independently of the flow mechanics.
 
 ### netrun (Runtime) - *Coming Soon*
 
-`netrun` is a pure Python package built on top of `netrun-core`. It provides:
+`netrun` is a pure Python package built on top of `netrun-sim`. It provides:
 - Actual node execution logic
 - Packet data storage and management
 - Higher-level APIs for building flow-based applications
@@ -25,7 +25,7 @@ This separation of concerns allows the actual execution and data storage to be i
 repo/
 ├── CLAUDE.md               # This file
 ├── README.md               # Project README
-├── netrun-core/            # Simulation engine
+├── netrun-sim/            # Simulation engine
 │   ├── Cargo.toml          # Rust workspace root
 │   ├── core/               # Rust library
 │   │   ├── Cargo.toml
@@ -41,7 +41,7 @@ repo/
 │       ├── pyproject.toml  # Maturin config
 │       ├── src/            # Rust binding code
 │       ├── python/         # Python package
-│       │   └── netrun_core/
+│       │   └── netrun_sim/
 │       └── examples/       # Python examples
 └── netrun/                 # Runtime (pure Python) - TBD
     └── ...
@@ -49,11 +49,11 @@ repo/
 
 ---
 
-# netrun-core Documentation
+# netrun-sim Documentation
 
 ## Overview
 
-The `netrun-core` library simulates packet flow through a network. It is designed to be used by external code (like `netrun`) that:
+The `netrun-sim` library simulates packet flow through a network. It is designed to be used by external code (like `netrun`) that:
 
 1. Defines the graph topology (nodes, ports, edges)
 2. Handles actual node execution logic
@@ -198,19 +198,19 @@ Actions produce events that track what happened:
 ### Rust Library
 
 ```bash
-cd netrun-core
-cargo build -p netrun-core
-cargo test -p netrun-core
-cargo run -p netrun-core --example linear_flow
+cd netrun-sim
+cargo build -p netrun-sim
+cargo test -p netrun-sim
+cargo run -p netrun-sim --example linear_flow
 ```
 
 ### Python Bindings
 
 ```bash
-cd netrun-core/python
+cd netrun-sim/python
 uv venv .venv && uv sync
 uv run maturin develop
 uv run python examples/linear_flow.py
 ```
 
-See `netrun-core/python/README.md` for full Python documentation.
+See `netrun-sim/python/README.md` for full Python documentation.
