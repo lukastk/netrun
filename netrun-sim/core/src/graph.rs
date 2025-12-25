@@ -3,14 +3,13 @@
 //! This module defines the static structure of a network: nodes, ports, edges,
 //! and the conditions that govern packet flow (salvo conditions).
 
-use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 
 /// The name of a port on a node.
 pub type PortName = String;
 
 /// Specifies the capacity of a port (how many packets it can hold).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub enum PortSlotSpec {
     /// Port can hold unlimited packets.
     Infinite,
@@ -19,7 +18,7 @@ pub enum PortSlotSpec {
 }
 
 /// A port on a node where packets can enter or exit.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Port {
     /// The capacity specification for this port.
     pub slots_spec: PortSlotSpec,
@@ -29,7 +28,7 @@ pub struct Port {
 ///
 /// These predicates test the current packet count at a port against
 /// various conditions like empty, full, or numeric comparisons.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub enum PortState {
     /// Port has zero packets.
     Empty,
@@ -55,7 +54,7 @@ pub enum PortState {
 ///
 /// This forms a simple expression tree that can combine port state checks
 /// with logical operators (And, Or, Not).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub enum SalvoConditionTerm {
     /// Check if a specific port matches a state predicate.
     Port { port_name: String, state: PortState },
@@ -130,7 +129,7 @@ pub type SalvoConditionName = String;
 /// Salvo conditions are attached to nodes and control the flow of packets:
 /// - **Input salvo conditions**: Define when packets at input ports can trigger a new epoch
 /// - **Output salvo conditions**: Define when packets at output ports can be sent out
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct SalvoCondition {
     /// Maximum number of times this condition can trigger per epoch.
     /// For input salvo conditions, this must be 1.
@@ -160,7 +159,7 @@ fn collect_ports_from_term(term: &SalvoConditionTerm, ports: &mut HashSet<PortNa
 }
 
 /// Errors that can occur during graph validation
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, thiserror::Error)]
+#[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum GraphValidationError {
     /// Edge references a node that doesn't exist
     #[error("edge {edge_source} -> {edge_target} references non-existent node '{missing_node}'")]
@@ -230,7 +229,7 @@ pub type NodeName = String;
 /// - Output ports where packets are sent
 /// - Input salvo conditions that define when arriving packets trigger an epoch
 /// - Output salvo conditions that define when output packets can be sent
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Node {
     /// The unique name of this node.
     pub name: NodeName,
@@ -245,7 +244,7 @@ pub struct Node {
 }
 
 /// Whether a port is for input or output.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum PortType {
     /// An input port (packets flow into the node).
     Input,
@@ -254,7 +253,7 @@ pub enum PortType {
 }
 
 /// A reference to a specific port on a specific node.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct PortRef {
     /// The name of the node containing this port.
     pub node_name: NodeName,
@@ -279,12 +278,12 @@ impl std::fmt::Display for PortRef {
 /// Edges connect output ports to input ports, allowing packets to flow
 /// between nodes. Currently edges have no additional properties beyond
 /// their endpoints.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct Edge {
 }
 
 /// A reference to an edge, identified by its source and target ports.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub struct EdgeRef {
     /// The output port where this edge originates.
     pub source: PortRef,
@@ -337,38 +336,12 @@ impl std::fmt::Display for EdgeRef {
 /// let graph = Graph::new(vec![node_a, node_b], vec![edge]);
 /// assert!(graph.validate().is_empty());
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(from = "GraphData", into = "GraphData")]
+#[derive(Debug, Clone)]
 pub struct Graph {
     nodes: HashMap<NodeName, Node>,
     edges: HashMap<EdgeRef, Edge>,
-
-    #[serde(skip)]
     edges_by_tail: HashMap<PortRef, EdgeRef>,
-    #[serde(skip)]
     edges_by_head: HashMap<PortRef, EdgeRef>,
-}
-
-/// Helper struct for serializing/deserializing Graph without the indexes
-#[derive(Serialize, Deserialize)]
-struct GraphData {
-    nodes: Vec<Node>,
-    edges: Vec<(EdgeRef, Edge)>,
-}
-
-impl From<GraphData> for Graph {
-    fn from(data: GraphData) -> Self {
-        Graph::new(data.nodes, data.edges)
-    }
-}
-
-impl From<Graph> for GraphData {
-    fn from(graph: Graph) -> Self {
-        GraphData {
-            nodes: graph.nodes.into_values().collect(),
-            edges: graph.edges.into_iter().collect(),
-        }
-    }
 }
 
 impl Graph {

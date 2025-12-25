@@ -3,7 +3,7 @@
 mod common;
 
 use netrun_sim::graph::{
-    Graph, GraphValidationError, Node, Port, PortRef,
+    Graph, GraphValidationError, Port, PortRef,
     PortSlotSpec, PortType, SalvoConditionTerm, PortState,
     evaluate_salvo_condition,
 };
@@ -289,59 +289,6 @@ fn test_evaluate_salvo_condition_not() {
     // Port is not empty, NOT(empty) = true
     counts.insert("in".to_string(), 1);
     assert!(evaluate_salvo_condition(&condition, &counts, &ports));
-}
-
-// ========== Serialization Tests ==========
-
-#[test]
-fn test_graph_serialization_roundtrip() {
-    let graph = common::linear_graph_3();
-
-    // Serialize to JSON
-    let json = serde_json::to_string(&graph).expect("Failed to serialize graph");
-
-    // Deserialize back
-    let deserialized: Graph = serde_json::from_str(&json).expect("Failed to deserialize graph");
-
-    // Verify structure is preserved
-    assert_eq!(deserialized.nodes().len(), graph.nodes().len());
-    assert_eq!(deserialized.edges().len(), graph.edges().len());
-    assert!(deserialized.validate().is_empty());
-}
-
-#[test]
-fn test_node_serialization_roundtrip() {
-    let node = common::simple_node("TestNode", vec!["in1", "in2"], vec!["out"]);
-
-    let json = serde_json::to_string(&node).expect("Failed to serialize node");
-    let deserialized: Node = serde_json::from_str(&json).expect("Failed to deserialize node");
-
-    assert_eq!(deserialized.name, "TestNode");
-    assert_eq!(deserialized.in_ports.len(), 2);
-    assert_eq!(deserialized.out_ports.len(), 1);
-}
-
-#[test]
-fn test_validation_error_serialization() {
-    let error = GraphValidationError::EdgeReferencesNonexistentNode {
-        edge_source: PortRef {
-            node_name: "A".to_string(),
-            port_type: PortType::Output,
-            port_name: "out".to_string(),
-        },
-        edge_target: PortRef {
-            node_name: "B".to_string(),
-            port_type: PortType::Input,
-            port_name: "in".to_string(),
-        },
-        missing_node: "B".to_string(),
-    };
-
-    let json = serde_json::to_string(&error).expect("Failed to serialize error");
-    let deserialized: GraphValidationError = serde_json::from_str(&json)
-        .expect("Failed to deserialize error");
-
-    assert_eq!(error, deserialized);
 }
 
 // ========== PortRef Display Tests ==========
