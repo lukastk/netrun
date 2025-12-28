@@ -1,0 +1,15 @@
+[project]
+name = "netrun"
+version = "0.1.0"
+description = "A flow-based development (FBD) runtime system."
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "netrun-sim>=0.1.1",
+]
+
+[dependency-groups]
+dev = [
+    "jupyterlab>=4.5.1",
+    "nblite>=0.6.10",
+]

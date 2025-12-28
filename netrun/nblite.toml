@@ -1,0 +1,33 @@
+export_pipeline = """
+nbs -> pts
+pts -> lib
+"""
+docs_cl='nbs'
+docs_title="netrun"
+
+[cl.lib]
+path="src/netrun"
+
+[cl.nbs]
+path="nbs/netrun"
+format="ipynb"
+
+[cl.pts]
+path="pts/netrun"
+format="percent"
+
+[cl.lib_test]
+path="src/tests"
+format="module"
+
+[cl.nbs_test]
+path="nbs/tests"
+format="ipynb"
+
+[cl.pts_test]
+path="pts/tests"
+format="percent"
+
+[cl.examples]
+path="examples"
+format="ipynb"
