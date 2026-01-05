@@ -7,6 +7,7 @@ docs_title="netrun"
 
 [cl.lib]
 path="src/netrun"
+format="module"
 
 [cl.nbs]
 path="nbs/netrun"
