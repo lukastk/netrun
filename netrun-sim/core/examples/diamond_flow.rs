@@ -13,12 +13,10 @@
 //! - Synchronization: D's epoch only triggers when both inputs are present
 
 use netrun_sim::graph::{
-    Edge, Graph, Node, Port, PortRef, PortSlotSpec, PortState, PortType,
-    SalvoCondition, SalvoConditionTerm,
+    Edge, Graph, Node, Port, PortRef, PortSlotSpec, PortState, PortType, SalvoCondition,
+    SalvoConditionTerm,
 };
-use netrun_sim::net::{
-    Net, NetAction, NetActionResponse, NetActionResponseData, PacketLocation,
-};
+use netrun_sim::net::{Net, NetAction, NetActionResponse, NetActionResponseData, PacketLocation};
 use std::collections::HashMap;
 
 fn main() {
@@ -36,19 +34,28 @@ fn main() {
 
     // Place packet1 on edge A -> B
     let edge_a_b = edge_location("A", "out1", "B", "in");
-    net.do_action(&NetAction::TransportPacketToLocation(packet1.clone(), edge_a_b));
+    net.do_action(&NetAction::TransportPacketToLocation(
+        packet1.clone(),
+        edge_a_b,
+    ));
     println!("Placed packet1 on edge A -> B");
 
     // Place packet2 on edge A -> C
     let edge_a_c = edge_location("A", "out2", "C", "in");
-    net.do_action(&NetAction::TransportPacketToLocation(packet2.clone(), edge_a_c));
+    net.do_action(&NetAction::TransportPacketToLocation(
+        packet2.clone(),
+        edge_a_c,
+    ));
     println!("Placed packet2 on edge A -> C");
 
     // Run network - packets move to B and C, triggering epochs
     net.do_action(&NetAction::RunNetUntilBlocked);
 
     let startable = net.get_startable_epochs();
-    println!("\nAfter first run: {} startable epochs (B and C)", startable.len());
+    println!(
+        "\nAfter first run: {} startable epochs (B and C)",
+        startable.len()
+    );
 
     // Process B and C, sending outputs to D
     for epoch_id in startable {
@@ -70,8 +77,14 @@ fn main() {
         let output = create_packet_in_epoch(&mut net, &started.id);
 
         // Load into output port and send
-        net.do_action(&NetAction::LoadPacketIntoOutputPort(output, "out".to_string()));
-        net.do_action(&NetAction::SendOutputSalvo(started.id.clone(), "default".to_string()));
+        net.do_action(&NetAction::LoadPacketIntoOutputPort(
+            output,
+            "out".to_string(),
+        ));
+        net.do_action(&NetAction::SendOutputSalvo(
+            started.id.clone(),
+            "default".to_string(),
+        ));
 
         // Finish epoch
         net.do_action(&NetAction::FinishEpoch(started.id));
@@ -94,7 +107,10 @@ fn main() {
 
     if let Some(d_epoch_id) = startable_d.first() {
         let d_epoch = net.get_epoch(d_epoch_id).unwrap();
-        println!("D's epoch received {} packets from both branches!", d_epoch.in_salvo.packets.len());
+        println!(
+            "D's epoch received {} packets from both branches!",
+            d_epoch.in_salvo.packets.len()
+        );
     }
 
     println!("\nDiamond flow example complete!");
@@ -106,9 +122,20 @@ fn create_diamond_graph() -> Graph {
         name: "A".to_string(),
         in_ports: HashMap::new(),
         out_ports: [
-            ("out1".to_string(), Port { slots_spec: PortSlotSpec::Infinite }),
-            ("out2".to_string(), Port { slots_spec: PortSlotSpec::Infinite }),
-        ].into(),
+            (
+                "out1".to_string(),
+                Port {
+                    slots_spec: PortSlotSpec::Infinite,
+                },
+            ),
+            (
+                "out2".to_string(),
+                Port {
+                    slots_spec: PortSlotSpec::Infinite,
+                },
+            ),
+        ]
+        .into(),
         in_salvo_conditions: HashMap::new(),
         out_salvo_conditions: HashMap::new(),
     };
@@ -123,9 +150,20 @@ fn create_diamond_graph() -> Graph {
     let node_d = Node {
         name: "D".to_string(),
         in_ports: [
-            ("in1".to_string(), Port { slots_spec: PortSlotSpec::Infinite }),
-            ("in2".to_string(), Port { slots_spec: PortSlotSpec::Infinite }),
-        ].into(),
+            (
+                "in1".to_string(),
+                Port {
+                    slots_spec: PortSlotSpec::Infinite,
+                },
+            ),
+            (
+                "in2".to_string(),
+                Port {
+                    slots_spec: PortSlotSpec::Infinite,
+                },
+            ),
+        ]
+        .into(),
         out_ports: HashMap::new(),
         in_salvo_conditions: [(
             "default".to_string(),
@@ -144,7 +182,8 @@ fn create_diamond_graph() -> Graph {
                     },
                 ]),
             },
-        )].into(),
+        )]
+        .into(),
         out_salvo_conditions: HashMap::new(),
     };
 
@@ -163,8 +202,20 @@ fn create_diamond_graph() -> Graph {
 fn create_simple_node(name: &str) -> Node {
     Node {
         name: name.to_string(),
-        in_ports: [("in".to_string(), Port { slots_spec: PortSlotSpec::Infinite })].into(),
-        out_ports: [("out".to_string(), Port { slots_spec: PortSlotSpec::Infinite })].into(),
+        in_ports: [(
+            "in".to_string(),
+            Port {
+                slots_spec: PortSlotSpec::Infinite,
+            },
+        )]
+        .into(),
+        out_ports: [(
+            "out".to_string(),
+            Port {
+                slots_spec: PortSlotSpec::Infinite,
+            },
+        )]
+        .into(),
         in_salvo_conditions: [(
             "default".to_string(),
             SalvoCondition {
@@ -175,7 +226,8 @@ fn create_simple_node(name: &str) -> Node {
                     state: PortState::NonEmpty,
                 },
             },
-        )].into(),
+        )]
+        .into(),
         out_salvo_conditions: [(
             "default".to_string(),
             SalvoCondition {
@@ -186,7 +238,8 @@ fn create_simple_node(name: &str) -> Node {
                     state: PortState::NonEmpty,
                 },
             },
-        )].into(),
+        )]
+        .into(),
     }
 }
 

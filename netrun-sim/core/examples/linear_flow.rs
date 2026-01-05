@@ -8,12 +8,10 @@
 //! - Sending output salvos to continue flow
 
 use netrun_sim::graph::{
-    Edge, Graph, Node, Port, PortRef, PortSlotSpec, PortState, PortType,
-    SalvoCondition, SalvoConditionTerm,
+    Edge, Graph, Node, Port, PortRef, PortSlotSpec, PortState, PortType, SalvoCondition,
+    SalvoConditionTerm,
 };
-use netrun_sim::net::{
-    Net, NetAction, NetActionResponse, NetActionResponseData, PacketLocation,
-};
+use netrun_sim::net::{Net, NetAction, NetActionResponse, NetActionResponseData, PacketLocation};
 use std::collections::HashMap;
 
 fn main() {
@@ -46,7 +44,10 @@ fn main() {
             port_name: "in".to_string(),
         },
     });
-    net.do_action(&NetAction::TransportPacketToLocation(packet_id.clone(), edge_a_b));
+    net.do_action(&NetAction::TransportPacketToLocation(
+        packet_id.clone(),
+        edge_a_b,
+    ));
     println!("Placed packet on edge A -> B");
 
     // Run the network - packet moves to B's input port and triggers an epoch
@@ -71,18 +72,25 @@ fn main() {
                 println!("Consumed input packet");
 
                 // Create an output packet
-                let output_packet = match net.do_action(&NetAction::CreatePacket(Some(epoch.id.clone()))) {
-                    NetActionResponse::Success(NetActionResponseData::Packet(id), _) => id,
-                    _ => panic!("Failed to create output packet"),
-                };
+                let output_packet =
+                    match net.do_action(&NetAction::CreatePacket(Some(epoch.id.clone()))) {
+                        NetActionResponse::Success(NetActionResponseData::Packet(id), _) => id,
+                        _ => panic!("Failed to create output packet"),
+                    };
                 println!("Created output packet: {}", output_packet);
 
                 // Load it into the output port
-                net.do_action(&NetAction::LoadPacketIntoOutputPort(output_packet.clone(), "out".to_string()));
+                net.do_action(&NetAction::LoadPacketIntoOutputPort(
+                    output_packet.clone(),
+                    "out".to_string(),
+                ));
                 println!("Loaded packet into output port");
 
                 // Send the output salvo
-                net.do_action(&NetAction::SendOutputSalvo(epoch.id.clone(), "default".to_string()));
+                net.do_action(&NetAction::SendOutputSalvo(
+                    epoch.id.clone(),
+                    "default".to_string(),
+                ));
                 println!("Sent output salvo - packet is now on edge B -> C");
 
                 // Finish the epoch
@@ -95,7 +103,10 @@ fn main() {
 
                 // Check for new startable epochs at C
                 let startable_c = net.get_startable_epochs();
-                println!("New startable epochs (should be at C): {}", startable_c.len());
+                println!(
+                    "New startable epochs (should be at C): {}",
+                    startable_c.len()
+                );
             }
             _ => panic!("Failed to start epoch"),
         }
@@ -125,12 +136,26 @@ fn create_linear_graph() -> Graph {
 fn create_node(name: &str, in_ports: Vec<&str>, out_ports: Vec<&str>) -> Node {
     let in_ports_map: HashMap<String, Port> = in_ports
         .iter()
-        .map(|p| (p.to_string(), Port { slots_spec: PortSlotSpec::Infinite }))
+        .map(|p| {
+            (
+                p.to_string(),
+                Port {
+                    slots_spec: PortSlotSpec::Infinite,
+                },
+            )
+        })
         .collect();
 
     let out_ports_map: HashMap<String, Port> = out_ports
         .iter()
-        .map(|p| (p.to_string(), Port { slots_spec: PortSlotSpec::Infinite }))
+        .map(|p| {
+            (
+                p.to_string(),
+                Port {
+                    slots_spec: PortSlotSpec::Infinite,
+                },
+            )
+        })
         .collect();
 
     // Default input salvo condition: trigger when any input port is non-empty

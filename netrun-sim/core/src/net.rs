@@ -7,7 +7,10 @@
 //! [`NetAction`] and returns a [`NetActionResponse`] containing any events that occurred.
 
 use crate::_utils::get_utc_now;
-use crate::graph::{Edge, Graph, NodeName, Port, PortSlotSpec, PortName, PortType, PortRef, SalvoConditionName, SalvoConditionTerm, evaluate_salvo_condition};
+use crate::graph::{
+    Edge, Graph, NodeName, Port, PortName, PortRef, PortSlotSpec, PortType, SalvoConditionName,
+    SalvoConditionTerm, evaluate_salvo_condition,
+};
 use indexmap::IndexSet;
 use std::collections::{HashMap, HashSet};
 use ulid::Ulid;
@@ -160,31 +163,52 @@ pub enum NetActionError {
 
     /// Packet is not inside the specified epoch's node location
     #[error("packet {packet_id} is not inside epoch {epoch_id}")]
-    PacketNotInNode { packet_id: PacketID, epoch_id: EpochID },
+    PacketNotInNode {
+        packet_id: PacketID,
+        epoch_id: EpochID,
+    },
 
     /// Output port does not exist on the node
     #[error("output port '{port_name}' not found on node for epoch {epoch_id}")]
-    OutputPortNotFound { port_name: PortName, epoch_id: EpochID },
+    OutputPortNotFound {
+        port_name: PortName,
+        epoch_id: EpochID,
+    },
 
     /// Output salvo condition does not exist on the node
     #[error("output salvo condition '{condition_name}' not found on node for epoch {epoch_id}")]
-    OutputSalvoConditionNotFound { condition_name: SalvoConditionName, epoch_id: EpochID },
+    OutputSalvoConditionNotFound {
+        condition_name: SalvoConditionName,
+        epoch_id: EpochID,
+    },
 
     /// Maximum number of output salvos reached for this condition
     #[error("max output salvos reached for condition '{condition_name}' on epoch {epoch_id}")]
-    MaxOutputSalvosReached { condition_name: SalvoConditionName, epoch_id: EpochID },
+    MaxOutputSalvosReached {
+        condition_name: SalvoConditionName,
+        epoch_id: EpochID,
+    },
 
     /// Output salvo condition is not satisfied
     #[error("salvo condition '{condition_name}' not met for epoch {epoch_id}")]
-    SalvoConditionNotMet { condition_name: SalvoConditionName, epoch_id: EpochID },
+    SalvoConditionNotMet {
+        condition_name: SalvoConditionName,
+        epoch_id: EpochID,
+    },
 
     /// Output port has reached its capacity
     #[error("output port '{port_name}' is full for epoch {epoch_id}")]
-    OutputPortFull { port_name: PortName, epoch_id: EpochID },
+    OutputPortFull {
+        port_name: PortName,
+        epoch_id: EpochID,
+    },
 
     /// Cannot send packets to an output port that has no connected edge
     #[error("output port '{port_name}' on node '{node_name}' is not connected to any edge")]
-    CannotPutPacketIntoUnconnectedOutputPort { port_name: PortName, node_name: NodeName },
+    CannotPutPacketIntoUnconnectedOutputPort {
+        port_name: PortName,
+        node_name: NodeName,
+    },
 
     /// Node with the given name was not found in the graph
     #[error("node not found: '{node_name}'")]
@@ -192,23 +216,39 @@ pub enum NetActionError {
 
     /// Packet is not at the expected input port
     #[error("packet {packet_id} is not at input port '{port_name}' of node '{node_name}'")]
-    PacketNotAtInputPort { packet_id: PacketID, port_name: PortName, node_name: NodeName },
+    PacketNotAtInputPort {
+        packet_id: PacketID,
+        port_name: PortName,
+        node_name: NodeName,
+    },
 
     /// Input port does not exist on the node
     #[error("input port '{port_name}' not found on node '{node_name}'")]
-    InputPortNotFound { port_name: PortName, node_name: NodeName },
+    InputPortNotFound {
+        port_name: PortName,
+        node_name: NodeName,
+    },
 
     /// Input port has reached its capacity
     #[error("input port '{port_name}' on node '{node_name}' is full")]
-    InputPortFull { port_name: PortName, node_name: NodeName },
+    InputPortFull {
+        port_name: PortName,
+        node_name: NodeName,
+    },
 
     /// Cannot move packet out of a running epoch
     #[error("cannot move packet {packet_id} out of running epoch {epoch_id}")]
-    CannotMovePacketFromRunningEpoch { packet_id: PacketID, epoch_id: EpochID },
+    CannotMovePacketFromRunningEpoch {
+        packet_id: PacketID,
+        epoch_id: EpochID,
+    },
 
     /// Cannot move packet into a running epoch
     #[error("cannot move packet {packet_id} into running epoch {epoch_id}")]
-    CannotMovePacketIntoRunningEpoch { packet_id: PacketID, epoch_id: EpochID },
+    CannotMovePacketIntoRunningEpoch {
+        packet_id: PacketID,
+        epoch_id: EpochID,
+    },
 
     /// Edge does not exist in the graph
     #[error("edge not found: {edge}")]
@@ -324,13 +364,18 @@ impl Net {
 
     fn move_packet(&mut self, packet_id: &PacketID, new_location: PacketLocation) {
         let packet = self._packets.get_mut(packet_id).unwrap();
-        let packets_at_old_location = self._packets_by_location.get_mut(&packet.location)
+        let packets_at_old_location = self
+            ._packets_by_location
+            .get_mut(&packet.location)
             .expect("Packet location has no entry in self._packets_by_location.");
         packets_at_old_location.shift_remove(packet_id);
         packet.location = new_location;
-        if !self._packets_by_location.get_mut(&packet.location)
-                .expect("Packet location has no entry in self._packets_by_location")
-                .insert(*packet_id) {
+        if !self
+            ._packets_by_location
+            .get_mut(&packet.location)
+            .expect("Packet location has no entry in self._packets_by_location")
+            .insert(*packet_id)
+        {
             panic!("Attempted to move packet to a location that already contains it.");
         }
     }
@@ -363,13 +408,22 @@ impl Net {
                         let target_port_name = edge_ref.target.port_name.clone();
 
                         // Check if the target input port has space
-                        let node = self.graph.nodes().get(&target_node_name)
+                        let node = self
+                            .graph
+                            .nodes()
+                            .get(&target_node_name)
                             .expect("Edge targets a non-existent node");
-                        let port = node.in_ports.get(&target_port_name)
+                        let port = node
+                            .in_ports
+                            .get(&target_port_name)
                             .expect("Edge targets a non-existent input port");
 
-                        let input_port_location = PacketLocation::InputPort(target_node_name.clone(), target_port_name.clone());
-                        let current_count = self._packets_by_location
+                        let input_port_location = PacketLocation::InputPort(
+                            target_node_name.clone(),
+                            target_port_name.clone(),
+                        );
+                        let current_count = self
+                            ._packets_by_location
                             .get(&input_port_location)
                             .map(|packets| packets.len() as u64)
                             .unwrap_or(0);
@@ -397,20 +451,36 @@ impl Net {
 
                 // Move the packet to the input port
                 self.move_packet(&candidate.packet_id, candidate.input_port_location.clone());
-                all_events.push(NetEvent::PacketMoved(get_utc_now(), candidate.packet_id, candidate.input_port_location.clone()));
+                all_events.push(NetEvent::PacketMoved(
+                    get_utc_now(),
+                    candidate.packet_id,
+                    candidate.input_port_location.clone(),
+                ));
                 made_progress = true;
 
                 // Check input salvo conditions on the target node
                 // Extract all needed data from the graph first
-                let node = self.graph.nodes().get(&candidate.target_node_name)
+                let node = self
+                    .graph
+                    .nodes()
+                    .get(&candidate.target_node_name)
                     .expect("Edge targets a non-existent node");
 
                 let in_port_names: Vec<PortName> = node.in_ports.keys().cloned().collect();
-                let in_ports_clone: HashMap<PortName, Port> = node.in_ports.iter()
-                    .map(|(k, v)| (k.clone(), Port { slots_spec: match v.slots_spec {
-                        PortSlotSpec::Infinite => PortSlotSpec::Infinite,
-                        PortSlotSpec::Finite(n) => PortSlotSpec::Finite(n),
-                    }}))
+                let in_ports_clone: HashMap<PortName, Port> = node
+                    .in_ports
+                    .iter()
+                    .map(|(k, v)| {
+                        (
+                            k.clone(),
+                            Port {
+                                slots_spec: match v.slots_spec {
+                                    PortSlotSpec::Infinite => PortSlotSpec::Infinite,
+                                    PortSlotSpec::Finite(n) => PortSlotSpec::Finite(n),
+                                },
+                            },
+                        )
+                    })
                     .collect();
 
                 // Collect salvo condition data
@@ -420,7 +490,9 @@ impl Net {
                     term: SalvoConditionTerm,
                 }
 
-                let salvo_conditions: Vec<SalvoConditionData> = node.in_salvo_conditions.iter()
+                let salvo_conditions: Vec<SalvoConditionData> = node
+                    .in_salvo_conditions
+                    .iter()
                     .map(|(name, cond)| SalvoConditionData {
                         name: name.clone(),
                         ports: cond.ports.clone(),
@@ -431,10 +503,15 @@ impl Net {
                 // Check salvo conditions in order - first satisfied one wins
                 for salvo_cond_data in salvo_conditions {
                     // Calculate packet counts for all input ports
-                    let port_packet_counts: HashMap<PortName, u64> = in_port_names.iter()
+                    let port_packet_counts: HashMap<PortName, u64> = in_port_names
+                        .iter()
                         .map(|port_name| {
-                            let count = self._packets_by_location
-                                .get(&PacketLocation::InputPort(candidate.target_node_name.clone(), port_name.clone()))
+                            let count = self
+                                ._packets_by_location
+                                .get(&PacketLocation::InputPort(
+                                    candidate.target_node_name.clone(),
+                                    port_name.clone(),
+                                ))
                                 .map(|packets| packets.len() as u64)
                                 .unwrap_or(0);
                             (port_name.clone(), count)
@@ -442,7 +519,11 @@ impl Net {
                         .collect();
 
                     // Check if salvo condition is satisfied
-                    if evaluate_salvo_condition(&salvo_cond_data.term, &port_packet_counts, &in_ports_clone) {
+                    if evaluate_salvo_condition(
+                        &salvo_cond_data.term,
+                        &port_packet_counts,
+                        &in_ports_clone,
+                    ) {
                         // Create a new epoch
                         let epoch_id = Ulid::new();
 
@@ -451,8 +532,12 @@ impl Net {
                         let mut packets_to_move: Vec<(PacketID, PortName)> = Vec::new();
 
                         for port_name in &salvo_cond_data.ports {
-                            let port_location = PacketLocation::InputPort(candidate.target_node_name.clone(), port_name.clone());
-                            if let Some(packet_ids) = self._packets_by_location.get(&port_location) {
+                            let port_location = PacketLocation::InputPort(
+                                candidate.target_node_name.clone(),
+                                port_name.clone(),
+                            );
+                            if let Some(packet_ids) = self._packets_by_location.get(&port_location)
+                            {
                                 for pid in packet_ids.iter() {
                                     salvo_packets.push((port_name.clone(), *pid));
                                     packets_to_move.push((*pid, port_name.clone()));
@@ -485,24 +570,38 @@ impl Net {
 
                         // Create a location entry for packets inside the epoch
                         let epoch_location = PacketLocation::Node(epoch_id);
-                        self._packets_by_location.insert(epoch_location.clone(), IndexSet::new());
+                        self._packets_by_location
+                            .insert(epoch_location.clone(), IndexSet::new());
 
                         // Create output port location entries for this epoch
-                        let node = self.graph.nodes().get(&candidate.target_node_name)
+                        let node = self
+                            .graph
+                            .nodes()
+                            .get(&candidate.target_node_name)
                             .expect("Node not found for epoch creation");
                         for port_name in node.out_ports.keys() {
-                            let output_port_location = PacketLocation::OutputPort(epoch_id, port_name.clone());
-                            self._packets_by_location.insert(output_port_location, IndexSet::new());
+                            let output_port_location =
+                                PacketLocation::OutputPort(epoch_id, port_name.clone());
+                            self._packets_by_location
+                                .insert(output_port_location, IndexSet::new());
                         }
 
                         // Move packets from input ports into the epoch
                         for (pid, _port_name) in &packets_to_move {
                             self.move_packet(pid, epoch_location.clone());
-                            all_events.push(NetEvent::PacketMoved(get_utc_now(), *pid, epoch_location.clone()));
+                            all_events.push(NetEvent::PacketMoved(
+                                get_utc_now(),
+                                *pid,
+                                epoch_location.clone(),
+                            ));
                         }
 
                         all_events.push(NetEvent::EpochCreated(get_utc_now(), epoch_id));
-                        all_events.push(NetEvent::InputSalvoTriggered(get_utc_now(), epoch_id, salvo_cond_data.name.clone()));
+                        all_events.push(NetEvent::InputSalvoTriggered(
+                            get_utc_now(),
+                            epoch_id,
+                            salvo_cond_data.name.clone(),
+                        ));
 
                         // Only one salvo condition can trigger per node per iteration
                         break;
@@ -555,7 +654,7 @@ impl Net {
 
         NetActionResponse::Success(
             NetActionResponseData::Packet(packet_id),
-            vec![NetEvent::PacketCreated(get_utc_now(), packet_id)]
+            vec![NetEvent::PacketCreated(get_utc_now(), packet_id)],
         )
     }
 
@@ -574,7 +673,7 @@ impl Net {
                 self._packets.remove(packet_id);
                 NetActionResponse::Success(
                     NetActionResponseData::None,
-                    vec![NetEvent::PacketConsumed(get_utc_now(), *packet_id)]
+                    vec![NetEvent::PacketConsumed(get_utc_now(), *packet_id)],
                 )
             } else {
                 panic!(
@@ -583,7 +682,10 @@ impl Net {
                 );
             }
         } else {
-            panic!("Packet location {:?} not found", self._packets[packet_id].location);
+            panic!(
+                "Packet location {:?} not found",
+                self._packets[packet_id].location
+            );
         }
     }
 
@@ -594,13 +696,15 @@ impl Net {
                     epoch_id: *epoch_id,
                 });
             }
-            debug_assert!(matches!(epoch.state, EpochState::Startable),
-                "Epoch state is not Startable but was in net._startable_epochs.");
+            debug_assert!(
+                matches!(epoch.state, EpochState::Startable),
+                "Epoch state is not Startable but was in net._startable_epochs."
+            );
             epoch.state = EpochState::Running;
             self._startable_epochs.remove(epoch_id);
             NetActionResponse::Success(
                 NetActionResponseData::StartedEpoch(epoch.clone()),
-                vec![NetEvent::EpochStarted(get_utc_now(), *epoch_id)]
+                vec![NetEvent::EpochStarted(get_utc_now(), *epoch_id)],
             )
         } else {
             NetActionResponse::Error(NetActionError::EpochNotFound {
@@ -616,9 +720,11 @@ impl Net {
                 let epoch_loc = PacketLocation::Node(*epoch_id);
                 if let Some(packets) = self._packets_by_location.get(&epoch_loc) {
                     if !packets.is_empty() {
-                        return NetActionResponse::Error(NetActionError::CannotFinishNonEmptyEpoch {
-                            epoch_id: *epoch_id,
-                        });
+                        return NetActionResponse::Error(
+                            NetActionError::CannotFinishNonEmptyEpoch {
+                                epoch_id: *epoch_id,
+                            },
+                        );
                     }
 
                     let mut epoch = self._epochs.remove(epoch_id).unwrap();
@@ -626,7 +732,7 @@ impl Net {
                     self._packets_by_location.remove(&epoch_loc);
                     NetActionResponse::Success(
                         NetActionResponseData::FinishedEpoch(epoch),
-                        vec![NetEvent::EpochFinished(get_utc_now(), *epoch_id)]
+                        vec![NetEvent::EpochFinished(get_utc_now(), *epoch_id)],
                     )
                 } else {
                     panic!("Epoch {} not found in location {:?}", epoch_id, epoch_loc);
@@ -663,7 +769,10 @@ impl Net {
         }
 
         // Collect packets in the epoch's output ports
-        let node = self.graph.nodes().get(&epoch.node_name)
+        let node = self
+            .graph
+            .nodes()
+            .get(&epoch.node_name)
             .expect("Epoch references non-existent node");
         for port_name in node.out_ports.keys() {
             let output_port_location = PacketLocation::OutputPort(*epoch_id, port_name.clone());
@@ -674,7 +783,9 @@ impl Net {
 
         // Remove packets from _packets and _packets_by_location, emit events
         for packet_id in &destroyed_packets {
-            let packet = self._packets.remove(packet_id)
+            let packet = self
+                ._packets
+                .remove(packet_id)
                 .expect("Packet in location map not found in packets map");
             if let Some(packets_at_location) = self._packets_by_location.get_mut(&packet.location) {
                 packets_at_location.shift_remove(packet_id);
@@ -700,14 +811,13 @@ impl Net {
         }
 
         // Remove epoch from _epochs
-        let epoch = self._epochs.remove(epoch_id)
-            .expect("Epoch should exist");
+        let epoch = self._epochs.remove(epoch_id).expect("Epoch should exist");
 
         events.push(NetEvent::EpochCancelled(get_utc_now(), *epoch_id));
 
         NetActionResponse::Success(
             NetActionResponseData::CancelledEpoch(epoch, destroyed_packets),
-            events
+            events,
         )
     }
 
@@ -774,12 +884,14 @@ impl Net {
 
         // Create location entry for packets inside the epoch
         let epoch_location = PacketLocation::Node(epoch_id);
-        self._packets_by_location.insert(epoch_location.clone(), IndexSet::new());
+        self._packets_by_location
+            .insert(epoch_location.clone(), IndexSet::new());
 
         // Create output port location entries for this epoch
         for port_name in node.out_ports.keys() {
             let output_port_location = PacketLocation::OutputPort(epoch_id, port_name.clone());
-            self._packets_by_location.insert(output_port_location, IndexSet::new());
+            self._packets_by_location
+                .insert(output_port_location, IndexSet::new());
         }
 
         events.push(NetEvent::EpochCreated(get_utc_now(), epoch_id));
@@ -787,18 +899,23 @@ impl Net {
         // Move packets from input ports into the epoch
         for (_, packet_id) in &salvo.packets {
             self.move_packet(packet_id, epoch_location.clone());
-            events.push(NetEvent::PacketMoved(get_utc_now(), *packet_id, epoch_location.clone()));
+            events.push(NetEvent::PacketMoved(
+                get_utc_now(),
+                *packet_id,
+                epoch_location.clone(),
+            ));
         }
 
         events.push(NetEvent::EpochStarted(get_utc_now(), epoch_id));
 
-        NetActionResponse::Success(
-            NetActionResponseData::StartedEpoch(epoch),
-            events
-        )
+        NetActionResponse::Success(NetActionResponseData::StartedEpoch(epoch), events)
     }
 
-    fn load_packet_into_output_port(&mut self, packet_id: &PacketID, port_name: &String) -> NetActionResponse {
+    fn load_packet_into_output_port(
+        &mut self,
+        packet_id: &PacketID,
+        port_name: &String,
+    ) -> NetActionResponse {
         let (epoch_id, old_location) = if let Some(packet) = self._packets.get(packet_id) {
             if let PacketLocation::Node(epoch_id) = packet.location {
                 (epoch_id, packet.location.clone())
@@ -808,7 +925,7 @@ impl Net {
                 return NetActionResponse::Error(NetActionError::PacketNotInNode {
                     packet_id: *packet_id,
                     epoch_id: Ulid::nil(), // Placeholder since packet isn't in any epoch
-                })
+                });
             }
         } else {
             return NetActionResponse::Error(NetActionError::PacketNotFound {
@@ -816,41 +933,54 @@ impl Net {
             });
         };
 
-        let node_name = self._epochs.get(&epoch_id)
+        let node_name = self
+            ._epochs
+            .get(&epoch_id)
             .expect("The epoch id in the location of a packet could not be found.")
-            .node_name.clone();
-        let node = self.graph.nodes().get(&node_name)
+            .node_name
+            .clone();
+        let node = self
+            .graph
+            .nodes()
+            .get(&node_name)
             .expect("Packet located in a non-existing node (yet the node has an epoch).");
 
         if !node.out_ports.contains_key(port_name) {
             return NetActionResponse::Error(NetActionError::OutputPortNotFound {
                 port_name: port_name.clone(),
                 epoch_id,
-            })
+            });
         }
 
         let port = node.out_ports.get(port_name).unwrap();
-        let port_packets = self._packets_by_location.get(&old_location)
+        let port_packets = self
+            ._packets_by_location
+            .get(&old_location)
             .expect("No entry in Net._packets_by_location found for output port.");
 
         // Check if the output port is full
         if let PortSlotSpec::Finite(num_slots) = port.slots_spec
-            && num_slots >= port_packets.len() as u64 {
-                return NetActionResponse::Error(NetActionError::OutputPortFull {
-                    port_name: port_name.clone(),
-                    epoch_id,
-                })
-            }
+            && num_slots >= port_packets.len() as u64
+        {
+            return NetActionResponse::Error(NetActionError::OutputPortFull {
+                port_name: port_name.clone(),
+                epoch_id,
+            });
+        }
 
         let new_location = PacketLocation::OutputPort(epoch_id, port_name.clone());
         self.move_packet(packet_id, new_location.clone());
         NetActionResponse::Success(
             NetActionResponseData::None,
-            vec![NetEvent::PacketMoved(get_utc_now(), epoch_id, new_location)]
+            vec![NetEvent::PacketMoved(get_utc_now(), epoch_id, new_location)],
         )
     }
 
-    fn send_output_salvo(&mut self, epoch_id: &EpochID, salvo_condition_name: &SalvoConditionName) -> NetActionResponse {
+    fn send_output_salvo(
+        &mut self,
+        epoch_id: &EpochID,
+        salvo_condition_name: &SalvoConditionName,
+    ) -> NetActionResponse {
         // Get epoch
         let epoch = if let Some(epoch) = self._epochs.get(epoch_id) {
             epoch
@@ -861,21 +991,27 @@ impl Net {
         };
 
         // Get node
-        let node = self.graph.nodes().get(&epoch.node_name)
+        let node = self
+            .graph
+            .nodes()
+            .get(&epoch.node_name)
             .expect("Node associated with epoch could not be found.");
 
         // Get salvo condition
-        let salvo_condition = if let Some(salvo_condition) = node.out_salvo_conditions.get(salvo_condition_name) {
-            salvo_condition
-        } else {
-            return NetActionResponse::Error(NetActionError::OutputSalvoConditionNotFound {
-                condition_name: salvo_condition_name.clone(),
-                epoch_id: *epoch_id,
-            });
-        };
+        let salvo_condition =
+            if let Some(salvo_condition) = node.out_salvo_conditions.get(salvo_condition_name) {
+                salvo_condition
+            } else {
+                return NetActionResponse::Error(NetActionError::OutputSalvoConditionNotFound {
+                    condition_name: salvo_condition_name.clone(),
+                    epoch_id: *epoch_id,
+                });
+            };
 
         // Check if max salvos reached (max_salvos = 0 means unlimited)
-        if salvo_condition.max_salvos > 0 && epoch.out_salvos.len() as u64 >= salvo_condition.max_salvos {
+        if salvo_condition.max_salvos > 0
+            && epoch.out_salvos.len() as u64 >= salvo_condition.max_salvos
+        {
             return NetActionResponse::Error(NetActionError::MaxOutputSalvosReached {
                 condition_name: salvo_condition_name.clone(),
                 epoch_id: *epoch_id,
@@ -883,9 +1019,12 @@ impl Net {
         }
 
         // Check that the salvo condition is met
-        let port_packet_counts: HashMap<PortName, u64> = node.out_ports.keys()
+        let port_packet_counts: HashMap<PortName, u64> = node
+            .out_ports
+            .keys()
             .map(|port_name| {
-                let count = self._packets_by_location
+                let count = self
+                    ._packets_by_location
                     .get(&PacketLocation::OutputPort(*epoch_id, port_name.clone()))
                     .map(|packets| packets.len() as u64)
                     .unwrap_or(0);
@@ -905,13 +1044,19 @@ impl Net {
             let packets = self._packets_by_location.get(&PacketLocation::OutputPort(*epoch_id, port_name.clone()))
                 .unwrap_or_else(|| panic!("Output port '{}' of node '{}' does not have an entry in self._packets_by_location", port_name, node.name.clone()))
                 .clone();
-            let edge_ref = if let Some(edge_ref) = self.graph.get_edge_by_tail(&PortRef { node_name: node.name.clone(), port_type: PortType::Output, port_name: port_name.clone() }) {
+            let edge_ref = if let Some(edge_ref) = self.graph.get_edge_by_tail(&PortRef {
+                node_name: node.name.clone(),
+                port_type: PortType::Output,
+                port_name: port_name.clone(),
+            }) {
                 edge_ref.clone()
             } else {
-                return NetActionResponse::Error(NetActionError::CannotPutPacketIntoUnconnectedOutputPort {
-                    port_name: port_name.clone(),
-                    node_name: node.name.clone(),
-                });
+                return NetActionResponse::Error(
+                    NetActionError::CannotPutPacketIntoUnconnectedOutputPort {
+                        port_name: port_name.clone(),
+                        node_name: node.name.clone(),
+                    },
+                );
             };
             let new_location = PacketLocation::Edge(edge_ref.clone());
             for packet_id in packets {
@@ -922,26 +1067,36 @@ impl Net {
         // Create a Salvo and add it to the epoch
         let salvo = Salvo {
             salvo_condition: salvo_condition_name.clone(),
-            packets: packets_to_move.iter().map(|(packet_id, port_name, _)| {
-                (port_name.clone(), *packet_id)
-            }).collect()
+            packets: packets_to_move
+                .iter()
+                .map(|(packet_id, port_name, _)| (port_name.clone(), *packet_id))
+                .collect(),
         };
-        self._epochs.get_mut(epoch_id).unwrap().out_salvos.push(salvo);
+        self._epochs
+            .get_mut(epoch_id)
+            .unwrap()
+            .out_salvos
+            .push(salvo);
 
         // Move packets
         let mut net_events = Vec::new();
         for (packet_id, _port_name, new_location) in packets_to_move {
-            net_events.push(NetEvent::PacketMoved(get_utc_now(), packet_id, new_location.clone()));
+            net_events.push(NetEvent::PacketMoved(
+                get_utc_now(),
+                packet_id,
+                new_location.clone(),
+            ));
             self.move_packet(&packet_id, new_location);
         }
 
-        NetActionResponse::Success(
-            NetActionResponseData::None,
-            net_events
-        )
+        NetActionResponse::Success(NetActionResponseData::None, net_events)
     }
 
-    fn transport_packet_to_location(&mut self, packet_id: &PacketID, destination: &PacketLocation) -> NetActionResponse {
+    fn transport_packet_to_location(
+        &mut self,
+        packet_id: &PacketID,
+        destination: &PacketLocation,
+    ) -> NetActionResponse {
         // Validate packet exists
         let packet = if let Some(p) = self._packets.get(packet_id) {
             p
@@ -956,21 +1111,27 @@ impl Net {
         match &current_location {
             PacketLocation::Node(epoch_id) => {
                 if let Some(epoch) = self._epochs.get(epoch_id)
-                    && epoch.state == EpochState::Running {
-                        return NetActionResponse::Error(NetActionError::CannotMovePacketFromRunningEpoch {
+                    && epoch.state == EpochState::Running
+                {
+                    return NetActionResponse::Error(
+                        NetActionError::CannotMovePacketFromRunningEpoch {
                             packet_id: *packet_id,
                             epoch_id: *epoch_id,
-                        });
-                    }
+                        },
+                    );
+                }
             }
             PacketLocation::OutputPort(epoch_id, _) => {
                 if let Some(epoch) = self._epochs.get(epoch_id)
-                    && epoch.state == EpochState::Running {
-                        return NetActionResponse::Error(NetActionError::CannotMovePacketFromRunningEpoch {
+                    && epoch.state == EpochState::Running
+                {
+                    return NetActionResponse::Error(
+                        NetActionError::CannotMovePacketFromRunningEpoch {
                             packet_id: *packet_id,
                             epoch_id: *epoch_id,
-                        });
-                    }
+                        },
+                    );
+                }
             }
             _ => {}
         }
@@ -980,10 +1141,12 @@ impl Net {
             PacketLocation::Node(epoch_id) => {
                 if let Some(epoch) = self._epochs.get(epoch_id) {
                     if epoch.state == EpochState::Running {
-                        return NetActionResponse::Error(NetActionError::CannotMovePacketIntoRunningEpoch {
-                            packet_id: *packet_id,
-                            epoch_id: *epoch_id,
-                        });
+                        return NetActionResponse::Error(
+                            NetActionError::CannotMovePacketIntoRunningEpoch {
+                                packet_id: *packet_id,
+                                epoch_id: *epoch_id,
+                            },
+                        );
                     }
                 } else {
                     return NetActionResponse::Error(NetActionError::EpochNotFound {
@@ -994,13 +1157,18 @@ impl Net {
             PacketLocation::OutputPort(epoch_id, port_name) => {
                 if let Some(epoch) = self._epochs.get(epoch_id) {
                     if epoch.state == EpochState::Running {
-                        return NetActionResponse::Error(NetActionError::CannotMovePacketIntoRunningEpoch {
-                            packet_id: *packet_id,
-                            epoch_id: *epoch_id,
-                        });
+                        return NetActionResponse::Error(
+                            NetActionError::CannotMovePacketIntoRunningEpoch {
+                                packet_id: *packet_id,
+                                epoch_id: *epoch_id,
+                            },
+                        );
                     }
                     // Check that output port exists on the node
-                    let node = self.graph.nodes().get(&epoch.node_name)
+                    let node = self
+                        .graph
+                        .nodes()
+                        .get(&epoch.node_name)
                         .expect("Node associated with epoch could not be found.");
                     if !node.out_ports.contains_key(port_name) {
                         return NetActionResponse::Error(NetActionError::OutputPortNotFound {
@@ -1033,7 +1201,8 @@ impl Net {
                     });
                 };
                 // Check capacity
-                let current_count = self._packets_by_location
+                let current_count = self
+                    ._packets_by_location
                     .get(destination)
                     .map(|s| s.len())
                     .unwrap_or(0);
@@ -1066,7 +1235,11 @@ impl Net {
 
         NetActionResponse::Success(
             NetActionResponseData::None,
-            vec![NetEvent::PacketMoved(get_utc_now(), *packet_id, destination.clone())]
+            vec![NetEvent::PacketMoved(
+                get_utc_now(),
+                *packet_id,
+                destination.clone(),
+            )],
         )
     }
 
@@ -1109,10 +1282,18 @@ impl Net {
             NetAction::StartEpoch(epoch_id) => self.start_epoch(epoch_id),
             NetAction::FinishEpoch(epoch_id) => self.finish_epoch(epoch_id),
             NetAction::CancelEpoch(epoch_id) => self.cancel_epoch(epoch_id),
-            NetAction::CreateAndStartEpoch(node_name, salvo) => self.create_and_start_epoch(node_name, salvo),
-            NetAction::LoadPacketIntoOutputPort(packet_id, port_name) => self.load_packet_into_output_port(packet_id, port_name),
-            NetAction::SendOutputSalvo(epoch_id, salvo_condition_name) => self.send_output_salvo(epoch_id, salvo_condition_name),
-            NetAction::TransportPacketToLocation(packet_id, location) => self.transport_packet_to_location(packet_id, location),
+            NetAction::CreateAndStartEpoch(node_name, salvo) => {
+                self.create_and_start_epoch(node_name, salvo)
+            }
+            NetAction::LoadPacketIntoOutputPort(packet_id, port_name) => {
+                self.load_packet_into_output_port(packet_id, port_name)
+            }
+            NetAction::SendOutputSalvo(epoch_id, salvo_condition_name) => {
+                self.send_output_salvo(epoch_id, salvo_condition_name)
+            }
+            NetAction::TransportPacketToLocation(packet_id, location) => {
+                self.transport_packet_to_location(packet_id, location)
+            }
         }
     }
 
@@ -1120,7 +1301,10 @@ impl Net {
 
     /// Get the number of packets at a given location.
     pub fn packet_count_at(&self, location: &PacketLocation) -> usize {
-        self._packets_by_location.get(location).map(|s| s.len()).unwrap_or(0)
+        self._packets_by_location
+            .get(location)
+            .map(|s| s.len())
+            .unwrap_or(0)
     }
 
     /// Get all packets at a given location.
@@ -1170,7 +1354,9 @@ mod tests {
     // Helper to extract epoch from start response
     fn get_started_epoch(response: &NetActionResponse) -> Epoch {
         match response {
-            NetActionResponse::Success(NetActionResponseData::StartedEpoch(epoch), _) => epoch.clone(),
+            NetActionResponse::Success(NetActionResponseData::StartedEpoch(epoch), _) => {
+                epoch.clone()
+            }
             _ => panic!("Expected StartedEpoch response, got: {:?}", response),
         }
     }
@@ -1183,7 +1369,10 @@ mod tests {
         let mut net = Net::new(graph);
 
         let response = net.do_action(&NetAction::CreatePacket(None));
-        assert!(matches!(response, NetActionResponse::Success(NetActionResponseData::Packet(_), _)));
+        assert!(matches!(
+            response,
+            NetActionResponse::Success(NetActionResponseData::Packet(_), _)
+        ));
     }
 
     #[test]
@@ -1196,7 +1385,10 @@ mod tests {
 
         // Consume it
         let response = net.do_action(&NetAction::ConsumePacket(packet_id));
-        assert!(matches!(response, NetActionResponse::Success(NetActionResponseData::None, _)));
+        assert!(matches!(
+            response,
+            NetActionResponse::Success(NetActionResponseData::None, _)
+        ));
     }
 
     #[test]
@@ -1206,7 +1398,10 @@ mod tests {
 
         let fake_id = Ulid::new();
         let response = net.do_action(&NetAction::ConsumePacket(fake_id));
-        assert!(matches!(response, NetActionResponse::Error(NetActionError::PacketNotFound { .. })));
+        assert!(matches!(
+            response,
+            NetActionResponse::Error(NetActionError::PacketNotFound { .. })
+        ));
     }
 
     // ========== Epoch Lifecycle Tests ==========
@@ -1234,8 +1429,14 @@ mod tests {
             },
         });
         net._packets.get_mut(&packet_id).unwrap().location = edge_location.clone();
-        net._packets_by_location.get_mut(&PacketLocation::OutsideNet).unwrap().shift_remove(&packet_id);
-        net._packets_by_location.get_mut(&edge_location).unwrap().insert(packet_id.clone());
+        net._packets_by_location
+            .get_mut(&PacketLocation::OutsideNet)
+            .unwrap()
+            .shift_remove(&packet_id);
+        net._packets_by_location
+            .get_mut(&edge_location)
+            .unwrap()
+            .insert(packet_id.clone());
 
         // Run until blocked - packet should move to input port and trigger epoch
         net.do_action(&NetAction::RunNetUntilBlocked);
@@ -1254,7 +1455,10 @@ mod tests {
 
         // Finish the epoch
         let response = net.do_action(&NetAction::FinishEpoch(epoch_id));
-        assert!(matches!(response, NetActionResponse::Success(NetActionResponseData::FinishedEpoch(_), _)));
+        assert!(matches!(
+            response,
+            NetActionResponse::Success(NetActionResponseData::FinishedEpoch(_), _)
+        ));
     }
 
     #[test]
@@ -1264,7 +1468,10 @@ mod tests {
 
         let fake_id = Ulid::new();
         let response = net.do_action(&NetAction::StartEpoch(fake_id));
-        assert!(matches!(response, NetActionResponse::Error(NetActionError::EpochNotFound { .. })));
+        assert!(matches!(
+            response,
+            NetActionResponse::Error(NetActionError::EpochNotFound { .. })
+        ));
     }
 
     #[test]
@@ -1279,19 +1486,30 @@ mod tests {
 
         let input_port_loc = PacketLocation::InputPort("B".to_string(), "in".to_string());
         net._packets.get_mut(&packet_id).unwrap().location = input_port_loc.clone();
-        net._packets_by_location.get_mut(&PacketLocation::OutsideNet).unwrap().shift_remove(&packet_id);
-        net._packets_by_location.get_mut(&input_port_loc).unwrap().insert(packet_id.clone());
+        net._packets_by_location
+            .get_mut(&PacketLocation::OutsideNet)
+            .unwrap()
+            .shift_remove(&packet_id);
+        net._packets_by_location
+            .get_mut(&input_port_loc)
+            .unwrap()
+            .insert(packet_id.clone());
 
         // Create and start epoch
         let salvo = Salvo {
             salvo_condition: "manual".to_string(),
             packets: vec![("in".to_string(), packet_id)],
         };
-        let epoch = get_started_epoch(&net.do_action(&NetAction::CreateAndStartEpoch("B".to_string(), salvo)));
+        let epoch = get_started_epoch(
+            &net.do_action(&NetAction::CreateAndStartEpoch("B".to_string(), salvo)),
+        );
 
         // Try to finish without consuming packet
         let response = net.do_action(&NetAction::FinishEpoch(epoch.id));
-        assert!(matches!(response, NetActionResponse::Error(NetActionError::CannotFinishNonEmptyEpoch { .. })));
+        assert!(matches!(
+            response,
+            NetActionResponse::Error(NetActionError::CannotFinishNonEmptyEpoch { .. })
+        ));
     }
 
     // ========== Cancel Epoch Tests ==========
@@ -1305,15 +1523,23 @@ mod tests {
         let packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
         let input_port_loc = PacketLocation::InputPort("B".to_string(), "in".to_string());
         net._packets.get_mut(&packet_id).unwrap().location = input_port_loc.clone();
-        net._packets_by_location.get_mut(&PacketLocation::OutsideNet).unwrap().shift_remove(&packet_id);
-        net._packets_by_location.get_mut(&input_port_loc).unwrap().insert(packet_id.clone());
+        net._packets_by_location
+            .get_mut(&PacketLocation::OutsideNet)
+            .unwrap()
+            .shift_remove(&packet_id);
+        net._packets_by_location
+            .get_mut(&input_port_loc)
+            .unwrap()
+            .insert(packet_id.clone());
 
         // Create and start epoch
         let salvo = Salvo {
             salvo_condition: "manual".to_string(),
             packets: vec![("in".to_string(), packet_id.clone())],
         };
-        let epoch = get_started_epoch(&net.do_action(&NetAction::CreateAndStartEpoch("B".to_string(), salvo)));
+        let epoch = get_started_epoch(
+            &net.do_action(&NetAction::CreateAndStartEpoch("B".to_string(), salvo)),
+        );
 
         // Cancel the epoch
         let response = net.do_action(&NetAction::CancelEpoch(epoch.id));
@@ -1351,8 +1577,14 @@ mod tests {
             },
         });
         net._packets.get_mut(&packet_id).unwrap().location = edge_location.clone();
-        net._packets_by_location.get_mut(&PacketLocation::OutsideNet).unwrap().shift_remove(&packet_id);
-        net._packets_by_location.get_mut(&edge_location).unwrap().insert(packet_id.clone());
+        net._packets_by_location
+            .get_mut(&PacketLocation::OutsideNet)
+            .unwrap()
+            .shift_remove(&packet_id);
+        net._packets_by_location
+            .get_mut(&edge_location)
+            .unwrap()
+            .insert(packet_id.clone());
 
         // Run until blocked
         net.do_action(&NetAction::RunNetUntilBlocked);
@@ -1365,24 +1597,26 @@ mod tests {
     fn test_run_until_blocked_respects_port_capacity() {
         // Create a graph where node B has finite capacity input port but NO salvo conditions
         // This tests that port capacity limits how many packets can wait at the input port
-        use std::collections::HashMap;
         use crate::graph::Node;
+        use std::collections::HashMap;
         let node_b = Node {
             name: "B".to_string(),
             in_ports: {
                 let mut ports = HashMap::new();
-                ports.insert("in".to_string(), Port { slots_spec: PortSlotSpec::Finite(1) });
+                ports.insert(
+                    "in".to_string(),
+                    Port {
+                        slots_spec: PortSlotSpec::Finite(1),
+                    },
+                );
                 ports
             },
             out_ports: HashMap::new(),
-            in_salvo_conditions: HashMap::new(),  // No salvo conditions = packets wait at input port
+            in_salvo_conditions: HashMap::new(), // No salvo conditions = packets wait at input port
             out_salvo_conditions: HashMap::new(),
         };
 
-        let nodes = vec![
-            simple_node("A", vec![], vec!["out"]),
-            node_b,
-        ];
+        let nodes = vec![simple_node("A", vec![], vec!["out"]), node_b];
         let edges = vec![edge("A", "out", "B", "in")];
         let graph = Graph::new(nodes, edges);
         let mut net = Net::new(graph);
@@ -1407,8 +1641,14 @@ mod tests {
         // Move both to edge
         for pid in [&packet1, &packet2] {
             net._packets.get_mut(pid).unwrap().location = edge_location.clone();
-            net._packets_by_location.get_mut(&PacketLocation::OutsideNet).unwrap().shift_remove(pid);
-            net._packets_by_location.get_mut(&edge_location).unwrap().insert(pid.clone());
+            net._packets_by_location
+                .get_mut(&PacketLocation::OutsideNet)
+                .unwrap()
+                .shift_remove(pid);
+            net._packets_by_location
+                .get_mut(&edge_location)
+                .unwrap()
+                .insert(pid.clone());
         }
 
         // Run until blocked - only first packet should move (capacity = 1)
@@ -1449,8 +1689,14 @@ mod tests {
         // Add to edge in order (packet1 first)
         for pid in [&packet1, &packet2, &packet3] {
             net._packets.get_mut(pid).unwrap().location = edge_location.clone();
-            net._packets_by_location.get_mut(&PacketLocation::OutsideNet).unwrap().shift_remove(pid);
-            net._packets_by_location.get_mut(&edge_location).unwrap().insert(pid.clone());
+            net._packets_by_location
+                .get_mut(&PacketLocation::OutsideNet)
+                .unwrap()
+                .shift_remove(pid);
+            net._packets_by_location
+                .get_mut(&edge_location)
+                .unwrap()
+                .insert(pid.clone());
         }
 
         // Run - each packet triggers its own epoch (default salvo condition)
@@ -1464,9 +1710,11 @@ mod tests {
 
         // Find the first PacketMoved event for each packet (when it moved from edge to input port)
         // The order of these events should match the FIFO order: packet1, packet2, packet3
-        let packet_move_order: Vec<PacketID> = events.iter()
+        let packet_move_order: Vec<PacketID> = events
+            .iter()
             .filter_map(|event| {
-                if let NetEvent::PacketMoved(_, packet_id, PacketLocation::InputPort(_, _)) = event {
+                if let NetEvent::PacketMoved(_, packet_id, PacketLocation::InputPort(_, _)) = event
+                {
                     Some(packet_id.clone())
                 } else {
                     None
@@ -1475,10 +1723,23 @@ mod tests {
             .collect();
 
         // We should have 3 packet moves to input ports, in FIFO order
-        assert_eq!(packet_move_order.len(), 3, "Expected 3 packets to move to input port");
-        assert_eq!(packet_move_order[0], packet1, "First packet to move should be packet1");
-        assert_eq!(packet_move_order[1], packet2, "Second packet to move should be packet2");
-        assert_eq!(packet_move_order[2], packet3, "Third packet to move should be packet3");
+        assert_eq!(
+            packet_move_order.len(),
+            3,
+            "Expected 3 packets to move to input port"
+        );
+        assert_eq!(
+            packet_move_order[0], packet1,
+            "First packet to move should be packet1"
+        );
+        assert_eq!(
+            packet_move_order[1], packet2,
+            "Second packet to move should be packet2"
+        );
+        assert_eq!(
+            packet_move_order[2], packet3,
+            "Third packet to move should be packet3"
+        );
     }
 
     // ========== Output Salvo Tests ==========
@@ -1492,19 +1753,33 @@ mod tests {
         let packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
         let input_port_loc = PacketLocation::InputPort("B".to_string(), "in".to_string());
         net._packets.get_mut(&packet_id).unwrap().location = input_port_loc.clone();
-        net._packets_by_location.get_mut(&PacketLocation::OutsideNet).unwrap().shift_remove(&packet_id);
-        net._packets_by_location.get_mut(&input_port_loc).unwrap().insert(packet_id.clone());
+        net._packets_by_location
+            .get_mut(&PacketLocation::OutsideNet)
+            .unwrap()
+            .shift_remove(&packet_id);
+        net._packets_by_location
+            .get_mut(&input_port_loc)
+            .unwrap()
+            .insert(packet_id.clone());
 
         // Create and start epoch
         let salvo = Salvo {
             salvo_condition: "manual".to_string(),
             packets: vec![("in".to_string(), packet_id.clone())],
         };
-        let epoch = get_started_epoch(&net.do_action(&NetAction::CreateAndStartEpoch("B".to_string(), salvo)));
+        let epoch = get_started_epoch(
+            &net.do_action(&NetAction::CreateAndStartEpoch("B".to_string(), salvo)),
+        );
 
         // Load packet into output port
-        let response = net.do_action(&NetAction::LoadPacketIntoOutputPort(packet_id.clone(), "out".to_string()));
-        assert!(matches!(response, NetActionResponse::Success(NetActionResponseData::None, _)));
+        let response = net.do_action(&NetAction::LoadPacketIntoOutputPort(
+            packet_id.clone(),
+            "out".to_string(),
+        ));
+        assert!(matches!(
+            response,
+            NetActionResponse::Success(NetActionResponseData::None, _)
+        ));
 
         // Packet should be at output port
         let output_loc = PacketLocation::OutputPort(epoch.id, "out".to_string());
@@ -1520,22 +1795,39 @@ mod tests {
         let packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
         let input_port_loc = PacketLocation::InputPort("B".to_string(), "in".to_string());
         net._packets.get_mut(&packet_id).unwrap().location = input_port_loc.clone();
-        net._packets_by_location.get_mut(&PacketLocation::OutsideNet).unwrap().shift_remove(&packet_id);
-        net._packets_by_location.get_mut(&input_port_loc).unwrap().insert(packet_id.clone());
+        net._packets_by_location
+            .get_mut(&PacketLocation::OutsideNet)
+            .unwrap()
+            .shift_remove(&packet_id);
+        net._packets_by_location
+            .get_mut(&input_port_loc)
+            .unwrap()
+            .insert(packet_id.clone());
 
         // Create and start epoch
         let salvo = Salvo {
             salvo_condition: "manual".to_string(),
             packets: vec![("in".to_string(), packet_id.clone())],
         };
-        let epoch = get_started_epoch(&net.do_action(&NetAction::CreateAndStartEpoch("B".to_string(), salvo)));
+        let epoch = get_started_epoch(
+            &net.do_action(&NetAction::CreateAndStartEpoch("B".to_string(), salvo)),
+        );
 
         // Load packet into output port
-        net.do_action(&NetAction::LoadPacketIntoOutputPort(packet_id.clone(), "out".to_string()));
+        net.do_action(&NetAction::LoadPacketIntoOutputPort(
+            packet_id.clone(),
+            "out".to_string(),
+        ));
 
         // Send output salvo
-        let response = net.do_action(&NetAction::SendOutputSalvo(epoch.id.clone(), "default".to_string()));
-        assert!(matches!(response, NetActionResponse::Success(NetActionResponseData::None, _)));
+        let response = net.do_action(&NetAction::SendOutputSalvo(
+            epoch.id.clone(),
+            "default".to_string(),
+        ));
+        assert!(matches!(
+            response,
+            NetActionResponse::Success(NetActionResponseData::None, _)
+        ));
 
         // Packet should now be on edge B->C
         let edge_loc = PacketLocation::Edge(Edge {
@@ -1564,15 +1856,23 @@ mod tests {
         let packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
         let input_port_loc = PacketLocation::InputPort("B".to_string(), "in".to_string());
         net._packets.get_mut(&packet_id).unwrap().location = input_port_loc.clone();
-        net._packets_by_location.get_mut(&PacketLocation::OutsideNet).unwrap().shift_remove(&packet_id);
-        net._packets_by_location.get_mut(&input_port_loc).unwrap().insert(packet_id.clone());
+        net._packets_by_location
+            .get_mut(&PacketLocation::OutsideNet)
+            .unwrap()
+            .shift_remove(&packet_id);
+        net._packets_by_location
+            .get_mut(&input_port_loc)
+            .unwrap()
+            .insert(packet_id.clone());
 
         // Create and start epoch manually
         let salvo = Salvo {
             salvo_condition: "manual".to_string(),
             packets: vec![("in".to_string(), packet_id.clone())],
         };
-        let epoch = get_started_epoch(&net.do_action(&NetAction::CreateAndStartEpoch("B".to_string(), salvo)));
+        let epoch = get_started_epoch(
+            &net.do_action(&NetAction::CreateAndStartEpoch("B".to_string(), salvo)),
+        );
 
         assert!(matches!(epoch.state, EpochState::Running));
         assert_eq!(epoch.node_name, "B");
@@ -1587,8 +1887,14 @@ mod tests {
             salvo_condition: "manual".to_string(),
             packets: vec![],
         };
-        let response = net.do_action(&NetAction::CreateAndStartEpoch("NonExistent".to_string(), salvo));
-        assert!(matches!(response, NetActionResponse::Error(NetActionError::NodeNotFound { .. })));
+        let response = net.do_action(&NetAction::CreateAndStartEpoch(
+            "NonExistent".to_string(),
+            salvo,
+        ));
+        assert!(matches!(
+            response,
+            NetActionResponse::Error(NetActionError::NodeNotFound { .. })
+        ));
     }
 
     #[test]
@@ -1604,6 +1910,9 @@ mod tests {
             packets: vec![("in".to_string(), packet_id)],
         };
         let response = net.do_action(&NetAction::CreateAndStartEpoch("B".to_string(), salvo));
-        assert!(matches!(response, NetActionResponse::Error(NetActionError::PacketNotAtInputPort { .. })));
+        assert!(matches!(
+            response,
+            NetActionResponse::Error(NetActionError::PacketNotAtInputPort { .. })
+        ));
     }
 }

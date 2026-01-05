@@ -172,7 +172,11 @@ impl Packet {
     }
 
     fn __repr__(&self) -> String {
-        format!("Packet(id='{}', location={})", self.id, self.location.__repr__())
+        format!(
+            "Packet(id='{}', location={})",
+            self.id,
+            self.location.__repr__()
+        )
     }
 }
 
@@ -396,7 +400,10 @@ impl NetAction {
         salvo_condition_name: String,
     ) -> PyResult<Self> {
         Ok(NetAction {
-            inner: NetActionKind::SendOutputSalvo(epoch_id.str()?.to_string(), salvo_condition_name),
+            inner: NetActionKind::SendOutputSalvo(
+                epoch_id.str()?.to_string(),
+                salvo_condition_name,
+            ),
         })
     }
 
@@ -429,7 +436,10 @@ impl NetAction {
                 format!("NetAction.create_and_start_epoch({:?}, ...)", name)
             }
             NetActionKind::LoadPacketIntoOutputPort(pid, port) => {
-                format!("NetAction.load_packet_into_output_port('{}', {:?})", pid, port)
+                format!(
+                    "NetAction.load_packet_into_output_port('{}', {:?})",
+                    pid, port
+                )
             }
             NetActionKind::SendOutputSalvo(eid, cond) => {
                 format!("NetAction.send_output_salvo('{}', {:?})", eid, cond)
@@ -485,9 +495,9 @@ impl NetAction {
                 })?;
                 Ok(CoreNetAction::CancelEpoch(ulid))
             }
-            NetActionKind::CreateAndStartEpoch(name, salvo) => {
-                Ok(CoreNetAction::CreateAndStartEpoch(name.clone(), salvo.to_core()))
-            }
+            NetActionKind::CreateAndStartEpoch(name, salvo) => Ok(
+                CoreNetAction::CreateAndStartEpoch(name.clone(), salvo.to_core()),
+            ),
             NetActionKind::LoadPacketIntoOutputPort(pid, port) => {
                 let ulid = ulid::Ulid::from_string(pid).map_err(|e| {
                     PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
@@ -504,7 +514,10 @@ impl NetAction {
                 let ulid = ulid::Ulid::from_string(pid).map_err(|e| {
                     PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
                 })?;
-                Ok(CoreNetAction::TransportPacketToLocation(ulid, loc.to_core()))
+                Ok(CoreNetAction::TransportPacketToLocation(
+                    ulid,
+                    loc.to_core(),
+                ))
             }
         }
     }
@@ -712,7 +725,11 @@ impl Net {
     /// Perform an action on the network.
     /// Returns (response_data, events) tuple on success.
     /// Raises an exception on error.
-    fn do_action(&mut self, py: Python<'_>, action: &NetAction) -> PyResult<(NetActionResponseData, Py<PyList>)> {
+    fn do_action(
+        &mut self,
+        py: Python<'_>,
+        action: &NetAction,
+    ) -> PyResult<(NetActionResponseData, Py<PyList>)> {
         let core_action = action.to_core()?;
         let response = self.inner.do_action(&core_action);
 
@@ -758,7 +775,11 @@ impl Net {
     }
 
     /// Get all packet IDs at a location.
-    fn get_packets_at_location(&self, py: Python<'_>, location: &PacketLocation) -> PyResult<Py<PyList>> {
+    fn get_packets_at_location(
+        &self,
+        py: Python<'_>,
+        location: &PacketLocation,
+    ) -> PyResult<Py<PyList>> {
         let packets = self.inner.get_packets_at_location(&location.to_core());
         let list = PyList::empty(py);
         for id in packets {

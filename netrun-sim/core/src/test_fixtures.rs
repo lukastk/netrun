@@ -3,8 +3,8 @@
 //! This module provides utilities for testing the netrun-sim library.
 
 use crate::graph::{
-    Edge, Node, Port, PortName, PortRef, PortSlotSpec, PortState, PortType,
-    SalvoCondition, SalvoConditionTerm, Graph,
+    Edge, Graph, Node, Port, PortName, PortRef, PortSlotSpec, PortState, PortType, SalvoCondition,
+    SalvoConditionTerm,
 };
 use std::collections::HashMap;
 
@@ -65,11 +65,7 @@ pub fn output_salvo_condition(port_names: Vec<&str>, max_salvos: u64) -> SalvoCo
 }
 
 /// Creates a simple node with specified input and output ports.
-pub fn simple_node(
-    name: &str,
-    in_ports: Vec<&str>,
-    out_ports: Vec<&str>,
-) -> Node {
+pub fn simple_node(name: &str, in_ports: Vec<&str>, out_ports: Vec<&str>) -> Node {
     let in_ports_map: HashMap<PortName, Port> = in_ports
         .iter()
         .map(|p| (p.to_string(), infinite_port()))
@@ -108,12 +104,7 @@ pub fn simple_node(
 }
 
 /// Creates an edge between two ports.
-pub fn edge(
-    source_node: &str,
-    source_port: &str,
-    target_node: &str,
-    target_port: &str,
-) -> Edge {
+pub fn edge(source_node: &str, source_port: &str, target_node: &str, target_port: &str) -> Edge {
     Edge {
         source: PortRef {
             node_name: source_node.to_string(),
@@ -138,10 +129,7 @@ pub fn linear_graph_3() -> Graph {
         simple_node("C", vec!["in"], vec![]),
     ];
 
-    let edges = vec![
-        edge("A", "out", "B", "in"),
-        edge("B", "out", "C", "in"),
-    ];
+    let edges = vec![edge("A", "out", "B", "in"), edge("B", "out", "C", "in")];
 
     Graph::new(nodes, edges)
 }
@@ -156,10 +144,7 @@ pub fn branching_graph() -> Graph {
         simple_node("C", vec!["in"], vec![]),
     ];
 
-    let edges = vec![
-        edge("A", "out1", "B", "in"),
-        edge("A", "out2", "C", "in"),
-    ];
+    let edges = vec![edge("A", "out1", "B", "in"), edge("A", "out2", "C", "in")];
 
     Graph::new(nodes, edges)
 }
@@ -174,10 +159,7 @@ pub fn merging_graph() -> Graph {
         simple_node("C", vec!["in1", "in2"], vec![]),
     ];
 
-    let edges = vec![
-        edge("A", "out", "C", "in1"),
-        edge("B", "out", "C", "in2"),
-    ];
+    let edges = vec![edge("A", "out", "C", "in1"), edge("B", "out", "C", "in2")];
 
     Graph::new(nodes, edges)
 }
