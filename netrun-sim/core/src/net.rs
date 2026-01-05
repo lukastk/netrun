@@ -323,14 +323,14 @@ impl Net {
     }
 
     fn move_packet(&mut self, packet_id: &PacketID, new_location: PacketLocation) {
-        let packet = self._packets.get_mut(&packet_id).unwrap();
+        let packet = self._packets.get_mut(packet_id).unwrap();
         let packets_at_old_location = self._packets_by_location.get_mut(&packet.location)
             .expect("Packet location has no entry in self._packets_by_location.");
         packets_at_old_location.shift_remove(packet_id);
         packet.location = new_location;
         if !self._packets_by_location.get_mut(&packet.location)
                 .expect("Packet location has no entry in self._packets_by_location")
-                .insert(packet_id.clone()) {
+                .insert(*packet_id) {
             panic!("Attempted to move packet to a location that already contains it.");
         }
     }
@@ -380,7 +380,7 @@ impl Net {
                         };
 
                         edge_candidates.push(EdgeMoveCandidate {
-                            packet_id: first_packet_id.clone(),
+                            packet_id: *first_packet_id,
                             target_node_name,
                             input_port_location,
                             can_move,
@@ -397,7 +397,7 @@ impl Net {
 
                 // Move the packet to the input port
                 self.move_packet(&candidate.packet_id, candidate.input_port_location.clone());
-                all_events.push(NetEvent::PacketMoved(get_utc_now(), candidate.packet_id.clone(), candidate.input_port_location.clone()));
+                all_events.push(NetEvent::PacketMoved(get_utc_now(), candidate.packet_id, candidate.input_port_location.clone()));
                 made_progress = true;
 
                 // Check input salvo conditions on the target node
@@ -454,8 +454,8 @@ impl Net {
                             let port_location = PacketLocation::InputPort(candidate.target_node_name.clone(), port_name.clone());
                             if let Some(packet_ids) = self._packets_by_location.get(&port_location) {
                                 for pid in packet_ids.iter() {
-                                    salvo_packets.push((port_name.clone(), pid.clone()));
-                                    packets_to_move.push((pid.clone(), port_name.clone()));
+                                    salvo_packets.push((port_name.clone(), *pid));
+                                    packets_to_move.push((*pid, port_name.clone()));
                                 }
                             }
                         }
@@ -468,7 +468,7 @@ impl Net {
 
                         // Create the epoch
                         let epoch = Epoch {
-                            id: epoch_id.clone(),
+                            id: epoch_id,
                             node_name: candidate.target_node_name.clone(),
                             in_salvo,
                             out_salvos: Vec::new(),
@@ -476,33 +476,33 @@ impl Net {
                         };
 
                         // Register the epoch
-                        self._epochs.insert(epoch_id.clone(), epoch);
-                        self._startable_epochs.insert(epoch_id.clone());
+                        self._epochs.insert(epoch_id, epoch);
+                        self._startable_epochs.insert(epoch_id);
                         self._node_to_epochs
                             .entry(candidate.target_node_name.clone())
-                            .or_insert_with(Vec::new)
-                            .push(epoch_id.clone());
+                            .or_default()
+                            .push(epoch_id);
 
                         // Create a location entry for packets inside the epoch
-                        let epoch_location = PacketLocation::Node(epoch_id.clone());
+                        let epoch_location = PacketLocation::Node(epoch_id);
                         self._packets_by_location.insert(epoch_location.clone(), IndexSet::new());
 
                         // Create output port location entries for this epoch
                         let node = self.graph.nodes().get(&candidate.target_node_name)
                             .expect("Node not found for epoch creation");
                         for port_name in node.out_ports.keys() {
-                            let output_port_location = PacketLocation::OutputPort(epoch_id.clone(), port_name.clone());
+                            let output_port_location = PacketLocation::OutputPort(epoch_id, port_name.clone());
                             self._packets_by_location.insert(output_port_location, IndexSet::new());
                         }
 
                         // Move packets from input ports into the epoch
                         for (pid, _port_name) in &packets_to_move {
                             self.move_packet(pid, epoch_location.clone());
-                            all_events.push(NetEvent::PacketMoved(get_utc_now(), pid.clone(), epoch_location.clone()));
+                            all_events.push(NetEvent::PacketMoved(get_utc_now(), *pid, epoch_location.clone()));
                         }
 
-                        all_events.push(NetEvent::EpochCreated(get_utc_now(), epoch_id.clone()));
-                        all_events.push(NetEvent::InputSalvoTriggered(get_utc_now(), epoch_id.clone(), salvo_cond_data.name.clone()));
+                        all_events.push(NetEvent::EpochCreated(get_utc_now(), epoch_id));
+                        all_events.push(NetEvent::InputSalvoTriggered(get_utc_now(), epoch_id, salvo_cond_data.name.clone()));
 
                         // Only one salvo condition can trigger per node per iteration
                         break;
@@ -522,20 +522,20 @@ impl Net {
     fn create_packet(&mut self, maybe_epoch_id: &Option<EpochID>) -> NetActionResponse {
         // Check that epoch_id exists and is running
         if let Some(epoch_id) = maybe_epoch_id {
-            if !self._epochs.contains_key(&epoch_id) {
+            if !self._epochs.contains_key(epoch_id) {
                 return NetActionResponse::Error(NetActionError::EpochNotFound {
-                    epoch_id: epoch_id.clone(),
+                    epoch_id: *epoch_id,
                 });
             }
-            if !matches!(self._epochs[&epoch_id].state, EpochState::Running) {
+            if !matches!(self._epochs[epoch_id].state, EpochState::Running) {
                 return NetActionResponse::Error(NetActionError::EpochNotRunning {
-                    epoch_id: epoch_id.clone(),
+                    epoch_id: *epoch_id,
                 });
             }
         }
 
         let packet_location = match maybe_epoch_id {
-            Some(epoch_id) => PacketLocation::Node(epoch_id.clone()),
+            Some(epoch_id) => PacketLocation::Node(*epoch_id),
             None => PacketLocation::OutsideNet,
         };
 
@@ -544,14 +544,14 @@ impl Net {
             location: packet_location.clone(),
         };
 
-        let packet_id = packet.id.clone();
-        self._packets.insert(packet.id.clone(), packet);
+        let packet_id = packet.id;
+        self._packets.insert(packet.id, packet);
 
         // Add packet to location index
         self._packets_by_location
             .entry(packet_location)
-            .or_insert_with(IndexSet::new)
-            .insert(packet_id.clone());
+            .or_default()
+            .insert(packet_id);
 
         NetActionResponse::Success(
             NetActionResponseData::Packet(packet_id),
@@ -562,7 +562,7 @@ impl Net {
     fn consume_packet(&mut self, packet_id: &PacketID) -> NetActionResponse {
         if !self._packets.contains_key(packet_id) {
             return NetActionResponse::Error(NetActionError::PacketNotFound {
-                packet_id: packet_id.clone(),
+                packet_id: *packet_id,
             });
         }
 
@@ -574,7 +574,7 @@ impl Net {
                 self._packets.remove(packet_id);
                 NetActionResponse::Success(
                     NetActionResponseData::None,
-                    vec![NetEvent::PacketConsumed(get_utc_now(), packet_id.clone())]
+                    vec![NetEvent::PacketConsumed(get_utc_now(), *packet_id)]
                 )
             } else {
                 panic!(
@@ -591,7 +591,7 @@ impl Net {
         if let Some(epoch) = self._epochs.get_mut(epoch_id) {
             if !self._startable_epochs.contains(epoch_id) {
                 return NetActionResponse::Error(NetActionError::EpochNotStartable {
-                    epoch_id: epoch_id.clone(),
+                    epoch_id: *epoch_id,
                 });
             }
             debug_assert!(matches!(epoch.state, EpochState::Startable),
@@ -600,46 +600,46 @@ impl Net {
             self._startable_epochs.remove(epoch_id);
             NetActionResponse::Success(
                 NetActionResponseData::StartedEpoch(epoch.clone()),
-                vec![NetEvent::EpochStarted(get_utc_now(), epoch_id.clone())]
+                vec![NetEvent::EpochStarted(get_utc_now(), *epoch_id)]
             )
         } else {
-            return NetActionResponse::Error(NetActionError::EpochNotFound {
-                epoch_id: epoch_id.clone(),
-            });
+            NetActionResponse::Error(NetActionError::EpochNotFound {
+                epoch_id: *epoch_id,
+            })
         }
     }
 
     fn finish_epoch(&mut self, epoch_id: &EpochID) -> NetActionResponse {
-        if let Some(epoch) = self._epochs.get(&epoch_id) {
+        if let Some(epoch) = self._epochs.get(epoch_id) {
             if let EpochState::Running = epoch.state {
                 // No packets may remain in the epoch by the time it has ended.
-                let epoch_loc = PacketLocation::Node(epoch_id.clone());
+                let epoch_loc = PacketLocation::Node(*epoch_id);
                 if let Some(packets) = self._packets_by_location.get(&epoch_loc) {
-                    if packets.len() > 0 {
+                    if !packets.is_empty() {
                         return NetActionResponse::Error(NetActionError::CannotFinishNonEmptyEpoch {
-                            epoch_id: epoch_id.clone(),
+                            epoch_id: *epoch_id,
                         });
                     }
 
-                    let mut epoch = self._epochs.remove(&epoch_id).unwrap();
+                    let mut epoch = self._epochs.remove(epoch_id).unwrap();
                     epoch.state = EpochState::Finished;
                     self._packets_by_location.remove(&epoch_loc);
                     NetActionResponse::Success(
                         NetActionResponseData::FinishedEpoch(epoch),
-                        vec![NetEvent::EpochFinished(get_utc_now(), epoch_id.clone())]
+                        vec![NetEvent::EpochFinished(get_utc_now(), *epoch_id)]
                     )
                 } else {
                     panic!("Epoch {} not found in location {:?}", epoch_id, epoch_loc);
                 }
             } else {
-                return NetActionResponse::Error(NetActionError::EpochNotRunning {
-                    epoch_id: epoch_id.clone(),
-                });
+                NetActionResponse::Error(NetActionError::EpochNotRunning {
+                    epoch_id: *epoch_id,
+                })
             }
         } else {
-            return NetActionResponse::Error(NetActionError::EpochNotFound {
-                epoch_id: epoch_id.clone(),
-            });
+            NetActionResponse::Error(NetActionError::EpochNotFound {
+                epoch_id: *epoch_id,
+            })
         }
     }
 
@@ -649,7 +649,7 @@ impl Net {
             epoch.clone()
         } else {
             return NetActionResponse::Error(NetActionError::EpochNotFound {
-                epoch_id: epoch_id.clone(),
+                epoch_id: *epoch_id,
             });
         };
 
@@ -657,7 +657,7 @@ impl Net {
         let mut destroyed_packets: Vec<PacketID> = Vec::new();
 
         // Collect packets inside the epoch (Node location)
-        let epoch_location = PacketLocation::Node(epoch_id.clone());
+        let epoch_location = PacketLocation::Node(*epoch_id);
         if let Some(packet_ids) = self._packets_by_location.get(&epoch_location) {
             destroyed_packets.extend(packet_ids.iter().cloned());
         }
@@ -666,7 +666,7 @@ impl Net {
         let node = self.graph.nodes().get(&epoch.node_name)
             .expect("Epoch references non-existent node");
         for port_name in node.out_ports.keys() {
-            let output_port_location = PacketLocation::OutputPort(epoch_id.clone(), port_name.clone());
+            let output_port_location = PacketLocation::OutputPort(*epoch_id, port_name.clone());
             if let Some(packet_ids) = self._packets_by_location.get(&output_port_location) {
                 destroyed_packets.extend(packet_ids.iter().cloned());
             }
@@ -679,12 +679,12 @@ impl Net {
             if let Some(packets_at_location) = self._packets_by_location.get_mut(&packet.location) {
                 packets_at_location.shift_remove(packet_id);
             }
-            events.push(NetEvent::PacketConsumed(get_utc_now(), packet_id.clone()));
+            events.push(NetEvent::PacketConsumed(get_utc_now(), *packet_id));
         }
 
         // Remove output port location entries for this epoch
         for port_name in node.out_ports.keys() {
-            let output_port_location = PacketLocation::OutputPort(epoch_id.clone(), port_name.clone());
+            let output_port_location = PacketLocation::OutputPort(*epoch_id, port_name.clone());
             self._packets_by_location.remove(&output_port_location);
         }
 
@@ -703,7 +703,7 @@ impl Net {
         let epoch = self._epochs.remove(epoch_id)
             .expect("Epoch should exist");
 
-        events.push(NetEvent::EpochCancelled(get_utc_now(), epoch_id.clone()));
+        events.push(NetEvent::EpochCancelled(get_utc_now(), *epoch_id));
 
         NetActionResponse::Success(
             NetActionResponseData::CancelledEpoch(epoch, destroyed_packets),
@@ -737,7 +737,7 @@ impl Net {
                 Some(packet) => packet,
                 None => {
                     return NetActionResponse::Error(NetActionError::PacketNotFound {
-                        packet_id: packet_id.clone(),
+                        packet_id: *packet_id,
                     });
                 }
             };
@@ -746,7 +746,7 @@ impl Net {
             let expected_location = PacketLocation::InputPort(node_name.clone(), port_name.clone());
             if packet.location != expected_location {
                 return NetActionResponse::Error(NetActionError::PacketNotAtInputPort {
-                    packet_id: packet_id.clone(),
+                    packet_id: *packet_id,
                     port_name: port_name.clone(),
                     node_name: node_name.clone(),
                 });
@@ -758,7 +758,7 @@ impl Net {
         // Create the epoch
         let epoch_id = Ulid::new();
         let epoch = Epoch {
-            id: epoch_id.clone(),
+            id: epoch_id,
             node_name: node_name.clone(),
             in_salvo: salvo.clone(),
             out_salvos: Vec::new(),
@@ -766,31 +766,31 @@ impl Net {
         };
 
         // Register the epoch
-        self._epochs.insert(epoch_id.clone(), epoch.clone());
+        self._epochs.insert(epoch_id, epoch.clone());
         self._node_to_epochs
             .entry(node_name.clone())
-            .or_insert_with(Vec::new)
-            .push(epoch_id.clone());
+            .or_default()
+            .push(epoch_id);
 
         // Create location entry for packets inside the epoch
-        let epoch_location = PacketLocation::Node(epoch_id.clone());
+        let epoch_location = PacketLocation::Node(epoch_id);
         self._packets_by_location.insert(epoch_location.clone(), IndexSet::new());
 
         // Create output port location entries for this epoch
         for port_name in node.out_ports.keys() {
-            let output_port_location = PacketLocation::OutputPort(epoch_id.clone(), port_name.clone());
+            let output_port_location = PacketLocation::OutputPort(epoch_id, port_name.clone());
             self._packets_by_location.insert(output_port_location, IndexSet::new());
         }
 
-        events.push(NetEvent::EpochCreated(get_utc_now(), epoch_id.clone()));
+        events.push(NetEvent::EpochCreated(get_utc_now(), epoch_id));
 
         // Move packets from input ports into the epoch
         for (_, packet_id) in &salvo.packets {
             self.move_packet(packet_id, epoch_location.clone());
-            events.push(NetEvent::PacketMoved(get_utc_now(), packet_id.clone(), epoch_location.clone()));
+            events.push(NetEvent::PacketMoved(get_utc_now(), *packet_id, epoch_location.clone()));
         }
 
-        events.push(NetEvent::EpochStarted(get_utc_now(), epoch_id.clone()));
+        events.push(NetEvent::EpochStarted(get_utc_now(), epoch_id));
 
         NetActionResponse::Success(
             NetActionResponseData::StartedEpoch(epoch),
@@ -806,13 +806,13 @@ impl Net {
                 // We don't know the epoch_id since the packet isn't in a node
                 // Use a placeholder - this is an edge case where we can't provide full context
                 return NetActionResponse::Error(NetActionError::PacketNotInNode {
-                    packet_id: packet_id.clone(),
+                    packet_id: *packet_id,
                     epoch_id: Ulid::nil(), // Placeholder since packet isn't in any epoch
                 })
             }
         } else {
             return NetActionResponse::Error(NetActionError::PacketNotFound {
-                packet_id: packet_id.clone(),
+                packet_id: *packet_id,
             });
         };
 
@@ -825,7 +825,7 @@ impl Net {
         if !node.out_ports.contains_key(port_name) {
             return NetActionResponse::Error(NetActionError::OutputPortNotFound {
                 port_name: port_name.clone(),
-                epoch_id: epoch_id.clone(),
+                epoch_id,
             })
         }
 
@@ -834,17 +834,16 @@ impl Net {
             .expect("No entry in Net._packets_by_location found for output port.");
 
         // Check if the output port is full
-        if let PortSlotSpec::Finite(num_slots) = port.slots_spec {
-            if num_slots >= port_packets.len() as u64 {
+        if let PortSlotSpec::Finite(num_slots) = port.slots_spec
+            && num_slots >= port_packets.len() as u64 {
                 return NetActionResponse::Error(NetActionError::OutputPortFull {
                     port_name: port_name.clone(),
-                    epoch_id: epoch_id.clone(),
+                    epoch_id,
                 })
             }
-        }
 
         let new_location = PacketLocation::OutputPort(epoch_id, port_name.clone());
-        self.move_packet(&packet_id, new_location.clone());
+        self.move_packet(packet_id, new_location.clone());
         NetActionResponse::Success(
             NetActionResponseData::None,
             vec![NetEvent::PacketMoved(get_utc_now(), epoch_id, new_location)]
@@ -857,7 +856,7 @@ impl Net {
             epoch
         } else {
             return NetActionResponse::Error(NetActionError::EpochNotFound {
-                epoch_id: epoch_id.clone(),
+                epoch_id: *epoch_id,
             });
         };
 
@@ -871,7 +870,7 @@ impl Net {
         } else {
             return NetActionResponse::Error(NetActionError::OutputSalvoConditionNotFound {
                 condition_name: salvo_condition_name.clone(),
-                epoch_id: epoch_id.clone(),
+                epoch_id: *epoch_id,
             });
         };
 
@@ -879,7 +878,7 @@ impl Net {
         if salvo_condition.max_salvos > 0 && epoch.out_salvos.len() as u64 >= salvo_condition.max_salvos {
             return NetActionResponse::Error(NetActionError::MaxOutputSalvosReached {
                 condition_name: salvo_condition_name.clone(),
-                epoch_id: epoch_id.clone(),
+                epoch_id: *epoch_id,
             });
         }
 
@@ -887,7 +886,7 @@ impl Net {
         let port_packet_counts: HashMap<PortName, u64> = node.out_ports.keys()
             .map(|port_name| {
                 let count = self._packets_by_location
-                    .get(&PacketLocation::OutputPort(epoch_id.clone(), port_name.clone()))
+                    .get(&PacketLocation::OutputPort(*epoch_id, port_name.clone()))
                     .map(|packets| packets.len() as u64)
                     .unwrap_or(0);
                 (port_name.clone(), count)
@@ -896,15 +895,15 @@ impl Net {
         if !evaluate_salvo_condition(&salvo_condition.term, &port_packet_counts, &node.out_ports) {
             return NetActionResponse::Error(NetActionError::SalvoConditionNotMet {
                 condition_name: salvo_condition_name.clone(),
-                epoch_id: epoch_id.clone(),
+                epoch_id: *epoch_id,
             });
         }
 
         // Get the locations to send packets to
         let mut packets_to_move: Vec<(PacketID, PortName, PacketLocation)> = Vec::new();
         for port_name in &salvo_condition.ports {
-            let packets = self._packets_by_location.get(&PacketLocation::OutputPort(epoch_id.clone(), port_name.clone()))
-                .expect(format!("Output port '{}' of node '{}' does not have an entry in self._packets_by_location", port_name, node.name.clone()).as_str())
+            let packets = self._packets_by_location.get(&PacketLocation::OutputPort(*epoch_id, port_name.clone()))
+                .unwrap_or_else(|| panic!("Output port '{}' of node '{}' does not have an entry in self._packets_by_location", port_name, node.name.clone()))
                 .clone();
             let edge_ref = if let Some(edge_ref) = self.graph.get_edge_by_tail(&PortRef { node_name: node.name.clone(), port_type: PortType::Output, port_name: port_name.clone() }) {
                 edge_ref.clone()
@@ -916,7 +915,7 @@ impl Net {
             };
             let new_location = PacketLocation::Edge(edge_ref.clone());
             for packet_id in packets {
-                packets_to_move.push((packet_id.clone(), port_name.clone(), new_location.clone()));
+                packets_to_move.push((packet_id, port_name.clone(), new_location.clone()));
             }
         }
 
@@ -924,15 +923,15 @@ impl Net {
         let salvo = Salvo {
             salvo_condition: salvo_condition_name.clone(),
             packets: packets_to_move.iter().map(|(packet_id, port_name, _)| {
-                (port_name.clone(), packet_id.clone())
+                (port_name.clone(), *packet_id)
             }).collect()
         };
-        self._epochs.get_mut(&epoch_id).unwrap().out_salvos.push(salvo);
+        self._epochs.get_mut(epoch_id).unwrap().out_salvos.push(salvo);
 
         // Move packets
         let mut net_events = Vec::new();
         for (packet_id, _port_name, new_location) in packets_to_move {
-            net_events.push(NetEvent::PacketMoved(get_utc_now(), packet_id.clone(), new_location.clone()));
+            net_events.push(NetEvent::PacketMoved(get_utc_now(), packet_id, new_location.clone()));
             self.move_packet(&packet_id, new_location);
         }
 
@@ -948,7 +947,7 @@ impl Net {
             p
         } else {
             return NetActionResponse::Error(NetActionError::PacketNotFound {
-                packet_id: packet_id.clone(),
+                packet_id: *packet_id,
             });
         };
         let current_location = packet.location.clone();
@@ -956,24 +955,22 @@ impl Net {
         // Check if moving FROM a running epoch
         match &current_location {
             PacketLocation::Node(epoch_id) => {
-                if let Some(epoch) = self._epochs.get(epoch_id) {
-                    if epoch.state == EpochState::Running {
+                if let Some(epoch) = self._epochs.get(epoch_id)
+                    && epoch.state == EpochState::Running {
                         return NetActionResponse::Error(NetActionError::CannotMovePacketFromRunningEpoch {
-                            packet_id: packet_id.clone(),
-                            epoch_id: epoch_id.clone(),
+                            packet_id: *packet_id,
+                            epoch_id: *epoch_id,
                         });
                     }
-                }
             }
             PacketLocation::OutputPort(epoch_id, _) => {
-                if let Some(epoch) = self._epochs.get(epoch_id) {
-                    if epoch.state == EpochState::Running {
+                if let Some(epoch) = self._epochs.get(epoch_id)
+                    && epoch.state == EpochState::Running {
                         return NetActionResponse::Error(NetActionError::CannotMovePacketFromRunningEpoch {
-                            packet_id: packet_id.clone(),
-                            epoch_id: epoch_id.clone(),
+                            packet_id: *packet_id,
+                            epoch_id: *epoch_id,
                         });
                     }
-                }
             }
             _ => {}
         }
@@ -984,13 +981,13 @@ impl Net {
                 if let Some(epoch) = self._epochs.get(epoch_id) {
                     if epoch.state == EpochState::Running {
                         return NetActionResponse::Error(NetActionError::CannotMovePacketIntoRunningEpoch {
-                            packet_id: packet_id.clone(),
-                            epoch_id: epoch_id.clone(),
+                            packet_id: *packet_id,
+                            epoch_id: *epoch_id,
                         });
                     }
                 } else {
                     return NetActionResponse::Error(NetActionError::EpochNotFound {
-                        epoch_id: epoch_id.clone(),
+                        epoch_id: *epoch_id,
                     });
                 }
             }
@@ -998,8 +995,8 @@ impl Net {
                 if let Some(epoch) = self._epochs.get(epoch_id) {
                     if epoch.state == EpochState::Running {
                         return NetActionResponse::Error(NetActionError::CannotMovePacketIntoRunningEpoch {
-                            packet_id: packet_id.clone(),
-                            epoch_id: epoch_id.clone(),
+                            packet_id: *packet_id,
+                            epoch_id: *epoch_id,
                         });
                     }
                     // Check that output port exists on the node
@@ -1008,12 +1005,12 @@ impl Net {
                     if !node.out_ports.contains_key(port_name) {
                         return NetActionResponse::Error(NetActionError::OutputPortNotFound {
                             port_name: port_name.clone(),
-                            epoch_id: epoch_id.clone(),
+                            epoch_id: *epoch_id,
                         });
                     }
                 } else {
                     return NetActionResponse::Error(NetActionError::EpochNotFound {
-                        epoch_id: epoch_id.clone(),
+                        epoch_id: *epoch_id,
                     });
                 }
             }
@@ -1069,7 +1066,7 @@ impl Net {
 
         NetActionResponse::Success(
             NetActionResponseData::None,
-            vec![NetEvent::PacketMoved(get_utc_now(), packet_id.clone(), destination.clone())]
+            vec![NetEvent::PacketMoved(get_utc_now(), *packet_id, destination.clone())]
         )
     }
 

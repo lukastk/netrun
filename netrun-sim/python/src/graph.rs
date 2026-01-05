@@ -294,7 +294,7 @@ impl Port {
     fn new(slots_spec: Option<&Bound<'_, PyAny>>) -> PyResult<Self> {
         let core_spec = match slots_spec {
             Some(obj) => {
-                if let Ok(_) = obj.extract::<PortSlotSpec>() {
+                if obj.extract::<PortSlotSpec>().is_ok() {
                     // It's PortSlotSpec.Infinite
                     CorePortSlotSpec::Infinite
                 } else if let Ok(finite) = obj.extract::<PyPortSlotSpecFinite>() {
