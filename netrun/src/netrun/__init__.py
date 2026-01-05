@@ -1,2 +1,3 @@
 
-from .graph import Port, SalvoConditionTerm, SalvoCondition, Node, Graph
+from netrun_sim import Port, SalvoConditionTerm, SalvoCondition, Edge
+from .graph import Node, Graph

@@ -1,9 +1,17 @@
+# ---
+# jupyter:
+#   kernelspec:
+#     display_name: .venv
+#     language: python
+#     name: python3
+# ---
+
 # %%
 #|default_exp graph
 
 # %%
 #|hide
-from nblite import nbl_export, show_doc; nbl_export()
+from nblite import nbl_export, show_doc; nbl_export();
 
 # %%
 #|export
@@ -11,8 +19,7 @@ from typing import Callable, Optional
 from dataclasses import dataclass
 
 import netrun_sim
-from netrun_sim import Port, SalvoConditionTerm, SalvoCondition
-
+from netrun_sim import Port, PortType, PortRef, SalvoConditionTerm, SalvoCondition, Edge
 
 # %%
 #|export
@@ -36,7 +43,6 @@ class Node:
             in_salvo_conditions=in_salvo_conditions,
             out_salvo_conditions=out_salvo_conditions,
         )
-
 
 # %%
 #|export
