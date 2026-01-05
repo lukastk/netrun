@@ -1,6 +1,6 @@
 export_pipeline = """
 nbs -> pts
-pts -> lib
+nbs -> lib
 """
 docs_cl='nbs'
 docs_title="netrun"
