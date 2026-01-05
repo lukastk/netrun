@@ -12,4 +12,5 @@ dependencies = [
 dev = [
     "jupyterlab>=4.5.1",
     "nblite>=0.6.10",
+    "pytest>=9.0.2",
 ]
