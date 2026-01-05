@@ -1,0 +1,174 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  # =============================================================================
+  # netrun-sim Rust library tests
+  # =============================================================================
+  netrun-sim-rust:
+    name: netrun-sim Rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: netrun-sim
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            netrun-sim/target
+          key: ${{ runner.os }}-cargo-${{ hashFiles('netrun-sim/**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-
+
+      - name: Run Rust tests
+        run: cargo test --workspace --all-features
+
+      - name: Run Rust lints
+        run: cargo clippy --workspace --all-features -- -D warnings
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+  # =============================================================================
+  # netrun-sim Python bindings tests
+  # =============================================================================
+  netrun-sim-python:
+    name: netrun-sim Python (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        working-directory: netrun-sim/python
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ['3.8', '3.11', '3.12']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('netrun-sim/**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+
+      - name: Build and verify import (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          python -m venv test-venv
+          source test-venv/bin/activate
+          pip install maturin
+          maturin develop --release
+          python -c "import netrun_sim; print('netrun-sim Python bindings OK')"
+        env:
+          PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
+
+      - name: Build and verify import (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          python -m venv test-venv
+          test-venv\Scripts\Activate.ps1
+          pip install maturin
+          maturin develop --release
+          python -c "import netrun_sim; print('netrun-sim Python bindings OK')"
+        env:
+          PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
+
+  # =============================================================================
+  # netrun pure Python package tests
+  # =============================================================================
+  netrun:
+    name: netrun (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    needs: [netrun-sim-python]  # netrun depends on netrun-sim
+    defaults:
+      run:
+        working-directory: netrun
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+        python-version: ['3.11', '3.12']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('netrun-sim/**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+
+      - name: Install netrun-sim from source and netrun (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          python -m venv test-venv
+          source test-venv/bin/activate
+          pip install maturin
+          cd ../netrun-sim/python && maturin develop --release
+          cd ../../netrun && pip install -e .
+          python -c "import netrun; print('netrun OK')"
+        env:
+          PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
+
+      - name: Install netrun-sim from source and netrun (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          python -m venv test-venv
+          test-venv\Scripts\Activate.ps1
+          pip install maturin
+          cd ../netrun-sim/python
+          maturin develop --release
+          cd ../../netrun
+          pip install -e .
+          python -c "import netrun; print('netrun OK')"
+        env:
+          PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
