@@ -4,8 +4,8 @@ mod common;
 
 use netrun_sim::graph::{Edge, PortRef, PortType};
 use netrun_sim::net::{
-    Epoch, Net, NetAction, NetActionError, NetActionResponse,
-    NetActionResponseData, NetEvent, PacketLocation, Salvo,
+    Epoch, Net, NetAction, NetActionError, NetActionResponse, NetActionResponseData, NetEvent,
+    PacketLocation, Salvo,
 };
 
 // ========== Helper Functions ==========
@@ -368,17 +368,18 @@ fn test_get_epoch() {
     // Create packet and transport to input port
     let packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
     let input_port_loc = PacketLocation::InputPort("B".to_string(), "in".to_string());
-    net.do_action(&NetAction::TransportPacketToLocation(packet_id.clone(), input_port_loc));
+    net.do_action(&NetAction::TransportPacketToLocation(
+        packet_id.clone(),
+        input_port_loc,
+    ));
 
     // Create and start epoch
     let salvo = Salvo {
         salvo_condition: "manual".to_string(),
         packets: vec![("in".to_string(), packet_id)],
     };
-    let epoch = get_started_epoch(&net.do_action(&NetAction::CreateAndStartEpoch(
-        "B".to_string(),
-        salvo,
-    )));
+    let epoch =
+        get_started_epoch(&net.do_action(&NetAction::CreateAndStartEpoch("B".to_string(), salvo)));
 
     // Should find the epoch
     let found_epoch = net.get_epoch(&epoch.id);
@@ -412,7 +413,10 @@ fn test_get_startable_epochs() {
             port_name: "in".to_string(),
         },
     });
-    net.do_action(&NetAction::TransportPacketToLocation(packet_id.clone(), edge_loc));
+    net.do_action(&NetAction::TransportPacketToLocation(
+        packet_id.clone(),
+        edge_loc,
+    ));
 
     // Run until blocked
     net.do_action(&NetAction::RunNetUntilBlocked);
@@ -462,7 +466,10 @@ fn test_transport_packet_to_location() {
 
     // Transport to input port
     let input_port = PacketLocation::InputPort("B".to_string(), "in".to_string());
-    let result = net.do_action(&NetAction::TransportPacketToLocation(packet_id.clone(), input_port.clone()));
+    let result = net.do_action(&NetAction::TransportPacketToLocation(
+        packet_id.clone(),
+        input_port.clone(),
+    ));
     assert!(matches!(result, NetActionResponse::Success(_, _)));
 
     // Verify packet is at new location
@@ -481,5 +488,8 @@ fn test_transport_packet_to_location_fails_for_nonexistent_packet() {
     let input_port = PacketLocation::InputPort("B".to_string(), "in".to_string());
 
     let result = net.do_action(&NetAction::TransportPacketToLocation(fake_id, input_port));
-    assert!(matches!(result, NetActionResponse::Error(NetActionError::PacketNotFound { .. })));
+    assert!(matches!(
+        result,
+        NetActionResponse::Error(NetActionError::PacketNotFound { .. })
+    ));
 }

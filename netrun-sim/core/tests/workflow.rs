@@ -4,8 +4,8 @@ mod common;
 
 use netrun_sim::graph::{Edge, PortRef, PortType};
 use netrun_sim::net::{
-    Epoch, EpochState, Net, NetAction, NetActionResponse, NetActionResponseData,
-    NetEvent, PacketLocation, Salvo,
+    Epoch, EpochState, Net, NetAction, NetActionResponse, NetActionResponseData, NetEvent,
+    PacketLocation, Salvo,
 };
 
 // ========== Helper Functions ==========
@@ -66,14 +66,21 @@ fn test_complete_linear_flow_a_to_b() {
 
     // 2. Transport packet to edge A->B
     let edge_a_b = PacketLocation::Edge(make_edge("A", "out", "B", "in"));
-    net.do_action(&NetAction::TransportPacketToLocation(packet_id.clone(), edge_a_b));
+    net.do_action(&NetAction::TransportPacketToLocation(
+        packet_id.clone(),
+        edge_a_b,
+    ));
 
     // 3. Run until blocked - packet should move to input port and trigger epoch
     let response = net.do_action(&NetAction::RunNetUntilBlocked);
     let events = get_events(&response);
 
     // Should have events: PacketMoved (to input port), PacketMoved (to node), EpochCreated, InputSalvoTriggered
-    assert!(events.iter().any(|e| matches!(e, NetEvent::EpochCreated(_, _))));
+    assert!(
+        events
+            .iter()
+            .any(|e| matches!(e, NetEvent::EpochCreated(_, _)))
+    );
 
     // 4. Find the startable epoch using public API
     let epoch_ids = net.get_startable_epochs();
@@ -88,7 +95,8 @@ fn test_complete_linear_flow_a_to_b() {
     net.do_action(&NetAction::ConsumePacket(packet_id));
 
     // 7. Finish the epoch
-    let finished = get_finished_epoch(&net.do_action(&NetAction::FinishEpoch(epoch_ids[0].clone())));
+    let finished =
+        get_finished_epoch(&net.do_action(&NetAction::FinishEpoch(epoch_ids[0].clone())));
     assert!(matches!(finished.state, EpochState::Finished));
 }
 
@@ -101,23 +109,25 @@ fn test_linear_flow_with_output_salvo() {
     // 1. Create packet and transport to B's input port
     let input_packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
     let input_port_loc = PacketLocation::InputPort("B".to_string(), "in".to_string());
-    net.do_action(&NetAction::TransportPacketToLocation(input_packet_id.clone(), input_port_loc));
+    net.do_action(&NetAction::TransportPacketToLocation(
+        input_packet_id.clone(),
+        input_port_loc,
+    ));
 
     // 2. Manually create and start epoch at B
     let salvo = Salvo {
         salvo_condition: "manual".to_string(),
         packets: vec![("in".to_string(), input_packet_id.clone())],
     };
-    let epoch = get_started_epoch(&net.do_action(&NetAction::CreateAndStartEpoch(
-        "B".to_string(),
-        salvo,
-    )));
+    let epoch =
+        get_started_epoch(&net.do_action(&NetAction::CreateAndStartEpoch("B".to_string(), salvo)));
 
     // 3. Consume input packet
     net.do_action(&NetAction::ConsumePacket(input_packet_id));
 
     // 4. Create output packet inside the epoch
-    let output_packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(Some(epoch.id.clone()))));
+    let output_packet_id =
+        get_packet_id(&net.do_action(&NetAction::CreatePacket(Some(epoch.id.clone()))));
 
     // 5. Load output packet into output port
     net.do_action(&NetAction::LoadPacketIntoOutputPort(
@@ -126,7 +136,10 @@ fn test_linear_flow_with_output_salvo() {
     ));
 
     // 6. Send output salvo
-    let response = net.do_action(&NetAction::SendOutputSalvo(epoch.id.clone(), "default".to_string()));
+    let response = net.do_action(&NetAction::SendOutputSalvo(
+        epoch.id.clone(),
+        "default".to_string(),
+    ));
     assert!(matches!(response, NetActionResponse::Success(_, _)));
 
     // 7. Verify packet is now on edge B->C using public API
@@ -152,8 +165,14 @@ fn test_branching_flow() {
     let edge_a_b = PacketLocation::Edge(make_edge("A", "out1", "B", "in"));
     let edge_a_c = PacketLocation::Edge(make_edge("A", "out2", "C", "in"));
 
-    net.do_action(&NetAction::TransportPacketToLocation(packet1.clone(), edge_a_b));
-    net.do_action(&NetAction::TransportPacketToLocation(packet2.clone(), edge_a_c));
+    net.do_action(&NetAction::TransportPacketToLocation(
+        packet1.clone(),
+        edge_a_b,
+    ));
+    net.do_action(&NetAction::TransportPacketToLocation(
+        packet2.clone(),
+        edge_a_c,
+    ));
 
     // Run until blocked
     net.do_action(&NetAction::RunNetUntilBlocked);
@@ -182,7 +201,10 @@ fn test_merging_flow_both_inputs_required() {
     // Place packet only on edge A->C
     let packet1 = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
     let edge_a_c = PacketLocation::Edge(make_edge("A", "out", "C", "in1"));
-    net.do_action(&NetAction::TransportPacketToLocation(packet1.clone(), edge_a_c));
+    net.do_action(&NetAction::TransportPacketToLocation(
+        packet1.clone(),
+        edge_a_c,
+    ));
 
     // Run until blocked
     net.do_action(&NetAction::RunNetUntilBlocked);
@@ -194,7 +216,10 @@ fn test_merging_flow_both_inputs_required() {
     // Now add packet from B
     let packet2 = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
     let edge_b_c = PacketLocation::Edge(make_edge("B", "out", "C", "in2"));
-    net.do_action(&NetAction::TransportPacketToLocation(packet2.clone(), edge_b_c));
+    net.do_action(&NetAction::TransportPacketToLocation(
+        packet2.clone(),
+        edge_b_c,
+    ));
 
     // Run again
     net.do_action(&NetAction::RunNetUntilBlocked);
@@ -221,8 +246,14 @@ fn test_diamond_flow_synchronization() {
     let edge_a_b = PacketLocation::Edge(make_edge("A", "out1", "B", "in"));
     let edge_a_c = PacketLocation::Edge(make_edge("A", "out2", "C", "in"));
 
-    net.do_action(&NetAction::TransportPacketToLocation(packet1.clone(), edge_a_b));
-    net.do_action(&NetAction::TransportPacketToLocation(packet2.clone(), edge_a_c));
+    net.do_action(&NetAction::TransportPacketToLocation(
+        packet1.clone(),
+        edge_a_b,
+    ));
+    net.do_action(&NetAction::TransportPacketToLocation(
+        packet2.clone(),
+        edge_a_c,
+    ));
 
     // Run until blocked
     net.do_action(&NetAction::RunNetUntilBlocked);
@@ -250,30 +281,42 @@ fn test_cancel_epoch_workflow() {
     // Create and transport packet
     let packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
     let input_port_loc = PacketLocation::InputPort("B".to_string(), "in".to_string());
-    net.do_action(&NetAction::TransportPacketToLocation(packet_id.clone(), input_port_loc));
+    net.do_action(&NetAction::TransportPacketToLocation(
+        packet_id.clone(),
+        input_port_loc,
+    ));
 
     // Create and start epoch
     let salvo = Salvo {
         salvo_condition: "manual".to_string(),
         packets: vec![("in".to_string(), packet_id.clone())],
     };
-    let epoch = get_started_epoch(&net.do_action(&NetAction::CreateAndStartEpoch(
-        "B".to_string(),
-        salvo,
-    )));
+    let epoch =
+        get_started_epoch(&net.do_action(&NetAction::CreateAndStartEpoch("B".to_string(), salvo)));
 
     // Cancel the epoch
     let response = net.do_action(&NetAction::CancelEpoch(epoch.id));
 
     match response {
-        NetActionResponse::Success(NetActionResponseData::CancelledEpoch(cancelled, destroyed), events) => {
+        NetActionResponse::Success(
+            NetActionResponseData::CancelledEpoch(cancelled, destroyed),
+            events,
+        ) => {
             assert_eq!(cancelled.id, epoch.id);
             assert_eq!(destroyed.len(), 1);
             assert_eq!(destroyed[0], packet_id);
 
             // Should have events for packet consumption and epoch cancellation
-            assert!(events.iter().any(|e| matches!(e, NetEvent::PacketConsumed(_, _))));
-            assert!(events.iter().any(|e| matches!(e, NetEvent::EpochCancelled(_, _))));
+            assert!(
+                events
+                    .iter()
+                    .any(|e| matches!(e, NetEvent::PacketConsumed(_, _)))
+            );
+            assert!(
+                events
+                    .iter()
+                    .any(|e| matches!(e, NetEvent::EpochCancelled(_, _)))
+            );
         }
         _ => panic!("Expected CancelledEpoch response"),
     }
@@ -292,32 +335,34 @@ fn test_multiple_sequential_epochs_on_same_node() {
     // Process first packet through B
     let packet1 = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
     let input_port_loc = PacketLocation::InputPort("B".to_string(), "in".to_string());
-    net.do_action(&NetAction::TransportPacketToLocation(packet1.clone(), input_port_loc.clone()));
+    net.do_action(&NetAction::TransportPacketToLocation(
+        packet1.clone(),
+        input_port_loc.clone(),
+    ));
 
     let salvo1 = Salvo {
         salvo_condition: "manual".to_string(),
         packets: vec![("in".to_string(), packet1.clone())],
     };
-    let epoch1 = get_started_epoch(&net.do_action(&NetAction::CreateAndStartEpoch(
-        "B".to_string(),
-        salvo1,
-    )));
+    let epoch1 =
+        get_started_epoch(&net.do_action(&NetAction::CreateAndStartEpoch("B".to_string(), salvo1)));
 
     net.do_action(&NetAction::ConsumePacket(packet1));
     net.do_action(&NetAction::FinishEpoch(epoch1.id));
 
     // Process second packet through B
     let packet2 = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
-    net.do_action(&NetAction::TransportPacketToLocation(packet2.clone(), input_port_loc));
+    net.do_action(&NetAction::TransportPacketToLocation(
+        packet2.clone(),
+        input_port_loc,
+    ));
 
     let salvo2 = Salvo {
         salvo_condition: "manual".to_string(),
         packets: vec![("in".to_string(), packet2.clone())],
     };
-    let epoch2 = get_started_epoch(&net.do_action(&NetAction::CreateAndStartEpoch(
-        "B".to_string(),
-        salvo2,
-    )));
+    let epoch2 =
+        get_started_epoch(&net.do_action(&NetAction::CreateAndStartEpoch("B".to_string(), salvo2)));
 
     // Second epoch should be on same node
     assert_eq!(epoch2.node_name, "B");
@@ -341,7 +386,10 @@ fn test_packet_location_tracking() {
 
     // Transport to edge
     let edge_loc = PacketLocation::Edge(make_edge("A", "out", "B", "in"));
-    net.do_action(&NetAction::TransportPacketToLocation(packet_id.clone(), edge_loc.clone()));
+    net.do_action(&NetAction::TransportPacketToLocation(
+        packet_id.clone(),
+        edge_loc.clone(),
+    ));
 
     // Verify location updated
     let packet = net.get_packet(&packet_id).unwrap();
@@ -369,7 +417,10 @@ fn test_get_packets_at_location() {
 
     // Move one to edge
     let edge_loc = PacketLocation::Edge(make_edge("A", "out", "B", "in"));
-    net.do_action(&NetAction::TransportPacketToLocation(packet1.clone(), edge_loc.clone()));
+    net.do_action(&NetAction::TransportPacketToLocation(
+        packet1.clone(),
+        edge_loc.clone(),
+    ));
 
     // Verify locations
     let outside_packets = net.get_packets_at_location(&PacketLocation::OutsideNet);

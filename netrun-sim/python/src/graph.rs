@@ -6,9 +6,9 @@ use crate::errors::GraphValidationError as PyGraphValidationError;
 
 // Re-export core types for internal use
 use netrun_sim::graph::{
-    Edge as CoreEdge, Graph as CoreGraph, Node as CoreNode,
-    Port as CorePort, PortName, PortRef as CorePortRef, PortSlotSpec as CorePortSlotSpec,
-    PortState as CorePortState, PortType as CorePortType, SalvoCondition as CoreSalvoCondition,
+    Edge as CoreEdge, Graph as CoreGraph, Node as CoreNode, Port as CorePort, PortName,
+    PortRef as CorePortRef, PortSlotSpec as CorePortSlotSpec, PortState as CorePortState,
+    PortType as CorePortType, SalvoCondition as CoreSalvoCondition,
     SalvoConditionTerm as CoreSalvoConditionTerm,
 };
 
@@ -317,10 +317,14 @@ impl Port {
     #[getter]
     fn slots_spec(&self, py: Python<'_>) -> PyResult<PyObject> {
         match &self.inner.slots_spec {
-            CorePortSlotSpec::Infinite => Ok(PortSlotSpec::Infinite.into_pyobject(py)?.unbind().into_any()),
-            CorePortSlotSpec::Finite(n) => {
-                Ok(PyPortSlotSpecFinite { capacity: *n }.into_pyobject(py)?.unbind().into_any())
-            }
+            CorePortSlotSpec::Infinite => Ok(PortSlotSpec::Infinite
+                .into_pyobject(py)?
+                .unbind()
+                .into_any()),
+            CorePortSlotSpec::Finite(n) => Ok(PyPortSlotSpecFinite { capacity: *n }
+                .into_pyobject(py)?
+                .unbind()
+                .into_any()),
         }
     }
 
@@ -464,7 +468,11 @@ impl Edge {
     }
 
     fn __repr__(&self) -> String {
-        format!("Edge({}, {})", self.source.__repr__(), self.target.__repr__())
+        format!(
+            "Edge({}, {})",
+            self.source.__repr__(),
+            self.target.__repr__()
+        )
     }
 
     fn __str__(&self) -> String {
@@ -669,10 +677,7 @@ impl Graph {
     #[new]
     fn new(nodes: Vec<Node>, edges: Vec<Edge>) -> Self {
         let core_nodes: Vec<CoreNode> = nodes.into_iter().map(|n| n.to_core()).collect();
-        let core_edges: Vec<CoreEdge> = edges
-            .into_iter()
-            .map(|e| e.to_core())
-            .collect();
+        let core_edges: Vec<CoreEdge> = edges.into_iter().map(|e| e.to_core()).collect();
         Graph {
             inner: CoreGraph::new(core_nodes, core_edges),
         }

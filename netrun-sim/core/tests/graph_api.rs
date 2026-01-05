@@ -3,9 +3,8 @@
 mod common;
 
 use netrun_sim::graph::{
-    Graph, GraphValidationError, Port, PortRef,
-    PortSlotSpec, PortType, SalvoConditionTerm, PortState,
-    evaluate_salvo_condition,
+    Graph, GraphValidationError, Port, PortRef, PortSlotSpec, PortState, PortType,
+    SalvoConditionTerm, evaluate_salvo_condition,
 };
 use std::collections::HashMap;
 
@@ -156,7 +155,12 @@ fn test_validation_error_display() {
 #[test]
 fn test_evaluate_salvo_condition_non_empty() {
     let mut ports = HashMap::new();
-    ports.insert("in".to_string(), Port { slots_spec: PortSlotSpec::Infinite });
+    ports.insert(
+        "in".to_string(),
+        Port {
+            slots_spec: PortSlotSpec::Infinite,
+        },
+    );
 
     let condition = SalvoConditionTerm::Port {
         port_name: "in".to_string(),
@@ -176,7 +180,12 @@ fn test_evaluate_salvo_condition_non_empty() {
 #[test]
 fn test_evaluate_salvo_condition_empty() {
     let mut ports = HashMap::new();
-    ports.insert("in".to_string(), Port { slots_spec: PortSlotSpec::Infinite });
+    ports.insert(
+        "in".to_string(),
+        Port {
+            slots_spec: PortSlotSpec::Infinite,
+        },
+    );
 
     let condition = SalvoConditionTerm::Port {
         port_name: "in".to_string(),
@@ -194,7 +203,12 @@ fn test_evaluate_salvo_condition_empty() {
 #[test]
 fn test_evaluate_salvo_condition_full() {
     let mut ports = HashMap::new();
-    ports.insert("in".to_string(), Port { slots_spec: PortSlotSpec::Finite(3) });
+    ports.insert(
+        "in".to_string(),
+        Port {
+            slots_spec: PortSlotSpec::Finite(3),
+        },
+    );
 
     let condition = SalvoConditionTerm::Port {
         port_name: "in".to_string(),
@@ -215,8 +229,18 @@ fn test_evaluate_salvo_condition_full() {
 #[test]
 fn test_evaluate_salvo_condition_and() {
     let mut ports = HashMap::new();
-    ports.insert("in1".to_string(), Port { slots_spec: PortSlotSpec::Infinite });
-    ports.insert("in2".to_string(), Port { slots_spec: PortSlotSpec::Infinite });
+    ports.insert(
+        "in1".to_string(),
+        Port {
+            slots_spec: PortSlotSpec::Infinite,
+        },
+    );
+    ports.insert(
+        "in2".to_string(),
+        Port {
+            slots_spec: PortSlotSpec::Infinite,
+        },
+    );
 
     let condition = SalvoConditionTerm::And(vec![
         SalvoConditionTerm::Port {
@@ -244,8 +268,18 @@ fn test_evaluate_salvo_condition_and() {
 #[test]
 fn test_evaluate_salvo_condition_or() {
     let mut ports = HashMap::new();
-    ports.insert("in1".to_string(), Port { slots_spec: PortSlotSpec::Infinite });
-    ports.insert("in2".to_string(), Port { slots_spec: PortSlotSpec::Infinite });
+    ports.insert(
+        "in1".to_string(),
+        Port {
+            slots_spec: PortSlotSpec::Infinite,
+        },
+    );
+    ports.insert(
+        "in2".to_string(),
+        Port {
+            slots_spec: PortSlotSpec::Infinite,
+        },
+    );
 
     let condition = SalvoConditionTerm::Or(vec![
         SalvoConditionTerm::Port {
@@ -273,7 +307,12 @@ fn test_evaluate_salvo_condition_or() {
 #[test]
 fn test_evaluate_salvo_condition_not() {
     let mut ports = HashMap::new();
-    ports.insert("in".to_string(), Port { slots_spec: PortSlotSpec::Infinite });
+    ports.insert(
+        "in".to_string(),
+        Port {
+            slots_spec: PortSlotSpec::Infinite,
+        },
+    );
 
     let condition = SalvoConditionTerm::Not(Box::new(SalvoConditionTerm::Port {
         port_name: "in".to_string(),

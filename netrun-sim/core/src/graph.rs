@@ -109,12 +109,12 @@ pub fn evaluate_salvo_condition(
                 PortState::EqualsOrGreaterThan(n) => count >= *n,
             }
         }
-        SalvoConditionTerm::And(terms) => {
-            terms.iter().all(|t| evaluate_salvo_condition(t, port_packet_counts, ports))
-        }
-        SalvoConditionTerm::Or(terms) => {
-            terms.iter().any(|t| evaluate_salvo_condition(t, port_packet_counts, ports))
-        }
+        SalvoConditionTerm::And(terms) => terms
+            .iter()
+            .all(|t| evaluate_salvo_condition(t, port_packet_counts, ports)),
+        SalvoConditionTerm::Or(terms) => terms
+            .iter()
+            .any(|t| evaluate_salvo_condition(t, port_packet_counts, ports)),
         SalvoConditionTerm::Not(inner) => {
             !evaluate_salvo_condition(inner, port_packet_counts, ports)
         }
@@ -204,7 +204,9 @@ pub enum GraphValidationError {
         missing_port: PortName,
     },
     /// Input salvo condition has max_salvos != 1
-    #[error("input salvo condition '{condition_name}' on node '{node_name}' has max_salvos={max_salvos}, but must be 1")]
+    #[error(
+        "input salvo condition '{condition_name}' on node '{node_name}' has max_salvos={max_salvos}, but must be 1"
+    )]
     InputSalvoConditionInvalidMaxSalvos {
         node_name: NodeName,
         condition_name: SalvoConditionName,
@@ -364,10 +366,14 @@ impl Graph {
     }
 
     /// Returns a reference to all nodes in the graph, keyed by name.
-    pub fn nodes(&self) -> &HashMap<NodeName, Node> { &self.nodes }
+    pub fn nodes(&self) -> &HashMap<NodeName, Node> {
+        &self.nodes
+    }
 
     /// Returns a reference to all edges in the graph.
-    pub fn edges(&self) -> &HashSet<Edge> { &self.edges }
+    pub fn edges(&self) -> &HashSet<Edge> {
+        &self.edges
+    }
 
     /// Returns the edge that has the given output port as its source (tail).
     pub fn get_edge_by_tail(&self, output_port_ref: &PortRef) -> Option<&Edge> {
@@ -473,12 +479,14 @@ impl Graph {
                 // Validate ports in condition.ports exist as input ports
                 for port_name in &condition.ports {
                     if !node.in_ports.contains_key(port_name) {
-                        errors.push(GraphValidationError::SalvoConditionReferencesNonexistentPort {
-                            node_name: node_name.clone(),
-                            condition_name: cond_name.clone(),
-                            is_input_condition: true,
-                            missing_port: port_name.clone(),
-                        });
+                        errors.push(
+                            GraphValidationError::SalvoConditionReferencesNonexistentPort {
+                                node_name: node_name.clone(),
+                                condition_name: cond_name.clone(),
+                                is_input_condition: true,
+                                missing_port: port_name.clone(),
+                            },
+                        );
                     }
                 }
 
@@ -487,12 +495,14 @@ impl Graph {
                 collect_ports_from_term(&condition.term, &mut term_ports);
                 for port_name in term_ports {
                     if !node.in_ports.contains_key(&port_name) {
-                        errors.push(GraphValidationError::SalvoConditionTermReferencesNonexistentPort {
-                            node_name: node_name.clone(),
-                            condition_name: cond_name.clone(),
-                            is_input_condition: true,
-                            missing_port: port_name,
-                        });
+                        errors.push(
+                            GraphValidationError::SalvoConditionTermReferencesNonexistentPort {
+                                node_name: node_name.clone(),
+                                condition_name: cond_name.clone(),
+                                is_input_condition: true,
+                                missing_port: port_name,
+                            },
+                        );
                     }
                 }
             }
@@ -502,12 +512,14 @@ impl Graph {
                 // Validate ports in condition.ports exist as output ports
                 for port_name in &condition.ports {
                     if !node.out_ports.contains_key(port_name) {
-                        errors.push(GraphValidationError::SalvoConditionReferencesNonexistentPort {
-                            node_name: node_name.clone(),
-                            condition_name: cond_name.clone(),
-                            is_input_condition: false,
-                            missing_port: port_name.clone(),
-                        });
+                        errors.push(
+                            GraphValidationError::SalvoConditionReferencesNonexistentPort {
+                                node_name: node_name.clone(),
+                                condition_name: cond_name.clone(),
+                                is_input_condition: false,
+                                missing_port: port_name.clone(),
+                            },
+                        );
                     }
                 }
 
@@ -516,12 +528,14 @@ impl Graph {
                 collect_ports_from_term(&condition.term, &mut term_ports);
                 for port_name in term_ports {
                     if !node.out_ports.contains_key(&port_name) {
-                        errors.push(GraphValidationError::SalvoConditionTermReferencesNonexistentPort {
-                            node_name: node_name.clone(),
-                            condition_name: cond_name.clone(),
-                            is_input_condition: false,
-                            missing_port: port_name,
-                        });
+                        errors.push(
+                            GraphValidationError::SalvoConditionTermReferencesNonexistentPort {
+                                node_name: node_name.clone(),
+                                condition_name: cond_name.clone(),
+                                is_input_condition: false,
+                                missing_port: port_name,
+                            },
+                        );
                     }
                 }
             }
@@ -537,7 +551,9 @@ mod tests {
 
     // Helper functions for tests
     fn simple_port() -> Port {
-        Port { slots_spec: PortSlotSpec::Infinite }
+        Port {
+            slots_spec: PortSlotSpec::Infinite,
+        }
     }
 
     fn simple_node(name: &str, in_ports: Vec<&str>, out_ports: Vec<&str>) -> Node {
@@ -605,9 +621,7 @@ mod tests {
 
     #[test]
     fn test_edge_references_nonexistent_source_node() {
-        let nodes = vec![
-            simple_node("B", vec!["in"], vec![]),
-        ];
+        let nodes = vec![simple_node("B", vec!["in"], vec![])];
         // Edge from nonexistent node "A"
         let edges = vec![edge("A", "out", "B", "in")];
         let graph = Graph::new(nodes, edges);
@@ -618,15 +632,16 @@ mod tests {
             GraphValidationError::EdgeReferencesNonexistentNode { missing_node, .. } => {
                 assert_eq!(missing_node, "A");
             }
-            _ => panic!("Expected EdgeReferencesNonexistentNode, got: {:?}", errors[0]),
+            _ => panic!(
+                "Expected EdgeReferencesNonexistentNode, got: {:?}",
+                errors[0]
+            ),
         }
     }
 
     #[test]
     fn test_edge_references_nonexistent_target_node() {
-        let nodes = vec![
-            simple_node("A", vec![], vec!["out"]),
-        ];
+        let nodes = vec![simple_node("A", vec![], vec!["out"])];
         // Edge to nonexistent node "B"
         let edges = vec![edge("A", "out", "B", "in")];
         let graph = Graph::new(nodes, edges);
@@ -637,7 +652,10 @@ mod tests {
             GraphValidationError::EdgeReferencesNonexistentNode { missing_node, .. } => {
                 assert_eq!(missing_node, "B");
             }
-            _ => panic!("Expected EdgeReferencesNonexistentNode, got: {:?}", errors[0]),
+            _ => panic!(
+                "Expected EdgeReferencesNonexistentNode, got: {:?}",
+                errors[0]
+            ),
         }
     }
 
@@ -657,7 +675,10 @@ mod tests {
             GraphValidationError::EdgeReferencesNonexistentPort { missing_port, .. } => {
                 assert_eq!(missing_port.port_name, "wrong_port");
             }
-            _ => panic!("Expected EdgeReferencesNonexistentPort, got: {:?}", errors[0]),
+            _ => panic!(
+                "Expected EdgeReferencesNonexistentPort, got: {:?}",
+                errors[0]
+            ),
         }
     }
 
@@ -677,7 +698,10 @@ mod tests {
             GraphValidationError::EdgeReferencesNonexistentPort { missing_port, .. } => {
                 assert_eq!(missing_port.port_name, "wrong_port");
             }
-            _ => panic!("Expected EdgeReferencesNonexistentPort, got: {:?}", errors[0]),
+            _ => panic!(
+                "Expected EdgeReferencesNonexistentPort, got: {:?}",
+                errors[0]
+            ),
         }
     }
 
@@ -703,7 +727,11 @@ mod tests {
         let graph = Graph::new(nodes, edges);
 
         let errors = graph.validate();
-        assert!(errors.iter().any(|e| matches!(e, GraphValidationError::EdgeSourceNotOutputPort { .. })));
+        assert!(
+            errors
+                .iter()
+                .any(|e| matches!(e, GraphValidationError::EdgeSourceNotOutputPort { .. }))
+        );
     }
 
     #[test]
@@ -728,14 +756,21 @@ mod tests {
         let graph = Graph::new(nodes, edges);
 
         let errors = graph.validate();
-        assert!(errors.iter().any(|e| matches!(e, GraphValidationError::EdgeTargetNotInputPort { .. })));
+        assert!(
+            errors
+                .iter()
+                .any(|e| matches!(e, GraphValidationError::EdgeTargetNotInputPort { .. }))
+        );
     }
 
     #[test]
     fn test_input_salvo_condition_must_have_max_salvos_1() {
         let mut node = simple_node("A", vec!["in"], vec![]);
         // Set max_salvos to something other than 1
-        node.in_salvo_conditions.get_mut("default").unwrap().max_salvos = 2;
+        node.in_salvo_conditions
+            .get_mut("default")
+            .unwrap()
+            .max_salvos = 2;
 
         let graph = Graph::new(vec![node], vec![]);
 
@@ -745,7 +780,10 @@ mod tests {
             GraphValidationError::InputSalvoConditionInvalidMaxSalvos { max_salvos, .. } => {
                 assert_eq!(*max_salvos, 2);
             }
-            _ => panic!("Expected InputSalvoConditionInvalidMaxSalvos, got: {:?}", errors[0]),
+            _ => panic!(
+                "Expected InputSalvoConditionInvalidMaxSalvos, got: {:?}",
+                errors[0]
+            ),
         }
     }
 
@@ -753,7 +791,8 @@ mod tests {
     fn test_salvo_condition_ports_must_exist() {
         let mut node = simple_node("A", vec!["in"], vec![]);
         // Reference nonexistent port in condition.ports
-        node.in_salvo_conditions.get_mut("default").unwrap().ports = vec!["nonexistent".to_string()];
+        node.in_salvo_conditions.get_mut("default").unwrap().ports =
+            vec!["nonexistent".to_string()];
 
         let graph = Graph::new(vec![node], vec![]);
 
