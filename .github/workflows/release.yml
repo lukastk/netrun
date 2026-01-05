@@ -1,0 +1,214 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'netrun-sim-v*'  # Releases netrun-sim Rust crate + Python wheels
+      - 'netrun-v*'       # Releases netrun pure Python package
+
+env:
+  CARGO_TERM_COLOR: always
+
+permissions:
+  contents: read
+
+jobs:
+  # =============================================================================
+  # netrun-sim Python wheels (triggered by netrun-sim-v* tags)
+  # =============================================================================
+
+  # Build wheels for Linux
+  netrun-sim-linux:
+    if: startsWith(github.ref, 'refs/tags/netrun-sim-v')
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [x86_64, aarch64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}
+          args: --release --out dist --manifest-path netrun-sim/python/Cargo.toml
+          sccache: 'true'
+          manylinux: auto
+        env:
+          PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: netrun-sim-wheels-linux-${{ matrix.target }}
+          path: dist
+
+  # Build wheels for macOS
+  netrun-sim-macos:
+    if: startsWith(github.ref, 'refs/tags/netrun-sim-v')
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        target: [x86_64, aarch64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: ${{ matrix.target }}-apple-darwin
+          args: --release --out dist --manifest-path netrun-sim/python/Cargo.toml
+          sccache: 'true'
+        env:
+          PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: netrun-sim-wheels-macos-${{ matrix.target }}
+          path: dist
+
+  # Build wheels for Windows
+  netrun-sim-windows:
+    if: startsWith(github.ref, 'refs/tags/netrun-sim-v')
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        target: [x64]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          architecture: ${{ matrix.target }}
+
+      - name: Build wheels
+        uses: PyO3/maturin-action@v1
+        with:
+          target: x86_64-pc-windows-msvc
+          args: --release --out dist --manifest-path netrun-sim/python/Cargo.toml
+          sccache: 'true'
+        env:
+          PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
+
+      - name: Upload wheels
+        uses: actions/upload-artifact@v4
+        with:
+          name: netrun-sim-wheels-windows-${{ matrix.target }}
+          path: dist
+
+  # Build source distribution for netrun-sim
+  netrun-sim-sdist:
+    if: startsWith(github.ref, 'refs/tags/netrun-sim-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build sdist
+        uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist --manifest-path netrun-sim/python/Cargo.toml
+
+      - name: Upload sdist
+        uses: actions/upload-artifact@v4
+        with:
+          name: netrun-sim-wheels-sdist
+          path: dist
+
+  # Publish netrun-sim to PyPI
+  netrun-sim-pypi:
+    name: Publish netrun-sim to PyPI
+    if: startsWith(github.ref, 'refs/tags/netrun-sim-v')
+    runs-on: ubuntu-latest
+    needs: [netrun-sim-linux, netrun-sim-macos, netrun-sim-windows, netrun-sim-sdist]
+    environment:
+      name: pypi
+      url: https://pypi.org/p/netrun-sim
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: netrun-sim-wheels-*
+          path: dist
+          merge-multiple: true
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
+
+  # Publish netrun-sim to crates.io
+  netrun-sim-crates-io:
+    name: Publish netrun-sim to crates.io
+    if: startsWith(github.ref, 'refs/tags/netrun-sim-v')
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: netrun-sim
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Publish netrun-sim to crates.io
+        run: cargo publish --package netrun-sim --all-features
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  # =============================================================================
+  # netrun pure Python package (triggered by netrun-v* tags)
+  # =============================================================================
+
+  # Build netrun sdist and wheel
+  netrun-build:
+    if: startsWith(github.ref, 'refs/tags/netrun-v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install build tools
+        run: pip install build
+
+      - name: Build sdist and wheel
+        run: python -m build
+        working-directory: netrun
+
+      - name: Upload dist
+        uses: actions/upload-artifact@v4
+        with:
+          name: netrun-dist
+          path: netrun/dist
+
+  # Publish netrun to PyPI
+  netrun-pypi:
+    name: Publish netrun to PyPI
+    if: startsWith(github.ref, 'refs/tags/netrun-v')
+    runs-on: ubuntu-latest
+    needs: [netrun-build]
+    environment:
+      name: pypi
+      url: https://pypi.org/p/netrun
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: netrun-dist
+          path: dist
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1
