@@ -29,14 +29,14 @@ This document tracks remaining tasks for the `netrun-sim` library.
 
 ### Net Construction
 
-- [x] **Create `Net` constructor**
-  - Implement `Net::new(graph: Graph)`
+- [x] **Create `NetSim` constructor**
+  - Implement `NetSim::new(graph: Graph)`
   - Initialize `_packets_by_location` with empty `IndexSet` for:
     - Every edge in the graph
     - Every input port of every node
     - Output port locations created per-epoch when epochs are created
   - Initialize `_packets`, `_epochs`, `_startable_epochs`, `_node_to_epochs` as empty
-  - Removed unused `_ports` cache and lifetime parameter from Net
+  - Removed unused `_ports` cache and lifetime parameter from NetSim
 
 ### Implement Missing NetActions
 
@@ -60,8 +60,8 @@ This document tracks remaining tasks for the `netrun-sim` library.
 
 ### API Design
 
-- [x] **Enforce all Net mutations go through NetAction/do_action**
-  - Principle: All external operations on Net must use `do_action(NetAction)` so that:
+- [x] **Enforce all NetSim mutations go through NetAction/do_action**
+  - Principle: All external operations on NetSim must use `do_action(NetAction)` so that:
     - External code can track exactly what operations have been performed
     - All operations return the list of `NetEvent`s that transpired
   - Audited public API and removed `place_packet_at_location()` method
@@ -94,7 +94,7 @@ This document tracks remaining tasks for the `netrun-sim` library.
   - Test salvo condition port/term validation
   - Test complex nested salvo condition terms
 
-- [x] **Create integration tests for Net operations**
+- [x] **Create integration tests for NetSim operations**
   - Test packet creation and consumption
   - Test epoch lifecycle (create → start → finish)
   - Test `run_until_blocked` with simple linear graphs
@@ -103,7 +103,7 @@ This document tracks remaining tasks for the `netrun-sim` library.
   - Test cancel epoch destroys packets
   - Test create_and_start_epoch validation
   - Test FIFO packet ordering (verified via PacketMoved events)
-  - Note: 18 integration tests covering all Net operations
+  - Note: 18 integration tests covering all NetSim operations
 
 - [x] **Create test fixtures**
   - Helper functions to create common graph patterns (linear, branching, merging, diamond)
@@ -112,7 +112,7 @@ This document tracks remaining tasks for the `netrun-sim` library.
 
 - [x] **Create public API integration tests (tests/ directory)**
   - Test Graph construction, validation, and accessors (19 tests)
-  - Test Net construction and all NetActions via do_action() (26 tests)
+  - Test NetSim construction and all NetActions via do_action() (26 tests)
   - Test end-to-end workflows (packet flow through multi-node graphs) (9 tests)
   - Test error handling returns correct error types
   - Test serialization/deserialization of Graph types
@@ -143,17 +143,17 @@ This document tracks remaining tasks for the `netrun-sim` library.
 
 ### Features
 
-- [x] **Add `Net::get_packets_at_location()`**
+- [x] **Add `NetSim::get_packets_at_location()`**
   - Convenient accessor for querying packet locations
   - Implemented along with `packet_count_at()`
 
-- [x] **Add `Net::get_epoch()`**
+- [x] **Add `NetSim::get_epoch()`**
   - Convenient accessor for querying epoch state
 
-- [x] **Add `Net::get_startable_epochs()`**
+- [x] **Add `NetSim::get_startable_epochs()`**
   - Return list of epochs ready to be started
 
-- [x] **Add `Net::get_packet()`**
+- [x] **Add `NetSim::get_packet()`**
   - Look up a packet by ID
 
 - [x] **Consider adding `NodeEnabled`/`NodeDisabled` events**
@@ -170,7 +170,7 @@ This document tracks remaining tasks for the `netrun-sim` library.
 - [x] **Add rustdoc comments to all public types and functions**
   - Added module-level docs to graph.rs and net.rs
   - Documented all public types, enums, and their variants
-  - Added doc examples for Graph and Net::do_action
+  - Added doc examples for Graph and NetSim::do_action
 
 - [x] **Add examples directory**
   - `examples/linear_flow.rs` - Simple A -> B -> C flow demonstrating epoch lifecycle
@@ -196,9 +196,9 @@ This document tracks remaining tasks for the `netrun-sim` library.
 ## Questions to Resolve
 
 - [x] Should `OutsideNet` packets be tracked in `_packets_by_location`?
-  - Yes, `OutsideNet` is initialized in `Net::new()` and packets created outside the net are tracked there
-- [x] What is the expected behavior when a graph is modified after a Net is created?
-  - Graph is immutable by design (no mutation methods). If a different topology is needed, create a new Net.
+  - Yes, `OutsideNet` is initialized in `NetSim::new()` and packets created outside the net are tracked there
+- [x] What is the expected behavior when a graph is modified after a NetSim is created?
+  - Graph is immutable by design (no mutation methods). If a different topology is needed, create a new NetSim.
 - [x] Should there be a way to "inject" packets directly into input ports (bypassing edges)?
   - Yes, via the new `TransportPacketToLocation` NetAction (see High Priority > API Design)
 - [x] How should the library handle infinite loops in the graph?

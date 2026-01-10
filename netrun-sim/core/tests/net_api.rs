@@ -1,10 +1,10 @@
-//! Integration tests for the Net public API.
+//! Integration tests for the NetSim public API.
 
 mod common;
 
 use netrun_sim::graph::{Edge, PortRef, PortType};
 use netrun_sim::net::{
-    Epoch, Net, NetAction, NetActionError, NetActionResponse, NetActionResponseData, NetEvent,
+    Epoch, NetSim, NetAction, NetActionError, NetActionResponse, NetActionResponseData, NetEvent,
     PacketLocation, Salvo,
 };
 
@@ -31,14 +31,14 @@ fn get_events(response: &NetActionResponse) -> Vec<NetEvent> {
     }
 }
 
-// ========== Net Construction Tests ==========
+// ========== NetSim Construction Tests ==========
 
 #[test]
 fn test_net_new_with_valid_graph() {
     let graph = common::linear_graph_3();
-    let net = Net::new(graph);
+    let net = NetSim::new(graph);
 
-    // Net should be created successfully
+    // NetSim should be created successfully
     assert!(net.graph.nodes().contains_key("A"));
     assert!(net.graph.nodes().contains_key("B"));
     assert!(net.graph.nodes().contains_key("C"));
@@ -48,7 +48,7 @@ fn test_net_new_with_valid_graph() {
 fn test_net_new_with_empty_graph() {
     use netrun_sim::graph::Graph;
     let graph = Graph::new(vec![], vec![]);
-    let _net = Net::new(graph);
+    let _net = NetSim::new(graph);
     // Should not panic
 }
 
@@ -57,7 +57,7 @@ fn test_net_new_with_empty_graph() {
 #[test]
 fn test_create_packet_outside_net() {
     let graph = common::linear_graph_3();
-    let mut net = Net::new(graph);
+    let mut net = NetSim::new(graph);
 
     let response = net.do_action(&NetAction::CreatePacket(None));
 
@@ -75,7 +75,7 @@ fn test_create_packet_outside_net() {
 #[test]
 fn test_create_packet_location_is_outside_net() {
     let graph = common::linear_graph_3();
-    let mut net = Net::new(graph);
+    let mut net = NetSim::new(graph);
 
     let packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
 
@@ -89,7 +89,7 @@ fn test_create_packet_location_is_outside_net() {
 #[test]
 fn test_consume_packet() {
     let graph = common::linear_graph_3();
-    let mut net = Net::new(graph);
+    let mut net = NetSim::new(graph);
 
     let packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
 
@@ -104,7 +104,7 @@ fn test_consume_packet() {
 #[test]
 fn test_consume_nonexistent_packet() {
     let graph = common::linear_graph_3();
-    let mut net = Net::new(graph);
+    let mut net = NetSim::new(graph);
 
     let fake_id = ulid::Ulid::new();
     let response = net.do_action(&NetAction::ConsumePacket(fake_id));
@@ -118,7 +118,7 @@ fn test_consume_nonexistent_packet() {
 #[test]
 fn test_packet_not_found_error_contains_id() {
     let graph = common::linear_graph_3();
-    let mut net = Net::new(graph);
+    let mut net = NetSim::new(graph);
 
     let fake_id = ulid::Ulid::new();
     let response = net.do_action(&NetAction::ConsumePacket(fake_id));
@@ -136,7 +136,7 @@ fn test_packet_not_found_error_contains_id() {
 #[test]
 fn test_start_nonexistent_epoch() {
     let graph = common::linear_graph_3();
-    let mut net = Net::new(graph);
+    let mut net = NetSim::new(graph);
 
     let fake_id = ulid::Ulid::new();
     let response = net.do_action(&NetAction::StartEpoch(fake_id));
@@ -150,7 +150,7 @@ fn test_start_nonexistent_epoch() {
 #[test]
 fn test_finish_nonexistent_epoch() {
     let graph = common::linear_graph_3();
-    let mut net = Net::new(graph);
+    let mut net = NetSim::new(graph);
 
     let fake_id = ulid::Ulid::new();
     let response = net.do_action(&NetAction::FinishEpoch(fake_id));
@@ -164,7 +164,7 @@ fn test_finish_nonexistent_epoch() {
 #[test]
 fn test_cancel_nonexistent_epoch() {
     let graph = common::linear_graph_3();
-    let mut net = Net::new(graph);
+    let mut net = NetSim::new(graph);
 
     let fake_id = ulid::Ulid::new();
     let response = net.do_action(&NetAction::CancelEpoch(fake_id));
@@ -180,7 +180,7 @@ fn test_cancel_nonexistent_epoch() {
 #[test]
 fn test_create_and_start_epoch_with_invalid_node() {
     let graph = common::linear_graph_3();
-    let mut net = Net::new(graph);
+    let mut net = NetSim::new(graph);
 
     let salvo = Salvo {
         salvo_condition: "manual".to_string(),
@@ -201,7 +201,7 @@ fn test_create_and_start_epoch_with_invalid_node() {
 #[test]
 fn test_create_and_start_epoch_node_not_found_error_contains_name() {
     let graph = common::linear_graph_3();
-    let mut net = Net::new(graph);
+    let mut net = NetSim::new(graph);
 
     let salvo = Salvo {
         salvo_condition: "manual".to_string(),
@@ -226,7 +226,7 @@ fn test_create_and_start_epoch_node_not_found_error_contains_name() {
 #[test]
 fn test_run_until_blocked_on_empty_net() {
     let graph = common::linear_graph_3();
-    let mut net = Net::new(graph);
+    let mut net = NetSim::new(graph);
 
     let response = net.do_action(&NetAction::RunNetUntilBlocked);
 
@@ -268,7 +268,7 @@ fn test_epoch_not_found_error_display() {
 #[test]
 fn test_packet_created_event_structure() {
     let graph = common::linear_graph_3();
-    let mut net = Net::new(graph);
+    let mut net = NetSim::new(graph);
 
     let response = net.do_action(&NetAction::CreatePacket(None));
     let events = get_events(&response);
@@ -286,7 +286,7 @@ fn test_packet_created_event_structure() {
 #[test]
 fn test_packet_consumed_event_structure() {
     let graph = common::linear_graph_3();
-    let mut net = Net::new(graph);
+    let mut net = NetSim::new(graph);
 
     let packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
     let response = net.do_action(&NetAction::ConsumePacket(packet_id.clone()));
@@ -307,7 +307,7 @@ fn test_packet_consumed_event_structure() {
 #[test]
 fn test_response_pattern_matching_success() {
     let graph = common::linear_graph_3();
-    let mut net = Net::new(graph);
+    let mut net = NetSim::new(graph);
 
     let response = net.do_action(&NetAction::CreatePacket(None));
 
@@ -327,7 +327,7 @@ fn test_response_pattern_matching_success() {
 #[test]
 fn test_response_pattern_matching_error() {
     let graph = common::linear_graph_3();
-    let mut net = Net::new(graph);
+    let mut net = NetSim::new(graph);
 
     let response = net.do_action(&NetAction::ConsumePacket(ulid::Ulid::new()));
 
@@ -346,7 +346,7 @@ fn test_response_pattern_matching_error() {
 #[test]
 fn test_get_packet() {
     let graph = common::linear_graph_3();
-    let mut net = Net::new(graph);
+    let mut net = NetSim::new(graph);
 
     let packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
 
@@ -363,7 +363,7 @@ fn test_get_packet() {
 #[test]
 fn test_get_epoch() {
     let graph = common::linear_graph_3();
-    let mut net = Net::new(graph);
+    let mut net = NetSim::new(graph);
 
     // Create packet and transport to input port
     let packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
@@ -394,7 +394,7 @@ fn test_get_epoch() {
 #[test]
 fn test_get_startable_epochs() {
     let graph = common::linear_graph_3();
-    let mut net = Net::new(graph);
+    let mut net = NetSim::new(graph);
 
     // Initially no startable epochs
     assert!(net.get_startable_epochs().is_empty());
@@ -429,7 +429,7 @@ fn test_get_startable_epochs() {
 #[test]
 fn test_packet_count_at() {
     let graph = common::linear_graph_3();
-    let mut net = Net::new(graph);
+    let mut net = NetSim::new(graph);
 
     // Create some packets
     let _p1 = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
@@ -446,7 +446,7 @@ fn test_packet_count_at() {
 #[test]
 fn test_get_packets_at_location() {
     let graph = common::linear_graph_3();
-    let mut net = Net::new(graph);
+    let mut net = NetSim::new(graph);
 
     let p1 = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
     let p2 = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
@@ -460,7 +460,7 @@ fn test_get_packets_at_location() {
 #[test]
 fn test_transport_packet_to_location() {
     let graph = common::linear_graph_3();
-    let mut net = Net::new(graph);
+    let mut net = NetSim::new(graph);
 
     let packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
 
@@ -482,7 +482,7 @@ fn test_transport_packet_to_location() {
 #[test]
 fn test_transport_packet_to_location_fails_for_nonexistent_packet() {
     let graph = common::linear_graph_3();
-    let mut net = Net::new(graph);
+    let mut net = NetSim::new(graph);
 
     let fake_id = ulid::Ulid::new();
     let input_port = PacketLocation::InputPort("B".to_string(), "in".to_string());

@@ -38,7 +38,7 @@ __all__ = [
     "SalvoCondition",
     "Node",
     "Graph",
-    # Net types
+    # NetSim types
     "PacketLocation",
     "EpochState",
     "Packet",
@@ -47,5 +47,5 @@ __all__ = [
     "NetAction",
     "NetEvent",
     "NetActionResponseData",
-    "Net",
+    "NetSim",
 ]

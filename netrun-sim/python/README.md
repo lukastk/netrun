@@ -33,7 +33,7 @@ pip install ../target/wheels/netrun_sim-*.whl
 
 ```python
 from netrun_sim import (
-    Graph, Node, Edge, Net, NetAction, NetActionResponseData,
+    Graph, Node, Edge, NetSim, NetAction, NetActionResponseData,
     Port, PortRef, PortType, PortSlotSpec, PortState,
     SalvoCondition, SalvoConditionTerm, PacketLocation,
 )
@@ -64,7 +64,7 @@ graph = Graph([node_a, node_b], [edge])
 assert len(graph.validate()) == 0
 
 # Create and run the network
-net = Net(graph)
+net = NetSim(graph)
 
 # Create a packet
 response, events = net.do_action(NetAction.create_packet())
@@ -129,11 +129,11 @@ jupyter notebook examples/linear_flow.ipynb
 | `SalvoCondition` | Rule for triggering epochs or sending packets |
 | `SalvoConditionTerm` | Boolean expression over port states |
 
-### Net Types
+### NetSim Types
 
 | Type | Description |
 |------|-------------|
-| `Net` | Runtime network state |
+| `NetSim` | Runtime network state |
 | `NetAction` | Action to perform on the network |
 | `NetEvent` | Event that occurred during an action |
 | `NetActionResponseData` | Response data from successful actions |

@@ -261,7 +261,7 @@ class Graph:
     def validate(self) -> List[GraphValidationError]: ...
 
 
-# === Net Types ===
+# === NetSim Types ===
 
 class PacketLocation:
     """Where a packet is located in the network."""
@@ -403,7 +403,7 @@ class NetActionResponseData:
         pass
 
 
-class Net:
+class NetSim:
     """The runtime state of a flow-based network."""
 
     def __init__(self, graph: Graph) -> None: ...
@@ -462,7 +462,7 @@ __all__ = [
     "SalvoCondition",
     "Node",
     "Graph",
-    # Net types
+    # NetSim types
     "PacketLocation",
     "EpochState",
     "Packet",
@@ -471,5 +471,5 @@ __all__ = [
     "NetAction",
     "NetEvent",
     "NetActionResponseData",
-    "Net",
+    "NetSim",
 ]

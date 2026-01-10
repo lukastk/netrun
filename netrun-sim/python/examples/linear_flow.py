@@ -11,7 +11,7 @@ This example demonstrates:
 from netrun_sim import (
     Edge,
     Graph,
-    Net,
+    NetSim,
     NetAction,
     NetActionResponseData,
     Node,
@@ -85,7 +85,7 @@ def main():
     assert len(errors) == 0, f"Graph validation failed: {errors}"
 
     # Create a network from the graph
-    net = Net(graph)
+    net = NetSim(graph)
 
     # Create a packet outside the network
     response_data, events = net.do_action(NetAction.create_packet())

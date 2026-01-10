@@ -16,7 +16,7 @@ This example demonstrates:
 from netrun_sim import (
     Edge,
     Graph,
-    Net,
+    NetSim,
     NetAction,
     NetActionResponseData,
     Node,
@@ -133,7 +133,7 @@ def main():
     print("Created diamond graph: A -> B,C -> D")
     print("D requires inputs from BOTH B and C\n")
 
-    net = Net(graph)
+    net = NetSim(graph)
 
     # Create two packets and place them on edges from A
     response1, _ = net.do_action(NetAction.create_packet())

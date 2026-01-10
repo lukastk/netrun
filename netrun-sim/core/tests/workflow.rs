@@ -4,7 +4,7 @@ mod common;
 
 use netrun_sim::graph::{Edge, PortRef, PortType};
 use netrun_sim::net::{
-    Epoch, EpochState, Net, NetAction, NetActionResponse, NetActionResponseData, NetEvent,
+    Epoch, EpochState, NetSim, NetAction, NetActionResponse, NetActionResponseData, NetEvent,
     PacketLocation, Salvo,
 };
 
@@ -59,7 +59,7 @@ fn make_edge(source_node: &str, source_port: &str, target_node: &str, target_por
 fn test_complete_linear_flow_a_to_b() {
     // Test a complete flow: create packet -> place on edge -> run -> start epoch -> process -> finish
     let graph = common::linear_graph_3();
-    let mut net = Net::new(graph);
+    let mut net = NetSim::new(graph);
 
     // 1. Create a packet
     let packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
@@ -104,7 +104,7 @@ fn test_complete_linear_flow_a_to_b() {
 fn test_linear_flow_with_output_salvo() {
     // Test: packet enters B, B produces output, packet moves to C
     let graph = common::linear_graph_3();
-    let mut net = Net::new(graph);
+    let mut net = NetSim::new(graph);
 
     // 1. Create packet and transport to B's input port
     let input_packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
@@ -156,7 +156,7 @@ fn test_linear_flow_with_output_salvo() {
 fn test_branching_flow() {
     // Test: A produces two outputs, one goes to B, one goes to C
     let graph = common::branching_graph();
-    let mut net = Net::new(graph);
+    let mut net = NetSim::new(graph);
 
     // Place packets on the edges
     let packet1 = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
@@ -196,7 +196,7 @@ fn test_branching_flow() {
 fn test_merging_flow_both_inputs_required() {
     // Test: C requires inputs from both A and B
     let graph = common::merging_graph();
-    let mut net = Net::new(graph);
+    let mut net = NetSim::new(graph);
 
     // Place packet only on edge A->C
     let packet1 = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
@@ -237,7 +237,7 @@ fn test_diamond_flow_synchronization() {
     // Test: A -> B -> D and A -> C -> D
     // D should wait for both B and C to complete
     let graph = common::diamond_graph();
-    let mut net = Net::new(graph);
+    let mut net = NetSim::new(graph);
 
     // Place packets on edges from A
     let packet1 = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
@@ -276,7 +276,7 @@ fn test_diamond_flow_synchronization() {
 #[test]
 fn test_cancel_epoch_workflow() {
     let graph = common::linear_graph_3();
-    let mut net = Net::new(graph);
+    let mut net = NetSim::new(graph);
 
     // Create and transport packet
     let packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
@@ -330,7 +330,7 @@ fn test_cancel_epoch_workflow() {
 #[test]
 fn test_multiple_sequential_epochs_on_same_node() {
     let graph = common::linear_graph_3();
-    let mut net = Net::new(graph);
+    let mut net = NetSim::new(graph);
 
     // Process first packet through B
     let packet1 = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
@@ -377,7 +377,7 @@ fn test_multiple_sequential_epochs_on_same_node() {
 #[test]
 fn test_packet_location_tracking() {
     let graph = common::linear_graph_3();
-    let mut net = Net::new(graph);
+    let mut net = NetSim::new(graph);
 
     // Create packet - should be at OutsideNet
     let packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
@@ -403,7 +403,7 @@ fn test_packet_location_tracking() {
 #[test]
 fn test_get_packets_at_location() {
     let graph = common::linear_graph_3();
-    let mut net = Net::new(graph);
+    let mut net = NetSim::new(graph);
 
     // Create multiple packets
     let packet1 = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
