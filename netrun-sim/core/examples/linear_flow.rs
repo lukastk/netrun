@@ -11,7 +11,7 @@ use netrun_sim::graph::{
     Edge, Graph, Node, Port, PortRef, PortSlotSpec, PortState, PortType, SalvoCondition,
     SalvoConditionTerm,
 };
-use netrun_sim::net::{Net, NetAction, NetActionResponse, NetActionResponseData, PacketLocation};
+use netrun_sim::net::{NetSim, NetAction, NetActionResponse, NetActionResponseData, PacketLocation};
 use std::collections::HashMap;
 
 fn main() {
@@ -20,7 +20,7 @@ fn main() {
     println!("Created graph with {} nodes", graph.nodes().len());
 
     // Create a network from the graph
-    let mut net = Net::new(graph);
+    let mut net = NetSim::new(graph);
 
     // Create a packet outside the network
     let packet_id = match net.do_action(&NetAction::CreatePacket(None)) {

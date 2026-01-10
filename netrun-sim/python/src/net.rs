@@ -5,9 +5,9 @@ use crate::errors::net_action_error_to_py_err;
 use crate::graph::{Edge, Graph};
 
 use netrun_sim::net::{
-    Epoch as CoreEpoch, EpochState as CoreEpochState, Net as CoreNet, NetAction as CoreNetAction,
-    NetActionResponse as CoreNetActionResponse, NetActionResponseData as CoreNetActionResponseData,
-    NetEvent as CoreNetEvent, Packet as CorePacket, PacketLocation as CorePacketLocation,
+    Epoch as CoreEpoch, EpochState as CoreEpochState, NetSim as CoreNetSim, NetAction as CoreNetSimAction,
+    NetActionResponse as CoreNetSimActionResponse, NetActionResponseData as CoreNetSimActionResponseData,
+    NetEvent as CoreNetSimEvent, Packet as CorePacket, PacketLocation as CorePacketLocation,
     Salvo as CoreSalvo,
 };
 
@@ -456,9 +456,9 @@ impl NetAction {
 }
 
 impl NetAction {
-    pub fn to_core(&self) -> PyResult<CoreNetAction> {
+    pub fn to_core(&self) -> PyResult<CoreNetSimAction> {
         match &self.inner {
-            NetActionKind::RunNetUntilBlocked => Ok(CoreNetAction::RunNetUntilBlocked),
+            NetActionKind::RunNetUntilBlocked => Ok(CoreNetSimAction::RunNetUntilBlocked),
             NetActionKind::CreatePacket(opt_id) => {
                 let ulid_opt = match opt_id {
                     Some(s) => Some(ulid::Ulid::from_string(s).map_err(|e| {
@@ -469,52 +469,52 @@ impl NetAction {
                     })?),
                     None => None,
                 };
-                Ok(CoreNetAction::CreatePacket(ulid_opt))
+                Ok(CoreNetSimAction::CreatePacket(ulid_opt))
             }
             NetActionKind::ConsumePacket(id) => {
                 let ulid = ulid::Ulid::from_string(id).map_err(|e| {
                     PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
                 })?;
-                Ok(CoreNetAction::ConsumePacket(ulid))
+                Ok(CoreNetSimAction::ConsumePacket(ulid))
             }
             NetActionKind::StartEpoch(id) => {
                 let ulid = ulid::Ulid::from_string(id).map_err(|e| {
                     PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
                 })?;
-                Ok(CoreNetAction::StartEpoch(ulid))
+                Ok(CoreNetSimAction::StartEpoch(ulid))
             }
             NetActionKind::FinishEpoch(id) => {
                 let ulid = ulid::Ulid::from_string(id).map_err(|e| {
                     PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
                 })?;
-                Ok(CoreNetAction::FinishEpoch(ulid))
+                Ok(CoreNetSimAction::FinishEpoch(ulid))
             }
             NetActionKind::CancelEpoch(id) => {
                 let ulid = ulid::Ulid::from_string(id).map_err(|e| {
                     PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
                 })?;
-                Ok(CoreNetAction::CancelEpoch(ulid))
+                Ok(CoreNetSimAction::CancelEpoch(ulid))
             }
             NetActionKind::CreateAndStartEpoch(name, salvo) => Ok(
-                CoreNetAction::CreateAndStartEpoch(name.clone(), salvo.to_core()),
+                CoreNetSimAction::CreateAndStartEpoch(name.clone(), salvo.to_core()),
             ),
             NetActionKind::LoadPacketIntoOutputPort(pid, port) => {
                 let ulid = ulid::Ulid::from_string(pid).map_err(|e| {
                     PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
                 })?;
-                Ok(CoreNetAction::LoadPacketIntoOutputPort(ulid, port.clone()))
+                Ok(CoreNetSimAction::LoadPacketIntoOutputPort(ulid, port.clone()))
             }
             NetActionKind::SendOutputSalvo(eid, cond) => {
                 let ulid = ulid::Ulid::from_string(eid).map_err(|e| {
                     PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
                 })?;
-                Ok(CoreNetAction::SendOutputSalvo(ulid, cond.clone()))
+                Ok(CoreNetSimAction::SendOutputSalvo(ulid, cond.clone()))
             }
             NetActionKind::TransportPacketToLocation(pid, loc) => {
                 let ulid = ulid::Ulid::from_string(pid).map_err(|e| {
                     PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
                 })?;
-                Ok(CoreNetAction::TransportPacketToLocation(
+                Ok(CoreNetSimAction::TransportPacketToLocation(
                     ulid,
                     loc.to_core(),
                 ))
@@ -660,25 +660,25 @@ impl NetEvent {
 }
 
 impl NetEvent {
-    pub fn from_core(event: &CoreNetEvent) -> Self {
+    pub fn from_core(event: &CoreNetSimEvent) -> Self {
         let inner = match event {
-            CoreNetEvent::PacketCreated(ts, id) => NetEventKind::PacketCreated(*ts, id.to_string()),
-            CoreNetEvent::PacketConsumed(ts, id) => {
+            CoreNetSimEvent::PacketCreated(ts, id) => NetEventKind::PacketCreated(*ts, id.to_string()),
+            CoreNetSimEvent::PacketConsumed(ts, id) => {
                 NetEventKind::PacketConsumed(*ts, id.to_string())
             }
-            CoreNetEvent::EpochCreated(ts, id) => NetEventKind::EpochCreated(*ts, id.to_string()),
-            CoreNetEvent::EpochStarted(ts, id) => NetEventKind::EpochStarted(*ts, id.to_string()),
-            CoreNetEvent::EpochFinished(ts, id) => NetEventKind::EpochFinished(*ts, id.to_string()),
-            CoreNetEvent::EpochCancelled(ts, id) => {
+            CoreNetSimEvent::EpochCreated(ts, id) => NetEventKind::EpochCreated(*ts, id.to_string()),
+            CoreNetSimEvent::EpochStarted(ts, id) => NetEventKind::EpochStarted(*ts, id.to_string()),
+            CoreNetSimEvent::EpochFinished(ts, id) => NetEventKind::EpochFinished(*ts, id.to_string()),
+            CoreNetSimEvent::EpochCancelled(ts, id) => {
                 NetEventKind::EpochCancelled(*ts, id.to_string())
             }
-            CoreNetEvent::PacketMoved(ts, id, loc) => {
+            CoreNetSimEvent::PacketMoved(ts, id, loc) => {
                 NetEventKind::PacketMoved(*ts, id.to_string(), PacketLocation::from_core(loc))
             }
-            CoreNetEvent::InputSalvoTriggered(ts, eid, cond) => {
+            CoreNetSimEvent::InputSalvoTriggered(ts, eid, cond) => {
                 NetEventKind::InputSalvoTriggered(*ts, eid.to_string(), cond.clone())
             }
-            CoreNetEvent::OutputSalvoTriggered(ts, eid, cond) => {
+            CoreNetSimEvent::OutputSalvoTriggered(ts, eid, cond) => {
                 NetEventKind::OutputSalvoTriggered(*ts, eid.to_string(), cond.clone())
             }
         };
@@ -707,18 +707,18 @@ pub enum NetActionResponseData {
 
 /// The runtime state of a flow-based network.
 #[pyclass]
-pub struct Net {
-    inner: CoreNet,
+pub struct NetSim {
+    inner: CoreNetSim,
 }
 
 #[pymethods]
-impl Net {
+impl NetSim {
     #[new]
     fn new(graph: &Graph) -> Self {
         // Clone the inner graph from the Python Graph wrapper
         let core_graph = graph.inner.clone();
-        Net {
-            inner: CoreNet::new(core_graph),
+        NetSim {
+            inner: CoreNetSim::new(core_graph),
         }
     }
 
@@ -734,28 +734,28 @@ impl Net {
         let response = self.inner.do_action(&core_action);
 
         match response {
-            CoreNetActionResponse::Success(data, events) => {
+            CoreNetSimActionResponse::Success(data, events) => {
                 let py_data = match data {
-                    CoreNetActionResponseData::Packet(id) => NetActionResponseData::Packet {
+                    CoreNetSimActionResponseData::Packet(id) => NetActionResponseData::Packet {
                         packet_id: id.to_string(),
                     },
-                    CoreNetActionResponseData::StartedEpoch(epoch) => {
+                    CoreNetSimActionResponseData::StartedEpoch(epoch) => {
                         NetActionResponseData::StartedEpoch {
                             epoch: Epoch::from_core(&epoch),
                         }
                     }
-                    CoreNetActionResponseData::FinishedEpoch(epoch) => {
+                    CoreNetSimActionResponseData::FinishedEpoch(epoch) => {
                         NetActionResponseData::FinishedEpoch {
                             epoch: Epoch::from_core(&epoch),
                         }
                     }
-                    CoreNetActionResponseData::CancelledEpoch(epoch, destroyed) => {
+                    CoreNetSimActionResponseData::CancelledEpoch(epoch, destroyed) => {
                         NetActionResponseData::CancelledEpoch {
                             epoch: Epoch::from_core(&epoch),
                             destroyed_packets: destroyed.iter().map(|id| id.to_string()).collect(),
                         }
                     }
-                    CoreNetActionResponseData::None => NetActionResponseData::Empty {},
+                    CoreNetSimActionResponseData::None => NetActionResponseData::Empty {},
                 };
 
                 let events_list = PyList::empty(py);
@@ -765,7 +765,7 @@ impl Net {
 
                 Ok((py_data, events_list.unbind()))
             }
-            CoreNetActionResponse::Error(err) => Err(net_action_error_to_py_err(err)),
+            CoreNetSimActionResponse::Error(err) => Err(net_action_error_to_py_err(err)),
         }
     }
 
@@ -834,6 +834,6 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<NetAction>()?;
     m.add_class::<NetEvent>()?;
     m.add_class::<NetActionResponseData>()?;
-    m.add_class::<Net>()?;
+    m.add_class::<NetSim>()?;
     Ok(())
 }

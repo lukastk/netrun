@@ -1,9 +1,9 @@
 //! Runtime state and operations for flow-based development networks.
 //!
-//! This module provides the [`Net`] type which tracks the runtime state of a network,
+//! This module provides the [`NetSim`] type which tracks the runtime state of a network,
 //! including packet locations, epoch lifecycles, and provides actions to control packet flow.
 //!
-//! All mutations to the network state go through [`Net::do_action`] which accepts a
+//! All mutations to the network state go through [`NetSim::do_action`] which accepts a
 //! [`NetAction`] and returns a [`NetActionResponse`] containing any events that occurred.
 
 use crate::_utils::get_utc_now;
@@ -106,7 +106,7 @@ pub type EventUTC = i128;
 
 /// An action that can be performed on the network.
 ///
-/// All mutations to [`Net`] state must go through these actions via [`Net::do_action`].
+/// All mutations to [`NetSim`] state must go through these actions via [`NetSim::do_action`].
 /// This ensures all operations are tracked and produce appropriate events.
 #[derive(Debug)]
 pub enum NetAction {
@@ -307,14 +307,14 @@ pub enum NetActionResponse {
 
 /// The runtime state of a flow-based network.
 ///
-/// A `Net` is created from a [`Graph`] and tracks:
+/// A `NetSim` is created from a [`Graph`] and tracks:
 /// - All packets and their locations
 /// - All epochs and their states
 /// - Which epochs are startable
 ///
-/// All mutations must go through [`Net::do_action`] to ensure proper event tracking.
+/// All mutations must go through [`NetSim::do_action`] to ensure proper event tracking.
 #[derive(Debug)]
-pub struct Net {
+pub struct NetSim {
     /// The graph topology this network is running on.
     pub graph: Graph,
     _packets: HashMap<PacketID, Packet>,
@@ -324,8 +324,8 @@ pub struct Net {
     _node_to_epochs: HashMap<NodeName, Vec<EpochID>>,
 }
 
-impl Net {
-    /// Creates a new Net from a Graph.
+impl NetSim {
+    /// Creates a new net simulation from a Graph.
     ///
     /// Initializes packet location tracking for all edges and input ports.
     pub fn new(graph: Graph) -> Self {
@@ -352,7 +352,7 @@ impl Net {
         // Note: Output port locations are created per-epoch when epochs are created
         // Note: Node locations (inside epochs) are created when epochs are created
 
-        Net {
+        NetSim {
             graph,
             _packets: HashMap::new(),
             _packets_by_location: packets_by_location,
@@ -956,7 +956,7 @@ impl Net {
         let port_packets = self
             ._packets_by_location
             .get(&old_location)
-            .expect("No entry in Net._packets_by_location found for output port.");
+            .expect("No entry in NetSim._packets_by_location found for output port.");
 
         // Check if the output port is full
         if let PortSlotSpec::Finite(num_slots) = port.slots_spec
@@ -1251,7 +1251,7 @@ impl Net {
     /// # Example
     ///
     /// ```
-    /// use netrun_sim::net::{Net, NetAction, NetActionResponse, NetActionResponseData};
+    /// use netrun_sim::net::{NetSim, NetAction, NetActionResponse, NetActionResponseData};
     /// use netrun_sim::graph::{Graph, Node, Port, PortSlotSpec};
     /// use std::collections::HashMap;
     ///
@@ -1263,7 +1263,7 @@ impl Net {
     ///     out_salvo_conditions: HashMap::new(),
     /// };
     /// let graph = Graph::new(vec![node], vec![]);
-    /// let mut net = Net::new(graph);
+    /// let mut net = NetSim::new(graph);
     ///
     /// // Create a packet outside the network
     /// let response = net.do_action(&NetAction::CreatePacket(None));
@@ -1366,7 +1366,7 @@ mod tests {
     #[test]
     fn test_create_packet_outside_net() {
         let graph = linear_graph_3();
-        let mut net = Net::new(graph);
+        let mut net = NetSim::new(graph);
 
         let response = net.do_action(&NetAction::CreatePacket(None));
         assert!(matches!(
@@ -1378,7 +1378,7 @@ mod tests {
     #[test]
     fn test_consume_packet() {
         let graph = linear_graph_3();
-        let mut net = Net::new(graph);
+        let mut net = NetSim::new(graph);
 
         // Create a packet
         let packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
@@ -1394,7 +1394,7 @@ mod tests {
     #[test]
     fn test_consume_nonexistent_packet_fails() {
         let graph = linear_graph_3();
-        let mut net = Net::new(graph);
+        let mut net = NetSim::new(graph);
 
         let fake_id = Ulid::new();
         let response = net.do_action(&NetAction::ConsumePacket(fake_id));
@@ -1409,7 +1409,7 @@ mod tests {
     #[test]
     fn test_epoch_lifecycle_via_run_until_blocked() {
         let graph = linear_graph_3();
-        let mut net = Net::new(graph);
+        let mut net = NetSim::new(graph);
 
         // Put a packet on edge A->B
         let response = net.do_action(&NetAction::CreatePacket(None));
@@ -1464,7 +1464,7 @@ mod tests {
     #[test]
     fn test_cannot_start_nonexistent_epoch() {
         let graph = linear_graph_3();
-        let mut net = Net::new(graph);
+        let mut net = NetSim::new(graph);
 
         let fake_id = Ulid::new();
         let response = net.do_action(&NetAction::StartEpoch(fake_id));
@@ -1477,7 +1477,7 @@ mod tests {
     #[test]
     fn test_cannot_finish_epoch_with_packets() {
         let graph = linear_graph_3();
-        let mut net = Net::new(graph);
+        let mut net = NetSim::new(graph);
 
         // Create epoch with packet via create_and_start_epoch
         // First put packet at input port
@@ -1517,7 +1517,7 @@ mod tests {
     #[test]
     fn test_cancel_epoch_destroys_packets() {
         let graph = linear_graph_3();
-        let mut net = Net::new(graph);
+        let mut net = NetSim::new(graph);
 
         // Create packet and place at input port
         let packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
@@ -1560,7 +1560,7 @@ mod tests {
     #[test]
     fn test_run_until_blocked_moves_packet_to_input_port() {
         let graph = linear_graph_3();
-        let mut net = Net::new(graph);
+        let mut net = NetSim::new(graph);
 
         // Create packet on edge A->B
         let packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
@@ -1619,7 +1619,7 @@ mod tests {
         let nodes = vec![simple_node("A", vec![], vec!["out"]), node_b];
         let edges = vec![edge("A", "out", "B", "in")];
         let graph = Graph::new(nodes, edges);
-        let mut net = Net::new(graph);
+        let mut net = NetSim::new(graph);
 
         // Create two packets on edge A->B
         let edge_location = PacketLocation::Edge(Edge {
@@ -1666,7 +1666,7 @@ mod tests {
         // Test that packets are processed in FIFO order on edges
         // We verify this by examining the events emitted during run_until_blocked
         let graph = linear_graph_3();
-        let mut net = Net::new(graph);
+        let mut net = NetSim::new(graph);
 
         let edge_location = PacketLocation::Edge(Edge {
             source: PortRef {
@@ -1747,7 +1747,7 @@ mod tests {
     #[test]
     fn test_load_packet_into_output_port() {
         let graph = linear_graph_3();
-        let mut net = Net::new(graph);
+        let mut net = NetSim::new(graph);
 
         // Create packet and place at input port of B
         let packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
@@ -1789,7 +1789,7 @@ mod tests {
     #[test]
     fn test_send_output_salvo() {
         let graph = linear_graph_3();
-        let mut net = Net::new(graph);
+        let mut net = NetSim::new(graph);
 
         // Create packet and place at input port of B
         let packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
@@ -1850,7 +1850,7 @@ mod tests {
     #[test]
     fn test_create_and_start_epoch() {
         let graph = linear_graph_3();
-        let mut net = Net::new(graph);
+        let mut net = NetSim::new(graph);
 
         // Create packet at input port
         let packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
@@ -1881,7 +1881,7 @@ mod tests {
     #[test]
     fn test_create_and_start_epoch_validates_node() {
         let graph = linear_graph_3();
-        let mut net = Net::new(graph);
+        let mut net = NetSim::new(graph);
 
         let salvo = Salvo {
             salvo_condition: "manual".to_string(),
@@ -1900,7 +1900,7 @@ mod tests {
     #[test]
     fn test_create_and_start_epoch_validates_packet_location() {
         let graph = linear_graph_3();
-        let mut net = Net::new(graph);
+        let mut net = NetSim::new(graph);
 
         // Create packet but leave it OutsideNet
         let packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));

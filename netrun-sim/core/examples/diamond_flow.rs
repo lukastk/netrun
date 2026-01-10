@@ -16,7 +16,7 @@ use netrun_sim::graph::{
     Edge, Graph, Node, Port, PortRef, PortSlotSpec, PortState, PortType, SalvoCondition,
     SalvoConditionTerm,
 };
-use netrun_sim::net::{Net, NetAction, NetActionResponse, NetActionResponseData, PacketLocation};
+use netrun_sim::net::{NetSim, NetAction, NetActionResponse, NetActionResponseData, PacketLocation};
 use std::collections::HashMap;
 
 fn main() {
@@ -25,7 +25,7 @@ fn main() {
     println!("Created diamond graph: A -> B,C -> D");
     println!("D requires inputs from BOTH B and C\n");
 
-    let mut net = Net::new(graph);
+    let mut net = NetSim::new(graph);
 
     // Create two packets and place them on edges from A
     let packet1 = create_packet(&mut net);
@@ -273,14 +273,14 @@ fn edge_location(src_node: &str, src_port: &str, tgt_node: &str, tgt_port: &str)
     })
 }
 
-fn create_packet(net: &mut Net) -> ulid::Ulid {
+fn create_packet(net: &mut NetSim) -> ulid::Ulid {
     match net.do_action(&NetAction::CreatePacket(None)) {
         NetActionResponse::Success(NetActionResponseData::Packet(id), _) => id,
         _ => panic!("Failed to create packet"),
     }
 }
 
-fn create_packet_in_epoch(net: &mut Net, epoch_id: &ulid::Ulid) -> ulid::Ulid {
+fn create_packet_in_epoch(net: &mut NetSim, epoch_id: &ulid::Ulid) -> ulid::Ulid {
     match net.do_action(&NetAction::CreatePacket(Some(epoch_id.clone()))) {
         NetActionResponse::Success(NetActionResponseData::Packet(id), _) => id,
         _ => panic!("Failed to create packet in epoch"),
