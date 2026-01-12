@@ -129,8 +129,10 @@ pub enum NetAction {
     /// Create a new packet, optionally inside an epoch.
     /// If `None`, packet is created outside the network.
     CreatePacket(Option<EpochID>),
-    /// Remove a packet from the network entirely.
+    /// Consume a packet (normal removal from the network).
     ConsumePacket(PacketID),
+    /// Destroy a packet (abnormal removal, e.g., due to error or cancellation).
+    DestroyPacket(PacketID),
     /// Transition a startable epoch to running state.
     StartEpoch(EpochID),
     /// Complete a running epoch. Fails if epoch still contains packets.
@@ -283,8 +285,10 @@ pub enum NetActionError {
 pub enum NetEvent {
     /// A new packet was created.
     PacketCreated(EventUTC, PacketID),
-    /// A packet was removed from the network.
+    /// A packet was consumed (normal removal from the network).
     PacketConsumed(EventUTC, PacketID),
+    /// A packet was destroyed (abnormal removal, e.g., epoch cancellation).
+    PacketDestroyed(EventUTC, PacketID),
     /// A new epoch was created (in Startable state).
     EpochCreated(EventUTC, EpochID),
     /// An epoch transitioned from Startable to Running.
@@ -715,6 +719,37 @@ impl NetSim {
         }
     }
 
+    fn destroy_packet(&mut self, packet_id: &PacketID) -> NetActionResponse {
+        if !self._packets.contains_key(packet_id) {
+            return NetActionResponse::Error(NetActionError::PacketNotFound {
+                packet_id: *packet_id,
+            });
+        }
+
+        if let Some(packets) = self
+            ._packets_by_location
+            .get_mut(&self._packets[packet_id].location)
+        {
+            if packets.shift_remove(packet_id) {
+                self._packets.remove(packet_id);
+                NetActionResponse::Success(
+                    NetActionResponseData::None,
+                    vec![NetEvent::PacketDestroyed(get_utc_now(), *packet_id)],
+                )
+            } else {
+                panic!(
+                    "Packet with ID {} not found in location {:?}",
+                    packet_id, self._packets[packet_id].location
+                );
+            }
+        } else {
+            panic!(
+                "Packet location {:?} not found",
+                self._packets[packet_id].location
+            );
+        }
+    }
+
     fn start_epoch(&mut self, epoch_id: &EpochID) -> NetActionResponse {
         if let Some(epoch) = self._epochs.get_mut(epoch_id) {
             if !self._startable_epochs.contains(epoch_id) {
@@ -844,7 +879,7 @@ impl NetSim {
             if let Some(packets_at_location) = self._packets_by_location.get_mut(&packet.location) {
                 packets_at_location.shift_remove(packet_id);
             }
-            events.push(NetEvent::PacketConsumed(get_utc_now(), *packet_id));
+            events.push(NetEvent::PacketDestroyed(get_utc_now(), *packet_id));
         }
 
         // Remove output port location entries for this epoch
@@ -1345,6 +1380,7 @@ impl NetSim {
             NetAction::RunNetUntilBlocked => self.run_until_blocked(),
             NetAction::CreatePacket(maybe_epoch_id) => self.create_packet(maybe_epoch_id),
             NetAction::ConsumePacket(packet_id) => self.consume_packet(packet_id),
+            NetAction::DestroyPacket(packet_id) => self.destroy_packet(packet_id),
             NetAction::StartEpoch(epoch_id) => self.start_epoch(epoch_id),
             NetAction::FinishEpoch(epoch_id) => self.finish_epoch(epoch_id),
             NetAction::CancelEpoch(epoch_id) => self.cancel_epoch(epoch_id),

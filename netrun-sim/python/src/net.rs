@@ -293,6 +293,7 @@ enum NetActionKind {
     RunNetUntilBlocked,
     CreatePacket(Option<String>),
     ConsumePacket(String),
+    DestroyPacket(String),
     StartEpoch(String),
     FinishEpoch(String),
     CancelEpoch(String),
@@ -325,11 +326,19 @@ impl NetAction {
         })
     }
 
-    /// Remove a packet from the network.
+    /// Consume a packet (normal removal from the network).
     #[staticmethod]
     fn consume_packet(packet_id: &Bound<'_, PyAny>) -> PyResult<Self> {
         Ok(NetAction {
             inner: NetActionKind::ConsumePacket(packet_id.str()?.to_string()),
+        })
+    }
+
+    /// Destroy a packet (abnormal removal, e.g., due to error or cancellation).
+    #[staticmethod]
+    fn destroy_packet(packet_id: &Bound<'_, PyAny>) -> PyResult<Self> {
+        Ok(NetAction {
+            inner: NetActionKind::DestroyPacket(packet_id.str()?.to_string()),
         })
     }
 
@@ -412,6 +421,7 @@ impl NetAction {
                 None => "NetAction.create_packet()".to_string(),
             },
             NetActionKind::ConsumePacket(id) => format!("NetAction.consume_packet('{}')", id),
+            NetActionKind::DestroyPacket(id) => format!("NetAction.destroy_packet('{}')", id),
             NetActionKind::StartEpoch(id) => format!("NetAction.start_epoch('{}')", id),
             NetActionKind::FinishEpoch(id) => format!("NetAction.finish_epoch('{}')", id),
             NetActionKind::CancelEpoch(id) => format!("NetAction.cancel_epoch('{}')", id),
@@ -459,6 +469,12 @@ impl NetAction {
                     PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
                 })?;
                 Ok(CoreNetSimAction::ConsumePacket(ulid))
+            }
+            NetActionKind::DestroyPacket(id) => {
+                let ulid = ulid::Ulid::from_string(id).map_err(|e| {
+                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
+                })?;
+                Ok(CoreNetSimAction::DestroyPacket(ulid))
             }
             NetActionKind::StartEpoch(id) => {
                 let ulid = ulid::Ulid::from_string(id).map_err(|e| {
@@ -517,6 +533,7 @@ pub struct NetEvent {
 enum NetEventKind {
     PacketCreated(i128, String),
     PacketConsumed(i128, String),
+    PacketDestroyed(i128, String),
     EpochCreated(i128, String),
     EpochStarted(i128, String),
     EpochFinished(i128, String),
@@ -533,6 +550,7 @@ impl NetEvent {
         match &self.inner {
             NetEventKind::PacketCreated(_, _) => "PacketCreated".to_string(),
             NetEventKind::PacketConsumed(_, _) => "PacketConsumed".to_string(),
+            NetEventKind::PacketDestroyed(_, _) => "PacketDestroyed".to_string(),
             NetEventKind::EpochCreated(_, _) => "EpochCreated".to_string(),
             NetEventKind::EpochStarted(_, _) => "EpochStarted".to_string(),
             NetEventKind::EpochFinished(_, _) => "EpochFinished".to_string(),
@@ -548,6 +566,7 @@ impl NetEvent {
         match &self.inner {
             NetEventKind::PacketCreated(ts, _)
             | NetEventKind::PacketConsumed(ts, _)
+            | NetEventKind::PacketDestroyed(ts, _)
             | NetEventKind::EpochCreated(ts, _)
             | NetEventKind::EpochStarted(ts, _)
             | NetEventKind::EpochFinished(ts, _)
@@ -563,6 +582,7 @@ impl NetEvent {
         match &self.inner {
             NetEventKind::PacketCreated(_, id)
             | NetEventKind::PacketConsumed(_, id)
+            | NetEventKind::PacketDestroyed(_, id)
             | NetEventKind::PacketMoved(_, id, _) => Some(id.clone()),
             _ => None,
         }
@@ -606,6 +626,9 @@ impl NetEvent {
             NetEventKind::PacketConsumed(ts, id) => {
                 format!("NetEvent.PacketConsumed(ts={}, packet_id='{}')", ts, id)
             }
+            NetEventKind::PacketDestroyed(ts, id) => {
+                format!("NetEvent.PacketDestroyed(ts={}, packet_id='{}')", ts, id)
+            }
             NetEventKind::EpochCreated(ts, id) => {
                 format!("NetEvent.EpochCreated(ts={}, epoch_id='{}')", ts, id)
             }
@@ -648,6 +671,9 @@ impl NetEvent {
             CoreNetSimEvent::PacketCreated(ts, id) => NetEventKind::PacketCreated(*ts, id.to_string()),
             CoreNetSimEvent::PacketConsumed(ts, id) => {
                 NetEventKind::PacketConsumed(*ts, id.to_string())
+            }
+            CoreNetSimEvent::PacketDestroyed(ts, id) => {
+                NetEventKind::PacketDestroyed(*ts, id.to_string())
             }
             CoreNetSimEvent::EpochCreated(ts, id) => NetEventKind::EpochCreated(*ts, id.to_string()),
             CoreNetSimEvent::EpochStarted(ts, id) => NetEventKind::EpochStarted(*ts, id.to_string()),

@@ -306,11 +306,11 @@ fn test_cancel_epoch_workflow() {
             assert_eq!(destroyed.len(), 1);
             assert_eq!(destroyed[0], packet_id);
 
-            // Should have events for packet consumption and epoch cancellation
+            // Should have events for packet destruction and epoch cancellation
             assert!(
                 events
                     .iter()
-                    .any(|e| matches!(e, NetEvent::PacketConsumed(_, _)))
+                    .any(|e| matches!(e, NetEvent::PacketDestroyed(_, _)))
             );
             assert!(
                 events
