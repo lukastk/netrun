@@ -126,6 +126,7 @@ name = "netrun-sim"
 version = "0.1.1"
 dependencies = [
  "indexmap",
+ "pyo3",
  "thiserror",
  "ulid",
  "utcnow",

@@ -65,7 +65,8 @@ pub struct Salvo {
 }
 
 /// The lifecycle state of an epoch.
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg_attr(feature = "python", pyo3::pyclass(eq, eq_int))]
 pub enum EpochState {
     /// Epoch is created but not yet started. External code must call StartEpoch.
     Startable,
@@ -73,6 +74,18 @@ pub enum EpochState {
     Running,
     /// Epoch has completed. No further operations are allowed.
     Finished,
+}
+
+#[cfg(feature = "python")]
+#[pyo3::pymethods]
+impl EpochState {
+    fn __repr__(&self) -> String {
+        match self {
+            EpochState::Startable => "EpochState.Startable".to_string(),
+            EpochState::Running => "EpochState.Running".to_string(),
+            EpochState::Finished => "EpochState.Finished".to_string(),
+        }
+    }
 }
 
 /// An execution instance of a node.

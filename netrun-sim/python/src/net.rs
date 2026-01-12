@@ -2,10 +2,14 @@ use pyo3::prelude::*;
 use pyo3::types::PyList;
 
 use crate::errors::net_action_error_to_py_err;
-use crate::graph::{Edge, Graph};
+use crate::graph::Graph;
 
+// Re-export EpochState from core (it has pyclass)
+pub use netrun_sim::net::EpochState;
+
+use netrun_sim::graph::Edge as CoreEdge;
 use netrun_sim::net::{
-    Epoch as CoreEpoch, EpochState as CoreEpochState, NetSim as CoreNetSim, NetAction as CoreNetSimAction,
+    Epoch as CoreEpoch, NetSim as CoreNetSim, NetAction as CoreNetSimAction,
     NetActionResponse as CoreNetSimActionResponse, NetActionResponseData as CoreNetSimActionResponseData,
     NetEvent as CoreNetSimEvent, Packet as CorePacket, PacketLocation as CorePacketLocation,
     Salvo as CoreSalvo,
@@ -71,9 +75,10 @@ impl PacketLocation {
 
     /// Create an Edge location.
     #[staticmethod]
-    fn edge(edge: Edge) -> Self {
+    fn edge(edge: CoreEdge) -> Self {
+        // Edge is now directly the core type (re-exported from core)
         PacketLocation {
-            inner: CorePacketLocation::Edge(edge.to_core()),
+            inner: CorePacketLocation::Edge(edge),
         }
     }
 
@@ -122,35 +127,7 @@ impl PacketLocation {
     }
 }
 
-/// Epoch lifecycle state.
-#[pyclass(eq, eq_int)]
-#[derive(Clone, PartialEq)]
-pub enum EpochState {
-    Startable,
-    Running,
-    Finished,
-}
-
-#[pymethods]
-impl EpochState {
-    fn __repr__(&self) -> String {
-        match self {
-            EpochState::Startable => "EpochState.Startable".to_string(),
-            EpochState::Running => "EpochState.Running".to_string(),
-            EpochState::Finished => "EpochState.Finished".to_string(),
-        }
-    }
-}
-
-impl EpochState {
-    pub fn from_core(state: &CoreEpochState) -> Self {
-        match state {
-            CoreEpochState::Startable => EpochState::Startable,
-            CoreEpochState::Running => EpochState::Running,
-            CoreEpochState::Finished => EpochState::Finished,
-        }
-    }
-}
+// EpochState is now re-exported from core (pub use above)
 
 /// A packet in the network.
 #[pyclass]
@@ -277,11 +254,16 @@ impl Epoch {
     }
 
     fn __repr__(&self) -> String {
+        let state_repr = match &self.state {
+            EpochState::Startable => "EpochState.Startable",
+            EpochState::Running => "EpochState.Running",
+            EpochState::Finished => "EpochState.Finished",
+        };
         format!(
-            "Epoch(id='{}', node_name={:?}, state={:?})",
+            "Epoch(id='{}', node_name={:?}, state={})",
             self.id,
             self.node_name,
-            self.state.__repr__()
+            state_repr
         )
     }
 }
@@ -293,7 +275,8 @@ impl Epoch {
             node_name: epoch.node_name.clone(),
             in_salvo: Salvo::from_core(&epoch.in_salvo),
             out_salvos: epoch.out_salvos.iter().map(Salvo::from_core).collect(),
-            state: EpochState::from_core(&epoch.state),
+            // EpochState is now directly the core type (re-exported from core)
+            state: epoch.state.clone(),
         }
     }
 }
