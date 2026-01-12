@@ -29,6 +29,10 @@ class CannotFinishNonEmptyEpochError(NetrunError):
     """Cannot finish epoch because it still contains packets."""
     ...
 
+class UnsentOutputSalvoError(NetrunError):
+    """Cannot finish epoch because output port still has unsent packets."""
+    ...
+
 class PacketNotInNodeError(NetrunError):
     """Packet is not inside the specified epoch's node location."""
     ...
@@ -482,6 +486,7 @@ __all__ = [
     "EpochNotRunningError",
     "EpochNotStartableError",
     "CannotFinishNonEmptyEpochError",
+    "UnsentOutputSalvoError",
     "PacketNotInNodeError",
     "OutputPortNotFoundError",
     "OutputPortFullError",

@@ -161,6 +161,13 @@ pub enum NetActionError {
     #[error("cannot finish epoch {epoch_id}: epoch still contains packets")]
     CannotFinishNonEmptyEpoch { epoch_id: EpochID },
 
+    /// Cannot finish epoch because output port still has unsent packets
+    #[error("cannot finish epoch {epoch_id}: output port '{port_name}' has unsent packets")]
+    UnsentOutputSalvo {
+        epoch_id: EpochID,
+        port_name: PortName,
+    },
+
     /// Packet is not inside the specified epoch's node location
     #[error("packet {packet_id} is not inside epoch {epoch_id}")]
     PacketNotInNode {
@@ -720,39 +727,67 @@ impl NetSim {
     }
 
     fn finish_epoch(&mut self, epoch_id: &EpochID) -> NetActionResponse {
-        if let Some(epoch) = self._epochs.get(epoch_id) {
-            if let EpochState::Running = epoch.state {
-                // No packets may remain in the epoch by the time it has ended.
-                let epoch_loc = PacketLocation::Node(*epoch_id);
-                if let Some(packets) = self._packets_by_location.get(&epoch_loc) {
-                    if !packets.is_empty() {
-                        return NetActionResponse::Error(
-                            NetActionError::CannotFinishNonEmptyEpoch {
-                                epoch_id: *epoch_id,
-                            },
-                        );
-                    }
+        // Check if epoch exists
+        let epoch = if let Some(epoch) = self._epochs.get(epoch_id) {
+            epoch.clone()
+        } else {
+            return NetActionResponse::Error(NetActionError::EpochNotFound {
+                epoch_id: *epoch_id,
+            });
+        };
 
-                    let mut epoch = self._epochs.remove(epoch_id).unwrap();
-                    epoch.state = EpochState::Finished;
-                    self._packets_by_location.remove(&epoch_loc);
-                    NetActionResponse::Success(
-                        NetActionResponseData::FinishedEpoch(epoch),
-                        vec![NetEvent::EpochFinished(get_utc_now(), *epoch_id)],
-                    )
-                } else {
-                    panic!("Epoch {} not found in location {:?}", epoch_id, epoch_loc);
-                }
-            } else {
-                NetActionResponse::Error(NetActionError::EpochNotRunning {
+        // Check if epoch is running
+        if epoch.state != EpochState::Running {
+            return NetActionResponse::Error(NetActionError::EpochNotRunning {
+                epoch_id: *epoch_id,
+            });
+        }
+
+        // No packets may remain inside the epoch
+        let epoch_loc = PacketLocation::Node(*epoch_id);
+        if let Some(packets) = self._packets_by_location.get(&epoch_loc) {
+            if !packets.is_empty() {
+                return NetActionResponse::Error(NetActionError::CannotFinishNonEmptyEpoch {
                     epoch_id: *epoch_id,
-                })
+                });
             }
         } else {
-            NetActionResponse::Error(NetActionError::EpochNotFound {
-                epoch_id: *epoch_id,
-            })
+            panic!("Epoch {} not found in location {:?}", epoch_id, epoch_loc);
         }
+
+        // No packets may remain in output ports (unsent salvos)
+        let node = self
+            .graph
+            .nodes()
+            .get(&epoch.node_name)
+            .expect("Epoch references non-existent node");
+        for port_name in node.out_ports.keys() {
+            let output_port_loc = PacketLocation::OutputPort(*epoch_id, port_name.clone());
+            if let Some(packets) = self._packets_by_location.get(&output_port_loc) {
+                if !packets.is_empty() {
+                    return NetActionResponse::Error(NetActionError::UnsentOutputSalvo {
+                        epoch_id: *epoch_id,
+                        port_name: port_name.clone(),
+                    });
+                }
+            }
+        }
+
+        // All checks passed - finish the epoch
+        let mut epoch = self._epochs.remove(epoch_id).unwrap();
+        epoch.state = EpochState::Finished;
+
+        // Clean up location entries
+        self._packets_by_location.remove(&epoch_loc);
+        for port_name in node.out_ports.keys() {
+            let output_port_loc = PacketLocation::OutputPort(*epoch_id, port_name.clone());
+            self._packets_by_location.remove(&output_port_loc);
+        }
+
+        NetActionResponse::Success(
+            NetActionResponseData::FinishedEpoch(epoch),
+            vec![NetEvent::EpochFinished(get_utc_now(), *epoch_id)],
+        )
     }
 
     fn cancel_epoch(&mut self, epoch_id: &EpochID) -> NetActionResponse {
@@ -1527,6 +1562,52 @@ mod tests {
         assert!(matches!(
             response,
             NetActionResponse::Error(NetActionError::CannotFinishNonEmptyEpoch { .. })
+        ));
+    }
+
+    #[test]
+    fn test_cannot_finish_epoch_with_unsent_output_salvo() {
+        let graph = linear_graph_3();
+        let mut net = NetSim::new(graph);
+
+        // Create packet and place at input port
+        let packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
+
+        let input_port_loc = PacketLocation::InputPort("B".to_string(), "in".to_string());
+        net._packets.get_mut(&packet_id).unwrap().location = input_port_loc.clone();
+        net._packets_by_location
+            .get_mut(&PacketLocation::OutsideNet)
+            .unwrap()
+            .shift_remove(&packet_id);
+        net._packets_by_location
+            .get_mut(&input_port_loc)
+            .unwrap()
+            .insert(packet_id.clone());
+
+        // Create and start epoch
+        let salvo = Salvo {
+            salvo_condition: "manual".to_string(),
+            packets: vec![("in".to_string(), packet_id.clone())],
+        };
+        let epoch = get_started_epoch(
+            &net.do_action(&NetAction::CreateAndStartEpoch("B".to_string(), salvo)),
+        );
+
+        // Consume the input packet
+        net.do_action(&NetAction::ConsumePacket(packet_id));
+
+        // Create an output packet and load it into output port
+        let output_packet_id = get_packet_id(&net.do_action(&NetAction::CreatePacket(Some(epoch.id))));
+        net.do_action(&NetAction::LoadPacketIntoOutputPort(
+            output_packet_id,
+            "out".to_string(),
+        ));
+
+        // Try to finish without sending the output salvo
+        let response = net.do_action(&NetAction::FinishEpoch(epoch.id));
+        assert!(matches!(
+            response,
+            NetActionResponse::Error(NetActionError::UnsentOutputSalvo { .. })
         ));
     }
 
