@@ -12,12 +12,24 @@ The project is split into two main components:
 
 This separation of concerns allows the actual execution and data storage to be implemented independently of the flow mechanics.
 
-### netrun (Runtime) - *Coming Soon*
+### netrun (Runtime)
 
 `netrun` is a pure Python package built on top of `netrun-sim`. It provides:
-- Actual node execution logic
-- Packet data storage and management
-- Higher-level APIs for building flow-based applications
+- Actual node execution logic via configurable execution functions
+- Packet value storage and retrieval
+- Thread and process pool management for parallel execution
+- Error handling with retries and dead letter queues
+- Comprehensive logging and history
+- A human-readable DSL (TOML) for net serialization
+- Checkpointing and state restoration
+- Node factories for reusable node templates
+
+**See `netrun/PROJECT_SPEC.md` for the full specification.**
+
+**Important:** The `netrun` package uses **nblite** for literate programming. Before writing any code for `netrun`, you **must** read `netrun/NBLITE_INSTRUCTIONS.md` carefully. Key points:
+- Source code lives in `.pct.py` files (percent notebooks), not in the exported Python modules
+- Never edit files in `src/netrun/` directly - they are auto-generated
+- After editing `.pct.py` files, run `nbl export --export-pipeline "pts->nbs"` then `nbl export`
 
 ## Repository Structure
 
@@ -25,7 +37,7 @@ This separation of concerns allows the actual execution and data storage to be i
 repo/
 ├── CLAUDE.md               # This file
 ├── README.md               # Project README
-├── netrun-sim/            # Simulation engine
+├── netrun-sim/             # Simulation engine (Rust + Python bindings)
 │   ├── Cargo.toml          # Rust workspace root
 │   ├── core/               # Rust library
 │   │   ├── Cargo.toml
@@ -33,7 +45,9 @@ repo/
 │   │   │   ├── lib.rs      # Module exports
 │   │   │   ├── _utils.rs   # Utility functions
 │   │   │   ├── graph.rs    # Graph topology types
-│   │   │   └── net.rs      # Network runtime state
+│   │   │   ├── graph_tests.rs  # Graph tests (separate file)
+│   │   │   ├── net.rs      # Network runtime state
+│   │   │   └── net_tests.rs    # Net tests (separate file)
 │   │   ├── tests/          # Integration tests
 │   │   └── examples/       # Rust examples
 │   └── python/             # Python bindings (PyO3)
@@ -43,8 +57,16 @@ repo/
 │       ├── python/         # Python package
 │       │   └── netrun_sim/
 │       └── examples/       # Python examples
-└── netrun/                 # Runtime (pure Python) - TBD
-    └── ...
+└── netrun/                 # Runtime (pure Python, nblite project)
+    ├── PROJECT_SPEC.md     # Full specification
+    ├── NBLITE_INSTRUCTIONS.md  # How to write code (READ THIS FIRST)
+    ├── nblite.toml         # nblite configuration
+    ├── nbs/                # Jupyter notebooks (.ipynb)
+    │   └── netrun/
+    ├── pts/                # Percent notebooks (.pct.py) - EDIT THESE AND THEN REVERSE EXPORT
+    │   └── netrun/
+    └── src/                # Auto-generated code (DO NOT EDIT)
+        └── netrun/
 ```
 
 ---
@@ -74,7 +96,7 @@ The `Graph` represents the static topology of the network:
 
 ### Net (`net.rs`)
 
-The `Net` represents the runtime state of a network:
+The `NetSim` represents the runtime state of a network:
 
 - **Packets** (`Packet`): Units that flow through the network
   - Identified by `PacketID` (ULID)
@@ -130,7 +152,7 @@ When `RunNetUntilBlocked` is called, the network automatically:
 
 ### Manual Actions (`NetAction`)
 
-**Important**: All mutations to the `Net` state must go through `do_action(NetAction)`. This ensures:
+**Important**: All mutations to the `NetSim` state must go through `do_action(NetAction)`. This ensures:
 - All operations return the list of `NetEvent`s that transpired
 - External code can track exactly what operations have been performed
 - Consistent event-driven architecture
@@ -162,7 +184,7 @@ Actions produce events that track what happened:
 ## Typical Usage Pattern
 
 1. **Define the graph**: Create nodes with ports and salvo conditions, connect with edges
-2. **Create a Net**: Initialize runtime state from the graph
+2. **Create a NetSim**: Initialize runtime state from the graph
 3. **Inject packets**: Create packets and place them on edges or in input ports
 4. **Run the network**: Call `RunNetUntilBlocked` to move packets and trigger epochs
 5. **Handle startable epochs**: External code decides when to start each epoch
@@ -191,7 +213,7 @@ Actions produce events that track what happened:
 - **Event-driven**: All state changes produce events for observability
 - **Explicit control**: External code explicitly starts epochs and sends salvos
 - **Deterministic**: Salvo conditions are checked in order; first match wins
-- **Action-based mutations**: All `Net` state changes must go through `do_action(NetAction)` to ensure event tracking and auditability
+- **Action-based mutations**: All `NetSim` state changes must go through `do_action(NetAction)` to ensure event tracking and auditability
 
 ## Building and Testing
 
