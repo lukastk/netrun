@@ -5,13 +5,28 @@ description = "A flow-based development (FBD) runtime system."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-    "netrun-sim>=0.1.1",
+    "netrun-sim",
 ]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/netrun"]
+
+[tool.uv.sources]
+netrun-sim = { path = "../netrun-sim/python", editable = true }
 
 [dependency-groups]
 dev = [
     "jupyterlab>=4.5.1",
     "nblite>=1.0.4",
     "pytest>=9.0.2",
+    "pytest-asyncio>=0.24.0",
     "ruff>=0.8.0",
 ]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

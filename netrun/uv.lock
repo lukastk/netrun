@@ -983,7 +983,7 @@ wheels = [
 [[package]]
 name = "netrun"
 version = "0.1.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "netrun-sim" },
 ]
@@ -993,30 +993,41 @@ dev = [
     { name = "jupyterlab" },
     { name = "nblite" },
     { name = "pytest" },
+    { name = "pytest-asyncio" },
     { name = "ruff" },
 ]
 
 [package.metadata]
-requires-dist = [{ name = "netrun-sim", specifier = ">=0.1.1" }]
+requires-dist = [{ name = "netrun-sim", editable = "../netrun-sim/python" }]
 
 [package.metadata.requires-dev]
 dev = [
     { name = "jupyterlab", specifier = ">=4.5.1" },
     { name = "nblite", specifier = ">=1.0.4" },
     { name = "pytest", specifier = ">=9.0.2" },
+    { name = "pytest-asyncio", specifier = ">=0.24.0" },
     { name = "ruff", specifier = ">=0.8.0" },
 ]
 
 [[package]]
 name = "netrun-sim"
 version = "0.1.1"
-source = { registry = "https://pypi.org/simple" }
+source = { editable = "../netrun-sim/python" }
 dependencies = [
     { name = "python-ulid" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/44/76/d3837800c29a26930a7f2ecc240d49285c15e7fe407040179435dd7cc5b4/netrun_sim-0.1.1.tar.gz", hash = "sha256:fe29bbbc6f578a48d9c57822177307567f4926cb82acd86c4364e66a0b7493b4", size = 209933, upload-time = "2025-12-25T21:27:09.028Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/fc/29/fe34853a5eb4c0046a0c9063a38e83434fa3dc5727d03581ca416320ceb1/netrun_sim-0.1.1-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:e8c275fa4e777f64003460895e03bbf4314a2122f9ba87f122d59f1c14ed5a30", size = 462297, upload-time = "2025-12-25T21:27:06.923Z" },
+
+[package.metadata]
+requires-dist = [{ name = "python-ulid", specifier = ">=1.0" }]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "git-cliff", specifier = ">=2.11.0" },
+    { name = "jupyterlab", specifier = ">=4.3.8" },
+    { name = "maturin", specifier = ">=1.10.2" },
+    { name = "python-ulid", specifier = ">=1.1.0" },
+    { name = "twine", specifier = ">=6.1.0" },
+    { name = "typing-extensions", specifier = ">=4.13.2" },
 ]
 
 [[package]]
@@ -1321,6 +1332,19 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/d1/db/7ef3487e0fb0049ddb5ce41d3a49c235bf9ad299b6a25d5780a89f19230f/pytest-9.0.2.tar.gz", hash = "sha256:75186651a92bd89611d1d9fc20f0b4345fd827c41ccd5c299a868a05d70edf11", size = 1568901, upload-time = "2025-12-06T21:30:51.014Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/3b/ab/b3226f0bd7cdcf710fbede2b3548584366da3b19b5021e74f5bde2a8fa3f/pytest-9.0.2-py3-none-any.whl", hash = "sha256:711ffd45bf766d5264d487b917733b453d917afd2b0ad65223959f59089f875b", size = 374801, upload-time = "2025-12-06T21:30:49.154Z" },
+]
+
+[[package]]
+name = "pytest-asyncio"
+version = "1.3.0"
+source = { registry = "https://pypi.org/simple" }
+dependencies = [
+    { name = "pytest" },
+    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
+]
+sdist = { url = "https://files.pythonhosted.org/packages/90/2c/8af215c0f776415f3590cac4f9086ccefd6fd463befeae41cd4d3f193e5a/pytest_asyncio-1.3.0.tar.gz", hash = "sha256:d7f52f36d231b80ee124cd216ffb19369aa168fc10095013c6b014a34d3ee9e5", size = 50087, upload-time = "2025-11-10T16:07:47.256Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/e5/35/f8b19922b6a25bc0880171a2f1a003eaeb93657475193ab516fd87cac9da/pytest_asyncio-1.3.0-py3-none-any.whl", hash = "sha256:611e26147c7f77640e6d0a92a38ed17c3e9848063698d5c93d5aa7aa11cebff5", size = 15075, upload-time = "2025-11-10T16:07:45.537Z" },
 ]
 
 [[package]]

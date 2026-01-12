@@ -1,0 +1,263 @@
+#!/usr/bin/env python3
+"""
+Example 00: Basic Setup
+
+Demonstrates the foundational components of netrun:
+- Graph creation with nodes and edges
+- Net construction and configuration
+- Node execution function setup
+- PacketValueStore usage
+"""
+
+from netrun.core import (
+    # Graph building
+    Graph,
+    Node,
+    Edge,
+    Port,
+    PortType,
+    PortRef,
+    PortState,
+    MaxSalvos,
+    SalvoCondition,
+    SalvoConditionTerm,
+    # Net and configuration
+    Net,
+    NetState,
+    NodeConfig,
+    # Value storage
+    PacketValueStore,
+    # Error types
+    NetrunRuntimeError,
+    PacketTypeMismatch,
+)
+
+
+def main():
+    print("=" * 60)
+    print("Example 00: Basic Setup")
+    print("=" * 60)
+
+    # =========================================================================
+    # Part 1: Creating a Graph
+    # =========================================================================
+    print("\n--- Part 1: Creating a Graph ---\n")
+
+    # Define a Source node with one output port
+    source_node = Node(
+        name="Source",
+        out_ports={"out": Port()},
+        out_salvo_conditions={
+            "send": SalvoCondition(
+                MaxSalvos.infinite(),
+                "out",
+                SalvoConditionTerm.port("out", PortState.non_empty())
+            )
+        }
+    )
+
+    # Define a Processor node with input and output ports
+    processor_node = Node(
+        name="Processor",
+        in_ports={"in": Port()},
+        out_ports={"out": Port()},
+        in_salvo_conditions={
+            "receive": SalvoCondition(
+                MaxSalvos.finite(1),
+                "in",
+                SalvoConditionTerm.port("in", PortState.non_empty())
+            )
+        },
+        out_salvo_conditions={
+            "send": SalvoCondition(
+                MaxSalvos.infinite(),
+                "out",
+                SalvoConditionTerm.port("out", PortState.non_empty())
+            )
+        }
+    )
+
+    # Define a Sink node with one input port
+    sink_node = Node(
+        name="Sink",
+        in_ports={"in": Port()},
+        in_salvo_conditions={
+            "receive": SalvoCondition(
+                MaxSalvos.finite(1),
+                "in",
+                SalvoConditionTerm.port("in", PortState.non_empty())
+            )
+        }
+    )
+
+    # Connect the nodes with edges
+    edges = [
+        Edge(
+            PortRef("Source", PortType.Output, "out"),
+            PortRef("Processor", PortType.Input, "in")
+        ),
+        Edge(
+            PortRef("Processor", PortType.Output, "out"),
+            PortRef("Sink", PortType.Input, "in")
+        ),
+    ]
+
+    # Create the graph
+    graph = Graph([source_node, processor_node, sink_node], edges)
+    print(f"Created graph: {graph}")
+    print(f"  Nodes: {list(graph.nodes().keys())}")
+
+    # =========================================================================
+    # Part 2: Creating a Net
+    # =========================================================================
+    print("\n--- Part 2: Creating a Net ---\n")
+
+    net = Net(
+        graph,
+        # Enable consumed packet storage (keep values after consumption)
+        consumed_packet_storage=True,
+        consumed_packet_storage_limit=100,
+        # Error handling mode
+        on_error="pause",
+    )
+
+    print(f"Created Net with state: {net.state}")
+    print(f"  on_error mode: {net._on_error}")
+
+    # =========================================================================
+    # Part 3: Setting Node Execution Functions
+    # =========================================================================
+    print("\n--- Part 3: Setting Node Execution Functions ---\n")
+
+    # Define execution functions (these won't run until Milestone 3)
+    def source_exec(ctx, packets):
+        """Source node: generates data."""
+        print(f"[Source] Executing epoch {ctx.epoch_id}")
+
+    def processor_exec(ctx, packets):
+        """Processor node: transforms data."""
+        print(f"[Processor] Executing epoch {ctx.epoch_id}")
+
+    def sink_exec(ctx, packets):
+        """Sink node: consumes data."""
+        print(f"[Sink] Executing epoch {ctx.epoch_id}")
+
+    def processor_start(net):
+        """Called when net starts - initialize processor state."""
+        print("[Processor] Starting up...")
+
+    def processor_stop(net):
+        """Called when net stops - cleanup processor state."""
+        print("[Processor] Shutting down...")
+
+    # Register execution functions
+    net.set_node_exec("Source", source_exec)
+    net.set_node_exec(
+        "Processor",
+        processor_exec,
+        start_func=processor_start,
+        stop_func=processor_stop
+    )
+    net.set_node_exec("Sink", sink_exec)
+
+    print("Registered execution functions for all nodes")
+
+    # Verify registration
+    for node_name in ["Source", "Processor", "Sink"]:
+        funcs = net.get_node_exec_funcs(node_name)
+        print(f"  {node_name}: exec_func={funcs.exec_func.__name__ if funcs.exec_func else None}")
+
+    # =========================================================================
+    # Part 4: Setting Node Configuration
+    # =========================================================================
+    print("\n--- Part 4: Setting Node Configuration ---\n")
+
+    # Configure the Processor with retries and deferred actions
+    net.set_node_config(
+        "Processor",
+        retries=3,
+        defer_net_actions=True,  # Required when retries > 0
+        retry_wait=0.5,
+        timeout=30.0,
+    )
+
+    # Configure the Sink
+    net.set_node_config(
+        "Sink",
+        capture_stdout=True,
+        echo_stdout=True,
+    )
+
+    # Show configurations
+    for node_name in ["Source", "Processor", "Sink"]:
+        config = net.get_node_config(node_name)
+        print(f"{node_name} config:")
+        print(f"  retries: {config.retries}")
+        print(f"  defer_net_actions: {config.defer_net_actions}")
+        print(f"  timeout: {config.timeout}")
+
+    # =========================================================================
+    # Part 5: Using PacketValueStore
+    # =========================================================================
+    print("\n--- Part 5: Using PacketValueStore ---\n")
+
+    # Create a standalone value store for demonstration
+    store = PacketValueStore(
+        consumed_storage=True,
+        consumed_storage_limit=5
+    )
+
+    # Store direct values
+    store.store_value("packet-001", {"type": "data", "value": 42})
+    store.store_value("packet-002", [1, 2, 3, 4, 5])
+
+    # Store a value function (lazy evaluation)
+    computation_count = [0]
+
+    def compute_value():
+        computation_count[0] += 1
+        return f"computed-result-{computation_count[0]}"
+
+    store.store_value_func("packet-003", compute_value)
+
+    print("Stored values:")
+    print(f"  packet-001: {store.get_value('packet-001')}")
+    print(f"  packet-002: {store.get_value('packet-002')}")
+
+    # Value function is called each time
+    print(f"\nValue function (first call): {store.get_value('packet-003')}")
+    print(f"Value function (second call): {store.get_value('packet-003')}")
+    print(f"  (Function was called {computation_count[0]} times)")
+
+    # Consume a value
+    consumed = store.consume("packet-001")
+    print(f"\nConsumed packet-001: {consumed}")
+    print(f"  In consumed storage: {store.get_consumed_value('packet-001')}")
+    print(f"  Still in active storage: {store.has_value('packet-001')}")
+
+    # =========================================================================
+    # Part 6: Net State and Wrapper Methods
+    # =========================================================================
+    print("\n--- Part 6: Net State and Wrapper Methods ---\n")
+
+    print(f"Net state: {net.state}")
+
+    # These methods wrap the internal NetSim
+    print(f"Startable epochs: {net.get_startable_epochs()}")
+    print(f"Startable epochs for 'Processor': {net.get_startable_epochs_by_node('Processor')}")
+
+    # Demonstrate state transitions
+    net.pause()
+    print(f"After pause(): {net.state}")
+
+    net.stop()
+    print(f"After stop(): {net.state}")
+
+    # =========================================================================
+    print("\n" + "=" * 60)
+    print("Example complete!")
+    print("=" * 60)
+
+
+if __name__ == "__main__":
+    main()

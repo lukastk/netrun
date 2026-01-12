@@ -31,6 +31,14 @@ format="ipynb"
 path="pts/tests"
 format="percent"
 
-[cl.examples]
-path="examples"
+[cl.nbs_examples]
+path="nbs/examples"
 format="ipynb"
+
+[cl.pts_examples]
+path="pts/examples"
+format="percent"
+
+[cl.lib_examples]
+path="src/examples"
+format="module"

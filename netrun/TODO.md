@@ -4,16 +4,16 @@ This document outlines the development plan for the `netrun` Python package, whi
 
 ---
 
-## Milestone 1: Core Foundation
+## Milestone 1: Core Foundation ✅ COMPLETED
 
 **Goal:** Establish the basic Net class structure and packet value management.
 
 ### 1.1 Core Module Setup
-- [ ] Set up `00_core.pct.py` with proper nblite structure
-- [ ] Re-export `netrun_sim` types for user convenience (errors, graph types, etc.)
+- [x] Set up `00_core.pct.py` with proper nblite structure
+- [x] Re-export `netrun_sim` types for user convenience (errors, graph types, etc.)
   - Use reflection/introspection where possible to avoid duplication
-- [ ] Define `NetrunError` base class for netrun-specific errors
-- [ ] Define netrun-specific error types (inheriting from `NetrunError`):
+- [x] Define `NetrunRuntimeError` base class for netrun-specific errors
+- [x] Define netrun-specific error types (inheriting from `NetrunRuntimeError`):
   - `PacketTypeMismatch`
   - `ValueFunctionFailed`
   - `NodeExecutionFailed`
@@ -21,93 +21,99 @@ This document outlines the development plan for the `netrun` Python package, whi
   - `EpochCancelled`
 
 ### 1.2 Packet Value Storage
-- [ ] Implement `PacketValueStore` class:
+- [x] Implement `PacketValueStore` class:
   - Store packet values by PacketID
   - Support value functions (lazy evaluation)
   - Handle consumed packet storage with configurable limits
   - Support optional file-based storage (pickle)
-- [ ] Implement value function handling:
+- [x] Implement value function handling:
   - Sync value functions
   - Async value functions
   - Error handling for value function failures
 
 ### 1.3 Basic Net Class
-- [ ] Implement `Net.__init__()`:
+- [x] Implement `Net.__init__()`:
   - Accept `Graph` from `netrun_sim`
   - Initialize internal `NetSim` (hidden from user)
   - Set up packet value store
   - Configuration options: `consumed_packet_storage`, `consumed_packet_storage_limit`
-- [ ] Implement `Net.set_node_exec()` for setting execution functions
-- [ ] Implement `Net.set_node_config()` for node configuration
-- [ ] Store node execution functions and configurations internally
-- [ ] Implement wrapper methods to hide NetSim:
+- [x] Implement `Net.set_node_exec()` for setting execution functions
+- [x] Implement `Net.set_node_config()` for node configuration
+- [x] Store node execution functions and configurations internally
+- [x] Implement wrapper methods to hide NetSim:
   - `get_startable_epochs()` - list of startable epoch IDs
   - `get_startable_epochs_by_node(node_name)` - startable epochs for a specific node
   - `get_epoch(epoch_id)` - get epoch by ID
   - `get_packet(packet_id)` - get packet by ID
 
 ### 1.4 Tests for Milestone 1
-- [ ] Test error type definitions and hierarchy
-- [ ] Test `PacketValueStore`:
+- [x] Test error type definitions and hierarchy
+- [x] Test `PacketValueStore`:
   - Direct value storage/retrieval
   - Value function evaluation (sync and async)
   - Storage limits and eviction
   - File-based storage
-- [ ] Test basic `Net` construction
-- [ ] Test `set_node_exec()` and `set_node_config()`
+- [x] Test basic `Net` construction
+- [x] Test `set_node_exec()` and `set_node_config()`
+
+### 1.5 Examples for Milestone 1
+- [x] `examples/00_basic_setup/` - Basic Net setup and configuration
 
 ---
 
-## Milestone 2: Node Execution Contexts
+## Milestone 2: Node Execution Contexts ✅ COMPLETED
 
 **Goal:** Implement the execution contexts that nodes use to interact with the network.
 
 ### 2.1 NodeExecutionContext
-- [ ] Implement `NodeExecutionContext` class:
+- [x] Implement `NodeExecutionContext` class:
   - Properties: `epoch_id`, `node_name`, `retry_count`, `retry_timestamps`, `retry_exceptions`
   - Access to `_net` (private)
-- [ ] Implement context packet operations:
+- [x] Implement context packet operations:
   - `create_packet(value)` - create packet with direct value
   - `create_packet_from_value_func(func)` - create packet with lazy value
   - `consume_packet(packet)` - consume and return value
   - `load_output_port(port_name, packet)` - load packet to output port
   - `send_output_salvo(salvo_condition_name)` - send output salvo
-- [ ] Implement `cancel_epoch()` - raises `EpochCancelled`
-- [ ] Support both sync and async variants of all methods
+- [x] Implement `cancel_epoch()` - raises `EpochCancelled`
+- [x] Support both sync and async variants of all methods
 
 ### 2.2 NodeFailureContext
-- [ ] Implement `NodeFailureContext` class:
+- [x] Implement `NodeFailureContext` class:
   - Properties: `epoch_id`, `node_name`, `retry_count`, `retry_timestamps`, `retry_exceptions`
   - `input_salvo`: dict of input packets
   - `packet_values`: dict of consumed values
 
 ### 2.3 Deferred Actions System
-- [ ] Implement `DeferredPacket` class:
+- [x] Implement `DeferredPacket` class:
   - Behaves like `Packet` for all node operations
   - `id` property raises exception if accessed (ID not yet assigned)
   - Resolved to real `Packet` on commit
-- [ ] Implement action deferral for `defer_net_actions=True`:
+- [x] Implement action deferral for `defer_net_actions=True`:
   - Queue all packet operations (create, consume, load, send)
   - `create_packet()` returns `DeferredPacket` instead of `Packet`
   - Commit queue on successful completion (assign real PacketIDs)
   - Discard queue on failure (keep for logging)
-- [ ] Implement "unconsume" logic for retries:
+- [x] Implement "unconsume" logic for retries:
   - Restore packet values on failure so they can be consumed again
   - Value functions may be called multiple times (document purity requirement)
 
 ### 2.4 Tests for Milestone 2
-- [ ] Test `NodeExecutionContext` operations (sync)
-- [ ] Test `NodeExecutionContext` operations (async)
-- [ ] Test `NodeFailureContext` creation and properties
-- [ ] Test `DeferredPacket`:
+- [x] Test `NodeExecutionContext` operations (sync)
+- [x] Test `NodeExecutionContext` operations (async)
+- [x] Test `NodeFailureContext` creation and properties
+- [x] Test `DeferredPacket`:
   - Behaves like Packet for load_output_port
   - `id` property raises exception
   - Resolved to real Packet on commit
-- [ ] Test deferred actions:
+- [x] Test deferred actions:
   - Successful commit
   - Discard on failure
   - Unconsume behavior (value functions called again on retry)
-- [ ] Test `cancel_epoch()` behavior
+- [x] Test `cancel_epoch()` behavior
+
+### 2.5 Examples for Milestone 2
+- [x] (No standalone examples - context is used within execution, demonstrated in Milestone 3)
 
 ---
 
@@ -146,6 +152,10 @@ This document outlines the development plan for the `netrun` Python package, whi
 - [ ] Test `start_node_func` and `stop_node_func` calls
 - [ ] Test `run_step()` with `start_epochs=True/False`
 - [ ] Test full `start()` execution
+
+### 3.5 Examples for Milestone 3
+- [ ] `examples/01_simple_pipeline/` - Simple linear pipeline (Source -> Process -> Sink)
+- [ ] `examples/02_branching_flow/` - Fan-out and fan-in patterns
 
 ---
 
@@ -188,6 +198,9 @@ This document outlines the development plan for the `netrun` Python package, whi
 - [ ] Test `on_error="raise"` behavior
 - [ ] Test `error_callback` invocation
 
+### 4.5 Examples for Milestone 4
+- [ ] `examples/03_error_handling/` - Retries and error recovery patterns
+
 ---
 
 ## Milestone 5: Async Execution
@@ -216,6 +229,9 @@ This document outlines the development plan for the `netrun` Python package, whi
 - [ ] Test `async_run_step()` and `async_start()`
 - [ ] Test mixed sync/async nodes
 - [ ] Test async value functions
+
+### 5.5 Examples for Milestone 5
+- [ ] `examples/04_async_nodes/` - Async node functions and mixed sync/async
 
 ---
 
@@ -265,6 +281,10 @@ This document outlines the development plan for the `netrun` Python package, whi
 - [ ] Test `threaded=True` execution
 - [ ] Test `wait_until_blocked()`, `poll()`, `pause()`, `stop()`
 
+### 6.6 Examples for Milestone 6
+- [ ] `examples/05_thread_pools/` - Parallel execution with thread pools
+- [ ] `examples/06_process_pools/` - CPU-intensive work with process pools
+
 ---
 
 ## Milestone 7: Rate Limiting and Parallel Epoch Control
@@ -285,6 +305,9 @@ This document outlines the development plan for the `netrun` Python package, whi
 - [ ] Test rate limiting accuracy
 - [ ] Test `max_parallel_epochs` enforcement
 - [ ] Test interaction between rate limit and max parallel
+
+### 7.4 Examples for Milestone 7
+- [ ] `examples/07_rate_limiting/` - Rate limiting and parallel control
 
 ---
 
@@ -318,6 +341,9 @@ This document outlines the development plan for the `netrun` Python package, whi
 - [ ] Test `echo_stdout` behavior
 - [ ] Test `get_node_log()` and `get_epoch_log()`
 
+### 8.4 Examples for Milestone 8
+- [ ] `examples/08_logging_history/` - History tracking and log inspection
+
 ---
 
 ## Milestone 9: Port Types
@@ -344,6 +370,9 @@ This document outlines the development plan for the `netrun` Python package, whi
 - [ ] Test subclass checking
 - [ ] Test type mismatch error
 
+### 9.4 Examples for Milestone 9
+- [ ] (Integrated into other examples - type checking is mostly transparent)
+
 ---
 
 ## Milestone 10: SIGINT Handling
@@ -360,6 +389,9 @@ This document outlines the development plan for the `netrun` Python package, whi
 ### 10.2 Tests for Milestone 10
 - [ ] Test graceful shutdown on SIGINT
 - [ ] Test running epochs complete before shutdown
+
+### 10.3 Examples for Milestone 10
+- [ ] (Demonstrated in long-running examples from other milestones)
 
 ---
 
@@ -409,6 +441,9 @@ This document outlines the development plan for the `netrun` Python package, whi
 - [ ] Test round-trip: parse → serialize → parse
 - [ ] Test error messages for invalid TOML
 
+### 11.6 Examples for Milestone 11
+- [ ] `examples/09_toml_dsl/` - Defining nets in TOML format
+
 ---
 
 ## Milestone 12: Node Factories
@@ -437,6 +472,9 @@ This document outlines the development plan for the `netrun` Python package, whi
 - [ ] Test `Net.from_factory()`
 - [ ] Test factory in DSL
 - [ ] Test factory serialization
+
+### 12.5 Examples for Milestone 12
+- [ ] `examples/10_node_factories/` - Creating reusable node templates
 
 ---
 
@@ -468,6 +506,9 @@ This document outlines the development plan for the `netrun` Python package, whi
 - [ ] Test definition save/load
 - [ ] Test resumption after load
 
+### 13.4 Examples for Milestone 13
+- [ ] `examples/11_checkpointing/` - Saving and resuming net state
+
 ---
 
 ## Milestone 14: Integration and Polish
@@ -497,12 +538,15 @@ This document outlines the development plan for the `netrun` Python package, whi
 - [ ] Benchmark with thread/process pools
 - [ ] Memory usage under load
 
+### 14.4 Examples for Milestone 14
+- [ ] `examples/12_complete_application/` - Full real-world example combining all features
+
 ---
 
 ## Implementation Order Summary
 
-1. **Milestone 1**: Core Foundation (errors, packet store, basic Net)
-2. **Milestone 2**: Execution Contexts (NodeExecutionContext, deferred actions)
+1. **Milestone 1**: Core Foundation (errors, packet store, basic Net) ✅
+2. **Milestone 2**: Execution Contexts (NodeExecutionContext, deferred actions) ✅
 3. **Milestone 3**: Single-Threaded Execution (run_step, start)
 4. **Milestone 4**: Error Handling (retries, dead letter queue)
 5. **Milestone 5**: Async Execution
@@ -518,10 +562,37 @@ This document outlines the development plan for the `netrun` Python package, whi
 
 ---
 
+## Examples Directory Structure
+
+```
+examples/
+├── 00_basic_setup/           # Milestone 1: Net setup and configuration
+├── 01_simple_pipeline/       # Milestone 3: Linear pipeline
+├── 02_branching_flow/        # Milestone 3: Fan-out/fan-in
+├── 03_error_handling/        # Milestone 4: Retries and recovery
+├── 04_async_nodes/           # Milestone 5: Async execution
+├── 05_thread_pools/          # Milestone 6: Thread pools
+├── 06_process_pools/         # Milestone 6: Process pools
+├── 07_rate_limiting/         # Milestone 7: Rate limiting
+├── 08_logging_history/       # Milestone 8: Logging
+├── 09_toml_dsl/              # Milestone 11: TOML format
+├── 10_node_factories/        # Milestone 12: Factories
+├── 11_checkpointing/         # Milestone 13: Checkpointing
+└── 12_complete_application/  # Milestone 14: Full example
+```
+
+Each example folder contains:
+- `README.md` - Description and instructions
+- `example.py` - Main example code
+- `run_example.sh` - Shell script to run the example
+
+---
+
 ## Notes
 
 - Each milestone should be independently testable
 - Run `nbl export --export-pipeline "pts->nbs"` after editing `.pct.py` files
 - Run `nbl export` to generate Python modules
 - Run `nbl test` to verify notebooks execute correctly
+- Run examples with `./examples/XX_name/run_example.sh`
 - The `netrun-sim` library handles flow mechanics; `netrun` handles execution

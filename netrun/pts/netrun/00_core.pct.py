@@ -6,6 +6,13 @@
 #     name: python3
 # ---
 
+# %% [markdown]
+# # Core
+#
+# This module provides the core functionality for `netrun`, a Python package for running
+# flow-based development (FBD) graphs. It wraps `netrun-sim` to provide actual node execution,
+# packet value storage, and higher-level APIs.
+
 # %%
 #|default_exp core
 
@@ -13,10 +20,1445 @@
 #|hide
 from nblite import nbl_export, show_doc; nbl_export();
 
+# %% [markdown]
+# ## Re-exports from netrun_sim
+#
+# We re-export all public types from `netrun_sim` so users can import everything from `netrun`.
+
 # %%
 #|export
-from typing import Callable, Optional
-from dataclasses import dataclass
-
 import netrun_sim
-from netrun_sim import Port, PortType, PortRef, SalvoConditionTerm, SalvoCondition, Edge
+
+# Graph types
+from netrun_sim import (
+    Graph,
+    Node,
+    Edge,
+    Port,
+    PortType,
+    PortRef,
+    PortSlotSpec,
+    PortState,
+    PacketCount,
+    MaxSalvos,
+    SalvoCondition,
+    SalvoConditionTerm,
+)
+
+# Net types
+from netrun_sim import (
+    NetSim,
+    NetAction,
+    NetEvent,
+    NetActionResponseData,
+    Packet,
+    PacketLocation,
+    Epoch,
+    EpochState,
+    Salvo,
+)
+
+# Error types from netrun_sim (using reflection to avoid manual listing)
+import sys as _sys
+_netrun_sim_errors = [
+    name for name in dir(netrun_sim)
+    if name.endswith('Error') and isinstance(getattr(netrun_sim, name), type)
+]
+for _err_name in _netrun_sim_errors:
+    setattr(_sys.modules[__name__], _err_name, getattr(netrun_sim, _err_name))
+
+# Clean up
+del _sys, _netrun_sim_errors, _err_name
+
+# %% [markdown]
+# ## netrun-specific Error Types
+#
+# These errors are specific to `netrun` (not `netrun-sim`) and handle higher-level
+# execution concerns.
+
+# %%
+#|export
+class NetrunRuntimeError(Exception):
+    """Base class for netrun runtime errors (distinct from netrun_sim errors)."""
+    pass
+
+
+class PacketTypeMismatch(NetrunRuntimeError):
+    """Raised when a packet value doesn't match the expected port type."""
+    def __init__(self, packet_id, expected_type, actual_type, port_name=None):
+        self.packet_id = packet_id
+        self.expected_type = expected_type
+        self.actual_type = actual_type
+        self.port_name = port_name
+        port_info = f" on port '{port_name}'" if port_name else ""
+        super().__init__(
+            f"Packet {packet_id}{port_info}: expected type {expected_type}, got {actual_type}"
+        )
+
+
+class ValueFunctionFailed(NetrunRuntimeError):
+    """Raised when a packet's value function raises an exception."""
+    def __init__(self, packet_id, original_exception):
+        self.packet_id = packet_id
+        self.original_exception = original_exception
+        super().__init__(
+            f"Value function for packet {packet_id} failed: {original_exception}"
+        )
+
+
+class NodeExecutionFailed(NetrunRuntimeError):
+    """Raised when a node's exec function raises an exception."""
+    def __init__(self, node_name, epoch_id, original_exception):
+        self.node_name = node_name
+        self.epoch_id = epoch_id
+        self.original_exception = original_exception
+        super().__init__(
+            f"Node '{node_name}' (epoch {epoch_id}) execution failed: {original_exception}"
+        )
+
+
+class EpochTimeout(NetrunRuntimeError):
+    """Raised when an epoch exceeds its configured timeout."""
+    def __init__(self, node_name, epoch_id, timeout_seconds):
+        self.node_name = node_name
+        self.epoch_id = epoch_id
+        self.timeout_seconds = timeout_seconds
+        super().__init__(
+            f"Node '{node_name}' (epoch {epoch_id}) timed out after {timeout_seconds}s"
+        )
+
+
+class EpochCancelled(NetrunRuntimeError):
+    """Raised when an epoch is cancelled via ctx.cancel_epoch()."""
+    def __init__(self, node_name, epoch_id):
+        self.node_name = node_name
+        self.epoch_id = epoch_id
+        super().__init__(f"Epoch {epoch_id} for node '{node_name}' was cancelled")
+
+
+class NetNotPausedError(NetrunRuntimeError):
+    """Raised when an operation requires the net to be paused but it isn't."""
+    def __init__(self, operation):
+        self.operation = operation
+        super().__init__(f"Operation '{operation}' requires the net to be paused")
+
+
+class DeferredPacketIdAccessError(NetrunRuntimeError):
+    """Raised when trying to access the ID of a deferred packet before commit."""
+    def __init__(self):
+        super().__init__(
+            "Cannot access packet ID before deferred actions are committed. "
+            "The packet ID is assigned when the epoch completes successfully."
+        )
+
+# %% [markdown]
+# ## Packet Value Storage
+#
+# The `PacketValueStore` manages packet values separately from `netrun-sim`'s packet tracking.
+# It supports direct values, lazy value functions, and optional persistence.
+
+# %%
+#|export
+from typing import Any, Callable, Optional, Union
+from dataclasses import dataclass, field
+from collections import OrderedDict
+from pathlib import Path
+import pickle
+import asyncio
+
+
+@dataclass
+class StoredValue:
+    """A stored packet value, either direct or via a value function."""
+    value: Any = None
+    value_func: Optional[Callable[[], Any]] = None
+    is_value_func: bool = False
+
+    def get_value(self) -> Any:
+        """Get the value, calling the value function if necessary."""
+        if self.is_value_func and self.value_func is not None:
+            return self.value_func()
+        return self.value
+
+    async def async_get_value(self) -> Any:
+        """Get the value, awaiting async value functions if necessary."""
+        if self.is_value_func and self.value_func is not None:
+            result = self.value_func()
+            if asyncio.iscoroutine(result):
+                return await result
+            return result
+        return self.value
+
+
+class PacketValueStore:
+    """
+    Manages packet values for the netrun runtime.
+
+    Handles:
+    - Direct value storage/retrieval by packet ID
+    - Lazy value functions (called on consumption)
+    - Consumed packet storage with configurable limits
+    - Optional file-based persistence
+    """
+
+    def __init__(
+        self,
+        consumed_storage: bool = False,
+        consumed_storage_limit: Optional[int] = None,
+        storage_path: Optional[Union[str, Path]] = None,
+    ):
+        """
+        Initialize the packet value store.
+
+        Args:
+            consumed_storage: Whether to keep values after consumption
+            consumed_storage_limit: Max consumed values to keep (None = unlimited)
+            storage_path: Optional path for file-based storage
+        """
+        self._values: dict[str, StoredValue] = {}
+        self._consumed_values: OrderedDict[str, Any] = OrderedDict()
+        self._consumed_storage = consumed_storage
+        self._consumed_storage_limit = consumed_storage_limit
+        self._storage_path = Path(storage_path) if storage_path else None
+
+        if self._storage_path:
+            self._storage_path.mkdir(parents=True, exist_ok=True)
+
+    def store_value(self, packet_id: str, value: Any) -> None:
+        """Store a direct value for a packet."""
+        self._values[packet_id] = StoredValue(value=value, is_value_func=False)
+
+        if self._storage_path:
+            self._persist_to_file(packet_id, value)
+
+    def store_value_func(self, packet_id: str, func: Callable[[], Any]) -> None:
+        """Store a value function for a packet (called lazily on consumption)."""
+        self._values[packet_id] = StoredValue(value_func=func, is_value_func=True)
+
+    def get_value(self, packet_id: str) -> Any:
+        """
+        Get a packet's value (consuming it from the store).
+
+        For value functions, this calls the function.
+        Raises KeyError if packet not found.
+        """
+        if packet_id not in self._values:
+            # Check consumed storage
+            if packet_id in self._consumed_values:
+                return self._consumed_values[packet_id]
+            # Check file storage
+            if self._storage_path:
+                value = self._load_from_file(packet_id)
+                if value is not None:
+                    return value
+            raise KeyError(f"Packet {packet_id} not found in value store")
+
+        stored = self._values[packet_id]
+        try:
+            value = stored.get_value()
+        except Exception as e:
+            raise ValueFunctionFailed(packet_id, e) from e
+
+        return value
+
+    async def async_get_value(self, packet_id: str) -> Any:
+        """Async version of get_value, supporting async value functions."""
+        if packet_id not in self._values:
+            if packet_id in self._consumed_values:
+                return self._consumed_values[packet_id]
+            if self._storage_path:
+                value = self._load_from_file(packet_id)
+                if value is not None:
+                    return value
+            raise KeyError(f"Packet {packet_id} not found in value store")
+
+        stored = self._values[packet_id]
+        try:
+            value = await stored.async_get_value()
+        except Exception as e:
+            raise ValueFunctionFailed(packet_id, e) from e
+
+        return value
+
+    def consume(self, packet_id: str) -> Any:
+        """
+        Consume a packet's value, removing it from active storage.
+
+        If consumed_storage is enabled, the value is kept in consumed storage.
+        """
+        value = self.get_value(packet_id)
+        self._remove_from_active(packet_id)
+
+        if self._consumed_storage:
+            self._add_to_consumed(packet_id, value)
+
+        return value
+
+    async def async_consume(self, packet_id: str) -> Any:
+        """Async version of consume."""
+        value = await self.async_get_value(packet_id)
+        self._remove_from_active(packet_id)
+
+        if self._consumed_storage:
+            self._add_to_consumed(packet_id, value)
+
+        return value
+
+    def unconsume(self, packet_id: str, value: Any) -> None:
+        """
+        Restore a consumed packet's value (for retry scenarios).
+
+        This moves the value back to active storage.
+        """
+        self._values[packet_id] = StoredValue(value=value, is_value_func=False)
+
+        # Remove from consumed if present
+        if packet_id in self._consumed_values:
+            del self._consumed_values[packet_id]
+
+    def has_value(self, packet_id: str) -> bool:
+        """Check if a packet has a stored value."""
+        return packet_id in self._values
+
+    def remove(self, packet_id: str) -> None:
+        """Remove a packet's value from the store entirely."""
+        self._remove_from_active(packet_id)
+        if packet_id in self._consumed_values:
+            del self._consumed_values[packet_id]
+
+    def get_consumed_value(self, packet_id: str) -> Optional[Any]:
+        """Get a value from consumed storage (doesn't remove it)."""
+        return self._consumed_values.get(packet_id)
+
+    def _remove_from_active(self, packet_id: str) -> None:
+        """Remove from active storage."""
+        if packet_id in self._values:
+            del self._values[packet_id]
+
+    def _add_to_consumed(self, packet_id: str, value: Any) -> None:
+        """Add to consumed storage, respecting limits."""
+        self._consumed_values[packet_id] = value
+
+        # Enforce limit by removing oldest entries
+        if self._consumed_storage_limit is not None:
+            while len(self._consumed_values) > self._consumed_storage_limit:
+                self._consumed_values.popitem(last=False)
+
+    def _persist_to_file(self, packet_id: str, value: Any) -> None:
+        """Persist a value to file storage."""
+        if self._storage_path:
+            file_path = self._storage_path / f"{packet_id}.pkl"
+            with open(file_path, 'wb') as f:
+                pickle.dump(value, f)
+
+    def _load_from_file(self, packet_id: str) -> Optional[Any]:
+        """Load a value from file storage."""
+        if self._storage_path:
+            file_path = self._storage_path / f"{packet_id}.pkl"
+            if file_path.exists():
+                with open(file_path, 'rb') as f:
+                    return pickle.load(f)
+        return None
+
+# %% [markdown]
+# ## Node Configuration
+#
+# Configuration dataclasses for nodes and their execution settings.
+
+# %%
+#|export
+from dataclasses import dataclass
+from typing import List
+
+
+@dataclass
+class NodeConfig:
+    """Configuration for a node's execution behavior."""
+    pool: Optional[Union[str, List[str]]] = None
+    max_parallel_epochs: Optional[int] = None
+    rate_limit_per_second: Optional[float] = None
+    defer_net_actions: bool = False
+    retries: int = 0
+    retry_wait: float = 0.0
+    timeout: Optional[float] = None
+    dead_letter_queue: bool = True
+    capture_stdout: bool = True
+    echo_stdout: bool = False
+    pool_init_mode: str = "per_worker"  # "per_worker" or "global"
+
+    def __post_init__(self):
+        # Enforce constraint: retries > 0 requires defer_net_actions
+        if self.retries > 0 and not self.defer_net_actions:
+            raise ValueError(
+                "defer_net_actions must be True when retries > 0"
+            )
+
+
+@dataclass
+class NodeExecFuncs:
+    """Execution functions for a node."""
+    exec_func: Optional[Callable] = None
+    start_func: Optional[Callable] = None
+    stop_func: Optional[Callable] = None
+    failed_func: Optional[Callable] = None
+
+# %% [markdown]
+# ## The Net Class
+#
+# The main `Net` class wraps `netrun-sim`'s `NetSim` and provides the high-level API
+# for running flow-based networks.
+
+# %%
+#|export
+from typing import Dict
+from enum import Enum, auto
+
+
+class NetState(Enum):
+    """The current state of the Net."""
+    CREATED = auto()      # Net created but not started
+    RUNNING = auto()      # Net is actively running
+    PAUSED = auto()       # Net is paused (can resume)
+    STOPPED = auto()      # Net is stopped (cannot resume)
+
+
+class Net:
+    """
+    High-level runtime for flow-based development graphs.
+
+    Wraps `netrun-sim`'s `NetSim` to provide:
+    - Actual node execution logic
+    - Packet value storage
+    - Configuration and control methods
+
+    The underlying `NetSim` is hidden from users - all interactions
+    go through this class's methods.
+    """
+
+    def __init__(
+        self,
+        graph: Graph,
+        *,
+        # Packet storage
+        consumed_packet_storage: bool = False,
+        consumed_packet_storage_limit: Optional[int] = None,
+        packet_storage_path: Optional[Union[str, Path]] = None,
+        # Pools
+        thread_pools: Optional[Dict[str, dict]] = None,
+        process_pools: Optional[Dict[str, dict]] = None,
+        # Error handling
+        on_error: str = "pause",  # "continue", "pause", "raise"
+        error_callback: Optional[Callable] = None,
+        # Dead letter queue
+        dead_letter_queue: str = "memory",  # "memory", "file", or callback
+        dead_letter_path: Optional[Union[str, Path]] = None,
+        dead_letter_callback: Optional[Callable] = None,
+        # History
+        history_max_size: Optional[int] = None,
+        history_file: Optional[Union[str, Path]] = None,
+        history_chunk_size: int = 100,
+        history_flush_on_pause: bool = True,
+    ):
+        """
+        Create a new Net from a graph.
+
+        Args:
+            graph: The network topology (from netrun_sim.Graph)
+            consumed_packet_storage: Keep values after consumption
+            consumed_packet_storage_limit: Max consumed values to keep
+            packet_storage_path: Path for file-based packet storage
+            thread_pools: Thread pool configurations {"name": {"size": N}}
+            process_pools: Process pool configurations {"name": {"size": N}}
+            on_error: Error handling mode ("continue", "pause", "raise")
+            error_callback: Called on any node error
+            dead_letter_queue: DLQ mode ("memory", "file", or callback)
+            dead_letter_path: Path for file-based DLQ
+            dead_letter_callback: Callback for DLQ
+            history_max_size: Max events in memory
+            history_file: Path for history persistence
+            history_chunk_size: Events per history write
+            history_flush_on_pause: Flush history when paused
+        """
+        # Validate on_error
+        if on_error not in ("continue", "pause", "raise"):
+            raise ValueError(f"on_error must be 'continue', 'pause', or 'raise', got '{on_error}'")
+
+        # Store the graph and create internal NetSim
+        self._graph = graph
+        self._sim = NetSim(graph)
+
+        # Packet value storage
+        self._value_store = PacketValueStore(
+            consumed_storage=consumed_packet_storage,
+            consumed_storage_limit=consumed_packet_storage_limit,
+            storage_path=packet_storage_path,
+        )
+
+        # Node configurations and execution functions
+        self._node_configs: Dict[str, NodeConfig] = {}
+        self._node_exec_funcs: Dict[str, NodeExecFuncs] = {}
+
+        # Pool configurations (to be implemented in Milestone 6)
+        self._thread_pools_config = thread_pools or {}
+        self._process_pools_config = process_pools or {}
+
+        # Error handling
+        self._on_error = on_error
+        self._error_callback = error_callback
+
+        # Dead letter queue config (to be implemented in Milestone 4)
+        self._dlq_mode = dead_letter_queue
+        self._dlq_path = Path(dead_letter_path) if dead_letter_path else None
+        self._dlq_callback = dead_letter_callback
+
+        # History config (to be implemented in Milestone 8)
+        self._history_max_size = history_max_size
+        self._history_file = Path(history_file) if history_file else None
+        self._history_chunk_size = history_chunk_size
+        self._history_flush_on_pause = history_flush_on_pause
+
+        # Runtime state
+        self._state = NetState.CREATED
+
+    # -------------------------------------------------------------------------
+    # Node Configuration
+    # -------------------------------------------------------------------------
+
+    def set_node_exec(
+        self,
+        node_name: str,
+        exec_func: Callable,
+        start_func: Optional[Callable] = None,
+        stop_func: Optional[Callable] = None,
+        failed_func: Optional[Callable] = None,
+    ) -> None:
+        """
+        Set execution functions for a node.
+
+        Args:
+            node_name: Name of the node
+            exec_func: Main execution function (required)
+            start_func: Called when net starts (optional)
+            stop_func: Called when net stops (optional)
+            failed_func: Called after failed execution (optional)
+        """
+        # Validate node exists
+        nodes = self._sim.graph.nodes()
+        if node_name not in nodes:
+            raise NodeNotFoundError(f"Node '{node_name}' not found in graph")
+
+        self._node_exec_funcs[node_name] = NodeExecFuncs(
+            exec_func=exec_func,
+            start_func=start_func,
+            stop_func=stop_func,
+            failed_func=failed_func,
+        )
+
+    def set_node_config(self, node_name: str, **options) -> None:
+        """
+        Set configuration options for a node.
+
+        Args:
+            node_name: Name of the node
+            **options: Configuration options (see NodeConfig)
+        """
+        # Validate node exists
+        nodes = self._sim.graph.nodes()
+        if node_name not in nodes:
+            raise NodeNotFoundError(f"Node '{node_name}' not found in graph")
+
+        # Validate options before applying
+        valid_options = {f.name for f in NodeConfig.__dataclass_fields__.values()}
+        for key in options:
+            if key not in valid_options:
+                raise ValueError(f"Unknown config option: {key}")
+
+        # Get existing config or create new
+        if node_name in self._node_configs:
+            # Update existing config
+            current = self._node_configs[node_name]
+            for key, value in options.items():
+                setattr(current, key, value)
+            # Re-validate after update
+            current.__post_init__()
+        else:
+            # Create new config
+            self._node_configs[node_name] = NodeConfig(**options)
+
+    def get_node_config(self, node_name: str) -> NodeConfig:
+        """Get the configuration for a node (returns default if not set)."""
+        return self._node_configs.get(node_name, NodeConfig())
+
+    def get_node_exec_funcs(self, node_name: str) -> Optional[NodeExecFuncs]:
+        """Get the execution functions for a node."""
+        return self._node_exec_funcs.get(node_name)
+
+    # -------------------------------------------------------------------------
+    # NetSim Wrapper Methods (hide NetSim from users)
+    # -------------------------------------------------------------------------
+
+    @property
+    def graph(self) -> Graph:
+        """Get the network topology."""
+        return self._graph
+
+    @property
+    def state(self) -> NetState:
+        """Get the current state of the net."""
+        return self._state
+
+    def get_startable_epochs(self) -> list:
+        """Get all epochs that are ready to be started."""
+        return self._sim.get_startable_epochs()
+
+    def get_startable_epochs_by_node(self, node_name: str) -> list:
+        """Get startable epochs for a specific node."""
+        all_startable = self._sim.get_startable_epochs()
+        result = []
+        for epoch_id in all_startable:
+            epoch = self._sim.get_epoch(epoch_id)
+            if epoch and epoch.node_name == node_name:
+                result.append(epoch_id)
+        return result
+
+    def get_epoch(self, epoch_id) -> Optional[Epoch]:
+        """Get an epoch by ID."""
+        return self._sim.get_epoch(epoch_id)
+
+    def get_packet(self, packet_id) -> Optional[Packet]:
+        """Get a packet by ID."""
+        return self._sim.get_packet(packet_id)
+
+    def get_packets_at_location(self, location: PacketLocation) -> list:
+        """Get all packet IDs at a specific location."""
+        return self._sim.get_packets_at_location(location)
+
+    def packet_count_at(self, location: PacketLocation) -> int:
+        """Get the number of packets at a location."""
+        return self._sim.packet_count_at(location)
+
+    # -------------------------------------------------------------------------
+    # Value Store Access
+    # -------------------------------------------------------------------------
+
+    @property
+    def value_store(self) -> PacketValueStore:
+        """Access the packet value store."""
+        return self._value_store
+
+    # -------------------------------------------------------------------------
+    # Placeholder methods (to be implemented in later milestones)
+    # -------------------------------------------------------------------------
+
+    def run_step(self, start_epochs: bool = True, threaded: bool = False) -> None:
+        """
+        Run one step of the network.
+
+        Executes RunNetUntilBlocked, optionally starts ready epochs,
+        and waits for completion.
+
+        (To be implemented in Milestone 3)
+        """
+        raise NotImplementedError("run_step will be implemented in Milestone 3")
+
+    def start(self, threaded: bool = False) -> None:
+        """
+        Start the network and run until fully blocked.
+
+        (To be implemented in Milestone 3)
+        """
+        raise NotImplementedError("start will be implemented in Milestone 3")
+
+    def pause(self) -> None:
+        """
+        Pause the network (finish running epochs, don't start new ones).
+
+        (To be implemented in Milestone 6)
+        """
+        # For now, just set state
+        self._state = NetState.PAUSED
+
+    def stop(self) -> None:
+        """
+        Stop the network entirely.
+
+        (To be implemented in Milestone 6)
+        """
+        self._state = NetState.STOPPED
+
+    def save_checkpoint(self, path: Union[str, Path]) -> None:
+        """
+        Save a complete checkpoint of the network state.
+
+        Requires the net to be paused.
+
+        (To be implemented in Milestone 13)
+        """
+        if self._state != NetState.PAUSED:
+            raise NetNotPausedError("save_checkpoint")
+        raise NotImplementedError("save_checkpoint will be implemented in Milestone 13")
+
+    @classmethod
+    def load_checkpoint(cls, path: Union[str, Path]) -> "Net":
+        """
+        Load a network from a checkpoint.
+
+        (To be implemented in Milestone 13)
+        """
+        raise NotImplementedError("load_checkpoint will be implemented in Milestone 13")
+
+# %% [markdown]
+# ## Deferred Packets and Actions
+#
+# When `defer_net_actions=True`, packet operations are queued rather than executed immediately.
+# This allows clean retry without orphaned packets.
+
+# %%
+#|export
+from datetime import datetime
+from typing import TYPE_CHECKING
+import uuid
+
+if TYPE_CHECKING:
+    from typing import Self
+
+
+class DeferredPacket:
+    """
+    A placeholder for a packet when defer_net_actions=True.
+
+    Behaves like a Packet for node operations (loading to output ports, etc.),
+    but the actual PacketID is not assigned until deferred actions are committed.
+    """
+
+    def __init__(self, deferred_id: str):
+        """
+        Initialize a deferred packet with a temporary internal ID.
+
+        Args:
+            deferred_id: Internal ID used to track this packet until commit
+        """
+        self._deferred_id = deferred_id
+        self._resolved_packet: Optional[Packet] = None
+
+    @property
+    def id(self) -> str:
+        """
+        Get the packet ID.
+
+        Raises DeferredPacketIdAccessError if not yet committed.
+        """
+        if self._resolved_packet is None:
+            raise DeferredPacketIdAccessError()
+        return self._resolved_packet.id
+
+    @property
+    def deferred_id(self) -> str:
+        """Get the internal deferred ID (always available)."""
+        return self._deferred_id
+
+    @property
+    def is_resolved(self) -> bool:
+        """Check if this deferred packet has been resolved to a real packet."""
+        return self._resolved_packet is not None
+
+    def _resolve(self, packet: Packet) -> None:
+        """Internal: resolve this deferred packet to a real packet."""
+        self._resolved_packet = packet
+
+    @property
+    def location(self):
+        """Get the packet location (only available after resolution)."""
+        if self._resolved_packet is None:
+            raise DeferredPacketIdAccessError()
+        return self._resolved_packet.location
+
+    def __repr__(self) -> str:
+        if self._resolved_packet is not None:
+            return f"DeferredPacket(resolved={self._resolved_packet.id})"
+        return f"DeferredPacket(deferred_id={self._deferred_id})"
+
+# %%
+#|export
+from enum import Enum
+from dataclasses import dataclass, field
+from typing import Any, List, Optional, Union
+
+
+class DeferredActionType(Enum):
+    """Types of deferred actions."""
+    CREATE_PACKET = "create_packet"
+    CREATE_PACKET_FROM_FUNC = "create_packet_from_func"
+    CONSUME_PACKET = "consume_packet"
+    LOAD_OUTPUT_PORT = "load_output_port"
+    SEND_OUTPUT_SALVO = "send_output_salvo"
+
+
+@dataclass
+class DeferredAction:
+    """A single deferred action to be committed or discarded."""
+    action_type: DeferredActionType
+    # For CREATE_PACKET: value to store
+    value: Any = None
+    # For CREATE_PACKET_FROM_FUNC: the value function
+    value_func: Optional[Callable] = None
+    # For CREATE_PACKET/CREATE_PACKET_FROM_FUNC: the deferred packet created
+    deferred_packet: Optional[DeferredPacket] = None
+    # For CONSUME_PACKET: the packet (or deferred packet) being consumed
+    packet: Optional[Union[Packet, DeferredPacket]] = None
+    # For CONSUME_PACKET: the consumed value (stored for unconsume on retry)
+    consumed_value: Any = None
+    # For LOAD_OUTPUT_PORT: port name
+    port_name: Optional[str] = None
+    # For SEND_OUTPUT_SALVO: salvo condition name
+    salvo_condition_name: Optional[str] = None
+
+
+class DeferredActionQueue:
+    """
+    Queue of deferred actions for a node execution.
+
+    Used when defer_net_actions=True to buffer operations until successful completion.
+    """
+
+    def __init__(self):
+        self._actions: List[DeferredAction] = []
+        self._deferred_packet_counter = 0
+        # Track consumed values for unconsume on retry
+        self._consumed_values: dict[str, Any] = {}
+
+    def create_packet(self, value: Any) -> DeferredPacket:
+        """Queue a packet creation with a direct value."""
+        deferred_id = f"deferred-{self._deferred_packet_counter}"
+        self._deferred_packet_counter += 1
+        deferred_packet = DeferredPacket(deferred_id)
+        self._actions.append(DeferredAction(
+            action_type=DeferredActionType.CREATE_PACKET,
+            value=value,
+            deferred_packet=deferred_packet,
+        ))
+        return deferred_packet
+
+    def create_packet_from_func(self, func: Callable) -> DeferredPacket:
+        """Queue a packet creation with a value function."""
+        deferred_id = f"deferred-{self._deferred_packet_counter}"
+        self._deferred_packet_counter += 1
+        deferred_packet = DeferredPacket(deferred_id)
+        self._actions.append(DeferredAction(
+            action_type=DeferredActionType.CREATE_PACKET_FROM_FUNC,
+            value_func=func,
+            deferred_packet=deferred_packet,
+        ))
+        return deferred_packet
+
+    def consume_packet(self, packet: Union[Packet, DeferredPacket], value: Any) -> None:
+        """Queue a packet consumption."""
+        packet_id = packet._deferred_id if isinstance(packet, DeferredPacket) else packet.id
+        self._consumed_values[packet_id] = value
+        self._actions.append(DeferredAction(
+            action_type=DeferredActionType.CONSUME_PACKET,
+            packet=packet,
+            consumed_value=value,
+        ))
+
+    def load_output_port(self, port_name: str, packet: Union[Packet, DeferredPacket]) -> None:
+        """Queue loading a packet to an output port."""
+        self._actions.append(DeferredAction(
+            action_type=DeferredActionType.LOAD_OUTPUT_PORT,
+            port_name=port_name,
+            packet=packet,
+        ))
+
+    def send_output_salvo(self, salvo_condition_name: str) -> None:
+        """Queue sending an output salvo."""
+        self._actions.append(DeferredAction(
+            action_type=DeferredActionType.SEND_OUTPUT_SALVO,
+            salvo_condition_name=salvo_condition_name,
+        ))
+
+    @property
+    def actions(self) -> List[DeferredAction]:
+        """Get all queued actions."""
+        return self._actions
+
+    @property
+    def consumed_values(self) -> dict[str, Any]:
+        """Get all consumed values (for unconsume on retry)."""
+        return self._consumed_values
+
+    def clear(self) -> None:
+        """Clear all queued actions."""
+        self._actions = []
+        self._consumed_values = {}
+        self._deferred_packet_counter = 0
+
+# %% [markdown]
+# ## Node Execution Context
+#
+# The `NodeExecutionContext` is passed to node execution functions and provides
+# methods for packet operations and epoch control.
+
+# %%
+#|export
+class NodeExecutionContext:
+    """
+    Context passed to node execution functions.
+
+    Provides access to packet operations, retry information, and epoch control.
+    All packet operations respect the defer_net_actions setting.
+    """
+
+    def __init__(
+        self,
+        net: "Net",
+        epoch_id: str,
+        node_name: str,
+        defer_net_actions: bool = False,
+        retry_count: int = 0,
+        retry_timestamps: Optional[List[datetime]] = None,
+        retry_exceptions: Optional[List[Exception]] = None,
+    ):
+        """
+        Initialize the execution context.
+
+        Args:
+            net: The Net instance
+            epoch_id: ID of the current epoch
+            node_name: Name of the node being executed
+            defer_net_actions: Whether to buffer actions until successful completion
+            retry_count: Current retry attempt (0 = first attempt)
+            retry_timestamps: Timestamps of previous retry attempts
+            retry_exceptions: Exceptions from previous retries
+        """
+        self._net = net
+        self._epoch_id = epoch_id
+        self._node_name = node_name
+        self._defer_net_actions = defer_net_actions
+        self._retry_count = retry_count
+        self._retry_timestamps = retry_timestamps or []
+        self._retry_exceptions = retry_exceptions or []
+
+        # Deferred action queue (only used if defer_net_actions=True)
+        self._deferred_queue: Optional[DeferredActionQueue] = (
+            DeferredActionQueue() if defer_net_actions else None
+        )
+
+        # Track consumed values for this execution (for failure context)
+        self._consumed_values: dict[str, Any] = {}
+
+    # -------------------------------------------------------------------------
+    # Properties
+    # -------------------------------------------------------------------------
+
+    @property
+    def epoch_id(self) -> str:
+        """The ID of the current epoch."""
+        return self._epoch_id
+
+    @property
+    def node_name(self) -> str:
+        """The name of the node being executed."""
+        return self._node_name
+
+    @property
+    def retry_count(self) -> int:
+        """Current retry attempt (0 = first attempt)."""
+        return self._retry_count
+
+    @property
+    def retry_timestamps(self) -> List[datetime]:
+        """Timestamps of previous retry attempts."""
+        return self._retry_timestamps.copy()
+
+    @property
+    def retry_exceptions(self) -> List[Exception]:
+        """Exceptions from previous retries."""
+        return self._retry_exceptions.copy()
+
+    # -------------------------------------------------------------------------
+    # Packet Operations (Sync)
+    # -------------------------------------------------------------------------
+
+    def create_packet(self, value: Any) -> Union[Packet, DeferredPacket]:
+        """
+        Create a new packet with a direct value.
+
+        If defer_net_actions=True, returns a DeferredPacket.
+        Otherwise, creates the packet immediately in NetSim.
+        """
+        if self._defer_net_actions and self._deferred_queue is not None:
+            return self._deferred_queue.create_packet(value)
+
+        # Immediate mode: create packet in NetSim
+        action = NetAction.create_packet(self._epoch_id)
+        events = self._net._sim.do_action(action)
+
+        # Get the created packet ID from the events
+        packet_id = None
+        for event in events:
+            if hasattr(event, 'packet_id'):
+                packet_id = event.packet_id
+                break
+
+        if packet_id is None:
+            raise RuntimeError("Failed to get packet ID from create_packet action")
+
+        # Store the value
+        self._net._value_store.store_value(packet_id, value)
+
+        return self._net._sim.get_packet(packet_id)
+
+    def create_packet_from_value_func(self, func: Callable[[], Any]) -> Union[Packet, DeferredPacket]:
+        """
+        Create a new packet with a lazy value function.
+
+        The function is called when the packet is consumed.
+
+        If defer_net_actions=True, returns a DeferredPacket.
+        Otherwise, creates the packet immediately in NetSim.
+        """
+        if self._defer_net_actions and self._deferred_queue is not None:
+            return self._deferred_queue.create_packet_from_func(func)
+
+        # Immediate mode: create packet in NetSim
+        action = NetAction.create_packet(self._epoch_id)
+        events = self._net._sim.do_action(action)
+
+        # Get the created packet ID from the events
+        packet_id = None
+        for event in events:
+            if hasattr(event, 'packet_id'):
+                packet_id = event.packet_id
+                break
+
+        if packet_id is None:
+            raise RuntimeError("Failed to get packet ID from create_packet action")
+
+        # Store the value function
+        self._net._value_store.store_value_func(packet_id, func)
+
+        return self._net._sim.get_packet(packet_id)
+
+    def consume_packet(self, packet: Union[Packet, DeferredPacket]) -> Any:
+        """
+        Consume a packet and return its value.
+
+        Removes the packet from the network and returns the stored value.
+        If the packet has a value function, it is called.
+        """
+        if isinstance(packet, DeferredPacket):
+            if not packet.is_resolved:
+                raise ValueError("Cannot consume an unresolved deferred packet")
+            packet_id = packet.id
+        else:
+            packet_id = packet.id
+
+        # Get the value (this calls value functions if needed)
+        value = self._net._value_store.consume(packet_id)
+        self._consumed_values[packet_id] = value
+
+        if self._defer_net_actions and self._deferred_queue is not None:
+            # Defer the consume action
+            self._deferred_queue.consume_packet(packet, value)
+        else:
+            # Immediate mode: consume in NetSim
+            action = NetAction.consume_packet(packet_id)
+            self._net._sim.do_action(action)
+
+        return value
+
+    def load_output_port(self, port_name: str, packet: Union[Packet, DeferredPacket]) -> None:
+        """
+        Load a packet into an output port.
+
+        The packet must have been created in this epoch.
+        """
+        if self._defer_net_actions and self._deferred_queue is not None:
+            self._deferred_queue.load_output_port(port_name, packet)
+            return
+
+        # Immediate mode
+        if isinstance(packet, DeferredPacket):
+            if not packet.is_resolved:
+                raise ValueError("Cannot load an unresolved deferred packet")
+            packet_id = packet.id
+        else:
+            packet_id = packet.id
+
+        action = NetAction.load_packet_into_output_port(packet_id, port_name)
+        self._net._sim.do_action(action)
+
+    def send_output_salvo(self, salvo_condition_name: str) -> None:
+        """
+        Send packets from output ports via a salvo condition.
+
+        The salvo condition must be satisfied for sending to succeed.
+        """
+        if self._defer_net_actions and self._deferred_queue is not None:
+            self._deferred_queue.send_output_salvo(salvo_condition_name)
+            return
+
+        # Immediate mode
+        action = NetAction.send_output_salvo(self._epoch_id, salvo_condition_name)
+        self._net._sim.do_action(action)
+
+    # -------------------------------------------------------------------------
+    # Packet Operations (Async)
+    # -------------------------------------------------------------------------
+
+    async def async_consume_packet(self, packet: Union[Packet, DeferredPacket]) -> Any:
+        """
+        Async version of consume_packet.
+
+        Supports async value functions.
+        """
+        if isinstance(packet, DeferredPacket):
+            if not packet.is_resolved:
+                raise ValueError("Cannot consume an unresolved deferred packet")
+            packet_id = packet.id
+        else:
+            packet_id = packet.id
+
+        # Get the value (async to support async value functions)
+        value = await self._net._value_store.async_consume(packet_id)
+        self._consumed_values[packet_id] = value
+
+        if self._defer_net_actions and self._deferred_queue is not None:
+            self._deferred_queue.consume_packet(packet, value)
+        else:
+            action = NetAction.consume_packet(packet_id)
+            self._net._sim.do_action(action)
+
+        return value
+
+    # -------------------------------------------------------------------------
+    # Epoch Control
+    # -------------------------------------------------------------------------
+
+    def cancel_epoch(self) -> None:
+        """
+        Cancel the current epoch.
+
+        Raises EpochCancelled exception which should not be caught by the node.
+        """
+        raise EpochCancelled(self._node_name, self._epoch_id)
+
+    # -------------------------------------------------------------------------
+    # Internal Methods
+    # -------------------------------------------------------------------------
+
+    def _get_deferred_queue(self) -> Optional[DeferredActionQueue]:
+        """Get the deferred action queue (for internal use)."""
+        return self._deferred_queue
+
+    def _get_consumed_values(self) -> dict[str, Any]:
+        """Get the consumed values (for failure context)."""
+        return self._consumed_values.copy()
+
+# %% [markdown]
+# ## Node Failure Context
+#
+# The `NodeFailureContext` is passed to the `exec_failed_node_func` callback
+# after a failed execution attempt.
+
+# %%
+#|export
+class NodeFailureContext:
+    """
+    Context passed to node failure handlers after execution failure.
+
+    Provides access to retry information, input packets, and consumed values.
+    Does not provide packet operations (execution has already failed).
+    """
+
+    def __init__(
+        self,
+        epoch_id: str,
+        node_name: str,
+        retry_count: int,
+        retry_timestamps: List[datetime],
+        retry_exceptions: List[Exception],
+        input_salvo: dict[str, list[Packet]],
+        packet_values: dict[str, Any],
+        exception: Exception,
+    ):
+        """
+        Initialize the failure context.
+
+        Args:
+            epoch_id: ID of the failed epoch
+            node_name: Name of the node that failed
+            retry_count: Current retry attempt (0 = first attempt)
+            retry_timestamps: Timestamps of all retry attempts including current
+            retry_exceptions: Exceptions from all retries including current
+            input_salvo: The input packets that triggered this epoch
+            packet_values: Values that were consumed during execution
+            exception: The exception that caused the failure
+        """
+        self._epoch_id = epoch_id
+        self._node_name = node_name
+        self._retry_count = retry_count
+        self._retry_timestamps = retry_timestamps
+        self._retry_exceptions = retry_exceptions
+        self._input_salvo = input_salvo
+        self._packet_values = packet_values
+        self._exception = exception
+
+    @property
+    def epoch_id(self) -> str:
+        """The ID of the failed epoch."""
+        return self._epoch_id
+
+    @property
+    def node_name(self) -> str:
+        """The name of the node that failed."""
+        return self._node_name
+
+    @property
+    def retry_count(self) -> int:
+        """Current retry attempt (0 = first attempt)."""
+        return self._retry_count
+
+    @property
+    def retry_timestamps(self) -> List[datetime]:
+        """Timestamps of all retry attempts including current."""
+        return self._retry_timestamps.copy()
+
+    @property
+    def retry_exceptions(self) -> List[Exception]:
+        """Exceptions from all retries including current."""
+        return self._retry_exceptions.copy()
+
+    @property
+    def input_salvo(self) -> dict[str, list[Packet]]:
+        """The input packets that triggered this epoch."""
+        return self._input_salvo.copy()
+
+    @property
+    def packet_values(self) -> dict[str, Any]:
+        """Values that were consumed during execution."""
+        return self._packet_values.copy()
+
+    @property
+    def exception(self) -> Exception:
+        """The exception that caused the failure."""
+        return self._exception
+
+# %% [markdown]
+# ## Deferred Actions Commit/Discard
+#
+# Helper functions for committing or discarding deferred actions.
+
+# %%
+#|export
+def _commit_deferred_actions(
+    net: "Net",
+    epoch_id: str,
+    queue: DeferredActionQueue,
+) -> dict[str, Packet]:
+    """
+    Commit all deferred actions to NetSim.
+
+    Returns a mapping from deferred_id to real Packet.
+    """
+    # Map from deferred_id to real packet
+    resolved_packets: dict[str, Packet] = {}
+
+    for action in queue.actions:
+        if action.action_type == DeferredActionType.CREATE_PACKET:
+            # Create the packet
+            net_action = NetAction.create_packet(epoch_id)
+            events = net._sim.do_action(net_action)
+
+            # Get the packet ID
+            packet_id = None
+            for event in events:
+                if hasattr(event, 'packet_id'):
+                    packet_id = event.packet_id
+                    break
+
+            if packet_id is None:
+                raise RuntimeError("Failed to get packet ID from create_packet action")
+
+            # Store the value
+            net._value_store.store_value(packet_id, action.value)
+
+            # Resolve the deferred packet
+            real_packet = net._sim.get_packet(packet_id)
+            if action.deferred_packet is not None:
+                action.deferred_packet._resolve(real_packet)
+                resolved_packets[action.deferred_packet.deferred_id] = real_packet
+
+        elif action.action_type == DeferredActionType.CREATE_PACKET_FROM_FUNC:
+            # Create the packet
+            net_action = NetAction.create_packet(epoch_id)
+            events = net._sim.do_action(net_action)
+
+            # Get the packet ID
+            packet_id = None
+            for event in events:
+                if hasattr(event, 'packet_id'):
+                    packet_id = event.packet_id
+                    break
+
+            if packet_id is None:
+                raise RuntimeError("Failed to get packet ID from create_packet action")
+
+            # Store the value function
+            net._value_store.store_value_func(packet_id, action.value_func)
+
+            # Resolve the deferred packet
+            real_packet = net._sim.get_packet(packet_id)
+            if action.deferred_packet is not None:
+                action.deferred_packet._resolve(real_packet)
+                resolved_packets[action.deferred_packet.deferred_id] = real_packet
+
+        elif action.action_type == DeferredActionType.CONSUME_PACKET:
+            # Consume was already done for value retrieval, just commit to NetSim
+            packet = action.packet
+            if isinstance(packet, DeferredPacket):
+                if not packet.is_resolved:
+                    raise RuntimeError("Trying to consume unresolved deferred packet on commit")
+                packet_id = packet.id
+            else:
+                packet_id = packet.id
+
+            net_action = NetAction.consume_packet(packet_id)
+            net._sim.do_action(net_action)
+
+        elif action.action_type == DeferredActionType.LOAD_OUTPUT_PORT:
+            packet = action.packet
+            if isinstance(packet, DeferredPacket):
+                if not packet.is_resolved:
+                    raise RuntimeError("Trying to load unresolved deferred packet on commit")
+                packet_id = packet.id
+            else:
+                packet_id = packet.id
+
+            net_action = NetAction.load_packet_into_output_port(packet_id, action.port_name)
+            net._sim.do_action(net_action)
+
+        elif action.action_type == DeferredActionType.SEND_OUTPUT_SALVO:
+            net_action = NetAction.send_output_salvo(epoch_id, action.salvo_condition_name)
+            net._sim.do_action(net_action)
+
+    return resolved_packets
+
+
+def _unconsume_packets_for_retry(
+    net: "Net",
+    consumed_values: dict[str, Any],
+) -> None:
+    """
+    Restore consumed packet values for retry.
+
+    Called when an epoch fails and will be retried.
+    """
+    for packet_id, value in consumed_values.items():
+        net._value_store.unconsume(packet_id, value)
+
+# %% [markdown]
+# ## Example Usage
+
+# %%
+# Create a simple graph for testing
+from netrun_sim import Node, Port, SalvoCondition, SalvoConditionTerm, PortState, MaxSalvos
+
+# Simple two-node graph: Source -> Sink
+source_node = Node(
+    name="Source",
+    out_ports={"out": Port()},
+    out_salvo_conditions={
+        "send": SalvoCondition(
+            MaxSalvos.infinite(),
+            "out",
+            SalvoConditionTerm.port("out", PortState.non_empty())
+        )
+    }
+)
+
+sink_node = Node(
+    name="Sink",
+    in_ports={"in": Port()},
+    in_salvo_conditions={
+        "receive": SalvoCondition(
+            MaxSalvos.finite(1),
+            "in",
+            SalvoConditionTerm.port("in", PortState.non_empty())
+        )
+    }
+)
+
+edges = [
+    Edge(
+        PortRef("Source", PortType.Output, "out"),
+        PortRef("Sink", PortType.Input, "in")
+    )
+]
+
+graph = Graph([source_node, sink_node], edges)
+graph
+
+# %%
+# Create a Net
+net = Net(
+    graph,
+    consumed_packet_storage=True,
+    consumed_packet_storage_limit=100,
+)
+
+# Define execution functions
+def source_exec(ctx, packets):
+    print("Source executing")
+
+def sink_exec(ctx, packets):
+    print("Sink executing")
+
+# Set execution functions
+net.set_node_exec("Source", source_exec)
+net.set_node_exec("Sink", sink_exec)
+
+# Set configuration
+net.set_node_config("Sink", retries=3, defer_net_actions=True)
+
+print(f"Source config: {net.get_node_config('Source')}")
+print(f"Sink config: {net.get_node_config('Sink')}")
+
+# %%
+# Test the value store
+store = PacketValueStore(consumed_storage=True, consumed_storage_limit=5)
+
+# Store direct values
+store.store_value("packet-1", {"data": "hello"})
+store.store_value("packet-2", [1, 2, 3])
+
+# Store a value function
+call_count = 0
+def lazy_value():
+    global call_count
+    call_count += 1
+    return f"computed-{call_count}"
+
+store.store_value_func("packet-3", lazy_value)
+
+# Get values
+print(f"packet-1: {store.get_value('packet-1')}")
+print(f"packet-3 (first call): {store.get_value('packet-3')}")
+print(f"packet-3 (second call): {store.get_value('packet-3')}")  # Called again
+
+# Consume
+value = store.consume("packet-2")
+print(f"Consumed packet-2: {value}")
+print(f"packet-2 in consumed storage: {store.get_consumed_value('packet-2')}")
+
+# %%
+# Test error types
+try:
+    raise PacketTypeMismatch("pkt-123", "DataFrame", "dict", "input_port")
+except PacketTypeMismatch as e:
+    print(f"Caught: {e}")
+
+try:
+    raise EpochCancelled("MyNode", "epoch-456")
+except EpochCancelled as e:
+    print(f"Caught: {e}")
