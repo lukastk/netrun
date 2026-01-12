@@ -6,8 +6,13 @@ edition = "2024"
 license-file = "../../LICENSE"
 repository = "https://github.com/lukastk/netrun/"
 
+[features]
+default = []
+python = ["pyo3"]
+
 [dependencies]
 indexmap = "2.12.1"
 thiserror = "2.0"
 ulid = "=1.1.0"
 utcnow = "0.2.7"
+pyo3 = { version = "0.23", features = ["abi3-py38"], optional = true }

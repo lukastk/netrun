@@ -4,11 +4,14 @@ use std::collections::HashMap;
 
 use crate::errors::GraphValidationError as PyGraphValidationError;
 
-// Re-export core types for internal use
+// Re-export core types that have pyclass directly
+pub use netrun_sim::graph::{Edge, PortRef, PortType};
+
+// Import core types with aliases for internal use
 use netrun_sim::graph::{
-    Edge as CoreEdge, Graph as CoreGraph, MaxSalvos as CoreMaxSalvos, Node as CoreNode,
-    PacketCount as CorePacketCount, Port as CorePort, PortName, PortRef as CorePortRef,
-    PortSlotSpec as CorePortSlotSpec, PortState as CorePortState, PortType as CorePortType,
+    Graph as CoreGraph, MaxSalvos as CoreMaxSalvos, Node as CoreNode,
+    PacketCount as CorePacketCount, Port as CorePort, PortName,
+    PortSlotSpec as CorePortSlotSpec, PortState as CorePortState,
     SalvoCondition as CoreSalvoCondition, SalvoConditionTerm as CoreSalvoConditionTerm,
 };
 
@@ -464,165 +467,6 @@ impl Port {
     }
 }
 
-/// Port type: Input or Output.
-#[pyclass(eq, eq_int)]
-#[derive(Clone, Debug, PartialEq, Eq, Hash)]
-pub enum PortType {
-    Input,
-    Output,
-}
-
-#[pymethods]
-impl PortType {
-    fn __repr__(&self) -> String {
-        match self {
-            PortType::Input => "PortType.Input".to_string(),
-            PortType::Output => "PortType.Output".to_string(),
-        }
-    }
-}
-
-impl PortType {
-    pub fn to_core(&self) -> CorePortType {
-        match self {
-            PortType::Input => CorePortType::Input,
-            PortType::Output => CorePortType::Output,
-        }
-    }
-
-    pub fn from_core(pt: &CorePortType) -> Self {
-        match pt {
-            CorePortType::Input => PortType::Input,
-            CorePortType::Output => PortType::Output,
-        }
-    }
-}
-
-/// Reference to a specific port on a node.
-#[pyclass]
-#[derive(Clone, PartialEq, Eq, Hash)]
-pub struct PortRef {
-    #[pyo3(get)]
-    pub node_name: String,
-    #[pyo3(get)]
-    pub port_type: PortType,
-    #[pyo3(get)]
-    pub port_name: String,
-}
-
-#[pymethods]
-impl PortRef {
-    #[new]
-    fn new(node_name: String, port_type: PortType, port_name: String) -> Self {
-        PortRef {
-            node_name,
-            port_type,
-            port_name,
-        }
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "PortRef({:?}, {:?}, {:?})",
-            self.node_name, self.port_type, self.port_name
-        )
-    }
-
-    fn __str__(&self) -> String {
-        let pt = match self.port_type {
-            PortType::Input => "in",
-            PortType::Output => "out",
-        };
-        format!("{}.{}.{}", self.node_name, pt, self.port_name)
-    }
-
-    fn __eq__(&self, other: &PortRef) -> bool {
-        self == other
-    }
-
-    fn __hash__(&self) -> u64 {
-        use std::hash::{Hash, Hasher};
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        self.hash(&mut hasher);
-        hasher.finish()
-    }
-}
-
-impl PortRef {
-    pub fn to_core(&self) -> CorePortRef {
-        CorePortRef {
-            node_name: self.node_name.clone(),
-            port_type: self.port_type.to_core(),
-            port_name: self.port_name.clone(),
-        }
-    }
-
-    pub fn from_core(pr: &CorePortRef) -> Self {
-        PortRef {
-            node_name: pr.node_name.clone(),
-            port_type: PortType::from_core(&pr.port_type),
-            port_name: pr.port_name.clone(),
-        }
-    }
-}
-
-/// A connection between two ports in the graph.
-#[pyclass]
-#[derive(Clone, PartialEq, Eq, Hash)]
-pub struct Edge {
-    #[pyo3(get)]
-    pub source: PortRef,
-    #[pyo3(get)]
-    pub target: PortRef,
-}
-
-#[pymethods]
-impl Edge {
-    #[new]
-    fn new(source: PortRef, target: PortRef) -> Self {
-        Edge { source, target }
-    }
-
-    fn __repr__(&self) -> String {
-        format!(
-            "Edge({}, {})",
-            self.source.__repr__(),
-            self.target.__repr__()
-        )
-    }
-
-    fn __str__(&self) -> String {
-        format!("{} -> {}", self.source.__str__(), self.target.__str__())
-    }
-
-    fn __eq__(&self, other: &Edge) -> bool {
-        self == other
-    }
-
-    fn __hash__(&self) -> u64 {
-        use std::hash::{Hash, Hasher};
-        let mut hasher = std::collections::hash_map::DefaultHasher::new();
-        self.hash(&mut hasher);
-        hasher.finish()
-    }
-}
-
-impl Edge {
-    pub fn to_core(&self) -> CoreEdge {
-        CoreEdge {
-            source: self.source.to_core(),
-            target: self.target.to_core(),
-        }
-    }
-
-    pub fn from_core(edge: &CoreEdge) -> Self {
-        Edge {
-            source: PortRef::from_core(&edge.source),
-            target: PortRef::from_core(&edge.target),
-        }
-    }
-}
-
 /// A condition that defines when packets can trigger an epoch or be sent.
 #[pyclass]
 #[derive(Clone)]
@@ -917,9 +761,9 @@ impl Graph {
     #[new]
     fn new(nodes: Vec<Node>, edges: Vec<Edge>) -> Self {
         let core_nodes: Vec<CoreNode> = nodes.into_iter().map(|n| n.to_core()).collect();
-        let core_edges: Vec<CoreEdge> = edges.into_iter().map(|e| e.to_core()).collect();
+        // Edge is now directly the core type (re-exported from core)
         Graph {
-            inner: CoreGraph::new(core_nodes, core_edges),
+            inner: CoreGraph::new(core_nodes, edges),
         }
     }
 
@@ -936,7 +780,8 @@ impl Graph {
     fn edges(&self, py: Python<'_>) -> PyResult<Py<PyList>> {
         let list = PyList::empty(py);
         for edge in self.inner.edges().iter() {
-            list.append(Edge::from_core(edge))?;
+            // Edge is now directly the core type (re-exported from core)
+            list.append(edge.clone())?;
         }
         Ok(list.unbind())
     }

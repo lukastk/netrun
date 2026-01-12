@@ -265,6 +265,7 @@ pub struct Node {
 
 /// Whether a port is for input or output.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "python", pyo3::pyclass(eq, eq_int, frozen, hash))]
 pub enum PortType {
     /// An input port (packets flow into the node).
     Input,
@@ -272,8 +273,20 @@ pub enum PortType {
     Output,
 }
 
+#[cfg(feature = "python")]
+#[pyo3::pymethods]
+impl PortType {
+    fn __repr__(&self) -> String {
+        match self {
+            PortType::Input => "PortType.Input".to_string(),
+            PortType::Output => "PortType.Output".to_string(),
+        }
+    }
+}
+
 /// A reference to a specific port on a specific node.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "python", pyo3::pyclass(eq, frozen, hash, get_all))]
 pub struct PortRef {
     /// The name of the node containing this port.
     pub node_name: NodeName,
@@ -281,6 +294,30 @@ pub struct PortRef {
     pub port_type: PortType,
     /// The name of the port on the node.
     pub port_name: PortName,
+}
+
+#[cfg(feature = "python")]
+#[pyo3::pymethods]
+impl PortRef {
+    #[new]
+    fn py_new(node_name: String, port_type: PortType, port_name: String) -> Self {
+        PortRef {
+            node_name,
+            port_type,
+            port_name,
+        }
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "PortRef('{}', {:?}, '{}')",
+            self.node_name, self.port_type, self.port_name
+        )
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
 }
 
 impl std::fmt::Display for PortRef {
@@ -298,11 +335,29 @@ impl std::fmt::Display for PortRef {
 /// Edges connect output ports to input ports, allowing packets to flow
 /// between nodes.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[cfg_attr(feature = "python", pyo3::pyclass(eq, frozen, hash, get_all))]
 pub struct Edge {
     /// The output port where this edge originates.
     pub source: PortRef,
     /// The input port where this edge terminates.
     pub target: PortRef,
+}
+
+#[cfg(feature = "python")]
+#[pyo3::pymethods]
+impl Edge {
+    #[new]
+    fn py_new(source: PortRef, target: PortRef) -> Self {
+        Edge { source, target }
+    }
+
+    fn __repr__(&self) -> String {
+        format!("Edge({}, {})", self.source, self.target)
+    }
+
+    fn __str__(&self) -> String {
+        self.to_string()
+    }
 }
 
 impl std::fmt::Display for Edge {
