@@ -1,0 +1,19 @@
+#!/usr/bin/env bash
+
+REPO_FOLDER="$(dirname "$(dirname "$0")")"
+PREV_CWD=$(pwd)
+cd "$REPO_FOLDER"
+
+cd netrun-sim
+cargo build -p netrun-sim
+
+cd ../netrun-sim/python
+uv run maturin develop --release
+
+cd ..
+cargo test --workspace --all-features
+
+cd "$REPO_FOLDER/netrun"
+uv run pytest
+
+cd "$PREV_CWD"
