@@ -5,6 +5,8 @@ nbs -> lib
 docs_cl='nbs'
 docs_title="netrun"
 
+readme_nb_path = "nbs/netrun/index.ipynb"
+
 [cl.lib]
 path="src/netrun"
 format="module"
