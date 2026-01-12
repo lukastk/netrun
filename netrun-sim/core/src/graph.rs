@@ -59,6 +59,15 @@ pub enum PacketCount {
     Count(u64),
 }
 
+/// Specifies the maximum number of times a salvo condition can trigger.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum MaxSalvos {
+    /// No limit on how many times the condition can trigger.
+    Infinite,
+    /// Can trigger at most this many times.
+    Finite(u64),
+}
+
 /// A boolean expression over port states, used to define when salvos can trigger.
 ///
 /// This forms a simple expression tree that can combine port state checks
@@ -141,9 +150,8 @@ pub type SalvoConditionName = String;
 #[derive(Debug, Clone)]
 pub struct SalvoCondition {
     /// Maximum number of times this condition can trigger per epoch.
-    /// For input salvo conditions, this must be 1.
-    /// For output salvo conditions, 0 means unlimited.
-    pub max_salvos: u64,
+    /// For input salvo conditions, this must be `Finite(1)`.
+    pub max_salvos: MaxSalvos,
     /// The ports whose packets are included when this condition triggers,
     /// and how many packets to take from each port.
     pub ports: HashMap<PortName, PacketCount>,
@@ -213,14 +221,14 @@ pub enum GraphValidationError {
         is_input_condition: bool,
         missing_port: PortName,
     },
-    /// Input salvo condition has max_salvos != 1
+    /// Input salvo condition has max_salvos != Finite(1)
     #[error(
-        "input salvo condition '{condition_name}' on node '{node_name}' has max_salvos={max_salvos}, but must be 1"
+        "input salvo condition '{condition_name}' on node '{node_name}' has max_salvos={max_salvos:?}, but must be Finite(1)"
     )]
     InputSalvoConditionInvalidMaxSalvos {
         node_name: NodeName,
         condition_name: SalvoConditionName,
-        max_salvos: u64,
+        max_salvos: MaxSalvos,
     },
     /// Duplicate edge (same source and target)
     #[error("duplicate edge: {edge_source} -> {edge_target}")]
@@ -477,12 +485,12 @@ impl Graph {
         for (node_name, node) in &self.nodes {
             // Validate input salvo conditions
             for (cond_name, condition) in &node.in_salvo_conditions {
-                // Input salvo conditions must have max_salvos == 1
-                if condition.max_salvos != 1 {
+                // Input salvo conditions must have max_salvos == Finite(1)
+                if condition.max_salvos != MaxSalvos::Finite(1) {
                     errors.push(GraphValidationError::InputSalvoConditionInvalidMaxSalvos {
                         node_name: node_name.clone(),
                         condition_name: cond_name.clone(),
-                        max_salvos: condition.max_salvos,
+                        max_salvos: condition.max_salvos.clone(),
                     });
                 }
 
@@ -582,7 +590,7 @@ mod tests {
             in_salvo_conditions.insert(
                 "default".to_string(),
                 SalvoCondition {
-                    max_salvos: 1,
+                    max_salvos: MaxSalvos::Finite(1),
                     ports: in_ports
                         .iter()
                         .map(|s| (s.to_string(), PacketCount::All))
@@ -777,13 +785,13 @@ mod tests {
     }
 
     #[test]
-    fn test_input_salvo_condition_must_have_max_salvos_1() {
+    fn test_input_salvo_condition_must_have_max_salvos_finite_1() {
         let mut node = simple_node("A", vec!["in"], vec![]);
-        // Set max_salvos to something other than 1
+        // Set max_salvos to something other than Finite(1)
         node.in_salvo_conditions
             .get_mut("default")
             .unwrap()
-            .max_salvos = 2;
+            .max_salvos = MaxSalvos::Finite(2);
 
         let graph = Graph::new(vec![node], vec![]);
 
@@ -791,7 +799,7 @@ mod tests {
         assert_eq!(errors.len(), 1);
         match &errors[0] {
             GraphValidationError::InputSalvoConditionInvalidMaxSalvos { max_salvos, .. } => {
-                assert_eq!(*max_salvos, 2);
+                assert_eq!(*max_salvos, MaxSalvos::Finite(2));
             }
             _ => panic!(
                 "Expected InputSalvoConditionInvalidMaxSalvos, got: {:?}",
@@ -845,7 +853,7 @@ mod tests {
         node.out_salvo_conditions.insert(
             "test".to_string(),
             SalvoCondition {
-                max_salvos: 0,
+                max_salvos: MaxSalvos::Infinite,
                 ports: [("nonexistent".to_string(), PacketCount::All)]
                     .into_iter()
                     .collect(),

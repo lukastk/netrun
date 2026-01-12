@@ -25,6 +25,10 @@ __all__ = [
     "UnconnectedOutputPortError",
     "GraphValidationError",
     # Graph types
+    "PacketCount",
+    "PacketCountN",
+    "MaxSalvos",
+    "MaxSalvosFinite",
     "PortSlotSpec",
     "PortSlotSpecFinite",
     "PortState",

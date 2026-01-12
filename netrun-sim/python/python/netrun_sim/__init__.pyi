@@ -109,6 +109,23 @@ class PacketCountN:
     def count(self) -> int: ...
 
 
+class MaxSalvos:
+    """Specifies the maximum number of times a salvo condition can trigger."""
+    Infinite: MaxSalvos
+
+    @staticmethod
+    def infinite() -> MaxSalvos: ...
+
+    @staticmethod
+    def finite(n: int) -> MaxSalvosFinite: ...
+
+
+class MaxSalvosFinite:
+    """Finite max salvos with a specific limit."""
+    @property
+    def max(self) -> int: ...
+
+
 class PortSlotSpec:
     """Port capacity specification."""
     Infinite: PortSlotSpec
@@ -240,6 +257,7 @@ class SalvoCondition:
 
     Args:
         max_salvos: Maximum number of times this condition can trigger.
+            Use MaxSalvos.finite(n) for a finite limit or MaxSalvos.Infinite for no limit.
         ports: Which ports' packets are included. Can be:
             - A single port name (str) - defaults to PacketCount.All
             - A list of port names - each defaults to PacketCount.All
@@ -247,10 +265,10 @@ class SalvoCondition:
         term: The boolean expression that must be satisfied.
     """
 
-    def __init__(self, max_salvos: int, ports: SalvoConditionPorts, term: SalvoConditionTerm) -> None: ...
+    def __init__(self, max_salvos: Union[MaxSalvos, MaxSalvosFinite], ports: SalvoConditionPorts, term: SalvoConditionTerm) -> None: ...
 
     @property
-    def max_salvos(self) -> int: ...
+    def max_salvos(self) -> Union[MaxSalvos, MaxSalvosFinite]: ...
     @property
     def ports(self) -> Dict[str, Union[PacketCount, PacketCountN]]: ...
     @property
@@ -482,6 +500,8 @@ __all__ = [
     # Graph types
     "PacketCount",
     "PacketCountN",
+    "MaxSalvos",
+    "MaxSalvosFinite",
     "PortSlotSpec",
     "PortSlotSpecFinite",
     "PortState",

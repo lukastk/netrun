@@ -11,6 +11,7 @@ This example demonstrates:
 from netrun_sim import (
     Edge,
     Graph,
+    MaxSalvos,
     NetSim,
     NetAction,
     NetActionResponseData,
@@ -35,7 +36,7 @@ def create_node(name: str, in_ports: list[str], out_ports: list[str]) -> Node:
     in_salvo_conditions = {}
     if in_ports:
         in_salvo_conditions["default"] = SalvoCondition(
-            max_salvos=1,
+            max_salvos=MaxSalvos.finite(1),
             ports=in_ports,
             term=SalvoConditionTerm.port(in_ports[0], PortState.non_empty()),
         )
@@ -44,7 +45,7 @@ def create_node(name: str, in_ports: list[str], out_ports: list[str]) -> Node:
     out_salvo_conditions = {}
     if out_ports:
         out_salvo_conditions["default"] = SalvoCondition(
-            max_salvos=0,  # unlimited
+            max_salvos=MaxSalvos.Infinite,
             ports=out_ports,
             term=SalvoConditionTerm.port(out_ports[0], PortState.non_empty()),
         )

@@ -6,10 +6,10 @@ use crate::errors::GraphValidationError as PyGraphValidationError;
 
 // Re-export core types for internal use
 use netrun_sim::graph::{
-    Edge as CoreEdge, Graph as CoreGraph, Node as CoreNode, PacketCount as CorePacketCount,
-    Port as CorePort, PortName, PortRef as CorePortRef, PortSlotSpec as CorePortSlotSpec,
-    PortState as CorePortState, PortType as CorePortType, SalvoCondition as CoreSalvoCondition,
-    SalvoConditionTerm as CoreSalvoConditionTerm,
+    Edge as CoreEdge, Graph as CoreGraph, MaxSalvos as CoreMaxSalvos, Node as CoreNode,
+    PacketCount as CorePacketCount, Port as CorePort, PortName, PortRef as CorePortRef,
+    PortSlotSpec as CorePortSlotSpec, PortState as CorePortState, PortType as CorePortType,
+    SalvoCondition as CoreSalvoCondition, SalvoConditionTerm as CoreSalvoConditionTerm,
 };
 
 /// Specifies how many packets to take from a port in a salvo.
@@ -67,6 +67,64 @@ impl PyPacketCountN {
 impl PyPacketCountN {
     pub fn to_core(&self) -> CorePacketCount {
         CorePacketCount::Count(self.count)
+    }
+}
+
+/// Specifies the maximum number of times a salvo condition can trigger.
+#[pyclass(eq, eq_int)]
+#[derive(Clone, PartialEq)]
+pub enum MaxSalvos {
+    /// No limit on how many times the condition can trigger.
+    Infinite,
+}
+
+#[pymethods]
+impl MaxSalvos {
+    /// No limit on triggers.
+    #[staticmethod]
+    fn infinite() -> Self {
+        MaxSalvos::Infinite
+    }
+
+    /// Finite limit on triggers.
+    #[staticmethod]
+    fn finite(n: u64) -> PyMaxSalvosFinite {
+        PyMaxSalvosFinite { max: n }
+    }
+
+    fn __repr__(&self) -> String {
+        match self {
+            MaxSalvos::Infinite => "MaxSalvos.Infinite".to_string(),
+        }
+    }
+}
+
+impl MaxSalvos {
+    pub fn to_core(&self) -> CoreMaxSalvos {
+        match self {
+            MaxSalvos::Infinite => CoreMaxSalvos::Infinite,
+        }
+    }
+}
+
+/// Finite max salvos with a specific limit.
+#[pyclass(name = "MaxSalvosFinite")]
+#[derive(Clone)]
+pub struct PyMaxSalvosFinite {
+    #[pyo3(get)]
+    pub max: u64,
+}
+
+#[pymethods]
+impl PyMaxSalvosFinite {
+    fn __repr__(&self) -> String {
+        format!("MaxSalvos.finite({})", self.max)
+    }
+}
+
+impl PyMaxSalvosFinite {
+    pub fn to_core(&self) -> CoreMaxSalvos {
+        CoreMaxSalvos::Finite(self.max)
     }
 }
 
@@ -569,8 +627,7 @@ impl Edge {
 #[pyclass]
 #[derive(Clone)]
 pub struct SalvoCondition {
-    #[pyo3(get)]
-    pub max_salvos: u64,
+    max_salvos_internal: CoreMaxSalvos,
     ports_internal: HashMap<String, CorePacketCount>,
     #[pyo3(get)]
     pub term: SalvoConditionTerm,
@@ -580,19 +637,43 @@ pub struct SalvoCondition {
 impl SalvoCondition {
     /// Create a new SalvoCondition.
     ///
+    /// `max_salvos` can be:
+    /// - MaxSalvos.Infinite or MaxSalvos.infinite()
+    /// - MaxSalvos.finite(n) (returns MaxSalvosFinite)
+    ///
     /// `ports` can be:
     /// - A single port name (str) - defaults to PacketCount.All
     /// - A list of port names - each defaults to PacketCount.All
     /// - A dict mapping port names to PacketCount values
     #[new]
     #[pyo3(signature = (max_salvos, ports, term))]
-    fn new(max_salvos: u64, ports: &Bound<'_, PyAny>, term: SalvoConditionTerm) -> PyResult<Self> {
+    fn new(
+        max_salvos: &Bound<'_, PyAny>,
+        ports: &Bound<'_, PyAny>,
+        term: SalvoConditionTerm,
+    ) -> PyResult<Self> {
+        let core_max_salvos = extract_max_salvos(max_salvos)?;
         let ports_map = extract_ports_map(ports)?;
         Ok(SalvoCondition {
-            max_salvos,
+            max_salvos_internal: core_max_salvos,
             ports_internal: ports_map,
             term,
         })
+    }
+
+    /// Get the max_salvos value.
+    #[getter]
+    fn max_salvos(&self, py: Python<'_>) -> PyResult<PyObject> {
+        match &self.max_salvos_internal {
+            CoreMaxSalvos::Infinite => Ok(MaxSalvos::Infinite
+                .into_pyobject(py)?
+                .unbind()
+                .into_any()),
+            CoreMaxSalvos::Finite(n) => Ok(PyMaxSalvosFinite { max: *n }
+                .into_pyobject(py)?
+                .unbind()
+                .into_any()),
+        }
     }
 
     /// Get the ports as a dict mapping port names to their packet counts.
@@ -613,6 +694,10 @@ impl SalvoCondition {
     }
 
     fn __repr__(&self) -> String {
+        let max_salvos_repr = match &self.max_salvos_internal {
+            CoreMaxSalvos::Infinite => "MaxSalvos.Infinite".to_string(),
+            CoreMaxSalvos::Finite(n) => format!("MaxSalvos.finite({})", n),
+        };
         let ports_repr: Vec<String> = self
             .ports_internal
             .iter()
@@ -626,7 +711,7 @@ impl SalvoCondition {
             .collect();
         format!(
             "SalvoCondition(max_salvos={}, ports={{{}}}, term={})",
-            self.max_salvos,
+            max_salvos_repr,
             ports_repr.join(", "),
             self.term.__repr__()
         )
@@ -680,10 +765,25 @@ fn extract_packet_count(obj: &Bound<'_, PyAny>) -> PyResult<CorePacketCount> {
     ))
 }
 
+/// Extract a MaxSalvos from a Python object.
+fn extract_max_salvos(obj: &Bound<'_, PyAny>) -> PyResult<CoreMaxSalvos> {
+    // Try MaxSalvos.Infinite
+    if let Ok(ms) = obj.extract::<MaxSalvos>() {
+        return Ok(ms.to_core());
+    }
+    // Try MaxSalvos.finite(n)
+    if let Ok(msf) = obj.extract::<PyMaxSalvosFinite>() {
+        return Ok(msf.to_core());
+    }
+    Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+        "Expected MaxSalvos or MaxSalvosFinite",
+    ))
+}
+
 impl SalvoCondition {
     pub fn to_core(&self) -> CoreSalvoCondition {
         CoreSalvoCondition {
-            max_salvos: self.max_salvos,
+            max_salvos: self.max_salvos_internal.clone(),
             ports: self.ports_internal.clone(),
             term: self.term.to_core(),
         }
@@ -691,7 +791,7 @@ impl SalvoCondition {
 
     pub fn from_core(sc: &CoreSalvoCondition) -> Self {
         SalvoCondition {
-            max_salvos: sc.max_salvos,
+            max_salvos_internal: sc.max_salvos.clone(),
             ports_internal: sc.ports.clone(),
             term: SalvoConditionTerm::from_core(&sc.term),
         }
@@ -870,6 +970,8 @@ impl Graph {
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PacketCount>()?;
     m.add_class::<PyPacketCountN>()?;
+    m.add_class::<MaxSalvos>()?;
+    m.add_class::<PyMaxSalvosFinite>()?;
     m.add_class::<PortSlotSpec>()?;
     m.add_class::<PyPortSlotSpecFinite>()?;
     m.add_class::<PortState>()?;

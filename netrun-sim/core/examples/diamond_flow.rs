@@ -13,7 +13,7 @@
 //! - Synchronization: D's epoch only triggers when both inputs are present
 
 use netrun_sim::graph::{
-    Edge, Graph, Node, PacketCount, Port, PortRef, PortSlotSpec, PortState, PortType,
+    Edge, Graph, MaxSalvos, Node, PacketCount, Port, PortRef, PortSlotSpec, PortState, PortType,
     SalvoCondition, SalvoConditionTerm,
 };
 use netrun_sim::net::{NetSim, NetAction, NetActionResponse, NetActionResponseData, PacketLocation};
@@ -168,7 +168,7 @@ fn create_diamond_graph() -> Graph {
         in_salvo_conditions: [(
             "default".to_string(),
             SalvoCondition {
-                max_salvos: 1,
+                max_salvos: MaxSalvos::Finite(1),
                 ports: [
                     ("in1".to_string(), PacketCount::All),
                     ("in2".to_string(), PacketCount::All),
@@ -224,7 +224,7 @@ fn create_simple_node(name: &str) -> Node {
         in_salvo_conditions: [(
             "default".to_string(),
             SalvoCondition {
-                max_salvos: 1,
+                max_salvos: MaxSalvos::Finite(1),
                 ports: [("in".to_string(), PacketCount::All)]
                     .into_iter()
                     .collect(),
@@ -238,7 +238,7 @@ fn create_simple_node(name: &str) -> Node {
         out_salvo_conditions: [(
             "default".to_string(),
             SalvoCondition {
-                max_salvos: 0,
+                max_salvos: MaxSalvos::Infinite,
                 ports: [("out".to_string(), PacketCount::All)]
                     .into_iter()
                     .collect(),

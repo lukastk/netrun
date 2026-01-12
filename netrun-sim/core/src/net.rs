@@ -8,7 +8,7 @@
 
 use crate::_utils::get_utc_now;
 use crate::graph::{
-    Edge, Graph, NodeName, PacketCount, Port, PortName, PortRef, PortSlotSpec, PortType,
+    Edge, Graph, MaxSalvos, NodeName, PacketCount, Port, PortName, PortRef, PortSlotSpec, PortType,
     SalvoConditionName, SalvoConditionTerm, evaluate_salvo_condition,
 };
 use indexmap::IndexSet;
@@ -1014,14 +1014,14 @@ impl NetSim {
                 });
             };
 
-        // Check if max salvos reached (max_salvos = 0 means unlimited)
-        if salvo_condition.max_salvos > 0
-            && epoch.out_salvos.len() as u64 >= salvo_condition.max_salvos
-        {
-            return NetActionResponse::Error(NetActionError::MaxOutputSalvosReached {
-                condition_name: salvo_condition_name.clone(),
-                epoch_id: *epoch_id,
-            });
+        // Check if max salvos reached
+        if let MaxSalvos::Finite(max) = salvo_condition.max_salvos {
+            if epoch.out_salvos.len() as u64 >= max {
+                return NetActionResponse::Error(NetActionError::MaxOutputSalvosReached {
+                    condition_name: salvo_condition_name.clone(),
+                    epoch_id: *epoch_id,
+                });
+            }
         }
 
         // Check that the salvo condition is met

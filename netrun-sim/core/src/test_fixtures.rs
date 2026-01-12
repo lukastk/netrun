@@ -3,8 +3,8 @@
 //! This module provides utilities for testing the netrun-sim library.
 
 use crate::graph::{
-    Edge, Graph, Node, PacketCount, Port, PortName, PortRef, PortSlotSpec, PortState, PortType,
-    SalvoCondition, SalvoConditionTerm,
+    Edge, Graph, MaxSalvos, Node, PacketCount, Port, PortName, PortRef, PortSlotSpec, PortState,
+    PortType, SalvoCondition, SalvoConditionTerm,
 };
 use std::collections::HashMap;
 
@@ -33,7 +33,7 @@ pub fn all_ports_non_empty_condition(port_names: Vec<&str>) -> SalvoCondition {
         .collect();
 
     SalvoCondition {
-        max_salvos: 1,
+        max_salvos: MaxSalvos::Finite(1),
         ports: port_names
             .iter()
             .map(|s| (s.to_string(), PacketCount::All))
@@ -47,7 +47,7 @@ pub fn all_ports_non_empty_condition(port_names: Vec<&str>) -> SalvoCondition {
 }
 
 /// Creates an output salvo condition that triggers when all specified ports are non-empty.
-pub fn output_salvo_condition(port_names: Vec<&str>, max_salvos: u64) -> SalvoCondition {
+pub fn output_salvo_condition(port_names: Vec<&str>, max_salvos: MaxSalvos) -> SalvoCondition {
     let terms: Vec<SalvoConditionTerm> = port_names
         .iter()
         .map(|name| SalvoConditionTerm::Port {
@@ -96,7 +96,7 @@ pub fn simple_node(name: &str, in_ports: Vec<&str>, out_ports: Vec<&str>) -> Nod
     if !out_ports.is_empty() {
         out_salvo_conditions.insert(
             "default".to_string(),
-            output_salvo_condition(out_ports.clone(), 0), // unlimited
+            output_salvo_condition(out_ports.clone(), MaxSalvos::Infinite),
         );
     }
 
