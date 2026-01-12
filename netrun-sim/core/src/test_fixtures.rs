@@ -3,8 +3,8 @@
 //! This module provides utilities for testing the netrun-sim library.
 
 use crate::graph::{
-    Edge, Graph, Node, Port, PortName, PortRef, PortSlotSpec, PortState, PortType, SalvoCondition,
-    SalvoConditionTerm,
+    Edge, Graph, Node, PacketCount, Port, PortName, PortRef, PortSlotSpec, PortState, PortType,
+    SalvoCondition, SalvoConditionTerm,
 };
 use std::collections::HashMap;
 
@@ -34,7 +34,10 @@ pub fn all_ports_non_empty_condition(port_names: Vec<&str>) -> SalvoCondition {
 
     SalvoCondition {
         max_salvos: 1,
-        ports: port_names.iter().map(|s| s.to_string()).collect(),
+        ports: port_names
+            .iter()
+            .map(|s| (s.to_string(), PacketCount::All))
+            .collect(),
         term: if terms.len() == 1 {
             terms.into_iter().next().unwrap()
         } else {
@@ -55,7 +58,10 @@ pub fn output_salvo_condition(port_names: Vec<&str>, max_salvos: u64) -> SalvoCo
 
     SalvoCondition {
         max_salvos,
-        ports: port_names.iter().map(|s| s.to_string()).collect(),
+        ports: port_names
+            .iter()
+            .map(|s| (s.to_string(), PacketCount::All))
+            .collect(),
         term: if terms.len() == 1 {
             terms.into_iter().next().unwrap()
         } else {
