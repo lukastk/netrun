@@ -11,6 +11,7 @@ create_exception!(netrun_sim, EpochNotFoundError, NetrunError);
 create_exception!(netrun_sim, EpochNotRunningError, NetrunError);
 create_exception!(netrun_sim, EpochNotStartableError, NetrunError);
 create_exception!(netrun_sim, CannotFinishNonEmptyEpochError, NetrunError);
+create_exception!(netrun_sim, UnsentOutputSalvoError, NetrunError);
 create_exception!(netrun_sim, PacketNotInNodeError, NetrunError);
 create_exception!(netrun_sim, OutputPortNotFoundError, NetrunError);
 create_exception!(netrun_sim, OutputPortFullError, NetrunError);
@@ -56,6 +57,10 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(
         "CannotFinishNonEmptyEpochError",
         m.py().get_type::<CannotFinishNonEmptyEpochError>(),
+    )?;
+    m.add(
+        "UnsentOutputSalvoError",
+        m.py().get_type::<UnsentOutputSalvoError>(),
     )?;
     m.add(
         "PacketNotInNodeError",
@@ -136,6 +141,13 @@ pub fn net_action_error_to_py_err(err: netrun_sim::net::NetActionError) -> PyErr
                 epoch_id
             ))
         }
+        NetActionError::UnsentOutputSalvo {
+            epoch_id,
+            port_name,
+        } => UnsentOutputSalvoError::new_err(format!(
+            "Cannot finish epoch {}: output port '{}' has unsent packets",
+            epoch_id, port_name
+        )),
         NetActionError::PacketNotInNode {
             packet_id,
             epoch_id,
