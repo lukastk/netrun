@@ -8,8 +8,8 @@
 //! - Sending output salvos to continue flow
 
 use netrun_sim::graph::{
-    Edge, Graph, Node, Port, PortRef, PortSlotSpec, PortState, PortType, SalvoCondition,
-    SalvoConditionTerm,
+    Edge, Graph, Node, PacketCount, Port, PortRef, PortSlotSpec, PortState, PortType,
+    SalvoCondition, SalvoConditionTerm,
 };
 use netrun_sim::net::{NetSim, NetAction, NetActionResponse, NetActionResponseData, PacketLocation};
 use std::collections::HashMap;
@@ -165,7 +165,10 @@ fn create_node(name: &str, in_ports: Vec<&str>, out_ports: Vec<&str>) -> Node {
             "default".to_string(),
             SalvoCondition {
                 max_salvos: 1,
-                ports: in_ports.iter().map(|s| s.to_string()).collect(),
+                ports: in_ports
+                    .iter()
+                    .map(|s| (s.to_string(), PacketCount::All))
+                    .collect(),
                 term: SalvoConditionTerm::Port {
                     port_name: in_ports[0].to_string(),
                     state: PortState::NonEmpty,
@@ -181,7 +184,10 @@ fn create_node(name: &str, in_ports: Vec<&str>, out_ports: Vec<&str>) -> Node {
             "default".to_string(),
             SalvoCondition {
                 max_salvos: 0, // unlimited
-                ports: out_ports.iter().map(|s| s.to_string()).collect(),
+                ports: out_ports
+                    .iter()
+                    .map(|s| (s.to_string(), PacketCount::All))
+                    .collect(),
                 term: SalvoConditionTerm::Port {
                     port_name: out_ports[0].to_string(),
                     state: PortState::NonEmpty,

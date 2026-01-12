@@ -92,6 +92,23 @@ class GraphValidationError(NetrunError):
 
 # === Graph Types ===
 
+class PacketCount:
+    """Specifies how many packets to take from a port in a salvo."""
+    All: PacketCount
+
+    @staticmethod
+    def all() -> PacketCount: ...
+
+    @staticmethod
+    def count(n: int) -> PacketCountN: ...
+
+
+class PacketCountN:
+    """PacketCount with a specific count limit."""
+    @property
+    def count(self) -> int: ...
+
+
 class PortSlotSpec:
     """Port capacity specification."""
     Infinite: PortSlotSpec
@@ -214,15 +231,28 @@ class Edge:
     def __hash__(self) -> int: ...
 
 
-class SalvoCondition:
-    """A condition that defines when packets can trigger an epoch or be sent."""
+# Type alias for ports parameter
+SalvoConditionPorts = Union[str, List[str], Dict[str, Union[PacketCount, PacketCountN]]]
 
-    def __init__(self, max_salvos: int, ports: List[str], term: SalvoConditionTerm) -> None: ...
+
+class SalvoCondition:
+    """A condition that defines when packets can trigger an epoch or be sent.
+
+    Args:
+        max_salvos: Maximum number of times this condition can trigger.
+        ports: Which ports' packets are included. Can be:
+            - A single port name (str) - defaults to PacketCount.All
+            - A list of port names - each defaults to PacketCount.All
+            - A dict mapping port names to PacketCount values
+        term: The boolean expression that must be satisfied.
+    """
+
+    def __init__(self, max_salvos: int, ports: SalvoConditionPorts, term: SalvoConditionTerm) -> None: ...
 
     @property
     def max_salvos(self) -> int: ...
     @property
-    def ports(self) -> List[str]: ...
+    def ports(self) -> Dict[str, Union[PacketCount, PacketCountN]]: ...
     @property
     def term(self) -> SalvoConditionTerm: ...
 
@@ -450,6 +480,8 @@ __all__ = [
     "UnconnectedOutputPortError",
     "GraphValidationError",
     # Graph types
+    "PacketCount",
+    "PacketCountN",
     "PortSlotSpec",
     "PortSlotSpecFinite",
     "PortState",
@@ -460,6 +492,7 @@ __all__ = [
     "PortRef",
     "Edge",
     "SalvoCondition",
+    "SalvoConditionPorts",
     "Node",
     "Graph",
     # NetSim types

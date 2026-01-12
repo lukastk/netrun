@@ -50,6 +50,15 @@ pub enum PortState {
     EqualsOrGreaterThan(u64),
 }
 
+/// Specifies how many packets to take from a port in a salvo.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum PacketCount {
+    /// Take all packets from the port.
+    All,
+    /// Take at most this many packets (takes fewer if port has fewer).
+    Count(u64),
+}
+
 /// A boolean expression over port states, used to define when salvos can trigger.
 ///
 /// This forms a simple expression tree that can combine port state checks
@@ -135,8 +144,9 @@ pub struct SalvoCondition {
     /// For input salvo conditions, this must be 1.
     /// For output salvo conditions, 0 means unlimited.
     pub max_salvos: u64,
-    /// The ports whose packets are included when this condition triggers.
-    pub ports: Vec<PortName>,
+    /// The ports whose packets are included when this condition triggers,
+    /// and how many packets to take from each port.
+    pub ports: HashMap<PortName, PacketCount>,
     /// The boolean condition that must be satisfied for this salvo to trigger.
     pub term: SalvoConditionTerm,
 }
@@ -477,7 +487,7 @@ impl Graph {
                 }
 
                 // Validate ports in condition.ports exist as input ports
-                for port_name in &condition.ports {
+                for port_name in condition.ports.keys() {
                     if !node.in_ports.contains_key(port_name) {
                         errors.push(
                             GraphValidationError::SalvoConditionReferencesNonexistentPort {
@@ -510,7 +520,7 @@ impl Graph {
             // Validate output salvo conditions
             for (cond_name, condition) in &node.out_salvo_conditions {
                 // Validate ports in condition.ports exist as output ports
-                for port_name in &condition.ports {
+                for port_name in condition.ports.keys() {
                     if !node.out_ports.contains_key(port_name) {
                         errors.push(
                             GraphValidationError::SalvoConditionReferencesNonexistentPort {
@@ -573,7 +583,10 @@ mod tests {
                 "default".to_string(),
                 SalvoCondition {
                     max_salvos: 1,
-                    ports: in_ports.iter().map(|s| s.to_string()).collect(),
+                    ports: in_ports
+                        .iter()
+                        .map(|s| (s.to_string(), PacketCount::All))
+                        .collect(),
                     term: SalvoConditionTerm::Port {
                         port_name: in_ports[0].to_string(),
                         state: PortState::NonEmpty,
@@ -792,7 +805,9 @@ mod tests {
         let mut node = simple_node("A", vec!["in"], vec![]);
         // Reference nonexistent port in condition.ports
         node.in_salvo_conditions.get_mut("default").unwrap().ports =
-            vec!["nonexistent".to_string()];
+            [("nonexistent".to_string(), PacketCount::All)]
+                .into_iter()
+                .collect();
 
         let graph = Graph::new(vec![node], vec![]);
 
@@ -831,7 +846,9 @@ mod tests {
             "test".to_string(),
             SalvoCondition {
                 max_salvos: 0,
-                ports: vec!["nonexistent".to_string()],
+                ports: [("nonexistent".to_string(), PacketCount::All)]
+                    .into_iter()
+                    .collect(),
                 term: SalvoConditionTerm::Port {
                     port_name: "out".to_string(),
                     state: PortState::NonEmpty,

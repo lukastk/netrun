@@ -13,8 +13,8 @@
 //! - Synchronization: D's epoch only triggers when both inputs are present
 
 use netrun_sim::graph::{
-    Edge, Graph, Node, Port, PortRef, PortSlotSpec, PortState, PortType, SalvoCondition,
-    SalvoConditionTerm,
+    Edge, Graph, Node, PacketCount, Port, PortRef, PortSlotSpec, PortState, PortType,
+    SalvoCondition, SalvoConditionTerm,
 };
 use netrun_sim::net::{NetSim, NetAction, NetActionResponse, NetActionResponseData, PacketLocation};
 use std::collections::HashMap;
@@ -169,7 +169,12 @@ fn create_diamond_graph() -> Graph {
             "default".to_string(),
             SalvoCondition {
                 max_salvos: 1,
-                ports: vec!["in1".to_string(), "in2".to_string()],
+                ports: [
+                    ("in1".to_string(), PacketCount::All),
+                    ("in2".to_string(), PacketCount::All),
+                ]
+                .into_iter()
+                .collect(),
                 // Require BOTH inputs to be non-empty
                 term: SalvoConditionTerm::And(vec![
                     SalvoConditionTerm::Port {
@@ -220,7 +225,9 @@ fn create_simple_node(name: &str) -> Node {
             "default".to_string(),
             SalvoCondition {
                 max_salvos: 1,
-                ports: vec!["in".to_string()],
+                ports: [("in".to_string(), PacketCount::All)]
+                    .into_iter()
+                    .collect(),
                 term: SalvoConditionTerm::Port {
                     port_name: "in".to_string(),
                     state: PortState::NonEmpty,
@@ -232,7 +239,9 @@ fn create_simple_node(name: &str) -> Node {
             "default".to_string(),
             SalvoCondition {
                 max_salvos: 0,
-                ports: vec!["out".to_string()],
+                ports: [("out".to_string(), PacketCount::All)]
+                    .into_iter()
+                    .collect(),
                 term: SalvoConditionTerm::Port {
                     port_name: "out".to_string(),
                     state: PortState::NonEmpty,

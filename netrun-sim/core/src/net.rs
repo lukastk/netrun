@@ -8,8 +8,8 @@
 
 use crate::_utils::get_utc_now;
 use crate::graph::{
-    Edge, Graph, NodeName, Port, PortName, PortRef, PortSlotSpec, PortType, SalvoConditionName,
-    SalvoConditionTerm, evaluate_salvo_condition,
+    Edge, Graph, NodeName, PacketCount, Port, PortName, PortRef, PortSlotSpec, PortType,
+    SalvoConditionName, SalvoConditionTerm, evaluate_salvo_condition,
 };
 use indexmap::IndexSet;
 use std::collections::{HashMap, HashSet};
@@ -486,7 +486,7 @@ impl NetSim {
                 // Collect salvo condition data
                 struct SalvoConditionData {
                     name: SalvoConditionName,
-                    ports: Vec<PortName>,
+                    ports: HashMap<PortName, PacketCount>,
                     term: SalvoConditionTerm,
                 }
 
@@ -531,14 +531,20 @@ impl NetSim {
                         let mut salvo_packets: Vec<(PortName, PacketID)> = Vec::new();
                         let mut packets_to_move: Vec<(PacketID, PortName)> = Vec::new();
 
-                        for port_name in &salvo_cond_data.ports {
+                        for (port_name, packet_count) in &salvo_cond_data.ports {
                             let port_location = PacketLocation::InputPort(
                                 candidate.target_node_name.clone(),
                                 port_name.clone(),
                             );
                             if let Some(packet_ids) = self._packets_by_location.get(&port_location)
                             {
-                                for pid in packet_ids.iter() {
+                                let take_count = match packet_count {
+                                    PacketCount::All => packet_ids.len(),
+                                    PacketCount::Count(n) => {
+                                        std::cmp::min(*n as usize, packet_ids.len())
+                                    }
+                                };
+                                for pid in packet_ids.iter().take(take_count) {
                                     salvo_packets.push((port_name.clone(), *pid));
                                     packets_to_move.push((*pid, port_name.clone()));
                                 }
@@ -1040,9 +1046,17 @@ impl NetSim {
 
         // Get the locations to send packets to
         let mut packets_to_move: Vec<(PacketID, PortName, PacketLocation)> = Vec::new();
-        for port_name in &salvo_condition.ports {
-            let packets = self._packets_by_location.get(&PacketLocation::OutputPort(*epoch_id, port_name.clone()))
-                .unwrap_or_else(|| panic!("Output port '{}' of node '{}' does not have an entry in self._packets_by_location", port_name, node.name.clone()))
+        for (port_name, packet_count) in &salvo_condition.ports {
+            let packets = self
+                ._packets_by_location
+                .get(&PacketLocation::OutputPort(*epoch_id, port_name.clone()))
+                .unwrap_or_else(|| {
+                    panic!(
+                        "Output port '{}' of node '{}' does not have an entry in self._packets_by_location",
+                        port_name,
+                        node.name.clone()
+                    )
+                })
                 .clone();
             let edge_ref = if let Some(edge_ref) = self.graph.get_edge_by_tail(&PortRef {
                 node_name: node.name.clone(),
@@ -1059,7 +1073,11 @@ impl NetSim {
                 );
             };
             let new_location = PacketLocation::Edge(edge_ref.clone());
-            for packet_id in packets {
+            let take_count = match packet_count {
+                PacketCount::All => packets.len(),
+                PacketCount::Count(n) => std::cmp::min(*n as usize, packets.len()),
+            };
+            for packet_id in packets.into_iter().take(take_count) {
                 packets_to_move.push((packet_id, port_name.clone(), new_location.clone()));
             }
         }

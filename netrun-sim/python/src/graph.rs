@@ -6,11 +6,69 @@ use crate::errors::GraphValidationError as PyGraphValidationError;
 
 // Re-export core types for internal use
 use netrun_sim::graph::{
-    Edge as CoreEdge, Graph as CoreGraph, Node as CoreNode, Port as CorePort, PortName,
-    PortRef as CorePortRef, PortSlotSpec as CorePortSlotSpec, PortState as CorePortState,
-    PortType as CorePortType, SalvoCondition as CoreSalvoCondition,
+    Edge as CoreEdge, Graph as CoreGraph, Node as CoreNode, PacketCount as CorePacketCount,
+    Port as CorePort, PortName, PortRef as CorePortRef, PortSlotSpec as CorePortSlotSpec,
+    PortState as CorePortState, PortType as CorePortType, SalvoCondition as CoreSalvoCondition,
     SalvoConditionTerm as CoreSalvoConditionTerm,
 };
+
+/// Specifies how many packets to take from a port in a salvo.
+#[pyclass(eq, eq_int)]
+#[derive(Clone, PartialEq)]
+pub enum PacketCount {
+    /// Take all packets from the port.
+    All,
+}
+
+#[pymethods]
+impl PacketCount {
+    /// Take all packets from the port.
+    #[staticmethod]
+    fn all() -> Self {
+        PacketCount::All
+    }
+
+    /// Take at most n packets (takes fewer if port has fewer).
+    #[staticmethod]
+    fn count(n: u64) -> PyPacketCountN {
+        PyPacketCountN { count: n }
+    }
+
+    fn __repr__(&self) -> String {
+        match self {
+            PacketCount::All => "PacketCount.All".to_string(),
+        }
+    }
+}
+
+impl PacketCount {
+    pub fn to_core(&self) -> CorePacketCount {
+        match self {
+            PacketCount::All => CorePacketCount::All,
+        }
+    }
+}
+
+/// PacketCount with a specific count limit.
+#[pyclass(name = "PacketCountN")]
+#[derive(Clone)]
+pub struct PyPacketCountN {
+    #[pyo3(get)]
+    pub count: u64,
+}
+
+#[pymethods]
+impl PyPacketCountN {
+    fn __repr__(&self) -> String {
+        format!("PacketCount.count({})", self.count)
+    }
+}
+
+impl PyPacketCountN {
+    pub fn to_core(&self) -> CorePacketCount {
+        CorePacketCount::Count(self.count)
+    }
+}
 
 /// Port capacity specification.
 #[pyclass(eq, eq_int)]
@@ -513,38 +571,120 @@ impl Edge {
 pub struct SalvoCondition {
     #[pyo3(get)]
     pub max_salvos: u64,
-    #[pyo3(get)]
-    pub ports: Vec<String>,
+    ports_internal: HashMap<String, CorePacketCount>,
     #[pyo3(get)]
     pub term: SalvoConditionTerm,
 }
 
 #[pymethods]
 impl SalvoCondition {
+    /// Create a new SalvoCondition.
+    ///
+    /// `ports` can be:
+    /// - A single port name (str) - defaults to PacketCount.All
+    /// - A list of port names - each defaults to PacketCount.All
+    /// - A dict mapping port names to PacketCount values
     #[new]
-    fn new(max_salvos: u64, ports: Vec<String>, term: SalvoConditionTerm) -> Self {
-        SalvoCondition {
+    #[pyo3(signature = (max_salvos, ports, term))]
+    fn new(max_salvos: u64, ports: &Bound<'_, PyAny>, term: SalvoConditionTerm) -> PyResult<Self> {
+        let ports_map = extract_ports_map(ports)?;
+        Ok(SalvoCondition {
             max_salvos,
-            ports,
+            ports_internal: ports_map,
             term,
+        })
+    }
+
+    /// Get the ports as a dict mapping port names to their packet counts.
+    #[getter]
+    fn ports(&self, py: Python<'_>) -> PyResult<PyObject> {
+        let dict = pyo3::types::PyDict::new(py);
+        for (port_name, packet_count) in &self.ports_internal {
+            let py_count: PyObject = match packet_count {
+                CorePacketCount::All => PacketCount::All.into_pyobject(py)?.unbind().into_any(),
+                CorePacketCount::Count(n) => PyPacketCountN { count: *n }
+                    .into_pyobject(py)?
+                    .unbind()
+                    .into_any(),
+            };
+            dict.set_item(port_name, py_count)?;
         }
+        Ok(dict.into())
     }
 
     fn __repr__(&self) -> String {
+        let ports_repr: Vec<String> = self
+            .ports_internal
+            .iter()
+            .map(|(k, v)| {
+                let v_str = match v {
+                    CorePacketCount::All => "PacketCount.All".to_string(),
+                    CorePacketCount::Count(n) => format!("PacketCount.count({})", n),
+                };
+                format!("{:?}: {}", k, v_str)
+            })
+            .collect();
         format!(
-            "SalvoCondition(max_salvos={}, ports={:?}, term={})",
+            "SalvoCondition(max_salvos={}, ports={{{}}}, term={})",
             self.max_salvos,
-            self.ports,
+            ports_repr.join(", "),
             self.term.__repr__()
         )
     }
+}
+
+/// Extract ports map from various Python input types.
+fn extract_ports_map(obj: &Bound<'_, PyAny>) -> PyResult<HashMap<String, CorePacketCount>> {
+    // Try as a string (single port name)
+    if let Ok(s) = obj.extract::<String>() {
+        let mut map = HashMap::new();
+        map.insert(s, CorePacketCount::All);
+        return Ok(map);
+    }
+
+    // Try as a list of strings
+    if let Ok(list) = obj.extract::<Vec<String>>() {
+        let map: HashMap<String, CorePacketCount> =
+            list.into_iter().map(|s| (s, CorePacketCount::All)).collect();
+        return Ok(map);
+    }
+
+    // Try as a dict
+    if let Ok(dict) = obj.downcast::<pyo3::types::PyDict>() {
+        let mut map = HashMap::new();
+        for (key, value) in dict.iter() {
+            let port_name: String = key.extract()?;
+            let packet_count = extract_packet_count(&value)?;
+            map.insert(port_name, packet_count);
+        }
+        return Ok(map);
+    }
+
+    Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+        "ports must be a str, list of str, or dict mapping str to PacketCount",
+    ))
+}
+
+/// Extract a PacketCount from a Python object.
+fn extract_packet_count(obj: &Bound<'_, PyAny>) -> PyResult<CorePacketCount> {
+    // Try PacketCount.All
+    if let Ok(pc) = obj.extract::<PacketCount>() {
+        return Ok(pc.to_core());
+    }
+    // Try PacketCount.count(n)
+    if let Ok(pcn) = obj.extract::<PyPacketCountN>() {
+        return Ok(pcn.to_core());
+    }
+    Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
+        "Expected PacketCount or PacketCountN",
+    ))
 }
 
 impl SalvoCondition {
     pub fn to_core(&self) -> CoreSalvoCondition {
         CoreSalvoCondition {
             max_salvos: self.max_salvos,
-            ports: self.ports.clone(),
+            ports: self.ports_internal.clone(),
             term: self.term.to_core(),
         }
     }
@@ -552,7 +692,7 @@ impl SalvoCondition {
     pub fn from_core(sc: &CoreSalvoCondition) -> Self {
         SalvoCondition {
             max_salvos: sc.max_salvos,
-            ports: sc.ports.clone(),
+            ports_internal: sc.ports.clone(),
             term: SalvoConditionTerm::from_core(&sc.term),
         }
     }
@@ -728,6 +868,8 @@ impl Graph {
 }
 
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
+    m.add_class::<PacketCount>()?;
+    m.add_class::<PyPacketCountN>()?;
     m.add_class::<PortSlotSpec>()?;
     m.add_class::<PyPortSlotSpecFinite>()?;
     m.add_class::<PortState>()?;
