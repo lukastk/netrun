@@ -564,27 +564,33 @@ This document outlines the development plan for the `netrun` Python package, whi
 
 ## Examples Directory Structure
 
+Examples use nblite's notebook format:
+
 ```
-examples/
-├── 00_basic_setup/           # Milestone 1: Net setup and configuration
-├── 01_simple_pipeline/       # Milestone 3: Linear pipeline
-├── 02_branching_flow/        # Milestone 3: Fan-out/fan-in
-├── 03_error_handling/        # Milestone 4: Retries and recovery
-├── 04_async_nodes/           # Milestone 5: Async execution
-├── 05_thread_pools/          # Milestone 6: Thread pools
-├── 06_process_pools/         # Milestone 6: Process pools
-├── 07_rate_limiting/         # Milestone 7: Rate limiting
-├── 08_logging_history/       # Milestone 8: Logging
-├── 09_toml_dsl/              # Milestone 11: TOML format
-├── 10_node_factories/        # Milestone 12: Factories
-├── 11_checkpointing/         # Milestone 13: Checkpointing
-└── 12_complete_application/  # Milestone 14: Full example
+pts/examples/                  # Source notebooks (percent format)
+├── 00_basic_setup.pct.py     # Milestone 1: Net setup and configuration
+├── 01_simple_pipeline.pct.py # Milestone 3: Linear pipeline
+├── 02_branching_flow.pct.py  # Milestone 3: Fan-out/fan-in
+├── 03_error_handling.pct.py  # Milestone 4: Retries and recovery
+├── 04_async_nodes.pct.py     # Milestone 5: Async execution
+├── 05_thread_pools.pct.py    # Milestone 6: Thread pools
+├── 06_process_pools.pct.py   # Milestone 6: Process pools
+├── 07_rate_limiting.pct.py   # Milestone 7: Rate limiting
+├── 08_logging_history.pct.py # Milestone 8: Logging
+├── 09_toml_dsl.pct.py        # Milestone 11: TOML format
+├── 10_node_factories.pct.py  # Milestone 12: Factories
+├── 11_checkpointing.pct.py   # Milestone 13: Checkpointing
+└── 12_complete_application.pct.py  # Milestone 14: Full example
+
+nbs/examples/                  # Generated Jupyter notebooks
+src/examples/                  # Generated Python modules (runnable)
 ```
 
-Each example folder contains:
-- `README.md` - Description and instructions
-- `example.py` - Main example code
-- `run_example.sh` - Shell script to run the example
+To export examples after editing:
+```bash
+nbl export --pipeline 'pts_examples->nbs_examples'
+nbl export --pipeline 'nbs_examples->lib_examples'
+```
 
 ---
 

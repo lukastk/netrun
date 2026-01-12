@@ -7,29 +7,29 @@ from pathlib import Path
 import pytest
 
 
-EXAMPLES_DIR = Path(__file__).parent.parent / "examples"
+EXAMPLES_DIR = Path(__file__).parent.parent / "src" / "examples"
 
 
-def get_example_dirs():
-    """Get all example directories that have a run_example.sh script."""
+def get_example_files():
+    """Get all example Python files in src/examples/."""
     examples = []
     if EXAMPLES_DIR.exists():
-        for d in sorted(EXAMPLES_DIR.iterdir()):
-            if d.is_dir() and (d / "run_example.sh").exists():
-                examples.append(d)
+        for f in sorted(EXAMPLES_DIR.glob("*.py")):
+            # Skip __init__.py and other internal files
+            if not f.name.startswith("_"):
+                examples.append(f)
     return examples
 
 
-@pytest.mark.parametrize("example_dir", get_example_dirs(), ids=lambda d: d.name)
-def test_example_runs(example_dir):
+@pytest.mark.parametrize("example_file", get_example_files(), ids=lambda f: f.stem)
+def test_example_runs(example_file):
     """Test that each example runs without errors."""
-    run_script = example_dir / "run_example.sh"
-
     result = subprocess.run(
-        ["bash", str(run_script)],
+        [sys.executable, str(example_file)],
         capture_output=True,
         text=True,
         timeout=60,
+        cwd=example_file.parent.parent.parent,  # Run from netrun/ directory
     )
 
     # Print output for debugging if test fails
@@ -37,4 +37,4 @@ def test_example_runs(example_dir):
         print(f"STDOUT:\n{result.stdout}")
         print(f"STDERR:\n{result.stderr}")
 
-    assert result.returncode == 0, f"Example {example_dir.name} failed with return code {result.returncode}"
+    assert result.returncode == 0, f"Example {example_file.name} failed with return code {result.returncode}"
