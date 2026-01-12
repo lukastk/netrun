@@ -16,6 +16,7 @@ This example demonstrates:
 from netrun_sim import (
     Edge,
     Graph,
+    MaxSalvos,
     NetSim,
     NetAction,
     NetActionResponseData,
@@ -57,14 +58,14 @@ def create_simple_node(name: str) -> Node:
         out_ports={"out": Port(PortSlotSpec.infinite())},
         in_salvo_conditions={
             "default": SalvoCondition(
-                max_salvos=1,
+                max_salvos=MaxSalvos.finite(1),
                 ports=["in"],
                 term=SalvoConditionTerm.port("in", PortState.non_empty()),
             ),
         },
         out_salvo_conditions={
             "default": SalvoCondition(
-                max_salvos=0,
+                max_salvos=MaxSalvos.Infinite,
                 ports=["out"],
                 term=SalvoConditionTerm.port("out", PortState.non_empty()),
             ),
@@ -102,7 +103,7 @@ def create_diamond_graph() -> Graph:
         out_ports={},
         in_salvo_conditions={
             "default": SalvoCondition(
-                max_salvos=1,
+                max_salvos=MaxSalvos.finite(1),
                 ports=["in1", "in2"],
                 # Require BOTH inputs to be non-empty
                 term=SalvoConditionTerm.and_([

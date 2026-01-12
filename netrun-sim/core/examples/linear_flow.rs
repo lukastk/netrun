@@ -8,7 +8,7 @@
 //! - Sending output salvos to continue flow
 
 use netrun_sim::graph::{
-    Edge, Graph, Node, PacketCount, Port, PortRef, PortSlotSpec, PortState, PortType,
+    Edge, Graph, MaxSalvos, Node, PacketCount, Port, PortRef, PortSlotSpec, PortState, PortType,
     SalvoCondition, SalvoConditionTerm,
 };
 use netrun_sim::net::{NetSim, NetAction, NetActionResponse, NetActionResponseData, PacketLocation};
@@ -164,7 +164,7 @@ fn create_node(name: &str, in_ports: Vec<&str>, out_ports: Vec<&str>) -> Node {
         in_salvo_conditions.insert(
             "default".to_string(),
             SalvoCondition {
-                max_salvos: 1,
+                max_salvos: MaxSalvos::Finite(1),
                 ports: in_ports
                     .iter()
                     .map(|s| (s.to_string(), PacketCount::All))
@@ -183,7 +183,7 @@ fn create_node(name: &str, in_ports: Vec<&str>, out_ports: Vec<&str>) -> Node {
         out_salvo_conditions.insert(
             "default".to_string(),
             SalvoCondition {
-                max_salvos: 0, // unlimited
+                max_salvos: MaxSalvos::Infinite,
                 ports: out_ports
                     .iter()
                     .map(|s| (s.to_string(), PacketCount::All))
