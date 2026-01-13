@@ -203,35 +203,35 @@ This document outlines the development plan for the `netrun` Python package, whi
 
 ---
 
-## Milestone 5: Async Execution
+## Milestone 5: Async Execution ✅ COMPLETED
 
 **Goal:** Support async node functions and async Net methods.
 
 ### 5.1 Async Node Functions
-- [ ] Detect if `exec_node_func` is async (via `asyncio.iscoroutinefunction`)
-- [ ] Execute async functions properly with `await`
-- [ ] Make `NodeExecutionContext` methods async when func is async
+- [x] Detect if `exec_node_func` is async (via `asyncio.iscoroutinefunction`)
+- [x] Execute async functions properly with `await`
+- [x] Make `NodeExecutionContext` methods async when func is async
 
 ### 5.2 Async Net Methods
-- [ ] Implement `Net.async_run_step()`
-- [ ] Implement `Net.async_start()`
-- [ ] Implement `Net.async_pause()`
-- [ ] Implement `Net.async_stop()`
-- [ ] Implement `Net.async_wait_until_blocked()`
+- [x] Implement `Net.async_run_step()`
+- [x] Implement `Net.async_start()`
+- [x] Implement `Net.async_pause()`
+- [x] Implement `Net.async_stop()`
+- [x] Implement `Net.async_wait_until_blocked()`
 
 ### 5.3 Mixed Sync/Async
-- [ ] Allow mixing sync and async nodes in same net
-- [ ] Proper event loop management
+- [x] Allow mixing sync and async nodes in same net
+- [x] Proper event loop management
 
 ### 5.4 Tests for Milestone 5
-- [ ] Test async `exec_node_func` execution
-- [ ] Test async context methods
-- [ ] Test `async_run_step()` and `async_start()`
-- [ ] Test mixed sync/async nodes
-- [ ] Test async value functions
+- [x] Test async `exec_node_func` execution
+- [x] Test async context methods
+- [x] Test `async_run_step()` and `async_start()`
+- [x] Test mixed sync/async nodes
+- [x] Test async value functions
 
 ### 5.5 Examples for Milestone 5
-- [ ] `examples/04_async_nodes/` - Async node functions and mixed sync/async
+- [x] `examples/03_async_nodes/` - Async node functions and mixed sync/async
 
 ---
 
@@ -549,7 +549,7 @@ This document outlines the development plan for the `netrun` Python package, whi
 2. **Milestone 2**: Execution Contexts (NodeExecutionContext, deferred actions) ✅
 3. **Milestone 3**: Single-Threaded Execution (run_step, start) ✅
 4. **Milestone 4**: Error Handling (retries, dead letter queue) ✅
-5. **Milestone 5**: Async Execution
+5. **Milestone 5**: Async Execution ✅
 6. **Milestone 6**: Thread and Process Pools
 7. **Milestone 7**: Rate Limiting and Parallel Control
 8. **Milestone 8**: Logging and History
@@ -571,8 +571,8 @@ pts/examples/                  # Source notebooks (percent format)
 ├── 00_basic_setup.pct.py     # Milestone 1: Net setup and configuration
 ├── 01_simple_pipeline.pct.py # Milestone 3: Linear pipeline
 ├── 02_branching_flow.pct.py  # Milestone 3: Fan-out/fan-in
-├── 03_error_handling.pct.py  # Milestone 4: Retries and recovery
-├── 04_async_nodes.pct.py     # Milestone 5: Async execution
+├── 02_error_handling.pct.py  # Milestone 4: Retries and recovery
+├── 03_async_nodes.pct.py     # Milestone 5: Async execution
 ├── 05_thread_pools.pct.py    # Milestone 6: Thread pools
 ├── 06_process_pools.pct.py   # Milestone 6: Process pools
 ├── 07_rate_limiting.pct.py   # Milestone 7: Rate limiting
