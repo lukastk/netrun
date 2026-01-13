@@ -33,7 +33,15 @@ from netrun.errors import ValueFunctionFailed
 
 @dataclass
 class StoredValue:
-    """A stored packet value, either direct or via a value function."""
+    """
+    A stored packet value, either direct or via a value function.
+
+    Attributes:
+        value: The direct value (used when is_value_func=False).
+        value_func: A callable that returns the value lazily (used when is_value_func=True).
+            Can be sync or async.
+        is_value_func: Whether this stored value uses a lazy value function.
+    """
     value: Any = None
     value_func: Optional[Callable[[], Any]] = None
     is_value_func: bool = False

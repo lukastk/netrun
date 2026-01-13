@@ -45,6 +45,16 @@ class NodeFactoryResult:
     Result of calling a node factory.
 
     Contains the node specification (kwargs for Node) and execution functions.
+
+    Attributes:
+        node_spec: Dictionary of kwargs for netrun_sim.Node constructor
+            (in_ports, out_ports, in_salvo_conditions, out_salvo_conditions).
+        exec_node_func: Main execution function for the node.
+        start_node_func: Called when the net starts.
+        stop_node_func: Called when the net stops.
+        exec_failed_node_func: Called after failed execution attempts.
+        factory_path: Import path of the factory (for serialization).
+        factory_args: Arguments passed to the factory (for serialization).
     """
     node_spec: Dict[str, Any]
     exec_node_func: Optional[Callable] = None

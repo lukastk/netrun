@@ -721,7 +721,28 @@ def dict_to_graph(data: Dict[str, Any]) -> Graph:
 # %% nbs/netrun/11_dsl.ipynb 19
 @dataclass
 class NetDSLConfig:
-    """Configuration extracted from DSL for Net construction."""
+    """
+    Configuration extracted from TOML DSL for Net construction.
+
+    This dataclass holds all configuration parsed from a TOML file, including
+    the graph topology, execution settings, and node configurations.
+
+    Attributes:
+        graph: The network topology (nodes, ports, edges, salvo conditions).
+        on_error: Error handling mode ("continue", "pause", or "raise").
+        consumed_packet_storage: Whether to keep packet values after consumption.
+        consumed_storage_limit: Maximum consumed values to retain in memory.
+        history_file: Path for persisting event history (JSONL format).
+        history_max_size: Maximum events to keep in memory.
+        history_chunk_size: Number of events per file write.
+        thread_pools: Thread pool configurations {"name": {"size": N}}.
+        process_pools: Process pool configurations {"name": {"size": N}}.
+        node_configs: Per-node configuration options (maps to NodeConfig fields).
+        node_exec_paths: Import paths for node execution functions.
+        node_factories: Factory specifications for node creation.
+        port_types: Port type specifications for type checking.
+        meta: Arbitrary metadata from the TOML file.
+    """
     graph: Graph
     on_error: str = "continue"
     consumed_packet_storage: bool = False

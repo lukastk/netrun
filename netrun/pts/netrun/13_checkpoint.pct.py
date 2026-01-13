@@ -44,32 +44,53 @@ from netrun.errors import NetNotPausedError
 #|export
 @dataclass
 class PacketState:
-    """Serializable state of a packet."""
+    """
+    Serializable state of a packet for checkpointing.
+
+    Attributes:
+        packet_id: The unique identifier of the packet.
+        location_kind: Where the packet is located. One of:
+            "outside_net", "input_port", "output_port", "edge", "node".
+        location_data: Additional data needed to restore the location
+            (e.g., node_name, port_name for input_port locations).
+    """
     packet_id: str
     location_kind: str  # "outside_net", "input_port", "output_port", "edge", "node"
     location_data: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
+        """Convert to a JSON-serializable dictionary."""
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "PacketState":
+        """Create a PacketState from a dictionary."""
         return cls(**data)
 
 
 @dataclass
 class CheckpointMetadata:
-    """Metadata for a checkpoint."""
+    """
+    Metadata for a checkpoint.
+
+    Attributes:
+        timestamp: ISO format timestamp when the checkpoint was created.
+        netrun_version: Version of netrun that created the checkpoint.
+        packet_count: Number of packets saved in the checkpoint.
+        has_history: Whether event history was included in the checkpoint.
+    """
     timestamp: str
     netrun_version: str = "0.1.0"
     packet_count: int = 0
     has_history: bool = False
 
     def to_dict(self) -> Dict[str, Any]:
+        """Convert to a JSON-serializable dictionary."""
         return asdict(self)
 
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> "CheckpointMetadata":
+        """Create a CheckpointMetadata from a dictionary."""
         return cls(**data)
 
 # %%
@@ -302,7 +323,23 @@ def save_checkpoint_state(
 #|export
 @dataclass
 class LoadedCheckpoint:
-    """Data loaded from a checkpoint."""
+    """
+    Data loaded from a checkpoint directory.
+
+    This dataclass contains all the information needed to restore a Net
+    to its checkpointed state.
+
+    Attributes:
+        metadata: Checkpoint metadata (timestamp, version, etc.).
+        net_definition_toml: The TOML string defining the network topology.
+        packet_states: List of packet states with their locations.
+        packet_values: Mapping of packet IDs to their values (pickled).
+        node_configs: Per-node configuration options.
+        node_exec_paths: Import paths for node execution functions.
+        node_factories: Factory specifications for node creation.
+        port_types: Port type specifications for type checking.
+        history_data: Optional list of history entries (if saved).
+    """
     metadata: CheckpointMetadata
     net_definition_toml: str
     packet_states: List[PacketState]

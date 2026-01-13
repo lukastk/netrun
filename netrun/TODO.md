@@ -517,7 +517,7 @@ and can be used to handle SIGINT at the application level if needed.
 
 ---
 
-## Milestone 14: Integration and Polish (IN PROGRESS)
+## Milestone 14: Integration and Polish (COMPLETE)
 
 **Goal:** Final integration, documentation, and examples.
 
@@ -532,7 +532,7 @@ and can be used to handle SIGINT at the application level if needed.
   - Combined features (pools, rate limiting, history)
 
 ### 14.2 Documentation
-- [ ] Complete docstrings for all public APIs
+- [x] Complete docstrings for all public APIs
 - [x] Add example notebooks demonstrating:
   - Basic usage (00_basic_setup, 01_simple_pipeline)
   - Async nodes (03_async_nodes)
@@ -566,7 +566,7 @@ and can be used to handle SIGINT at the application level if needed.
 11. **Milestone 11**: DSL Format ✅
 12. **Milestone 12**: Node Factories ✅
 13. **Milestone 13**: Checkpointing ✅
-14. **Milestone 14**: Integration and Polish (MOSTLY COMPLETE - missing: complete docstrings)
+14. **Milestone 14**: Integration and Polish ✅
 
 ---
 

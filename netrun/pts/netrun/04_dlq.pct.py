@@ -29,7 +29,20 @@ from typing import Callable, List, Optional
 
 @dataclass
 class DeadLetterEntry:
-    """An entry in the dead letter queue."""
+    """
+    An entry in the dead letter queue representing a failed epoch.
+
+    Attributes:
+        epoch_id: The ID of the failed epoch.
+        node_name: The name of the node that failed.
+        exception: The final exception that caused the failure.
+        retry_count: Number of retry attempts made (0 if no retries configured).
+        retry_timestamps: Timestamps of each retry attempt.
+        retry_exceptions: Exceptions raised during each retry attempt.
+        input_packets: Mapping of port names to lists of input packet IDs.
+        packet_values: Mapping of packet IDs to their values (for consumed packets).
+        timestamp: When this entry was created (when the epoch finally failed).
+    """
     epoch_id: str
     node_name: str
     exception: Exception
