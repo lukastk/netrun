@@ -298,8 +298,8 @@ pub enum NetEvent {
     EpochFinished(EventUTC, EpochID),
     /// An epoch was cancelled.
     EpochCancelled(EventUTC, EpochID),
-    /// A packet moved to a new location.
-    PacketMoved(EventUTC, PacketID, PacketLocation),
+    /// A packet moved from one location to another.
+    PacketMoved(EventUTC, PacketID, PacketLocation, PacketLocation), // (ts, packet_id, from, to)
     /// An input salvo condition was triggered, creating an epoch.
     InputSalvoTriggered(EventUTC, EpochID, SalvoConditionName),
     /// An output salvo condition was triggered, sending packets.
@@ -535,11 +535,13 @@ impl NetSim {
                 }
 
                 // Move packets from input ports into the epoch
-                for (pid, _port_name) in &packets_to_move {
+                for (pid, port_name) in &packets_to_move {
+                    let from_location = PacketLocation::InputPort(node_name.clone(), port_name.clone());
                     self.move_packet(pid, epoch_location.clone());
                     events.push(NetEvent::PacketMoved(
                         get_utc_now(),
                         *pid,
+                        from_location,
                         epoch_location.clone(),
                     ));
                 }
@@ -570,6 +572,7 @@ impl NetSim {
             // We need to extract data before mutating to avoid borrow issues
             struct EdgeMoveCandidate {
                 packet_id: PacketID,
+                from_location: PacketLocation,
                 input_port_location: PacketLocation,
                 can_move: bool,
             }
@@ -612,6 +615,7 @@ impl NetSim {
 
                         edge_candidates.push(EdgeMoveCandidate {
                             packet_id: *first_packet_id,
+                            from_location: location.clone(),
                             input_port_location,
                             can_move,
                         });
@@ -630,6 +634,7 @@ impl NetSim {
                 all_events.push(NetEvent::PacketMoved(
                     get_utc_now(),
                     candidate.packet_id,
+                    candidate.from_location,
                     candidate.input_port_location.clone(),
                 ));
                 made_progress = true;
@@ -1001,11 +1006,13 @@ impl NetSim {
         events.push(NetEvent::EpochCreated(get_utc_now(), epoch_id));
 
         // Move packets from input ports into the epoch
-        for (_, packet_id) in &salvo.packets {
+        for (port_name, packet_id) in &salvo.packets {
+            let from_location = PacketLocation::InputPort(node_name.clone(), port_name.clone());
             self.move_packet(packet_id, epoch_location.clone());
             events.push(NetEvent::PacketMoved(
                 get_utc_now(),
                 *packet_id,
+                from_location,
                 epoch_location.clone(),
             ));
         }
@@ -1018,7 +1025,7 @@ impl NetSim {
         packet_id: &PacketID,
         port_name: &String,
     ) -> NetActionResponse {
-        let (epoch_id, _old_location) = if let Some(packet) = self._packets.get(packet_id) {
+        let (epoch_id, old_location) = if let Some(packet) = self._packets.get(packet_id) {
             if let PacketLocation::Node(epoch_id) = packet.location {
                 (epoch_id, packet.location.clone())
             } else {
@@ -1075,7 +1082,7 @@ impl NetSim {
         self.move_packet(packet_id, new_location.clone());
         NetActionResponse::Success(
             NetActionResponseData::None,
-            vec![NetEvent::PacketMoved(get_utc_now(), epoch_id, new_location)],
+            vec![NetEvent::PacketMoved(get_utc_now(), *packet_id, old_location, new_location)],
         )
     }
 
@@ -1147,11 +1154,13 @@ impl NetSim {
         }
 
         // Get the locations to send packets to
-        let mut packets_to_move: Vec<(PacketID, PortName, PacketLocation)> = Vec::new();
+        // Tuple: (packet_id, port_name, from_location, to_location)
+        let mut packets_to_move: Vec<(PacketID, PortName, PacketLocation, PacketLocation)> = Vec::new();
         for (port_name, packet_count) in &salvo_condition.ports {
+            let from_location = PacketLocation::OutputPort(*epoch_id, port_name.clone());
             let packets = self
                 ._packets_by_location
-                .get(&PacketLocation::OutputPort(*epoch_id, port_name.clone()))
+                .get(&from_location)
                 .unwrap_or_else(|| {
                     panic!(
                         "Output port '{}' of node '{}' does not have an entry in self._packets_by_location",
@@ -1174,13 +1183,13 @@ impl NetSim {
                     },
                 );
             };
-            let new_location = PacketLocation::Edge(edge_ref.clone());
+            let to_location = PacketLocation::Edge(edge_ref.clone());
             let take_count = match packet_count {
                 PacketCount::All => packets.len(),
                 PacketCount::Count(n) => std::cmp::min(*n as usize, packets.len()),
             };
             for packet_id in packets.into_iter().take(take_count) {
-                packets_to_move.push((packet_id, port_name.clone(), new_location.clone()));
+                packets_to_move.push((packet_id, port_name.clone(), from_location.clone(), to_location.clone()));
             }
         }
 
@@ -1189,7 +1198,7 @@ impl NetSim {
             salvo_condition: salvo_condition_name.clone(),
             packets: packets_to_move
                 .iter()
-                .map(|(packet_id, port_name, _)| (port_name.clone(), *packet_id))
+                .map(|(packet_id, port_name, _, _)| (port_name.clone(), *packet_id))
                 .collect(),
         };
         self._epochs
@@ -1200,13 +1209,14 @@ impl NetSim {
 
         // Move packets
         let mut net_events = Vec::new();
-        for (packet_id, _port_name, new_location) in packets_to_move {
+        for (packet_id, _port_name, from_location, to_location) in packets_to_move {
             net_events.push(NetEvent::PacketMoved(
                 get_utc_now(),
                 packet_id,
-                new_location.clone(),
+                from_location,
+                to_location.clone(),
             ));
-            self.move_packet(&packet_id, new_location);
+            self.move_packet(&packet_id, to_location);
         }
 
         NetActionResponse::Success(NetActionResponseData::None, net_events)
@@ -1358,6 +1368,7 @@ impl NetSim {
             vec![NetEvent::PacketMoved(
                 get_utc_now(),
                 *packet_id,
+                current_location,
                 destination.clone(),
             )],
         )

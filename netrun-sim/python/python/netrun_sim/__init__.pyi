@@ -600,20 +600,55 @@ class NetAction:
 
 
 class NetEvent:
-    """An event that occurred during a network action."""
+    """An event that occurred during a network action.
+
+    Event kinds:
+    - `PacketCreated`: A packet was created
+    - `PacketConsumed`: A packet was consumed (removed from the network)
+    - `PacketDestroyed`: A packet was destroyed (e.g., when epoch cancelled)
+    - `EpochCreated`: An epoch was created
+    - `EpochStarted`: An epoch transitioned to Running state
+    - `EpochFinished`: An epoch completed successfully
+    - `EpochCancelled`: An epoch was cancelled
+    - `PacketMoved`: A packet moved from one location to another
+    - `InputSalvoTriggered`: An input salvo condition was triggered
+    - `OutputSalvoTriggered`: An output salvo condition was triggered
+    """
 
     @property
-    def kind(self) -> str: ...
+    def kind(self) -> str:
+        """Get the event kind (e.g., 'PacketMoved', 'EpochCreated')."""
+        ...
+
     @property
-    def timestamp(self) -> int: ...
+    def timestamp(self) -> int:
+        """Get the timestamp (UTC microseconds) when the event occurred."""
+        ...
+
     @property
-    def packet_id(self) -> Optional[str]: ...
+    def packet_id(self) -> Optional[str]:
+        """Get the packet ID for packet-related events."""
+        ...
+
     @property
-    def epoch_id(self) -> Optional[str]: ...
+    def epoch_id(self) -> Optional[str]:
+        """Get the epoch ID for epoch-related events."""
+        ...
+
     @property
-    def location(self) -> Optional[PacketLocation]: ...
+    def from_location(self) -> Optional[PacketLocation]:
+        """Get the source location for PacketMoved events."""
+        ...
+
     @property
-    def salvo_condition(self) -> Optional[str]: ...
+    def to_location(self) -> Optional[PacketLocation]:
+        """Get the destination location for PacketMoved events."""
+        ...
+
+    @property
+    def salvo_condition(self) -> Optional[str]:
+        """Get the salvo condition name for salvo-triggered events."""
+        ...
 
 
 class NetActionResponseData:
