@@ -304,56 +304,135 @@ def get_import_path(obj: Any) -> Optional[str]:
     return None
 
 # %% nbs/netrun/11_dsl.ipynb 9
-def port_state_to_expr(state: PortState) -> str:
-    """Convert a PortState to an expression string fragment."""
-    # This is a simplified version - PortState internals would need inspection
-    # For now, we'll handle the common cases based on how we create them
-    return "nonempty"  # Placeholder - would need actual PortState introspection
+def port_state_to_expr(state) -> str:
+    """Convert a PortState to an expression string fragment.
+
+    Args:
+        state: Either PortState enum (Empty, Full, NonEmpty, NonFull) or
+               PortStateNumeric (equals, less_than, etc.)
+
+    Returns:
+        String representation suitable for TOML 'when' expressions
+    """
+    # Check if it's a PortStateNumeric by class name
+    if type(state).__name__ == "PortStateNumeric":
+        kind = state.kind
+        value = state.value
+        if kind == "equals":
+            return f"=={value}"
+        elif kind == "less_than":
+            return f"<{value}"
+        elif kind == "greater_than":
+            return f">{value}"
+        elif kind == "equals_or_less_than":
+            return f"<={value}"
+        elif kind == "equals_or_greater_than":
+            return f">={value}"
+        else:
+            return "nonempty"
+
+    # It's a PortState enum
+    if state == PortState.Empty:
+        return "empty"
+    elif state == PortState.Full:
+        return "full"
+    elif state == PortState.NonEmpty:
+        return "nonempty"
+    elif state == PortState.NonFull:
+        return "nonfull"
+    else:
+        return "nonempty"
 
 
-def salvo_term_to_expr(term: SalvoConditionTerm, port_name: str = None) -> str:
+def salvo_term_to_expr(term: SalvoConditionTerm) -> str:
     """
     Convert a SalvoConditionTerm back to an expression string.
 
-    Note: This is a best-effort conversion. Complex terms may not round-trip perfectly.
+    Args:
+        term: The SalvoConditionTerm to convert
+
+    Returns:
+        Expression string suitable for TOML 'when' field
     """
-    # This would require introspection of the SalvoConditionTerm structure
-    # For now, return a placeholder
-    if port_name:
-        return f"nonempty({port_name})"
-    return "nonempty(port)"
+    kind = term.kind
+
+    if kind == "Port":
+        port_name = term.get_port_name()
+        state = term.get_port_state()
+        state_expr = port_state_to_expr(state)
+        return f"{state_expr}({port_name})"
+
+    elif kind == "And":
+        sub_terms = term.get_terms()
+        sub_exprs = [salvo_term_to_expr(t) for t in sub_terms]
+        return " and ".join(sub_exprs)
+
+    elif kind == "Or":
+        sub_terms = term.get_terms()
+        sub_exprs = [salvo_term_to_expr(t) for t in sub_terms]
+        return " or ".join(f"({e})" for e in sub_exprs)
+
+    elif kind == "Not":
+        inner = term.get_inner()
+        inner_expr = salvo_term_to_expr(inner)
+        return f"not({inner_expr})"
+
+    else:
+        return "nonempty(port)"
 
 # %% nbs/netrun/11_dsl.ipynb 11
-def _is_port_slots_finite(slots_spec: PortSlotSpec) -> bool:
-    """Check if a PortSlotSpec is finite."""
-    return slots_spec != PortSlotSpec.infinite()
+def _is_port_slots_finite(slots_spec) -> bool:
+    """Check if a PortSlotSpec is finite.
+
+    Args:
+        slots_spec: Either PortSlotSpec.Infinite or PortSlotSpecFinite
+
+    Returns:
+        True if finite, False if infinite
+    """
+    # Check class name to avoid confusion with similarly named attributes
+    return type(slots_spec).__name__ == "PortSlotSpecFinite"
 
 
-def _get_port_slots_count(slots_spec: PortSlotSpec) -> int:
-    """Extract the count from a finite PortSlotSpec."""
-    # Parse from string representation: "PortSlotSpec.finite(5)"
-    s = str(slots_spec)
-    import re
-    match = re.search(r'finite\((\d+)\)', s)
-    if match:
-        return int(match.group(1))
-    raise ValueError(f"Cannot extract count from: {s}")
+def _get_port_slots_count(slots_spec) -> int:
+    """Extract the count from a finite PortSlotSpec.
+
+    Args:
+        slots_spec: A PortSlotSpecFinite instance
+
+    Returns:
+        The capacity value
+    """
+    if type(slots_spec).__name__ == "PortSlotSpecFinite":
+        return slots_spec.capacity
+    raise ValueError(f"Cannot extract count from non-finite PortSlotSpec: {slots_spec}")
 
 
-def _is_max_salvos_infinite(max_salvos: MaxSalvos) -> bool:
-    """Check if a MaxSalvos is infinite."""
-    return max_salvos == MaxSalvos.infinite()
+def _is_max_salvos_infinite(max_salvos) -> bool:
+    """Check if a MaxSalvos is infinite.
+
+    Args:
+        max_salvos: Either MaxSalvos.Infinite or MaxSalvosFinite
+
+    Returns:
+        True if infinite, False if finite
+    """
+    # Check class name to avoid confusion with similarly named attributes
+    return type(max_salvos).__name__ != "MaxSalvosFinite"
 
 
-def _get_max_salvos_count(max_salvos: MaxSalvos) -> int:
-    """Extract the count from a finite MaxSalvos."""
-    # Parse from string representation: "MaxSalvos.finite(3)"
-    s = str(max_salvos)
-    import re
-    match = re.search(r'finite\((\d+)\)', s)
-    if match:
-        return int(match.group(1))
-    raise ValueError(f"Cannot extract count from: {s}")
+def _get_max_salvos_count(max_salvos) -> int:
+    """Extract the count from a finite MaxSalvos.
+
+    Args:
+        max_salvos: A MaxSalvosFinite instance
+
+    Returns:
+        The max value
+    """
+    if type(max_salvos).__name__ == "MaxSalvosFinite":
+        return max_salvos.max
+    raise ValueError(f"Cannot extract count from non-finite MaxSalvos: {max_salvos}")
 
 # %% nbs/netrun/11_dsl.ipynb 13
 def port_to_dict(port: Port) -> Dict[str, Any]:
@@ -423,15 +502,20 @@ def node_to_dict(node: Node) -> Dict[str, Any]:
 
 
 def _packet_count_to_value(pc) -> Union[str, int]:
-    """Convert a PacketCount to a serializable value."""
-    s = str(pc)
-    if s == "PacketCount.All":
-        return "all"
-    # Parse "PacketCount(N)"
-    import re
-    match = re.search(r'PacketCount\((\d+)\)', s)
-    if match:
-        return int(match.group(1))
+    """Convert a PacketCount to a serializable value.
+
+    Args:
+        pc: Either PacketCount.All or PacketCountN
+
+    Returns:
+        "all" for PacketCount.All, or the integer count for PacketCountN
+    """
+    # Check if it's PacketCountN by checking the class name
+    # (hasattr check can be misleading due to method names like .count())
+    class_name = type(pc).__name__
+    if class_name == "PacketCountN":
+        return pc.count
+    # It's PacketCount.All or another variant
     return "all"
 
 

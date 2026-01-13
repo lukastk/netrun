@@ -53,73 +53,6 @@ class CheckpointMetadata:
         return cls(**data)
 
 # %% nbs/netrun/13_checkpoint.ipynb 4
-import re
-
-
-def _parse_location_string(location: PacketLocation) -> Dict[str, Any]:
-    """
-    Parse the string representation of a PacketLocation to extract data.
-
-    The netrun_sim Rust bindings don't expose location data as properties,
-    so we parse the string representation instead.
-
-    Note: Python-constructed locations use double quotes, Rust-returned use single quotes.
-    """
-    s = str(location)
-
-    # outside_net()
-    if "outside_net()" in s:
-        return {"kind": "outside_net"}
-
-    # input_port('node', 'port') or input_port("node", "port")
-    match = re.search(r"input_port\(['\"]([^'\"]+)['\"], ['\"]([^'\"]+)['\"]\)", s)
-    if match:
-        return {
-            "kind": "input_port",
-            "node_name": match.group(1),
-            "port_name": match.group(2),
-        }
-
-    # output_port('epoch_id', 'port') or output_port("epoch_id", "port")
-    match = re.search(r"output_port\(['\"]([^'\"]+)['\"], ['\"]([^'\"]+)['\"]\)", s)
-    if match:
-        return {
-            "kind": "output_port",
-            "epoch_id": match.group(1),
-            "port_name": match.group(2),
-        }
-
-    # node('epoch_id') or node("epoch_id")
-    match = re.search(r"\.node\(['\"]([^'\"]+)['\"]\)", s)
-    if match:
-        return {
-            "kind": "node",
-            "epoch_id": match.group(1),
-        }
-
-    # edge(Edge(...)) - handles both quote styles
-    if "edge(" in s:
-        # Parse edge: Edge(source=PortRef(...), target=PortRef(...))
-        source_match = re.search(
-            r"source=PortRef\(node_name=['\"]([^'\"]+)['\"], port_type=\w+, port_name=['\"]([^'\"]+)['\"]\)",
-            s
-        )
-        target_match = re.search(
-            r"target=PortRef\(node_name=['\"]([^'\"]+)['\"], port_type=\w+, port_name=['\"]([^'\"]+)['\"]\)",
-            s
-        )
-        if source_match and target_match:
-            return {
-                "kind": "edge",
-                "source_node": source_match.group(1),
-                "source_port": source_match.group(2),
-                "target_node": target_match.group(1),
-                "target_port": target_match.group(2),
-            }
-
-    raise ValueError(f"Cannot parse PacketLocation: {s}")
-
-
 def serialize_packet_location(location: PacketLocation) -> PacketState:
     """
     Convert a PacketLocation to a serializable PacketState.
@@ -130,49 +63,49 @@ def serialize_packet_location(location: PacketLocation) -> PacketState:
     Returns:
         PacketState with location info
     """
-    parsed = _parse_location_string(location)
-    kind = parsed["kind"]
+    kind = location.kind
 
-    if kind == "outside_net":
+    if kind == "OutsideNet":
         return PacketState(
             packet_id="",  # Will be set by caller
             location_kind="outside_net",
         )
-    elif kind == "input_port":
+    elif kind == "InputPort":
         return PacketState(
             packet_id="",
             location_kind="input_port",
             location_data={
-                "node_name": parsed["node_name"],
-                "port_name": parsed["port_name"],
+                "node_name": location.node_name,
+                "port_name": location.port_name,
             }
         )
-    elif kind == "output_port":
+    elif kind == "OutputPort":
         return PacketState(
             packet_id="",
             location_kind="output_port",
             location_data={
-                "epoch_id": parsed["epoch_id"],
-                "port_name": parsed["port_name"],
+                "epoch_id": location.epoch_id,
+                "port_name": location.port_name,
             }
         )
-    elif kind == "edge":
+    elif kind == "Edge":
+        edge = location.get_edge()
         return PacketState(
             packet_id="",
             location_kind="edge",
             location_data={
-                "source_node": parsed["source_node"],
-                "source_port": parsed["source_port"],
-                "target_node": parsed["target_node"],
-                "target_port": parsed["target_port"],
+                "source_node": edge.source.node_name,
+                "source_port": edge.source.port_name,
+                "target_node": edge.target.node_name,
+                "target_port": edge.target.port_name,
             }
         )
-    elif kind == "node":
+    elif kind == "Node":
         return PacketState(
             packet_id="",
             location_kind="node",
             location_data={
-                "epoch_id": parsed["epoch_id"],
+                "epoch_id": location.epoch_id,
             }
         )
     else:
