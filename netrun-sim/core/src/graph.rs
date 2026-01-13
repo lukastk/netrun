@@ -223,7 +223,7 @@ pub enum GraphValidationError {
     },
     /// Input salvo condition has max_salvos != Finite(1)
     #[error(
-        "input salvo condition '{condition_name}' on node '{node_name}' has max_salvos={max_salvos:?}, but must be Finite(1)"
+        "input salvo condition '{condition_name}' on node '{node_name}' has max_salvos={max_salvos:?}, but must be Finite(1). Input salvos must have exactly one packet to trigger an epoch."
     )]
     InputSalvoConditionInvalidMaxSalvos {
         node_name: NodeName,
