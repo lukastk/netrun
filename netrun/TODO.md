@@ -235,149 +235,151 @@ This document outlines the development plan for the `netrun` Python package, whi
 
 ---
 
-## Milestone 6: Thread and Process Pools
+## Milestone 6: Thread and Process Pools ✅ COMPLETED
 
 **Goal:** Enable parallel execution via thread and process pools.
 
 ### 6.1 Pool Management
-- [ ] Implement pool configuration in `Net.__init__()`:
+- [x] Implement pool configuration in `Net.__init__()`:
   - `thread_pools`: dict of pool configs `{"name": {"size": N}}`
   - `process_pools`: dict of pool configs
-- [ ] Create and manage `ThreadPoolExecutor` instances
-- [ ] Create and manage `ProcessPoolExecutor` instances
-- [ ] Process pool requirements:
+- [x] Create and manage `ThreadPoolExecutor` instances
+- [x] Create and manage `ProcessPoolExecutor` instances
+- [x] Process pool requirements:
   - Packet values must be picklable (raise clear error if not)
   - Each worker process maintains its own event loop for async functions
   - Ensure proper error propagation from worker processes
 
 ### 6.2 Node Pool Assignment
-- [ ] Support `pool` config: single name or list of names
-- [ ] Implement pool selection algorithm:
+- [x] Support `pool` config: single name or list of names
+- [x] Implement pool selection algorithm:
   - "least_busy" (default): pool with most available workers
-- [ ] Support `pool_init_mode`: "global" vs "per_worker"
+- [x] Support `pool_init_mode`: "global" vs "per_worker"
 
 ### 6.3 Pool Lifecycle
-- [ ] Call `start_node_func` per worker (default) or globally
-- [ ] Call `stop_node_func` per worker or globally
-- [ ] Proper pool shutdown on net stop
+- [x] Call `start_node_func` per worker (default) or globally
+- [x] Call `stop_node_func` per worker or globally
+- [x] Proper pool shutdown on net stop
 
 ### 6.4 Threaded Net Execution
-- [ ] Implement `Net.start(threaded=True)`:
+- [x] Implement `Net.start(threaded=True)`:
   - Run net in background thread
-- [ ] Implement `Net.run_step(threaded=True)`
-- [ ] Implement control methods:
+- [x] Implement `Net.run_step(threaded=True)`
+- [x] Implement control methods:
   - `wait_until_blocked()`
   - `poll()` - check status
   - `pause()` - finish current epochs, don't start new
   - `stop()` - stop entirely
 
 ### 6.5 Tests for Milestone 6
-- [ ] Test thread pool creation and configuration
-- [ ] Test process pool creation and configuration
-- [ ] Test node execution in thread pool
-- [ ] Test node execution in process pool
-- [ ] Test pool selection algorithm
-- [ ] Test per-worker vs global init mode
-- [ ] Test `threaded=True` execution
-- [ ] Test `wait_until_blocked()`, `poll()`, `pause()`, `stop()`
+- [x] Test thread pool creation and configuration
+- [x] Test process pool creation and configuration
+- [x] Test node execution in thread pool
+- [x] Test node execution in process pool
+- [x] Test pool selection algorithm
+- [x] Test per-worker vs global init mode
+- [x] Test `threaded=True` execution
+- [x] Test `wait_until_blocked()`, `poll()`, `pause()`, `stop()`
 
 ### 6.6 Examples for Milestone 6
-- [ ] `examples/05_thread_pools/` - Parallel execution with thread pools
-- [ ] `examples/06_process_pools/` - CPU-intensive work with process pools
+- [x] `examples/04_background_runner/` - Background execution with thread pools
 
 ---
 
-## Milestone 7: Rate Limiting and Parallel Epoch Control
+## Milestone 7: Rate Limiting and Parallel Epoch Control ✅ COMPLETED
 
 **Goal:** Control execution rate and parallelism per node.
 
 ### 7.1 Rate Limiting
-- [ ] Implement `rate_limit_per_second` config
-- [ ] Track epoch start timestamps per node
-- [ ] Delay epoch starts to respect rate limit
+- [x] Implement `rate_limit_per_second` config
+- [x] Track epoch start timestamps per node
+- [x] Delay epoch starts to respect rate limit
 
 ### 7.2 Parallel Epoch Control
-- [ ] Implement `max_parallel_epochs` config
-- [ ] Track running epochs per node
-- [ ] Delay epoch starts when at max
+- [x] Implement `max_parallel_epochs` config
+- [x] Track running epochs per node
+- [x] Delay epoch starts when at max
 
 ### 7.3 Tests for Milestone 7
-- [ ] Test rate limiting accuracy
-- [ ] Test `max_parallel_epochs` enforcement
-- [ ] Test interaction between rate limit and max parallel
+- [x] Test rate limiting accuracy
+- [x] Test `max_parallel_epochs` enforcement
+- [x] Test interaction between rate limit and max parallel
 
 ### 7.4 Examples for Milestone 7
-- [ ] `examples/07_rate_limiting/` - Rate limiting and parallel control
+- [x] `examples/05_rate_limiting/` - Rate limiting and parallel control
 
 ---
 
-## Milestone 8: Logging and History
+## Milestone 8: Logging and History ✅ COMPLETED
 
 **Goal:** Comprehensive logging, history tracking, and stdout capture.
 
 ### 8.1 Event History
-- [ ] Implement history storage:
+- [x] Implement history storage:
   - Record all `NetAction` and `NetEvent` with timestamps
   - Add unique IDs for traceability
   - Store action→events relationships
-- [ ] History configuration:
+- [x] History configuration:
   - `history_max_size`: max events in memory
   - `history_file`: persist to JSONL file
   - `history_chunk_size`: write in chunks
   - `history_flush_on_pause`: flush when paused/blocked
 
 ### 8.2 Node-Level Logging
-- [ ] Implement stdout capture via custom `print` injection
-- [ ] Support `capture_stdout` config (per node)
-- [ ] Support `echo_stdout` config (also print to real stdout)
-- [ ] Store logs per node and per epoch
-- [ ] Methods: `get_node_log(node_name)`, `get_epoch_log(epoch_id)`
+- [x] Implement stdout capture via custom `print` injection
+- [x] Support `capture_stdout` config (per node)
+- [x] Support `echo_stdout` config (also print to real stdout)
+- [x] Store logs per node and per epoch
+- [x] Methods: `get_node_log(node_name)`, `get_epoch_log(epoch_id)`
 
 ### 8.3 Tests for Milestone 8
-- [ ] Test history recording accuracy
-- [ ] Test history persistence to JSONL
-- [ ] Test history size limits
-- [ ] Test stdout capture
-- [ ] Test `echo_stdout` behavior
-- [ ] Test `get_node_log()` and `get_epoch_log()`
+- [x] Test history recording accuracy
+- [x] Test history persistence to JSONL
+- [x] Test history size limits
+- [x] Test stdout capture
+- [x] Test `echo_stdout` behavior
+- [x] Test `get_node_log()` and `get_epoch_log()`
 
 ### 8.4 Examples for Milestone 8
-- [ ] `examples/08_logging_history/` - History tracking and log inspection
+- [x] `examples/06_logging_history/` - History tracking and log inspection
 
 ---
 
-## Milestone 9: Port Types
+## Milestone 9: Port Types ✅ COMPLETED
 
 **Goal:** Type checking for packet values on ports.
 
 ### 9.1 Port Type Definition
-- [ ] Support type specifications:
+- [x] Support type specifications:
   - String class name: `"DataFrame"`
   - Actual class: `pandas.DataFrame`
   - Dict with options: `{"class": MyClass, "isinstance": True/False, "subclass": True}`
 
 ### 9.2 Type Checking
-- [ ] Check input port types when packet is consumed via `ctx.consume_packet()`
+- [x] Check input port types when packet is consumed via `ctx.consume_packet()`
   - (Not at epoch creation, since value may not be known until consumption)
-- [ ] Check output port types when packet loaded via `ctx.load_output_port()`
-- [ ] Raise `PacketTypeMismatch` on mismatch
+- [x] Check output port types when packet loaded via `ctx.load_output_port()`
+- [x] Raise `PacketTypeMismatch` on mismatch
 
 ### 9.3 Tests for Milestone 9
-- [ ] Test string class name matching
-- [ ] Test actual class matching
-- [ ] Test isinstance checking
-- [ ] Test exact type checking
-- [ ] Test subclass checking
-- [ ] Test type mismatch error
+- [x] Test string class name matching
+- [x] Test actual class matching
+- [x] Test isinstance checking
+- [x] Test exact type checking
+- [x] Test subclass checking
+- [x] Test type mismatch error
 
 ### 9.4 Examples for Milestone 9
-- [ ] (Integrated into other examples - type checking is mostly transparent)
+- [x] `examples/07_port_types/` - Port type checking demonstration
 
 ---
 
-## Milestone 10: SIGINT Handling
+## Milestone 10: SIGINT Handling (DEFERRED)
 
 **Goal:** Graceful shutdown on SIGINT.
+
+**Note:** This milestone was deferred. The pause/stop functionality is already implemented
+and can be used to handle SIGINT at the application level if needed.
 
 ### 10.1 Signal Handler
 - [ ] Register SIGINT handler when net starts
@@ -395,16 +397,16 @@ This document outlines the development plan for the `netrun` Python package, whi
 
 ---
 
-## Milestone 11: DSL Format (TOML)
+## Milestone 11: DSL Format (TOML) ✅ COMPLETED
 
 **Goal:** Human-readable serialization format for nets.
 
 ### 11.1 TOML Parser
-- [ ] Parse `[net]` section:
+- [x] Parse `[net]` section:
   - Net-level config (on_error, history_file, etc.)
   - Thread/process pool definitions
   - Metadata
-- [ ] Parse `[nodes.X]` sections:
+- [x] Parse `[nodes.X]` sections:
   - Port definitions (simple list or detailed config)
   - Salvo conditions with expression language
   - Node options
@@ -413,101 +415,105 @@ This document outlines the development plan for the `netrun` Python package, whi
   - Metadata
 
 ### 11.2 Salvo Condition Expression Parser
-- [ ] Parse expressions:
+- [x] Parse expressions:
   - `nonempty(port)`, `empty(port)`, `full(port)`
   - `count(port) >= N`, `count(port) == N`
   - `and`, `or`, `not`
   - Parentheses for grouping
-- [ ] Convert to `SalvoConditionTerm`
-- [ ] Handle `ports` field:
+- [x] Convert to `SalvoConditionTerm`
+- [x] Handle `ports` field:
   - If omitted, include all input/output ports (depending on condition type)
-- [ ] Handle `max_salvos` field:
+- [x] Handle `max_salvos` field:
   - `"infinite"` maps to `MaxSalvos.Infinite`
   - Positive integer maps to `MaxSalvos.finite(n)`
 
 ### 11.3 Edge Definition Parser
-- [ ] Parse edge list format: `[{ from = "A.out", to = "B.in" }, ...]`
-- [ ] Parse detailed edge format with metadata
+- [x] Parse edge list format: `[{ from = "A.out", to = "B.in" }, ...]`
+- [x] Parse detailed edge format with metadata
 
 ### 11.4 TOML Serializer
-- [ ] Serialize `Net` to TOML string
-- [ ] Preserve all configuration
-- [ ] Pretty-print salvo conditions
+- [x] Serialize `Net` to TOML string
+- [x] Preserve all configuration
+- [x] Pretty-print salvo conditions
 
 ### 11.5 Tests for Milestone 11
-- [ ] Test parsing simple net definition
-- [ ] Test parsing complex salvo conditions
-- [ ] Test parsing edge definitions
-- [ ] Test round-trip: parse → serialize → parse
-- [ ] Test error messages for invalid TOML
+- [x] Test parsing simple net definition
+- [x] Test parsing complex salvo conditions
+- [x] Test parsing edge definitions
+- [x] Test round-trip: parse → serialize → parse
+- [x] Test error messages for invalid TOML
 
 ### 11.6 Examples for Milestone 11
-- [ ] `examples/09_toml_dsl/` - Defining nets in TOML format
+- [x] `examples/08_dsl_format/` - Defining nets in TOML format
 
 ---
 
-## Milestone 12: Node Factories
+## Milestone 12: Node Factories ✅ COMPLETED
 
 **Goal:** Reusable node templates via factory pattern.
 
 ### 12.1 Factory Protocol
-- [ ] Define factory interface:
+- [x] Define factory interface:
   - `get_node_spec(**args) -> dict` (Node kwargs)
   - `get_node_funcs(**args) -> tuple` (exec, start, stop, failed)
-- [ ] Support factory import from string path
+- [x] Support factory import from string path
 
 ### 12.2 Factory Usage
-- [ ] Implement `Net.from_factory()` class method
-- [ ] Support factory args in DSL:
+- [x] Implement `Net.from_factory()` class method
+- [x] Support factory args in DSL:
   - `factory = "module.factory"`
   - `factory_args = { ... }`
 
 ### 12.3 Factory Serialization
-- [ ] Require JSON-serializable args for serialization
-- [ ] Support callable args as import paths
+- [x] Require JSON-serializable args for serialization
+- [x] Support callable args as import paths
 
 ### 12.4 Tests for Milestone 12
-- [ ] Test factory `get_node_spec()`
-- [ ] Test factory `get_node_funcs()`
-- [ ] Test `Net.from_factory()`
-- [ ] Test factory in DSL
-- [ ] Test factory serialization
+- [x] Test factory `get_node_spec()`
+- [x] Test factory `get_node_funcs()`
+- [x] Test `Net.from_factory()`
+- [x] Test factory in DSL
+- [x] Test factory serialization
 
 ### 12.5 Examples for Milestone 12
-- [ ] `examples/10_node_factories/` - Creating reusable node templates
+- [x] `examples/09_node_factories/` - Creating reusable node templates
 
 ---
 
-## Milestone 13: Checkpointing and State Serialization
+## Milestone 13: Checkpointing and State Serialization ✅ COMPLETED
 
 **Goal:** Save and restore net state for resumability.
 
 ### 13.1 Full Checkpoint
-- [ ] Implement `Net.save_checkpoint(path)`:
+- [x] Implement `Net.save_checkpoint(path)`:
   - **Require net to be paused first** (raise exception if not paused)
-  - `net_state.json`: serialized NetSim state
-  - `packets.pkl`: pickled packet values
+  - `net_definition.toml`: serialized net definition
+  - `packet_states.json`: packet locations
+  - `packet_values.pkl`: pickled packet values
+  - `node_configs.json`: node configuration
+  - `metadata.json`: checkpoint metadata
   - `history.jsonl`: event history (if configured)
-- [ ] Implement `Net.load_checkpoint(path)`:
-  - Restore NetSim state
+- [x] Implement `Net.load_checkpoint(path)`:
+  - Restore net definition
   - Restore packet values
+  - Restore packet locations
   - Net starts in paused state, ready to resume
 
 ### 13.2 Definition-Only Serialization
-- [ ] Implement `Net.save_definition(path)`:
+- [x] Implement `Net.save_definition(path)`:
   - Save TOML without runtime state
-- [ ] Implement `Net.load_definition(path)`:
+- [x] Implement `Net.load_definition(path)`:
   - Load net from TOML
 
 ### 13.3 Tests for Milestone 13
-- [ ] Test checkpoint save/load
-- [ ] Test checkpoint requires paused net (error if not paused)
-- [ ] Test checkpoint with pending packets and startable epochs
-- [ ] Test definition save/load
-- [ ] Test resumption after load
+- [x] Test checkpoint save/load
+- [x] Test checkpoint requires paused net (error if not paused)
+- [x] Test checkpoint with pending packets and startable epochs
+- [x] Test definition save/load
+- [x] Test resumption after load
 
 ### 13.4 Examples for Milestone 13
-- [ ] `examples/11_checkpointing/` - Saving and resuming net state
+- [x] `examples/10_checkpointing/` - Saving and resuming net state
 
 ---
 
@@ -550,14 +556,14 @@ This document outlines the development plan for the `netrun` Python package, whi
 3. **Milestone 3**: Single-Threaded Execution (run_step, start) ✅
 4. **Milestone 4**: Error Handling (retries, dead letter queue) ✅
 5. **Milestone 5**: Async Execution ✅
-6. **Milestone 6**: Thread and Process Pools
-7. **Milestone 7**: Rate Limiting and Parallel Control
-8. **Milestone 8**: Logging and History
-9. **Milestone 9**: Port Types
-10. **Milestone 10**: SIGINT Handling
-11. **Milestone 11**: DSL Format
-12. **Milestone 12**: Node Factories
-13. **Milestone 13**: Checkpointing
+6. **Milestone 6**: Thread and Process Pools ✅
+7. **Milestone 7**: Rate Limiting and Parallel Control ✅
+8. **Milestone 8**: Logging and History ✅
+9. **Milestone 9**: Port Types ✅
+10. **Milestone 10**: SIGINT Handling (DEFERRED)
+11. **Milestone 11**: DSL Format ✅
+12. **Milestone 12**: Node Factories ✅
+13. **Milestone 13**: Checkpointing ✅
 14. **Milestone 14**: Integration and Polish
 
 ---
@@ -567,23 +573,22 @@ This document outlines the development plan for the `netrun` Python package, whi
 Examples use nblite's notebook format:
 
 ```
-pts/examples/                  # Source notebooks (percent format)
-├── 00_basic_setup.pct.py     # Milestone 1: Net setup and configuration
-├── 01_simple_pipeline.pct.py # Milestone 3: Linear pipeline
-├── 02_branching_flow.pct.py  # Milestone 3: Fan-out/fan-in
-├── 02_error_handling.pct.py  # Milestone 4: Retries and recovery
-├── 03_async_nodes.pct.py     # Milestone 5: Async execution
-├── 05_thread_pools.pct.py    # Milestone 6: Thread pools
-├── 06_process_pools.pct.py   # Milestone 6: Process pools
-├── 07_rate_limiting.pct.py   # Milestone 7: Rate limiting
-├── 08_logging_history.pct.py # Milestone 8: Logging
-├── 09_toml_dsl.pct.py        # Milestone 11: TOML format
-├── 10_node_factories.pct.py  # Milestone 12: Factories
-├── 11_checkpointing.pct.py   # Milestone 13: Checkpointing
-└── 12_complete_application.pct.py  # Milestone 14: Full example
+pts/examples/                       # Source notebooks (percent format)
+├── 00_basic_setup.pct.py          # Milestone 1: Net setup and configuration
+├── 01_simple_pipeline.pct.py      # Milestone 3: Linear pipeline
+├── 02_error_handling.pct.py       # Milestone 4: Retries and recovery
+├── 03_async_nodes.pct.py          # Milestone 5: Async execution
+├── 04_background_runner.pct.py    # Milestone 6: Background execution with pools
+├── 05_rate_limiting.pct.py        # Milestone 7: Rate limiting
+├── 06_logging_history.pct.py      # Milestone 8: Logging
+├── 07_port_types.pct.py           # Milestone 9: Port type checking
+├── 08_dsl_format.pct.py           # Milestone 11: TOML format
+├── 09_node_factories.pct.py       # Milestone 12: Factories
+├── 10_checkpointing.pct.py        # Milestone 13: Checkpointing
+└── 11_complete_application.pct.py # Milestone 14: Full example (TODO)
 
-nbs/examples/                  # Generated Jupyter notebooks
-src/examples/                  # Generated Python modules (runnable)
+nbs/examples/                       # Generated Jupyter notebooks
+src/examples/                       # Generated Python modules (runnable)
 ```
 
 To export examples after editing:
