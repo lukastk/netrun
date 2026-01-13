@@ -113,6 +113,19 @@ from .factories import (
     validate_factory_args,
 )
 
+# Re-export checkpoint
+from .checkpoint import (
+    PacketState,
+    CheckpointMetadata,
+    LoadedCheckpoint,
+    serialize_packet_location,
+    deserialize_packet_location,
+    get_all_packet_states,
+    save_checkpoint_state,
+    load_checkpoint_state,
+    restore_packets_to_net,
+)
+
 # Re-export Net and netrun_sim types
 from .net import (
     # Main class

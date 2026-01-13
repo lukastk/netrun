@@ -1742,3 +1742,211 @@ class Net:
             result.stop_node_func,
             result.exec_failed_node_func,
         )
+
+    # =========================================================================
+    # Checkpointing Methods
+    # =========================================================================
+
+    def save_checkpoint(self, path: Union[str, Path]) -> None:
+        """
+        Save the complete Net state to a checkpoint directory.
+
+        The net must be paused (or not yet started) before saving a checkpoint.
+        This ensures no epochs are in a running state during serialization.
+
+        Creates the following files:
+        - metadata.json: Checkpoint metadata
+        - net_definition.toml: Net graph and configuration
+        - packet_states.json: Packet locations
+        - packet_values.pkl: Pickled packet values
+        - node_configs.json: Node configurations
+        - history.jsonl: Event history (if configured)
+
+        Args:
+            path: Directory to save checkpoint files
+
+        Raises:
+            NetNotPausedError: If the net has running epochs
+        """
+        from netrun.checkpoint import (
+            get_all_packet_states,
+            save_checkpoint_state,
+            CheckpointMetadata,
+        )
+
+        # Check that net is paused or stopped (safe to checkpoint)
+        # Must be in PAUSED or STOPPED state
+        allowed_states = {NetState.PAUSED, NetState.STOPPED}
+        if self._state not in allowed_states:
+            raise NetNotPausedError(
+                f"Cannot save checkpoint in state {self._state}. "
+                "Call net.pause() first to ensure no epochs are running."
+            )
+
+        # Get packet IDs from value store
+        packet_ids = list(self._value_store._values.keys())
+
+        # Get packet states
+        packet_states = get_all_packet_states(self._sim, packet_ids, self._graph)
+
+        # Get packet values (make a copy to avoid modifying during iteration)
+        packet_values = {}
+        for packet_id, stored_value in self._value_store._values.items():
+            if stored_value.is_value_func:
+                # For value functions, we can't serialize them directly
+                # Store a marker indicating this was a value function
+                packet_values[packet_id] = {"__value_func__": True}
+            else:
+                packet_values[packet_id] = stored_value.value
+
+        # Get node configs
+        node_configs = {}
+        for node_name, config in self._node_configs.items():
+            node_configs[node_name] = {
+                "pool": config.pool,
+                "max_parallel_epochs": config.max_parallel_epochs,
+                "rate_limit_per_second": config.rate_limit_per_second,
+                "defer_net_actions": config.defer_net_actions,
+                "retries": config.retries,
+                "retry_wait": config.retry_wait,
+                "timeout": config.timeout,
+                "dead_letter_queue": config.dead_letter_queue,
+                "capture_stdout": config.capture_stdout,
+            }
+
+        # Get exec paths (we store the paths for serialization)
+        node_exec_paths = {}
+        for node_name, exec_funcs in self._node_exec_funcs.items():
+            paths = {}
+            if exec_funcs.exec_func:
+                paths["exec_func"] = get_import_path(exec_funcs.exec_func)
+            if exec_funcs.start_func:
+                paths["start_func"] = get_import_path(exec_funcs.start_func)
+            if exec_funcs.stop_func:
+                paths["stop_func"] = get_import_path(exec_funcs.stop_func)
+            if exec_funcs.failed_func:
+                paths["failed_func"] = get_import_path(exec_funcs.failed_func)
+            if paths:
+                node_exec_paths[node_name] = paths
+
+        # Get factory info from DSL config
+        dsl_config = self.to_dsl_config()
+        node_factories = dsl_config.node_factories
+
+        # Get port types
+        port_types = dsl_config.port_types
+
+        # Get history data if available
+        history_data = None
+        if self._event_history is not None:
+            history_data = [e.to_dict() for e in self._event_history.get_entries()]
+
+        # Generate net definition TOML
+        net_definition_toml = self.to_toml()
+
+        # Create metadata
+        metadata = CheckpointMetadata(
+            timestamp=datetime.now().isoformat(),
+            packet_count=len(packet_states),
+            has_history=history_data is not None,
+        )
+
+        # Save checkpoint
+        save_checkpoint_state(
+            checkpoint_dir=Path(path),
+            net_definition_toml=net_definition_toml,
+            packet_states=packet_states,
+            packet_values=packet_values,
+            node_configs=node_configs,
+            node_exec_paths=node_exec_paths,
+            node_factories=node_factories,
+            port_types=port_types,
+            history_data=history_data,
+            metadata=metadata,
+        )
+
+    @classmethod
+    def load_checkpoint(
+        cls,
+        path: Union[str, Path],
+        resolve_funcs: bool = True,
+    ) -> "Net":
+        """
+        Load a Net from a checkpoint directory.
+
+        Args:
+            path: Directory containing checkpoint files
+            resolve_funcs: Whether to resolve and set exec function import paths
+
+        Returns:
+            A new Net instance restored to the checkpointed state
+        """
+        from netrun.checkpoint import (
+            load_checkpoint_state,
+            restore_packets_to_net,
+            deserialize_packet_location,
+        )
+
+        # Load checkpoint data
+        checkpoint = load_checkpoint_state(path)
+
+        # Create Net from definition
+        net = cls.from_toml(checkpoint.net_definition_toml, resolve_funcs=resolve_funcs)
+
+        # Restore packets
+        id_mapping = restore_packets_to_net(
+            net._sim,
+            checkpoint.packet_states,
+            net._graph,
+        )
+
+        # Restore packet values with new IDs
+        for old_id, new_id in id_mapping.items():
+            if old_id in checkpoint.packet_values:
+                value = checkpoint.packet_values[old_id]
+                if isinstance(value, dict) and value.get("__value_func__"):
+                    # Value function - can't restore, just skip
+                    # User will need to set up value functions again
+                    pass
+                else:
+                    net._value_store.store_value(new_id, value)
+
+        # Run until blocked to trigger input salvo conditions
+        net._sim.do_action(NetAction.run_net_until_blocked())
+
+        return net
+
+    def save_definition(self, path: Union[str, Path]) -> None:
+        """
+        Save just the Net definition (without runtime state) to a TOML file.
+
+        This saves the graph structure and configuration, but not:
+        - Current packet locations
+        - Packet values
+        - Running epochs
+        - Event history
+
+        Args:
+            path: Path to save the TOML file
+        """
+        self.save_toml(path)
+
+    @classmethod
+    def load_definition(
+        cls,
+        path: Union[str, Path],
+        resolve_funcs: bool = True,
+    ) -> "Net":
+        """
+        Load a Net definition from a TOML file.
+
+        This creates a fresh Net without any runtime state.
+
+        Args:
+            path: Path to the TOML file
+            resolve_funcs: Whether to resolve and set exec function import paths
+
+        Returns:
+            A new Net instance
+        """
+        return cls.from_toml_file(path, resolve_funcs=resolve_funcs)

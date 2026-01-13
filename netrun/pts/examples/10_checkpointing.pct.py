@@ -1,0 +1,206 @@
+# ---
+# jupyter:
+#   kernelspec:
+#     display_name: .venv
+#     language: python
+#     name: python3
+# ---
+
+# %% [markdown]
+# # Example 10: Checkpointing and State Restoration
+#
+# This example demonstrates checkpointing capabilities:
+#
+# - Saving the complete Net state (paused or stopped)
+# - Restoring a Net from a checkpoint
+# - Saving/loading just the Net definition (without runtime state)
+
+# %%
+#|default_exp 10_checkpointing
+
+# %%
+#|export
+from netrun import (
+    Net, Node, Graph, Edge, Port, PortType, PortRef,
+    SalvoCondition, SalvoConditionTerm, MaxSalvos, PortState,
+)
+import tempfile
+from pathlib import Path
+
+# %% [markdown]
+# ## Setup: Create a Simple Pipeline
+#
+# We'll create a Source -> Processor -> Sink pipeline.
+
+# %%
+#|export
+def create_pipeline_graph():
+    """Create a 3-node pipeline graph."""
+    source = Node(
+        name="Source",
+        out_ports={"out": Port()},
+        out_salvo_conditions={
+            "send": SalvoCondition(
+                MaxSalvos.infinite(),
+                "out",
+                SalvoConditionTerm.port("out", PortState.non_empty())
+            )
+        }
+    )
+    processor = Node(
+        name="Processor",
+        in_ports={"in": Port()},
+        out_ports={"out": Port()},
+        in_salvo_conditions={
+            "receive": SalvoCondition(
+                MaxSalvos.finite(1),
+                "in",
+                SalvoConditionTerm.port("in", PortState.non_empty())
+            )
+        },
+        out_salvo_conditions={
+            "send": SalvoCondition(
+                MaxSalvos.infinite(),
+                "out",
+                SalvoConditionTerm.port("out", PortState.non_empty())
+            )
+        }
+    )
+    sink = Node(
+        name="Sink",
+        in_ports={"in": Port()},
+        in_salvo_conditions={
+            "receive": SalvoCondition(
+                MaxSalvos.finite(1),
+                "in",
+                SalvoConditionTerm.port("in", PortState.non_empty())
+            )
+        }
+    )
+    edges = [
+        Edge(PortRef("Source", PortType.Output, "out"), PortRef("Processor", PortType.Input, "in")),
+        Edge(PortRef("Processor", PortType.Output, "out"), PortRef("Sink", PortType.Input, "in")),
+    ]
+    return Graph([source, processor, sink], edges)
+
+# %% [markdown]
+# ## Checkpoint Save and Restore
+#
+# Let's create a Net, run it partially, save a checkpoint, and restore it.
+
+# %%
+#|export
+def checkpoint_example():
+    """Demonstrate checkpoint save and restore."""
+    graph = create_pipeline_graph()
+    net = Net(graph)
+
+    # Results captured across both Net instances
+    results = []
+
+    # Set up execution functions
+    def source_exec(ctx, packets):
+        # Create a packet with some data
+        pkt = ctx.create_packet({"step": 1, "message": "Hello from source"})
+        ctx.load_output_port("out", pkt)
+        ctx.send_output_salvo("send")
+
+    def processor_exec(ctx, packets):
+        for _, pkts in packets.items():
+            for pkt in pkts:
+                value = ctx.consume_packet(pkt)
+                value["processed"] = True
+                value["step"] = 2
+                out_pkt = ctx.create_packet(value)
+                ctx.load_output_port("out", out_pkt)
+                ctx.send_output_salvo("send")
+
+    # Don't set sink_exec yet - packet will wait there
+
+    net.set_node_exec("Source", source_exec)
+    net.set_node_exec("Processor", processor_exec)
+
+    # Start and run until paused
+    net.inject_source_epoch("Source")
+    net.start()
+    net.pause()  # Pause while packet waits at Sink
+
+    print("Net paused with packet waiting at Sink")
+
+    # Save checkpoint to a temporary directory
+    with tempfile.TemporaryDirectory() as tmpdir:
+        checkpoint_path = Path(tmpdir) / "checkpoint"
+
+        # Save checkpoint
+        net.save_checkpoint(checkpoint_path)
+        print(f"Checkpoint saved to {checkpoint_path}")
+
+        # Load checkpoint into a new Net instance
+        net2 = Net.load_checkpoint(checkpoint_path, resolve_funcs=False)
+        print("Checkpoint loaded into new Net instance")
+
+        # Set up sink exec on the restored Net
+        def sink_exec(ctx, packets):
+            for _, pkts in packets.items():
+                for pkt in pkts:
+                    value = ctx.consume_packet(pkt)
+                    results.append(value)
+                    print(f"Sink received: {value}")
+
+        net2.set_node_exec("Sink", sink_exec)
+
+        # Resume execution
+        net2.start()
+        print("Execution resumed and completed")
+
+    return results
+
+# %% [markdown]
+# ## Definition Save and Load
+#
+# Sometimes you only need to save/load the Net structure without runtime state.
+
+# %%
+#|export
+def definition_example():
+    """Demonstrate saving and loading just the Net definition."""
+    graph = create_pipeline_graph()
+    net = Net(graph)
+
+    # Configure some settings (retries requires defer_net_actions)
+    net.set_node_config("Processor", retries=3, defer_net_actions=True)
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        definition_path = Path(tmpdir) / "net.toml"
+
+        # Save just the definition (no runtime state)
+        net.save_definition(definition_path)
+        print(f"Definition saved to {definition_path}")
+
+        # Load the definition into a new Net
+        net2 = Net.load_definition(definition_path, resolve_funcs=False)
+        print("Definition loaded into new Net instance")
+
+        # Verify configuration was preserved
+        config = net2._node_configs.get("Processor")
+        if config:
+            print(f"Processor retries config preserved: {config.retries}")
+
+    return net2
+
+# %% [markdown]
+# ## Run the Examples
+
+# %%
+#|export
+if __name__ == "__main__":
+    print("=" * 50)
+    print("Checkpoint Example")
+    print("=" * 50)
+    results = checkpoint_example()
+    print(f"\nFinal results: {results}")
+
+    print("\n" + "=" * 50)
+    print("Definition Example")
+    print("=" * 50)
+    definition_example()
