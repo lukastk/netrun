@@ -1018,7 +1018,7 @@ impl NetSim {
         packet_id: &PacketID,
         port_name: &String,
     ) -> NetActionResponse {
-        let (epoch_id, old_location) = if let Some(packet) = self._packets.get(packet_id) {
+        let (epoch_id, _old_location) = if let Some(packet) = self._packets.get(packet_id) {
             if let PacketLocation::Node(epoch_id) = packet.location {
                 (epoch_id, packet.location.clone())
             } else {
@@ -1055,14 +1055,15 @@ impl NetSim {
         }
 
         let port = node.out_ports.get(port_name).unwrap();
+        let output_port_location = PacketLocation::OutputPort(epoch_id, port_name.clone());
         let port_packets = self
             ._packets_by_location
-            .get(&old_location)
+            .get(&output_port_location)
             .expect("No entry in NetSim._packets_by_location found for output port.");
 
         // Check if the output port is full
         if let PortSlotSpec::Finite(num_slots) = port.slots_spec
-            && num_slots >= port_packets.len() as u64
+            && port_packets.len() as u64 >= num_slots
         {
             return NetActionResponse::Error(NetActionError::OutputPortFull {
                 port_name: port_name.clone(),
@@ -1070,7 +1071,7 @@ impl NetSim {
             });
         }
 
-        let new_location = PacketLocation::OutputPort(epoch_id, port_name.clone());
+        let new_location = output_port_location;
         self.move_packet(packet_id, new_location.clone());
         NetActionResponse::Success(
             NetActionResponseData::None,
@@ -1110,9 +1111,14 @@ impl NetSim {
                 });
             };
 
-        // Check if max salvos reached
+        // Check if max salvos reached for this specific condition
         if let MaxSalvos::Finite(max) = salvo_condition.max_salvos {
-            if epoch.out_salvos.len() as u64 >= max {
+            let condition_salvo_count = epoch
+                .out_salvos
+                .iter()
+                .filter(|s| s.salvo_condition == *salvo_condition_name)
+                .count() as u64;
+            if condition_salvo_count >= max {
                 return NetActionResponse::Error(NetActionError::MaxOutputSalvosReached {
                     condition_name: salvo_condition_name.clone(),
                     epoch_id: *epoch_id,
