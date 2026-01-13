@@ -1,0 +1,10 @@
+# nblite configuration
+export_pipeline = "nbs_examples -> pts_examples"
+
+[cl.nbs_examples]
+path = "examples/nbs"
+format = "ipynb"
+
+[cl.pts_examples]
+path = "examples/pts"
+format = "percent"
