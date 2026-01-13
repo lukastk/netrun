@@ -314,6 +314,22 @@ pub struct SalvoConditionTerm {
 
 #[pymethods]
 impl SalvoConditionTerm {
+    /// Create a term that is always true. Useful for source nodes with no input ports.
+    #[staticmethod]
+    fn true_() -> Self {
+        SalvoConditionTerm {
+            inner: CoreSalvoConditionTerm::True,
+        }
+    }
+
+    /// Create a term that is always false. Useful as a placeholder or with Not.
+    #[staticmethod]
+    fn false_() -> Self {
+        SalvoConditionTerm {
+            inner: CoreSalvoConditionTerm::False,
+        }
+    }
+
     /// Create a port state check term.
     #[staticmethod]
     #[pyo3(signature = (port_name, state))]
@@ -351,10 +367,12 @@ impl SalvoConditionTerm {
         }
     }
 
-    /// Get the term kind: "Port", "And", "Or", or "Not".
+    /// Get the term kind: "True", "False", "Port", "And", "Or", or "Not".
     #[getter]
     fn kind(&self) -> String {
         match &self.inner {
+            CoreSalvoConditionTerm::True => "True".to_string(),
+            CoreSalvoConditionTerm::False => "False".to_string(),
             CoreSalvoConditionTerm::Port { .. } => "Port".to_string(),
             CoreSalvoConditionTerm::And(_) => "And".to_string(),
             CoreSalvoConditionTerm::Or(_) => "Or".to_string(),
@@ -411,6 +429,8 @@ impl SalvoConditionTerm {
 
 fn format_term(term: &CoreSalvoConditionTerm) -> String {
     match term {
+        CoreSalvoConditionTerm::True => "SalvoConditionTerm.true_()".to_string(),
+        CoreSalvoConditionTerm::False => "SalvoConditionTerm.false_()".to_string(),
         CoreSalvoConditionTerm::Port { port_name, state } => {
             format!("SalvoConditionTerm.port({:?}, {:?})", port_name, state)
         }

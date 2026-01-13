@@ -74,6 +74,10 @@ pub enum MaxSalvos {
 /// with logical operators (And, Or, Not).
 #[derive(Debug, Clone)]
 pub enum SalvoConditionTerm {
+    /// Always true. Useful for source nodes with no input ports.
+    True,
+    /// Always false. Useful as a placeholder or with Not.
+    False,
     /// Check if a specific port matches a state predicate.
     Port { port_name: String, state: PortState },
     /// All sub-terms must be true.
@@ -99,6 +103,8 @@ pub fn evaluate_salvo_condition(
     ports: &HashMap<PortName, Port>,
 ) -> bool {
     match term {
+        SalvoConditionTerm::True => true,
+        SalvoConditionTerm::False => false,
         SalvoConditionTerm::Port { port_name, state } => {
             let count = *port_packet_counts.get(port_name).unwrap_or(&0);
             let port = ports.get(port_name);
@@ -162,6 +168,9 @@ pub struct SalvoCondition {
 /// Extracts all port names referenced in a SalvoConditionTerm.
 fn collect_ports_from_term(term: &SalvoConditionTerm, ports: &mut HashSet<PortName>) {
     match term {
+        SalvoConditionTerm::True | SalvoConditionTerm::False => {
+            // No ports referenced
+        }
         SalvoConditionTerm::Port { port_name, .. } => {
             ports.insert(port_name.clone());
         }
