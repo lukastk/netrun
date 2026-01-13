@@ -1,0 +1,512 @@
+# ---
+# jupyter:
+#   kernelspec:
+#     display_name: .venv
+#     language: python
+#     name: python3
+# ---
+
+# %% [markdown]
+# # Example 09: Node Factories
+#
+# This example demonstrates node factories - reusable templates for creating
+# nodes with configurable behavior:
+#
+# - Creating factory modules with `get_node_spec` and `get_node_funcs`
+# - Using `Net.from_factory` to load factories
+# - Factory functions that return `NodeFactoryResult`
+# - Using factories in TOML DSL configuration
+
+# %%
+#|default_exp 09_node_factories
+
+# %%
+#|export
+from netrun import (
+    Net, Node, Graph, Edge, Port, PortType, PortRef,
+    SalvoCondition, SalvoConditionTerm, MaxSalvos, PortState,
+    NodeFactoryResult,
+    load_factory,
+    create_node_from_factory,
+    parse_toml_string,
+)
+
+# %% [markdown]
+# ## Creating a Factory Module
+#
+# A factory module must provide two functions:
+# - `get_node_spec(**args)` - Returns kwargs for Node constructor
+# - `get_node_funcs(**args)` - Returns (exec_func, start_func, stop_func, failed_func)
+
+# %%
+#|export
+# This would normally be in a separate file like my_factories.py
+# For this example, we'll create the factory functions inline
+
+def create_transformer_spec(name="Transformer", transform_key="transformed"):
+    """Create a transformer node spec."""
+    return {
+        "name": name,
+        "in_ports": {"in": Port()},
+        "out_ports": {"out": Port()},
+        "in_salvo_conditions": {
+            "receive": SalvoCondition(
+                MaxSalvos.finite(1),
+                "in",
+                SalvoConditionTerm.port("in", PortState.non_empty())
+            )
+        },
+        "out_salvo_conditions": {
+            "send": SalvoCondition(
+                MaxSalvos.infinite(),
+                "out",
+                SalvoConditionTerm.port("out", PortState.non_empty())
+            )
+        },
+    }
+
+
+def create_transformer_funcs(name="Transformer", transform_key="transformed"):
+    """Create transformer execution functions."""
+
+    def exec_func(ctx, packets):
+        for port_name, pkts in packets.items():
+            for pkt in pkts:
+                value = ctx.consume_packet(pkt)
+                # Transform the value
+                transformed = {**value, transform_key: True}
+                out_pkt = ctx.create_packet(transformed)
+                ctx.load_output_port("out", out_pkt)
+                ctx.send_output_salvo("send")
+
+    def start_func(net):
+        print(f"Starting transformer node: {name}")
+
+    def stop_func(net):
+        print(f"Stopping transformer node: {name}")
+
+    return (exec_func, start_func, stop_func, None)
+
+# %%
+#|export
+def run_inline_factory_example():
+    """Demonstrate using inline factory functions."""
+    print("=" * 60)
+    print("Inline Factory Example")
+    print("=" * 60)
+
+    # Get spec and funcs from factory
+    spec = create_transformer_spec(name="DataTransformer", transform_key="processed")
+    exec_func, start_func, stop_func, _ = create_transformer_funcs(
+        name="DataTransformer",
+        transform_key="processed"
+    )
+
+    # Create the transformer node
+    transformer = Node(**spec)
+
+    # Create source and sink
+    source = Node(
+        name="Source",
+        out_ports={"out": Port()},
+        out_salvo_conditions={
+            "send": SalvoCondition(
+                MaxSalvos.infinite(),
+                "out",
+                SalvoConditionTerm.port("out", PortState.non_empty())
+            )
+        }
+    )
+
+    sink = Node(
+        name="Sink",
+        in_ports={"in": Port()},
+        in_salvo_conditions={
+            "receive": SalvoCondition(
+                MaxSalvos.finite(1),
+                "in",
+                SalvoConditionTerm.port("in", PortState.non_empty())
+            )
+        }
+    )
+
+    edges = [
+        Edge(
+            PortRef("Source", PortType.Output, "out"),
+            PortRef("DataTransformer", PortType.Input, "in")
+        ),
+        Edge(
+            PortRef("DataTransformer", PortType.Output, "out"),
+            PortRef("Sink", PortType.Input, "in")
+        ),
+    ]
+
+    graph = Graph([source, transformer, sink], edges)
+    net = Net(graph)
+
+    results = []
+
+    def source_exec(ctx, packets):
+        pkt = ctx.create_packet({"id": 1, "data": "hello"})
+        ctx.load_output_port("out", pkt)
+        ctx.send_output_salvo("send")
+
+    def sink_exec(ctx, packets):
+        for port_name, pkts in packets.items():
+            for pkt in pkts:
+                results.append(ctx.consume_packet(pkt))
+
+    net.set_node_exec("Source", source_exec)
+    net.set_node_exec("DataTransformer", exec_func, start_func=start_func, stop_func=stop_func)
+    net.set_node_exec("Sink", sink_exec)
+
+    net.inject_source_epoch("Source")
+    net.start()
+
+    print(f"Results: {results}")
+    print(f"Value was transformed: 'processed' key = {results[0].get('processed')}")
+    return results
+
+# %% [markdown]
+# ## Factory Functions with NodeFactoryResult
+#
+# Factory functions can return a `NodeFactoryResult` for cleaner code:
+
+# %%
+#|export
+def create_counter_node(name="Counter", initial_count=0):
+    """
+    Factory function that creates a counter node.
+
+    This demonstrates a factory that returns a NodeFactoryResult directly.
+    """
+    # Closure to maintain count state
+    count_state = {"count": initial_count}
+
+    def exec_func(ctx, packets):
+        for port_name, pkts in packets.items():
+            for pkt in pkts:
+                value = ctx.consume_packet(pkt)
+                count_state["count"] += 1
+                result = {**value, "count": count_state["count"]}
+                out_pkt = ctx.create_packet(result)
+                ctx.load_output_port("out", out_pkt)
+                ctx.send_output_salvo("send")
+
+    spec = {
+        "name": name,
+        "in_ports": {"in": Port()},
+        "out_ports": {"out": Port()},
+        "in_salvo_conditions": {
+            "receive": SalvoCondition(
+                MaxSalvos.finite(1),
+                "in",
+                SalvoConditionTerm.port("in", PortState.non_empty())
+            )
+        },
+        "out_salvo_conditions": {
+            "send": SalvoCondition(
+                MaxSalvos.infinite(),
+                "out",
+                SalvoConditionTerm.port("out", PortState.non_empty())
+            )
+        },
+    }
+
+    return NodeFactoryResult(
+        node_spec=spec,
+        exec_node_func=exec_func,
+    )
+
+# %%
+#|export
+def run_factory_result_example():
+    """Demonstrate using a factory function that returns NodeFactoryResult."""
+    print("\n" + "=" * 60)
+    print("Factory Function with NodeFactoryResult")
+    print("=" * 60)
+
+    # Call the factory function
+    result = create_counter_node(name="MyCounter", initial_count=100)
+
+    # Create the node from the spec
+    counter = Node(**result.node_spec)
+
+    # Create source and sink
+    source = Node(
+        name="Source",
+        out_ports={"out": Port()},
+        out_salvo_conditions={
+            "send": SalvoCondition(
+                MaxSalvos.infinite(),
+                "out",
+                SalvoConditionTerm.port("out", PortState.non_empty())
+            )
+        }
+    )
+
+    sink = Node(
+        name="Sink",
+        in_ports={"in": Port()},
+        in_salvo_conditions={
+            "receive": SalvoCondition(
+                MaxSalvos.finite(1),
+                "in",
+                SalvoConditionTerm.port("in", PortState.non_empty())
+            )
+        }
+    )
+
+    edges = [
+        Edge(
+            PortRef("Source", PortType.Output, "out"),
+            PortRef("MyCounter", PortType.Input, "in")
+        ),
+        Edge(
+            PortRef("MyCounter", PortType.Output, "out"),
+            PortRef("Sink", PortType.Input, "in")
+        ),
+    ]
+
+    graph = Graph([source, counter, sink], edges)
+    net = Net(graph)
+
+    results = []
+
+    def source_exec(ctx, packets):
+        # Send 3 packets
+        for i in range(3):
+            pkt = ctx.create_packet({"item": f"item_{i}"})
+            ctx.load_output_port("out", pkt)
+            ctx.send_output_salvo("send")
+
+    def sink_exec(ctx, packets):
+        for port_name, pkts in packets.items():
+            for pkt in pkts:
+                results.append(ctx.consume_packet(pkt))
+
+    net.set_node_exec("Source", source_exec)
+    net.set_node_exec("MyCounter", result.exec_node_func)
+    net.set_node_exec("Sink", sink_exec)
+
+    net.inject_source_epoch("Source")
+    net.start()
+
+    print(f"Results (showing count starting at 100):")
+    for r in results:
+        print(f"  {r}")
+
+    return results
+
+# %% [markdown]
+# ## Using Net.from_factory
+#
+# The `Net.from_factory` static method provides a convenient way to load factories.
+# This example shows how it would work with a registered factory module.
+
+# %%
+#|export
+def run_net_from_factory_concept():
+    """
+    Demonstrate the Net.from_factory API concept.
+
+    Note: In practice, you would use this with factory modules installed
+    in your Python environment:
+
+        spec, exec_fn, start_fn, stop_fn, failed_fn = Net.from_factory(
+            "my_package.factories.create_processor",
+            batch_size=100,
+            timeout=30.0,
+        )
+        node = Node(**spec)
+        net.set_node_exec(node.name, exec_fn, start_fn, stop_fn, failed_fn)
+    """
+    print("\n" + "=" * 60)
+    print("Net.from_factory API Concept")
+    print("=" * 60)
+
+    print("""
+The Net.from_factory method loads a factory module and returns:
+    (node_spec, exec_func, start_func, stop_func, failed_func)
+
+Example usage:
+
+    # Load factory and get spec + functions
+    spec, exec_fn, start_fn, stop_fn, failed_fn = Net.from_factory(
+        "my_package.factories.data_processor",
+        input_format="json",
+        output_format="csv",
+    )
+
+    # Create the node
+    node = Node(**spec)
+
+    # Add to graph and configure net
+    graph = Graph([source, node, sink], edges)
+    net = Net(graph)
+    net.set_node_exec(node.name, exec_fn, start_fn, stop_fn, failed_fn)
+""")
+
+# %% [markdown]
+# ## Factories in TOML DSL
+#
+# Factory information can be included in TOML configuration files:
+
+# %%
+#|export
+def run_toml_factory_example():
+    """Demonstrate factory definitions in TOML DSL."""
+    print("\n" + "=" * 60)
+    print("Factories in TOML DSL")
+    print("=" * 60)
+
+    toml_example = '''
+[net]
+on_error = "raise"
+
+# Node defined using a factory
+[nodes.Processor]
+factory = "my_package.factories.create_processor"
+factory_args = { batch_size = 100, timeout = 30.0 }
+
+# The factory generates the node spec, but you can still
+# override or add port definitions
+in_ports = { in = {} }
+out_ports = { out = {} }
+
+[nodes.Processor.in_salvo_conditions.receive]
+max_salvos = 1
+ports = "in"
+when = "nonempty(in)"
+
+[nodes.Processor.out_salvo_conditions.send]
+max_salvos = "infinite"
+ports = "out"
+when = "nonempty(out)"
+
+# Configuration options (separate from factory_args)
+[nodes.Processor.options]
+pool = "compute"
+retries = 2
+defer_net_actions = true
+
+[nodes.Source]
+out_ports = { out = {} }
+
+[nodes.Source.out_salvo_conditions.send]
+max_salvos = "infinite"
+ports = "out"
+when = "nonempty(out)"
+
+[nodes.Sink]
+in_ports = { in = {} }
+
+[nodes.Sink.in_salvo_conditions.receive]
+max_salvos = 1
+ports = "in"
+when = "nonempty(in)"
+
+[[edges]]
+from = "Source.out"
+to = "Processor.in"
+
+[[edges]]
+from = "Processor.out"
+to = "Sink.in"
+'''
+
+    print("Example TOML with factory definition:")
+    print("-" * 40)
+    print(toml_example)
+    print("-" * 40)
+
+    # Parse the TOML (won't resolve the factory since it doesn't exist)
+    config = parse_toml_string(toml_example)
+
+    print(f"\nParsed factory info:")
+    print(f"  Node: Processor")
+    print(f"  Factory: {config.node_factories.get('Processor', {}).get('factory')}")
+    print(f"  Factory args: {config.node_factories.get('Processor', {}).get('factory_args')}")
+
+# %% [markdown]
+# ## Factory Pattern Benefits
+#
+# Using factories provides several benefits:
+#
+# 1. **Reusability**: Create standardized node types that can be instantiated
+#    with different configurations
+# 2. **Encapsulation**: Keep related spec and execution logic together
+# 3. **Serialization**: Factory path and args can be saved in TOML for
+#    reproducible configurations
+# 4. **Testing**: Test factory functions independently of the full net
+
+# %%
+#|export
+def show_factory_pattern():
+    """Show the benefits of the factory pattern."""
+    print("\n" + "=" * 60)
+    print("Factory Pattern Benefits")
+    print("=" * 60)
+
+    print("""
+Factory Structure:
+------------------
+A factory module or function provides:
+
+1. get_node_spec(**args) -> dict
+   - Returns kwargs for Node constructor
+   - Should be lightweight (no heavy initialization)
+   - Good for UI introspection
+
+2. get_node_funcs(**args) -> tuple
+   - Returns (exec_func, start_func, stop_func, failed_func)
+   - Any function can be None
+   - Can capture factory args in closures
+
+OR
+
+A single function that returns NodeFactoryResult:
+   - Combines spec and funcs in one call
+   - More flexible for complex factories
+
+Example Factory Module:
+-----------------------
+# my_factories.py
+
+from netrun import NodeFactoryResult, Port, ...
+
+def get_node_spec(name="MyNode", buffer_size=100):
+    return {
+        "name": name,
+        "in_ports": {"in": Port(slots=buffer_size)},
+        "out_ports": {"out": Port()},
+        ...
+    }
+
+def get_node_funcs(name="MyNode", buffer_size=100):
+    buffer = []
+
+    def exec_func(ctx, packets):
+        # Uses buffer_size from closure
+        ...
+
+    return (exec_func, None, None, None)
+
+Usage:
+------
+# Using load_factory
+result = load_factory("my_factories", buffer_size=500)
+node = Node(**result.node_spec)
+net.set_node_exec(node.name, result.exec_node_func)
+
+# Using Net.from_factory
+spec, exec_fn, *_ = Net.from_factory("my_factories", buffer_size=500)
+""")
+
+# %%
+if __name__ == "__main__":
+    run_inline_factory_example()
+    run_factory_result_example()
+    run_net_from_factory_concept()
+    run_toml_factory_example()
+    show_factory_pattern()

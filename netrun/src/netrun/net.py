@@ -1655,4 +1655,62 @@ class Net:
                     port_name = port_key[4:]
                     net.set_output_port_type(node_name, port_name, type_spec)
 
+        # Resolve and set factories
+        if resolve_funcs:
+            from .factories import load_factory
+
+            for node_name, factory_info in config.node_factories.items():
+                factory_path = factory_info.get("factory")
+                factory_args = factory_info.get("factory_args", {})
+
+                if factory_path:
+                    result = load_factory(factory_path, **factory_args)
+
+                    # Set the exec functions from the factory
+                    if result.exec_node_func:
+                        net.set_node_exec(
+                            node_name,
+                            result.exec_node_func,
+                            start_func=result.start_node_func,
+                            stop_func=result.stop_node_func,
+                            failed_func=result.exec_failed_node_func,
+                        )
+
         return net
+
+    @staticmethod
+    def from_factory(
+        factory_path: str,
+        **factory_args
+    ) -> tuple:
+        """
+        Load a node factory and return its spec and functions.
+
+        This is a convenience method for working with node factories.
+
+        Args:
+            factory_path: Dotted import path to the factory module
+            **factory_args: Arguments to pass to the factory functions
+
+        Returns:
+            Tuple of (node_spec, exec_func, start_func, stop_func, failed_func)
+
+        Example:
+            spec, exec_fn, start_fn, stop_fn, failed_fn = Net.from_factory(
+                "my_module.my_factory",
+                num_inputs=3,
+                timeout=30,
+            )
+            node = Node(**spec)
+            net.set_node_exec(node.name, exec_fn, start_fn, stop_fn, failed_fn)
+        """
+        from .factories import load_factory
+
+        result = load_factory(factory_path, **factory_args)
+        return (
+            result.node_spec,
+            result.exec_node_func,
+            result.start_node_func,
+            result.stop_node_func,
+            result.exec_failed_node_func,
+        )

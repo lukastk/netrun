@@ -100,6 +100,19 @@ from .dsl import (
     get_import_path,
 )
 
+# Re-export factories
+from .factories import (
+    NodeFactory,
+    NodeFactoryResult,
+    FactoryError,
+    FactoryNotFoundError,
+    InvalidFactoryError,
+    load_factory,
+    create_node_from_factory,
+    is_json_serializable,
+    validate_factory_args,
+)
+
 # Re-export Net and netrun_sim types
 from .net import (
     # Main class

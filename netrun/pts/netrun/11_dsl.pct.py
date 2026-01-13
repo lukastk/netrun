@@ -685,6 +685,7 @@ class NetDSLConfig:
     process_pools: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     node_configs: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     node_exec_paths: Dict[str, Dict[str, str]] = field(default_factory=dict)
+    node_factories: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     port_types: Dict[str, Dict[str, Any]] = field(default_factory=dict)
     meta: Dict[str, Any] = field(default_factory=dict)
 
@@ -776,6 +777,15 @@ def _parse_toml_data(data: Dict[str, Any]) -> NetDSLConfig:
         if port_types:
             config.port_types[node_name] = port_types
 
+        # Factory info
+        if "factory" in node_data:
+            factory_info = {
+                "factory": node_data["factory"],
+            }
+            if "factory_args" in node_data:
+                factory_info["factory_args"] = node_data["factory_args"]
+            config.node_factories[node_name] = factory_info
+
     return config
 
 # %% [markdown]
@@ -856,6 +866,14 @@ def net_config_to_toml(config: NetDSLConfig) -> str:
                 node_table["stop_node_func"] = paths["stop_func"]
             if "failed_func" in paths:
                 node_table["exec_failed_node_func"] = paths["failed_func"]
+
+        # Factory info
+        if node_name in config.node_factories:
+            factory_info = config.node_factories[node_name]
+            if "factory" in factory_info:
+                node_table["factory"] = factory_info["factory"]
+            if "factory_args" in factory_info:
+                node_table["factory_args"] = factory_info["factory_args"]
 
         nodes_table[node_name] = node_table
 
