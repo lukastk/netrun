@@ -1,6 +1,6 @@
 # netrun Development Plan
 
-This document outlines the development plan for the `netrun` Python package, which provides a high-level runtime for flow-based development graphs built on top of `netrun-sim`.
+This document outlines the development plan for the `netrun` Python package, which provides a high-level runtime for flow-based development graphs built on top of `netrun-sim`. Please see `PROJECT_SPEC.md` for further details on the package.
 
 ---
 
