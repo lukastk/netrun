@@ -3,7 +3,7 @@
 import pytest
 from datetime import datetime
 
-from netrun.core import (
+from netrun import (
     # Graph types
     Graph,
     Node,

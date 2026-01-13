@@ -4,7 +4,7 @@ __all__ = ['edges', 'execution_log', 'graph', 'net', 'net2', 'processor2', 'proc
 
 # %% nbs/examples/03_async_nodes.ipynb 2
 import asyncio
-from netrun.core import (
+from netrun import (
     # Graph building
     Graph,
     Node,

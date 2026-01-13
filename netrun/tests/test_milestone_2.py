@@ -3,7 +3,7 @@
 import pytest
 from datetime import datetime, timedelta
 
-from netrun.core import (
+from netrun import (
     # Graph types
     Graph,
     Node,
@@ -30,10 +30,9 @@ from netrun.core import (
     # Errors
     DeferredPacketIdAccessError,
     EpochCancelled,
-    # Internal functions
-    _commit_deferred_actions,
-    _unconsume_packets_for_retry,
 )
+# Internal functions for testing
+from netrun.net import _commit_deferred_actions, _unconsume_packets_for_retry
 
 
 # =============================================================================
@@ -159,7 +158,7 @@ def net_with_running_epoch(simple_graph):
     # Transport packet to Source's output port
     # First we need to create an epoch for Source
     # Create and start an epoch manually
-    from netrun.core import Salvo
+    from netrun import Salvo
     salvo = Salvo({})  # Empty input salvo for Source (it has no input ports)
     action = NetAction.create_and_start_epoch("Source", salvo)
     events = net._sim.do_action(action)

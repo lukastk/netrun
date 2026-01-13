@@ -12,7 +12,7 @@ import asyncio
 import tempfile
 from pathlib import Path
 
-from netrun.core import (
+from netrun import (
     # Error types
     NetrunRuntimeError,
     PacketTypeMismatch,
@@ -518,20 +518,20 @@ class TestReExports:
 
     def test_graph_types_available(self):
         """Graph types are importable from netrun.core."""
-        from netrun.core import Graph, Node, Edge, Port, PortType, PortRef
+        from netrun import Graph, Node, Edge, Port, PortType, PortRef
         assert Graph is not None
         assert Node is not None
         assert Edge is not None
 
     def test_net_types_available(self):
         """Net types are importable from netrun.core."""
-        from netrun.core import NetSim, Packet, Epoch, PacketLocation
+        from netrun import NetSim, Packet, Epoch, PacketLocation
         assert NetSim is not None
         assert Packet is not None
 
     def test_error_types_from_netrun_sim(self):
         """netrun_sim errors are re-exported."""
-        from netrun.core import (
+        from netrun import (
             NodeNotFoundError,
             PacketNotFoundError,
             EpochNotFoundError,

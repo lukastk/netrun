@@ -3,7 +3,7 @@
 __all__ = ['computation_count', 'compute_value', 'consumed', 'edges', 'graph', 'net', 'processor_exec', 'processor_node', 'processor_start', 'processor_stop', 'sink_exec', 'sink_node', 'source_exec', 'source_node', 'store']
 
 # %% nbs/examples/00_basic_setup.ipynb 2
-from netrun.core import (
+from netrun import (
     # Graph building
     Graph,
     Node,

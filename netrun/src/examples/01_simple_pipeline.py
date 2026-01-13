@@ -3,7 +3,7 @@
 __all__ = ['actual_messages', 'all_processed', 'edges', 'execution_log', 'expected_messages', 'graph', 'net', 'processor_exec', 'processor_node', 'results', 'sink_exec', 'sink_node', 'source_epoch', 'source_exec', 'source_node']
 
 # %% nbs/examples/01_simple_pipeline.ipynb 2
-from netrun.core import (
+from netrun import (
     # Graph building
     Graph,
     Node,

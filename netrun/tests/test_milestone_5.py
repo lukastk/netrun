@@ -6,14 +6,15 @@ import pytest
 import asyncio
 from datetime import datetime
 
-from netrun.core import (
+from netrun import (
     Graph, Node, Edge, Port, PortType, PortRef, PortState,
     MaxSalvos, SalvoCondition, SalvoConditionTerm,
     Net, NetState, NodeConfig, NodeExecFuncs,
     NodeExecutionContext, NodeFailureContext,
     NodeExecutionFailed, EpochCancelled,
-    _is_async_func,
 )
+# Internal functions for testing
+from netrun.net import _is_async_func
 
 
 # ============================================================================

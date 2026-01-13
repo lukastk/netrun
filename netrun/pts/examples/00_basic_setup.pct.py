@@ -34,7 +34,7 @@
 
 # %%
 #|export
-from netrun.core import (
+from netrun import (
     # Graph building
     Graph,
     Node,

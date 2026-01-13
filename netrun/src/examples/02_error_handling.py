@@ -4,7 +4,7 @@ __all__ = ['call_count', 'dlq_entries', 'edges', 'error_callback', 'error_log', 
 
 # %% nbs/examples/02_error_handling.ipynb 2
 import random
-from netrun.core import (
+from netrun import (
     # Graph building
     Graph,
     Node,

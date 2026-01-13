@@ -1,0 +1,56 @@
+# ---
+# jupyter:
+#   kernelspec:
+#     display_name: .venv
+#     language: python
+#     name: python3
+# ---
+
+# %% [markdown]
+# # Node Configuration
+#
+# Configuration dataclasses for nodes and their execution settings.
+
+# %%
+#|default_exp config
+
+# %%
+#|hide
+from nblite import nbl_export, show_doc; nbl_export();
+
+# %%
+#|export
+from dataclasses import dataclass
+from typing import Any, Callable, List, Optional, Union
+
+
+@dataclass
+class NodeConfig:
+    """Configuration for a node's execution behavior."""
+    pool: Optional[Union[str, List[str]]] = None
+    max_parallel_epochs: Optional[int] = None
+    rate_limit_per_second: Optional[float] = None
+    defer_net_actions: bool = False
+    retries: int = 0
+    retry_wait: float = 0.0
+    timeout: Optional[float] = None
+    dead_letter_queue: bool = True
+    capture_stdout: bool = True
+    echo_stdout: bool = False
+    pool_init_mode: str = "per_worker"  # "per_worker" or "global"
+
+    def __post_init__(self):
+        # Enforce constraint: retries > 0 requires defer_net_actions
+        if self.retries > 0 and not self.defer_net_actions:
+            raise ValueError(
+                "defer_net_actions must be True when retries > 0"
+            )
+
+
+@dataclass
+class NodeExecFuncs:
+    """Execution functions for a node."""
+    exec_func: Optional[Callable] = None
+    start_func: Optional[Callable] = None
+    stop_func: Optional[Callable] = None
+    failed_func: Optional[Callable] = None
