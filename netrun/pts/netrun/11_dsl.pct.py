@@ -1,0 +1,884 @@
+# ---
+# jupyter:
+#   kernelspec:
+#     display_name: .venv
+#     language: python
+#     name: python3
+# ---
+
+# %% [markdown]
+# # DSL Format
+#
+# TOML-based serialization for netrun Nets.
+#
+# This module provides:
+# - Salvo condition expression parser
+# - TOML serialization and deserialization
+# - Helper functions for import path resolution
+
+# %%
+#|default_exp dsl
+
+# %%
+#|hide
+from nblite import nbl_export, show_doc; nbl_export();
+
+# %%
+#|export
+import re
+import importlib
+from typing import Any, Callable, Dict, List, Optional, Tuple, Union
+from dataclasses import dataclass, field
+from pathlib import Path
+
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib
+
+import tomlkit
+
+from netrun_sim import (
+    Graph, Node, Edge, Port, PortType, PortRef,
+    PortSlotSpec, PortState, PacketCount,
+    MaxSalvos, SalvoCondition, SalvoConditionTerm,
+)
+
+# %% [markdown]
+# ## Salvo Condition Expression Parser
+#
+# Parses expressions like `nonempty(port)` and `count(port) >= 5` into `SalvoConditionTerm` objects.
+
+# %%
+#|export
+class ExpressionParseError(Exception):
+    """Error parsing a salvo condition expression."""
+    pass
+
+
+@dataclass
+class Token:
+    """A token from the expression lexer."""
+    type: str
+    value: str
+    position: int
+
+
+class ExpressionLexer:
+    """Lexer for salvo condition expressions."""
+
+    # Token patterns
+    PATTERNS = [
+        (r'\s+', None),  # Whitespace (skip)
+        (r'nonempty', 'NONEMPTY'),
+        (r'empty', 'EMPTY'),
+        (r'full', 'FULL'),
+        (r'count', 'COUNT'),
+        (r'and', 'AND'),
+        (r'or', 'OR'),
+        (r'not', 'NOT'),
+        (r'>=', 'GTE'),
+        (r'<=', 'LTE'),
+        (r'==', 'EQ'),
+        (r'!=', 'NEQ'),
+        (r'>', 'GT'),
+        (r'<', 'LT'),
+        (r'\(', 'LPAREN'),
+        (r'\)', 'RPAREN'),
+        (r'\d+', 'NUMBER'),
+        (r'[a-zA-Z_][a-zA-Z0-9_]*', 'IDENT'),
+    ]
+
+    def __init__(self, text: str):
+        self.text = text
+        self.pos = 0
+        self.tokens: List[Token] = []
+
+    def tokenize(self) -> List[Token]:
+        """Tokenize the input text."""
+        while self.pos < len(self.text):
+            match = None
+            for pattern, token_type in self.PATTERNS:
+                regex = re.compile(pattern)
+                match = regex.match(self.text, self.pos)
+                if match:
+                    if token_type is not None:
+                        self.tokens.append(Token(token_type, match.group(), self.pos))
+                    self.pos = match.end()
+                    break
+
+            if not match:
+                raise ExpressionParseError(
+                    f"Unexpected character at position {self.pos}: '{self.text[self.pos]}'"
+                )
+
+        return self.tokens
+
+
+class ExpressionParser:
+    """
+    Parser for salvo condition expressions.
+
+    Grammar:
+        expr     -> or_expr
+        or_expr  -> and_expr ('or' and_expr)*
+        and_expr -> not_expr ('and' not_expr)*
+        not_expr -> 'not' not_expr | primary
+        primary  -> func_call | '(' expr ')'
+        func_call -> ('nonempty' | 'empty' | 'full') '(' IDENT ')'
+                   | 'count' '(' IDENT ')' comparison NUMBER
+        comparison -> '>=' | '<=' | '==' | '!=' | '>' | '<'
+    """
+
+    def __init__(self, tokens: List[Token]):
+        self.tokens = tokens
+        self.pos = 0
+
+    def parse(self) -> SalvoConditionTerm:
+        """Parse the tokens into a SalvoConditionTerm."""
+        if not self.tokens:
+            raise ExpressionParseError("Empty expression")
+        result = self._parse_or_expr()
+        if self.pos < len(self.tokens):
+            raise ExpressionParseError(
+                f"Unexpected token: {self.tokens[self.pos].value}"
+            )
+        return result
+
+    def _current_token(self) -> Optional[Token]:
+        if self.pos < len(self.tokens):
+            return self.tokens[self.pos]
+        return None
+
+    def _consume(self, expected_type: str) -> Token:
+        token = self._current_token()
+        if token is None:
+            raise ExpressionParseError(f"Expected {expected_type}, got end of input")
+        if token.type != expected_type:
+            raise ExpressionParseError(
+                f"Expected {expected_type}, got {token.type} at position {token.position}"
+            )
+        self.pos += 1
+        return token
+
+    def _match(self, *types: str) -> bool:
+        token = self._current_token()
+        return token is not None and token.type in types
+
+    def _parse_or_expr(self) -> SalvoConditionTerm:
+        left = self._parse_and_expr()
+        while self._match('OR'):
+            self.pos += 1  # consume 'or'
+            right = self._parse_and_expr()
+            left = SalvoConditionTerm.or_([left, right])
+        return left
+
+    def _parse_and_expr(self) -> SalvoConditionTerm:
+        left = self._parse_not_expr()
+        while self._match('AND'):
+            self.pos += 1  # consume 'and'
+            right = self._parse_not_expr()
+            left = SalvoConditionTerm.and_([left, right])
+        return left
+
+    def _parse_not_expr(self) -> SalvoConditionTerm:
+        if self._match('NOT'):
+            self.pos += 1  # consume 'not'
+            expr = self._parse_not_expr()
+            return SalvoConditionTerm.not_(expr)
+        return self._parse_primary()
+
+    def _parse_primary(self) -> SalvoConditionTerm:
+        token = self._current_token()
+        if token is None:
+            raise ExpressionParseError("Unexpected end of expression")
+
+        if token.type == 'LPAREN':
+            self.pos += 1  # consume '('
+            expr = self._parse_or_expr()
+            self._consume('RPAREN')
+            return expr
+
+        if token.type in ('NONEMPTY', 'EMPTY', 'FULL'):
+            return self._parse_simple_func()
+
+        if token.type == 'COUNT':
+            return self._parse_count_func()
+
+        raise ExpressionParseError(
+            f"Unexpected token: {token.value} at position {token.position}"
+        )
+
+    def _parse_simple_func(self) -> SalvoConditionTerm:
+        """Parse nonempty(port), empty(port), full(port)."""
+        func_token = self._current_token()
+        self.pos += 1  # consume function name
+        self._consume('LPAREN')
+        port_token = self._consume('IDENT')
+        self._consume('RPAREN')
+
+        port_name = port_token.value
+
+        if func_token.type == 'NONEMPTY':
+            return SalvoConditionTerm.port(port_name, PortState.non_empty())
+        elif func_token.type == 'EMPTY':
+            return SalvoConditionTerm.port(port_name, PortState.empty())
+        elif func_token.type == 'FULL':
+            return SalvoConditionTerm.port(port_name, PortState.full())
+        else:
+            raise ExpressionParseError(f"Unknown function: {func_token.value}")
+
+    def _parse_count_func(self) -> SalvoConditionTerm:
+        """Parse count(port) >= N style expressions."""
+        self.pos += 1  # consume 'count'
+        self._consume('LPAREN')
+        port_token = self._consume('IDENT')
+        self._consume('RPAREN')
+
+        port_name = port_token.value
+
+        # Parse comparison operator
+        op_token = self._current_token()
+        if op_token is None or op_token.type not in ('GTE', 'LTE', 'EQ', 'NEQ', 'GT', 'LT'):
+            raise ExpressionParseError("Expected comparison operator after count()")
+        self.pos += 1
+
+        # Parse number
+        num_token = self._consume('NUMBER')
+        count = int(num_token.value)
+
+        # Create the appropriate PortState
+        if op_token.type == 'GTE':
+            state = PortState.equals_or_greater_than(count)
+        elif op_token.type == 'LTE':
+            state = PortState.equals_or_less_than(count)
+        elif op_token.type == 'EQ':
+            state = PortState.equals(count)
+        elif op_token.type == 'GT':
+            state = PortState.greater_than(count)
+        elif op_token.type == 'LT':
+            state = PortState.less_than(count)
+        elif op_token.type == 'NEQ':
+            # not equal is tricky - use not(equals(n))
+            return SalvoConditionTerm.not_(
+                SalvoConditionTerm.port(port_name, PortState.equals(count))
+            )
+        else:
+            raise ExpressionParseError(f"Unknown comparison: {op_token.type}")
+
+        return SalvoConditionTerm.port(port_name, state)
+
+
+def parse_salvo_condition_expr(expr: str) -> SalvoConditionTerm:
+    """
+    Parse a salvo condition expression into a SalvoConditionTerm.
+
+    Examples:
+        "nonempty(in)" -> SalvoConditionTerm.port("in", PortState.non_empty())
+        "count(in) >= 5" -> SalvoConditionTerm.port("in", PortState.at_least(5))
+        "nonempty(a) and nonempty(b)" -> SalvoConditionTerm.and_term(...)
+
+    Args:
+        expr: The expression string
+
+    Returns:
+        A SalvoConditionTerm representing the expression
+
+    Raises:
+        ExpressionParseError: If the expression is invalid
+    """
+    lexer = ExpressionLexer(expr)
+    tokens = lexer.tokenize()
+    parser = ExpressionParser(tokens)
+    return parser.parse()
+
+# %% [markdown]
+# ## TOML Serialization Helpers
+
+# %%
+#|export
+def resolve_import_path(path: str) -> Any:
+    """
+    Resolve a dotted import path to an object.
+
+    Example: "my_module.my_func" -> my_func
+
+    Args:
+        path: Dotted import path like "module.submodule.object"
+
+    Returns:
+        The resolved object
+
+    Raises:
+        ImportError: If the module or object cannot be found
+    """
+    parts = path.rsplit('.', 1)
+    if len(parts) == 1:
+        # Just a module name
+        return importlib.import_module(parts[0])
+    module_path, obj_name = parts
+    module = importlib.import_module(module_path)
+    return getattr(module, obj_name)
+
+
+def get_import_path(obj: Any) -> Optional[str]:
+    """
+    Get the import path for an object.
+
+    Args:
+        obj: Any Python object (function, class, etc.)
+
+    Returns:
+        Import path like "module.submodule.object" or None if not resolvable
+    """
+    if hasattr(obj, '__module__') and hasattr(obj, '__name__'):
+        return f"{obj.__module__}.{obj.__name__}"
+    return None
+
+# %% [markdown]
+# ## Port State Serialization
+
+# %%
+#|export
+def port_state_to_expr(state: PortState) -> str:
+    """Convert a PortState to an expression string fragment."""
+    # This is a simplified version - PortState internals would need inspection
+    # For now, we'll handle the common cases based on how we create them
+    return "nonempty"  # Placeholder - would need actual PortState introspection
+
+
+def salvo_term_to_expr(term: SalvoConditionTerm, port_name: str = None) -> str:
+    """
+    Convert a SalvoConditionTerm back to an expression string.
+
+    Note: This is a best-effort conversion. Complex terms may not round-trip perfectly.
+    """
+    # This would require introspection of the SalvoConditionTerm structure
+    # For now, return a placeholder
+    if port_name:
+        return f"nonempty({port_name})"
+    return "nonempty(port)"
+
+# %% [markdown]
+# ## Helper Functions for Serialization
+
+# %%
+#|export
+def _is_port_slots_finite(slots_spec: PortSlotSpec) -> bool:
+    """Check if a PortSlotSpec is finite."""
+    return slots_spec != PortSlotSpec.infinite()
+
+
+def _get_port_slots_count(slots_spec: PortSlotSpec) -> int:
+    """Extract the count from a finite PortSlotSpec."""
+    # Parse from string representation: "PortSlotSpec.finite(5)"
+    s = str(slots_spec)
+    import re
+    match = re.search(r'finite\((\d+)\)', s)
+    if match:
+        return int(match.group(1))
+    raise ValueError(f"Cannot extract count from: {s}")
+
+
+def _is_max_salvos_infinite(max_salvos: MaxSalvos) -> bool:
+    """Check if a MaxSalvos is infinite."""
+    return max_salvos == MaxSalvos.infinite()
+
+
+def _get_max_salvos_count(max_salvos: MaxSalvos) -> int:
+    """Extract the count from a finite MaxSalvos."""
+    # Parse from string representation: "MaxSalvos.finite(3)"
+    s = str(max_salvos)
+    import re
+    match = re.search(r'finite\((\d+)\)', s)
+    if match:
+        return int(match.group(1))
+    raise ValueError(f"Cannot extract count from: {s}")
+
+# %% [markdown]
+# ## Node Serialization
+
+# %%
+#|export
+def port_to_dict(port: Port) -> Dict[str, Any]:
+    """Convert a Port to a dictionary for TOML serialization."""
+    result = {}
+    slots = port.slots_spec
+    if _is_port_slots_finite(slots):
+        result["slots"] = _get_port_slots_count(slots)
+    # If infinite, we don't include slots (it's the default)
+    return result
+
+
+def dict_to_port(data: Union[Dict, None]) -> Port:
+    """Convert a dictionary to a Port."""
+    if data is None or not data:
+        return Port()  # Default port
+
+    slots = data.get("slots")
+    if slots is not None:
+        return Port(PortSlotSpec.finite(slots))
+    return Port()
+
+
+def node_to_dict(node: Node) -> Dict[str, Any]:
+    """Convert a Node to a dictionary for TOML serialization."""
+    result = {"name": node.name}
+
+    # Input ports
+    if node.in_ports:
+        in_ports = {}
+        for name, port in node.in_ports.items():
+            port_dict = port_to_dict(port)
+            if port_dict:
+                in_ports[name] = port_dict
+            else:
+                in_ports[name] = {}
+        if in_ports:
+            result["in_ports"] = in_ports
+
+    # Output ports
+    if node.out_ports:
+        out_ports = {}
+        for name, port in node.out_ports.items():
+            port_dict = port_to_dict(port)
+            if port_dict:
+                out_ports[name] = port_dict
+            else:
+                out_ports[name] = {}
+        if out_ports:
+            result["out_ports"] = out_ports
+
+    # Input salvo conditions
+    if node.in_salvo_conditions:
+        in_salvos = {}
+        for name, cond in node.in_salvo_conditions.items():
+            in_salvos[name] = salvo_condition_to_dict(cond)
+        result["in_salvo_conditions"] = in_salvos
+
+    # Output salvo conditions
+    if node.out_salvo_conditions:
+        out_salvos = {}
+        for name, cond in node.out_salvo_conditions.items():
+            out_salvos[name] = salvo_condition_to_dict(cond)
+        result["out_salvo_conditions"] = out_salvos
+
+    return result
+
+
+def _packet_count_to_value(pc) -> Union[str, int]:
+    """Convert a PacketCount to a serializable value."""
+    s = str(pc)
+    if s == "PacketCount.All":
+        return "all"
+    # Parse "PacketCount(N)"
+    import re
+    match = re.search(r'PacketCount\((\d+)\)', s)
+    if match:
+        return int(match.group(1))
+    return "all"
+
+
+def _ports_to_serializable(ports) -> Union[str, Dict[str, Any]]:
+    """Convert ports specification to a serializable format."""
+    if isinstance(ports, str):
+        return ports
+    if isinstance(ports, dict):
+        # Convert PacketCount values to strings/ints
+        result = {}
+        for port_name, packet_count in ports.items():
+            result[port_name] = _packet_count_to_value(packet_count)
+        # If there's only one port with "all", simplify to just the port name
+        if len(result) == 1 and list(result.values())[0] == "all":
+            return list(result.keys())[0]
+        return result
+    return str(ports)
+
+
+def salvo_condition_to_dict(cond: SalvoCondition) -> Dict[str, Any]:
+    """Convert a SalvoCondition to a dictionary."""
+    result = {}
+
+    # Max salvos
+    max_salvos = cond.max_salvos
+    if _is_max_salvos_infinite(max_salvos):
+        result["max_salvos"] = "infinite"
+    else:
+        result["max_salvos"] = _get_max_salvos_count(max_salvos)
+
+    # Ports - convert to serializable format
+    ports_serialized = _ports_to_serializable(cond.ports)
+    result["ports"] = ports_serialized
+
+    # Term (expression) - simplified for now
+    # Would need full introspection of SalvoConditionTerm to serialize properly
+    # For now, we store a placeholder based on the first port
+    if isinstance(ports_serialized, str):
+        result["when"] = f"nonempty({ports_serialized})"
+    elif isinstance(ports_serialized, dict):
+        first_port = list(ports_serialized.keys())[0]
+        result["when"] = f"nonempty({first_port})"
+    else:
+        result["when"] = "true"
+
+    return result
+
+
+def dict_to_salvo_condition(data: Dict[str, Any]) -> SalvoCondition:
+    """Convert a dictionary to a SalvoCondition."""
+    # Parse max_salvos
+    max_salvos_val = data.get("max_salvos", "infinite")
+    if max_salvos_val == "infinite":
+        max_salvos = MaxSalvos.infinite()
+    else:
+        max_salvos = MaxSalvos.finite(int(max_salvos_val))
+
+    # Get ports
+    ports = data.get("ports", "")
+
+    # Parse the when expression
+    when_expr = data.get("when", "")
+    if when_expr:
+        term = parse_salvo_condition_expr(when_expr)
+    else:
+        # Default to non-empty check on the ports
+        term = SalvoConditionTerm.port(ports, PortState.non_empty())
+
+    return SalvoCondition(max_salvos, ports, term)
+
+
+def dict_to_node(name: str, data: Dict[str, Any]) -> Node:
+    """Convert a dictionary to a Node."""
+    # Parse input ports
+    in_ports = {}
+    in_ports_data = data.get("in_ports", {})
+    if isinstance(in_ports_data, list):
+        # Simple list of port names
+        for port_name in in_ports_data:
+            in_ports[port_name] = Port()
+    elif isinstance(in_ports_data, dict):
+        for port_name, port_data in in_ports_data.items():
+            in_ports[port_name] = dict_to_port(port_data)
+
+    # Parse output ports
+    out_ports = {}
+    out_ports_data = data.get("out_ports", {})
+    if isinstance(out_ports_data, list):
+        for port_name in out_ports_data:
+            out_ports[port_name] = Port()
+    elif isinstance(out_ports_data, dict):
+        for port_name, port_data in out_ports_data.items():
+            out_ports[port_name] = dict_to_port(port_data)
+
+    # Parse input salvo conditions
+    in_salvo_conditions = {}
+    in_salvos_data = data.get("in_salvo_conditions", {})
+    for cond_name, cond_data in in_salvos_data.items():
+        in_salvo_conditions[cond_name] = dict_to_salvo_condition(cond_data)
+
+    # Parse output salvo conditions
+    out_salvo_conditions = {}
+    out_salvos_data = data.get("out_salvo_conditions", {})
+    for cond_name, cond_data in out_salvos_data.items():
+        out_salvo_conditions[cond_name] = dict_to_salvo_condition(cond_data)
+
+    return Node(
+        name=name,
+        in_ports=in_ports if in_ports else None,
+        out_ports=out_ports if out_ports else None,
+        in_salvo_conditions=in_salvo_conditions if in_salvo_conditions else None,
+        out_salvo_conditions=out_salvo_conditions if out_salvo_conditions else None,
+    )
+
+# %% [markdown]
+# ## Edge Serialization
+
+# %%
+#|export
+def edge_to_dict(edge: Edge) -> Dict[str, str]:
+    """Convert an Edge to a dictionary."""
+    source = edge.source
+    target = edge.target
+    return {
+        "from": f"{source.node_name}.{source.port_name}",
+        "to": f"{target.node_name}.{target.port_name}",
+    }
+
+
+def dict_to_edge(data: Dict[str, str]) -> Edge:
+    """Convert a dictionary to an Edge."""
+    from_str = data["from"]
+    to_str = data["to"]
+
+    # Parse "NodeName.port_name"
+    from_parts = from_str.rsplit('.', 1)
+    to_parts = to_str.rsplit('.', 1)
+
+    if len(from_parts) != 2 or len(to_parts) != 2:
+        raise ValueError(f"Invalid edge format: {from_str} -> {to_str}")
+
+    source = PortRef(from_parts[0], PortType.Output, from_parts[1])
+    target = PortRef(to_parts[0], PortType.Input, to_parts[1])
+
+    return Edge(source, target)
+
+# %% [markdown]
+# ## Graph Serialization
+
+# %%
+#|export
+def graph_to_dict(graph: Graph) -> Dict[str, Any]:
+    """Convert a Graph to a dictionary for TOML serialization."""
+    result = {}
+
+    # Nodes - graph.nodes() returns a dict of node_name -> Node
+    nodes_dict = {}
+    graph_nodes = graph.nodes()
+    for node_name, node in graph_nodes.items():
+        node_dict = node_to_dict(node)
+        # Remove 'name' since it's the key
+        node_dict.pop('name', None)
+        nodes_dict[node_name] = node_dict
+    result["nodes"] = nodes_dict
+
+    # Edges
+    edges_list = []
+    for edge in graph.edges():
+        edges_list.append(edge_to_dict(edge))
+    result["edges"] = edges_list
+
+    return result
+
+
+def dict_to_graph(data: Dict[str, Any]) -> Graph:
+    """Convert a dictionary to a Graph."""
+    # Parse nodes
+    nodes = []
+    nodes_data = data.get("nodes", {})
+    for node_name, node_data in nodes_data.items():
+        nodes.append(dict_to_node(node_name, node_data))
+
+    # Parse edges
+    edges = []
+    edges_data = data.get("edges", [])
+    for edge_data in edges_data:
+        edges.append(dict_to_edge(edge_data))
+
+    return Graph(nodes, edges)
+
+# %% [markdown]
+# ## Net Configuration Serialization
+
+# %%
+#|export
+@dataclass
+class NetDSLConfig:
+    """Configuration extracted from DSL for Net construction."""
+    graph: Graph
+    on_error: str = "continue"
+    consumed_packet_storage: bool = False
+    consumed_storage_limit: Optional[int] = None
+    history_file: Optional[str] = None
+    history_max_size: int = 10000
+    history_chunk_size: int = 100
+    thread_pools: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    process_pools: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    node_configs: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    node_exec_paths: Dict[str, Dict[str, str]] = field(default_factory=dict)
+    port_types: Dict[str, Dict[str, Any]] = field(default_factory=dict)
+    meta: Dict[str, Any] = field(default_factory=dict)
+
+
+def parse_toml_string(toml_str: str) -> NetDSLConfig:
+    """
+    Parse a TOML string into a NetDSLConfig.
+
+    Args:
+        toml_str: TOML configuration string
+
+    Returns:
+        NetDSLConfig with parsed configuration
+    """
+    data = tomllib.loads(toml_str)
+    return _parse_toml_data(data)
+
+
+def parse_toml_file(path: Union[str, Path]) -> NetDSLConfig:
+    """
+    Parse a TOML file into a NetDSLConfig.
+
+    Args:
+        path: Path to the TOML file
+
+    Returns:
+        NetDSLConfig with parsed configuration
+    """
+    path = Path(path)
+    with open(path, 'rb') as f:
+        data = tomllib.load(f)
+    return _parse_toml_data(data)
+
+
+def _parse_toml_data(data: Dict[str, Any]) -> NetDSLConfig:
+    """Parse TOML data into NetDSLConfig."""
+    # Parse graph
+    graph = dict_to_graph(data)
+
+    # Parse net-level config
+    net_config = data.get("net", {})
+
+    config = NetDSLConfig(
+        graph=graph,
+        on_error=net_config.get("on_error", "continue"),
+        consumed_packet_storage=net_config.get("consumed_packet_storage", False),
+        consumed_storage_limit=net_config.get("consumed_storage_limit"),
+        history_file=net_config.get("history_file"),
+        history_max_size=net_config.get("history_max_size", 10000),
+        history_chunk_size=net_config.get("history_chunk_size", 100),
+        thread_pools=net_config.get("thread_pools", {}),
+        process_pools=net_config.get("process_pools", {}),
+        meta=net_config.get("meta", {}),
+    )
+
+    # Parse node-specific configs
+    nodes_data = data.get("nodes", {})
+    for node_name, node_data in nodes_data.items():
+        # Node options
+        options = node_data.get("options", {})
+        if options:
+            config.node_configs[node_name] = options
+
+        # Node exec functions
+        exec_paths = {}
+        if "exec_node_func" in node_data:
+            exec_paths["exec_func"] = node_data["exec_node_func"]
+        if "start_node_func" in node_data:
+            exec_paths["start_func"] = node_data["start_node_func"]
+        if "stop_node_func" in node_data:
+            exec_paths["stop_func"] = node_data["stop_node_func"]
+        if "exec_failed_node_func" in node_data:
+            exec_paths["failed_func"] = node_data["exec_failed_node_func"]
+        if exec_paths:
+            config.node_exec_paths[node_name] = exec_paths
+
+        # Port types
+        port_types = {}
+        in_ports_data = node_data.get("in_ports", {})
+        if isinstance(in_ports_data, dict):
+            for port_name, port_data in in_ports_data.items():
+                if isinstance(port_data, dict) and "type" in port_data:
+                    port_types[f"in.{port_name}"] = port_data["type"]
+        out_ports_data = node_data.get("out_ports", {})
+        if isinstance(out_ports_data, dict):
+            for port_name, port_data in out_ports_data.items():
+                if isinstance(port_data, dict) and "type" in port_data:
+                    port_types[f"out.{port_name}"] = port_data["type"]
+        if port_types:
+            config.port_types[node_name] = port_types
+
+    return config
+
+# %% [markdown]
+# ## TOML Generation
+
+# %%
+#|export
+def net_config_to_toml(config: NetDSLConfig) -> str:
+    """
+    Convert a NetDSLConfig to a TOML string.
+
+    Args:
+        config: The configuration to serialize
+
+    Returns:
+        TOML string representation
+    """
+    doc = tomlkit.document()
+
+    # Net-level config
+    net_table = tomlkit.table()
+    if config.on_error != "continue":
+        net_table["on_error"] = config.on_error
+    if config.consumed_packet_storage:
+        net_table["consumed_packet_storage"] = config.consumed_packet_storage
+    if config.consumed_storage_limit is not None:
+        net_table["consumed_storage_limit"] = config.consumed_storage_limit
+    if config.history_file:
+        net_table["history_file"] = config.history_file
+    if config.history_max_size is not None and config.history_max_size != 10000:
+        net_table["history_max_size"] = config.history_max_size
+    if config.thread_pools:
+        pools_table = tomlkit.table()
+        for name, pool_config in config.thread_pools.items():
+            pools_table[name] = pool_config
+        net_table["thread_pools"] = pools_table
+    if config.process_pools:
+        pools_table = tomlkit.table()
+        for name, pool_config in config.process_pools.items():
+            pools_table[name] = pool_config
+        net_table["process_pools"] = pools_table
+    if config.meta:
+        net_table["meta"] = config.meta
+
+    if net_table:
+        doc["net"] = net_table
+
+    # Nodes
+    graph_dict = graph_to_dict(config.graph)
+    nodes_table = tomlkit.table()
+    for node_name, node_data in graph_dict.get("nodes", {}).items():
+        node_table = tomlkit.table()
+
+        # Ports
+        if "in_ports" in node_data:
+            node_table["in_ports"] = node_data["in_ports"]
+        if "out_ports" in node_data:
+            node_table["out_ports"] = node_data["out_ports"]
+
+        # Salvo conditions
+        if "in_salvo_conditions" in node_data:
+            node_table["in_salvo_conditions"] = node_data["in_salvo_conditions"]
+        if "out_salvo_conditions" in node_data:
+            node_table["out_salvo_conditions"] = node_data["out_salvo_conditions"]
+
+        # Node options
+        if node_name in config.node_configs:
+            node_table["options"] = config.node_configs[node_name]
+
+        # Exec paths
+        if node_name in config.node_exec_paths:
+            paths = config.node_exec_paths[node_name]
+            if "exec_func" in paths:
+                node_table["exec_node_func"] = paths["exec_func"]
+            if "start_func" in paths:
+                node_table["start_node_func"] = paths["start_func"]
+            if "stop_func" in paths:
+                node_table["stop_node_func"] = paths["stop_func"]
+            if "failed_func" in paths:
+                node_table["exec_failed_node_func"] = paths["failed_func"]
+
+        nodes_table[node_name] = node_table
+
+    doc["nodes"] = nodes_table
+
+    # Edges
+    edges_array = tomlkit.array()
+    for edge_data in graph_dict.get("edges", []):
+        edges_array.append(edge_data)
+    doc["edges"] = edges_array
+
+    return tomlkit.dumps(doc)
+
+
+def save_toml_file(config: NetDSLConfig, path: Union[str, Path]) -> None:
+    """
+    Save a NetDSLConfig to a TOML file.
+
+    Args:
+        config: The configuration to save
+        path: Path to write the TOML file
+    """
+    path = Path(path)
+    toml_str = net_config_to_toml(config)
+    with open(path, 'w') as f:
+        f.write(toml_str)

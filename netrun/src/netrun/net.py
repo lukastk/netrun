@@ -76,6 +76,15 @@ from .port_types import (
     PortTypeRegistry,
     check_value_type,
 )
+from .dsl import (
+    NetDSLConfig,
+    parse_toml_string,
+    parse_toml_file,
+    net_config_to_toml,
+    save_toml_file,
+    resolve_import_path,
+    get_import_path,
+)
 
 
 class NetState(Enum):
@@ -1463,3 +1472,187 @@ class Net:
         (To be implemented in Milestone 13)
         """
         raise NotImplementedError("load_checkpoint will be implemented in Milestone 13")
+
+    # -------------------------------------------------------------------------
+    # DSL Methods (Milestone 10)
+    # -------------------------------------------------------------------------
+
+    def to_dsl_config(self) -> NetDSLConfig:
+        """
+        Convert the current Net configuration to a DSLConfig.
+
+        Note: This captures the configuration but not runtime state.
+        Exec functions are only included if they have resolvable import paths.
+
+        Returns:
+            NetDSLConfig representing the current configuration
+        """
+        config = NetDSLConfig(
+            graph=self._graph,
+            on_error=self._on_error,
+            consumed_packet_storage=self._value_store._consumed_storage,
+            consumed_storage_limit=self._value_store._consumed_storage_limit,
+            history_file=str(self._event_history._file_path) if self._event_history._file_path else None,
+            history_max_size=self._event_history._max_size,
+        )
+
+        # Node configs
+        for node_name, node_config in self._node_configs.items():
+            options = {}
+            if node_config.pool:
+                options["pool"] = node_config.pool
+            if node_config.retries > 0:
+                options["retries"] = node_config.retries
+            if node_config.defer_net_actions:
+                options["defer_net_actions"] = node_config.defer_net_actions
+            if node_config.timeout is not None:
+                options["timeout"] = node_config.timeout
+            if node_config.max_parallel_epochs is not None:
+                options["max_parallel_epochs"] = node_config.max_parallel_epochs
+            if node_config.rate_limit_per_second is not None:
+                options["rate_limit_per_second"] = node_config.rate_limit_per_second
+            if options:
+                config.node_configs[node_name] = options
+
+        # Node exec paths (best effort - only if import paths are resolvable)
+        for node_name, exec_funcs in self._node_exec_funcs.items():
+            paths = {}
+            if exec_funcs.exec_func:
+                path = get_import_path(exec_funcs.exec_func)
+                if path:
+                    paths["exec_func"] = path
+            if exec_funcs.start_func:
+                path = get_import_path(exec_funcs.start_func)
+                if path:
+                    paths["start_func"] = path
+            if exec_funcs.stop_func:
+                path = get_import_path(exec_funcs.stop_func)
+                if path:
+                    paths["stop_func"] = path
+            if exec_funcs.failed_func:
+                path = get_import_path(exec_funcs.failed_func)
+                if path:
+                    paths["failed_func"] = path
+            if paths:
+                config.node_exec_paths[node_name] = paths
+
+        # Port types
+        for (node_name, port_name), type_spec in self._port_type_registry._input_port_types.items():
+            if node_name not in config.port_types:
+                config.port_types[node_name] = {}
+            config.port_types[node_name][f"in.{port_name}"] = type_spec
+        for (node_name, port_name), type_spec in self._port_type_registry._output_port_types.items():
+            if node_name not in config.port_types:
+                config.port_types[node_name] = {}
+            config.port_types[node_name][f"out.{port_name}"] = type_spec
+
+        return config
+
+    def to_toml(self) -> str:
+        """
+        Serialize the Net configuration to a TOML string.
+
+        Note: This captures the configuration but not runtime state.
+        Exec functions are only included if they have resolvable import paths.
+
+        Returns:
+            TOML string representation
+        """
+        config = self.to_dsl_config()
+        return net_config_to_toml(config)
+
+    def save_toml(self, path: Union[str, Path]) -> None:
+        """
+        Save the Net configuration to a TOML file.
+
+        Args:
+            path: Path to write the TOML file
+        """
+        config = self.to_dsl_config()
+        save_toml_file(config, path)
+
+    @classmethod
+    def from_toml(cls, toml_str: str, resolve_funcs: bool = True) -> "Net":
+        """
+        Create a Net from a TOML configuration string.
+
+        Args:
+            toml_str: TOML configuration string
+            resolve_funcs: Whether to resolve and set exec function import paths
+
+        Returns:
+            A new Net instance configured according to the TOML
+        """
+        config = parse_toml_string(toml_str)
+        return cls._from_dsl_config(config, resolve_funcs)
+
+    @classmethod
+    def from_toml_file(cls, path: Union[str, Path], resolve_funcs: bool = True) -> "Net":
+        """
+        Create a Net from a TOML configuration file.
+
+        Args:
+            path: Path to the TOML file
+            resolve_funcs: Whether to resolve and set exec function import paths
+
+        Returns:
+            A new Net instance configured according to the TOML
+        """
+        config = parse_toml_file(path)
+        return cls._from_dsl_config(config, resolve_funcs)
+
+    @classmethod
+    def _from_dsl_config(cls, config: NetDSLConfig, resolve_funcs: bool = True) -> "Net":
+        """Create a Net from a DSLConfig."""
+        # Create Net with basic config
+        net = cls(
+            graph=config.graph,
+            on_error=config.on_error,
+            consumed_packet_storage=config.consumed_packet_storage,
+            consumed_packet_storage_limit=config.consumed_storage_limit,
+            history_file=config.history_file,
+            history_max_size=config.history_max_size,
+            history_chunk_size=config.history_chunk_size,
+        )
+
+        # Apply node configs
+        for node_name, options in config.node_configs.items():
+            net.set_node_config(node_name, **options)
+
+        # Resolve and set exec functions
+        if resolve_funcs:
+            for node_name, paths in config.node_exec_paths.items():
+                exec_func = None
+                start_func = None
+                stop_func = None
+                failed_func = None
+
+                if "exec_func" in paths:
+                    exec_func = resolve_import_path(paths["exec_func"])
+                if "start_func" in paths:
+                    start_func = resolve_import_path(paths["start_func"])
+                if "stop_func" in paths:
+                    stop_func = resolve_import_path(paths["stop_func"])
+                if "failed_func" in paths:
+                    failed_func = resolve_import_path(paths["failed_func"])
+
+                if exec_func:
+                    net.set_node_exec(
+                        node_name,
+                        exec_func,
+                        start_func=start_func,
+                        stop_func=stop_func,
+                        failed_func=failed_func,
+                    )
+
+        # Set port types
+        for node_name, port_types in config.port_types.items():
+            for port_key, type_spec in port_types.items():
+                if port_key.startswith("in."):
+                    port_name = port_key[3:]
+                    net.set_input_port_type(node_name, port_name, type_spec)
+                elif port_key.startswith("out."):
+                    port_name = port_key[4:]
+                    net.set_output_port_type(node_name, port_name, type_spec)
+
+        return net

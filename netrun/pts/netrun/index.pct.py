@@ -104,6 +104,19 @@ from netrun.port_types import (
     check_value_type,
 )
 
+# Re-export DSL
+from netrun.dsl import (
+    ExpressionParseError,
+    parse_salvo_condition_expr,
+    NetDSLConfig,
+    parse_toml_string,
+    parse_toml_file,
+    net_config_to_toml,
+    save_toml_file,
+    resolve_import_path,
+    get_import_path,
+)
+
 # Re-export Net and netrun_sim types
 from netrun.net import (
     # Main class
