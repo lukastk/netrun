@@ -139,9 +139,10 @@ pub enum NetAction {
     FinishEpoch(EpochID),
     /// Cancel an epoch and destroy all packets inside it.
     CancelEpoch(EpochID),
-    /// Manually create and start an epoch with specified packets.
+    /// Manually create an epoch with specified packets.
     /// Bypasses the normal salvo condition triggering mechanism.
-    CreateAndStartEpoch(NodeName, Salvo),
+    /// The epoch is created in Startable state - call StartEpoch to begin execution.
+    CreateEpoch(NodeName, Salvo),
     /// Move a packet from inside an epoch to one of its output ports.
     LoadPacketIntoOutputPort(PacketID, PortName),
     /// Send packets from output ports onto edges according to a salvo condition.
@@ -310,7 +311,9 @@ pub enum NetEvent {
 pub enum NetActionResponseData {
     /// A packet ID (returned by CreatePacket).
     Packet(PacketID),
-    /// The started epoch (returned by StartEpoch, CreateAndStartEpoch).
+    /// The created epoch in Startable state (returned by CreateEpoch).
+    CreatedEpoch(Epoch),
+    /// The started epoch (returned by StartEpoch).
     StartedEpoch(Epoch),
     /// The finished epoch (returned by FinishEpoch).
     FinishedEpoch(Epoch),
@@ -931,7 +934,7 @@ impl NetSim {
         )
     }
 
-    fn create_and_start_epoch(&mut self, node_name: &NodeName, salvo: &Salvo) -> NetActionResponse {
+    fn create_epoch(&mut self, node_name: &NodeName, salvo: &Salvo) -> NetActionResponse {
         // Validate node exists
         let node = match self.graph.nodes().get(node_name) {
             Some(node) => node,
@@ -975,18 +978,19 @@ impl NetSim {
 
         let mut events: Vec<NetEvent> = Vec::new();
 
-        // Create the epoch
+        // Create the epoch in Startable state
         let epoch_id = Ulid::new();
         let epoch = Epoch {
             id: epoch_id,
             node_name: node_name.clone(),
             in_salvo: salvo.clone(),
             out_salvos: Vec::new(),
-            state: EpochState::Running,
+            state: EpochState::Startable,
         };
 
         // Register the epoch
         self._epochs.insert(epoch_id, epoch.clone());
+        self._startable_epochs.insert(epoch_id);
         self._node_to_epochs
             .entry(node_name.clone())
             .or_default()
@@ -1016,9 +1020,7 @@ impl NetSim {
             ));
         }
 
-        events.push(NetEvent::EpochStarted(get_utc_now(), epoch_id));
-
-        NetActionResponse::Success(NetActionResponseData::StartedEpoch(epoch), events)
+        NetActionResponse::Success(NetActionResponseData::CreatedEpoch(epoch), events)
     }
 
     fn load_packet_into_output_port(
@@ -1405,9 +1407,7 @@ impl NetSim {
             NetAction::StartEpoch(epoch_id) => self.start_epoch(epoch_id),
             NetAction::FinishEpoch(epoch_id) => self.finish_epoch(epoch_id),
             NetAction::CancelEpoch(epoch_id) => self.cancel_epoch(epoch_id),
-            NetAction::CreateAndStartEpoch(node_name, salvo) => {
-                self.create_and_start_epoch(node_name, salvo)
-            }
+            NetAction::CreateEpoch(node_name, salvo) => self.create_epoch(node_name, salvo),
             NetAction::LoadPacketIntoOutputPort(packet_id, port_name) => {
                 self.load_packet_into_output_port(packet_id, port_name)
             }

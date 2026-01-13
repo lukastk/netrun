@@ -17,6 +17,13 @@ fn get_packet_id(response: &NetActionResponse) -> netrun_sim::net::PacketID {
     }
 }
 
+fn get_created_epoch(response: &NetActionResponse) -> Epoch {
+    match response {
+        NetActionResponse::Success(NetActionResponseData::CreatedEpoch(epoch), _) => epoch.clone(),
+        _ => panic!("Expected CreatedEpoch response, got: {:?}", response),
+    }
+}
+
 fn get_started_epoch(response: &NetActionResponse) -> Epoch {
     match response {
         NetActionResponse::Success(NetActionResponseData::StartedEpoch(epoch), _) => epoch.clone(),
@@ -175,10 +182,10 @@ fn test_cancel_nonexistent_epoch() {
     ));
 }
 
-// ========== Create And Start Epoch Tests ==========
+// ========== Create Epoch Tests ==========
 
 #[test]
-fn test_create_and_start_epoch_with_invalid_node() {
+fn test_create_epoch_with_invalid_node() {
     let graph = common::linear_graph_3();
     let mut net = NetSim::new(graph);
 
@@ -187,7 +194,7 @@ fn test_create_and_start_epoch_with_invalid_node() {
         packets: vec![],
     };
 
-    let response = net.do_action(&NetAction::CreateAndStartEpoch(
+    let response = net.do_action(&NetAction::CreateEpoch(
         "NonExistent".to_string(),
         salvo,
     ));
@@ -199,7 +206,7 @@ fn test_create_and_start_epoch_with_invalid_node() {
 }
 
 #[test]
-fn test_create_and_start_epoch_node_not_found_error_contains_name() {
+fn test_create_epoch_node_not_found_error_contains_name() {
     let graph = common::linear_graph_3();
     let mut net = NetSim::new(graph);
 
@@ -208,7 +215,7 @@ fn test_create_and_start_epoch_node_not_found_error_contains_name() {
         packets: vec![],
     };
 
-    let response = net.do_action(&NetAction::CreateAndStartEpoch(
+    let response = net.do_action(&NetAction::CreateEpoch(
         "MissingNode".to_string(),
         salvo,
     ));
@@ -379,7 +386,8 @@ fn test_get_epoch() {
         packets: vec![("in".to_string(), packet_id)],
     };
     let epoch =
-        get_started_epoch(&net.do_action(&NetAction::CreateAndStartEpoch("B".to_string(), salvo)));
+        get_created_epoch(&net.do_action(&NetAction::CreateEpoch("B".to_string(), salvo)));
+    let epoch = get_started_epoch(&net.do_action(&NetAction::StartEpoch(epoch.id)));
 
     // Should find the epoch
     let found_epoch = net.get_epoch(&epoch.id);

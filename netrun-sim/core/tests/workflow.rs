@@ -17,6 +17,13 @@ fn get_packet_id(response: &NetActionResponse) -> netrun_sim::net::PacketID {
     }
 }
 
+fn get_created_epoch(response: &NetActionResponse) -> Epoch {
+    match response {
+        NetActionResponse::Success(NetActionResponseData::CreatedEpoch(epoch), _) => epoch.clone(),
+        _ => panic!("Expected CreatedEpoch response, got: {:?}", response),
+    }
+}
+
 fn get_started_epoch(response: &NetActionResponse) -> Epoch {
     match response {
         NetActionResponse::Success(NetActionResponseData::StartedEpoch(epoch), _) => epoch.clone(),
@@ -120,7 +127,8 @@ fn test_linear_flow_with_output_salvo() {
         packets: vec![("in".to_string(), input_packet_id.clone())],
     };
     let epoch =
-        get_started_epoch(&net.do_action(&NetAction::CreateAndStartEpoch("B".to_string(), salvo)));
+        get_created_epoch(&net.do_action(&NetAction::CreateEpoch("B".to_string(), salvo)));
+    let epoch = get_started_epoch(&net.do_action(&NetAction::StartEpoch(epoch.id)));
 
     // 3. Consume input packet
     net.do_action(&NetAction::ConsumePacket(input_packet_id));
@@ -292,7 +300,8 @@ fn test_cancel_epoch_workflow() {
         packets: vec![("in".to_string(), packet_id.clone())],
     };
     let epoch =
-        get_started_epoch(&net.do_action(&NetAction::CreateAndStartEpoch("B".to_string(), salvo)));
+        get_created_epoch(&net.do_action(&NetAction::CreateEpoch("B".to_string(), salvo)));
+    let epoch = get_started_epoch(&net.do_action(&NetAction::StartEpoch(epoch.id)));
 
     // Cancel the epoch
     let response = net.do_action(&NetAction::CancelEpoch(epoch.id));
@@ -345,7 +354,8 @@ fn test_multiple_sequential_epochs_on_same_node() {
         packets: vec![("in".to_string(), packet1.clone())],
     };
     let epoch1 =
-        get_started_epoch(&net.do_action(&NetAction::CreateAndStartEpoch("B".to_string(), salvo1)));
+        get_created_epoch(&net.do_action(&NetAction::CreateEpoch("B".to_string(), salvo1)));
+    let epoch1 = get_started_epoch(&net.do_action(&NetAction::StartEpoch(epoch1.id)));
 
     net.do_action(&NetAction::ConsumePacket(packet1));
     net.do_action(&NetAction::FinishEpoch(epoch1.id));
@@ -362,7 +372,8 @@ fn test_multiple_sequential_epochs_on_same_node() {
         packets: vec![("in".to_string(), packet2.clone())],
     };
     let epoch2 =
-        get_started_epoch(&net.do_action(&NetAction::CreateAndStartEpoch("B".to_string(), salvo2)));
+        get_created_epoch(&net.do_action(&NetAction::CreateEpoch("B".to_string(), salvo2)));
+    let epoch2 = get_started_epoch(&net.do_action(&NetAction::StartEpoch(epoch2.id)));
 
     // Second epoch should be on same node
     assert_eq!(epoch2.node_name, "B");
