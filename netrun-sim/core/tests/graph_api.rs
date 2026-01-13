@@ -330,6 +330,88 @@ fn test_evaluate_salvo_condition_not() {
     assert!(evaluate_salvo_condition(&condition, &counts, &ports));
 }
 
+#[test]
+fn test_evaluate_salvo_condition_true() {
+    // True should always return true, regardless of port state
+    let ports = HashMap::new();
+    let counts = HashMap::new();
+
+    let condition = SalvoConditionTerm::True;
+    assert!(evaluate_salvo_condition(&condition, &counts, &ports));
+}
+
+#[test]
+fn test_evaluate_salvo_condition_false() {
+    // False should always return false, regardless of port state
+    let ports = HashMap::new();
+    let counts = HashMap::new();
+
+    let condition = SalvoConditionTerm::False;
+    assert!(!evaluate_salvo_condition(&condition, &counts, &ports));
+}
+
+#[test]
+fn test_evaluate_salvo_condition_not_false_is_true() {
+    // NOT(False) should be true
+    let ports = HashMap::new();
+    let counts = HashMap::new();
+
+    let condition = SalvoConditionTerm::Not(Box::new(SalvoConditionTerm::False));
+    assert!(evaluate_salvo_condition(&condition, &counts, &ports));
+}
+
+#[test]
+fn test_evaluate_salvo_condition_true_in_or() {
+    // OR with True should always be true
+    let mut ports = HashMap::new();
+    ports.insert(
+        "in".to_string(),
+        Port {
+            slots_spec: PortSlotSpec::Infinite,
+        },
+    );
+
+    let condition = SalvoConditionTerm::Or(vec![
+        SalvoConditionTerm::Port {
+            port_name: "in".to_string(),
+            state: PortState::NonEmpty,
+        },
+        SalvoConditionTerm::True,
+    ]);
+
+    let mut counts = HashMap::new();
+    counts.insert("in".to_string(), 0); // Port is empty
+
+    // Should still be true because of the True term
+    assert!(evaluate_salvo_condition(&condition, &counts, &ports));
+}
+
+#[test]
+fn test_evaluate_salvo_condition_false_in_and() {
+    // AND with False should always be false
+    let mut ports = HashMap::new();
+    ports.insert(
+        "in".to_string(),
+        Port {
+            slots_spec: PortSlotSpec::Infinite,
+        },
+    );
+
+    let condition = SalvoConditionTerm::And(vec![
+        SalvoConditionTerm::Port {
+            port_name: "in".to_string(),
+            state: PortState::NonEmpty,
+        },
+        SalvoConditionTerm::False,
+    ]);
+
+    let mut counts = HashMap::new();
+    counts.insert("in".to_string(), 1); // Port is non-empty
+
+    // Should still be false because of the False term
+    assert!(!evaluate_salvo_condition(&condition, &counts, &ports));
+}
+
 // ========== PortRef Display Tests ==========
 
 #[test]
