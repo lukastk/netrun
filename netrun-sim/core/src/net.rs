@@ -406,12 +406,163 @@ impl NetSim {
 
     // NetActions
 
+    /// Helper: Try to trigger an input salvo condition for a node.
+    /// Returns (triggered: bool, events: Vec<NetEvent>).
+    fn try_trigger_input_salvo(&mut self, node_name: &NodeName) -> (bool, Vec<NetEvent>) {
+        let mut events: Vec<NetEvent> = Vec::new();
+
+        let node = match self.graph.nodes().get(node_name) {
+            Some(n) => n,
+            None => return (false, events),
+        };
+
+        let in_port_names: Vec<PortName> = node.in_ports.keys().cloned().collect();
+        let in_ports_clone: HashMap<PortName, Port> = node
+            .in_ports
+            .iter()
+            .map(|(k, v)| {
+                (
+                    k.clone(),
+                    Port {
+                        slots_spec: match v.slots_spec {
+                            PortSlotSpec::Infinite => PortSlotSpec::Infinite,
+                            PortSlotSpec::Finite(n) => PortSlotSpec::Finite(n),
+                        },
+                    },
+                )
+            })
+            .collect();
+
+        // Collect salvo condition data
+        struct SalvoConditionData {
+            name: SalvoConditionName,
+            ports: HashMap<PortName, PacketCount>,
+            term: SalvoConditionTerm,
+        }
+
+        let salvo_conditions: Vec<SalvoConditionData> = node
+            .in_salvo_conditions
+            .iter()
+            .map(|(name, cond)| SalvoConditionData {
+                name: name.clone(),
+                ports: cond.ports.clone(),
+                term: cond.term.clone(),
+            })
+            .collect();
+
+        // Check salvo conditions in order - first satisfied one wins
+        for salvo_cond_data in salvo_conditions {
+            // Calculate packet counts for all input ports
+            let port_packet_counts: HashMap<PortName, u64> = in_port_names
+                .iter()
+                .map(|port_name| {
+                    let count = self
+                        ._packets_by_location
+                        .get(&PacketLocation::InputPort(node_name.clone(), port_name.clone()))
+                        .map(|packets| packets.len() as u64)
+                        .unwrap_or(0);
+                    (port_name.clone(), count)
+                })
+                .collect();
+
+            // Check if salvo condition is satisfied
+            if evaluate_salvo_condition(&salvo_cond_data.term, &port_packet_counts, &in_ports_clone)
+            {
+                // Create a new epoch
+                let epoch_id = Ulid::new();
+
+                // Collect packets from the ports listed in salvo_condition.ports
+                let mut salvo_packets: Vec<(PortName, PacketID)> = Vec::new();
+                let mut packets_to_move: Vec<(PacketID, PortName)> = Vec::new();
+
+                for (port_name, packet_count) in &salvo_cond_data.ports {
+                    let port_location =
+                        PacketLocation::InputPort(node_name.clone(), port_name.clone());
+                    if let Some(packet_ids) = self._packets_by_location.get(&port_location) {
+                        let take_count = match packet_count {
+                            PacketCount::All => packet_ids.len(),
+                            PacketCount::Count(n) => std::cmp::min(*n as usize, packet_ids.len()),
+                        };
+                        for pid in packet_ids.iter().take(take_count) {
+                            salvo_packets.push((port_name.clone(), *pid));
+                            packets_to_move.push((*pid, port_name.clone()));
+                        }
+                    }
+                }
+
+                // Create the salvo
+                let in_salvo = Salvo {
+                    salvo_condition: salvo_cond_data.name.clone(),
+                    packets: salvo_packets,
+                };
+
+                // Create the epoch
+                let epoch = Epoch {
+                    id: epoch_id,
+                    node_name: node_name.clone(),
+                    in_salvo,
+                    out_salvos: Vec::new(),
+                    state: EpochState::Startable,
+                };
+
+                // Register the epoch
+                self._epochs.insert(epoch_id, epoch);
+                self._startable_epochs.insert(epoch_id);
+                self._node_to_epochs
+                    .entry(node_name.clone())
+                    .or_default()
+                    .push(epoch_id);
+
+                // Create a location entry for packets inside the epoch
+                let epoch_location = PacketLocation::Node(epoch_id);
+                self._packets_by_location
+                    .insert(epoch_location.clone(), IndexSet::new());
+
+                // Create output port location entries for this epoch
+                let node = self
+                    .graph
+                    .nodes()
+                    .get(node_name)
+                    .expect("Node not found for epoch creation");
+                for out_port_name in node.out_ports.keys() {
+                    let output_port_location =
+                        PacketLocation::OutputPort(epoch_id, out_port_name.clone());
+                    self._packets_by_location
+                        .insert(output_port_location, IndexSet::new());
+                }
+
+                // Move packets from input ports into the epoch
+                for (pid, _port_name) in &packets_to_move {
+                    self.move_packet(pid, epoch_location.clone());
+                    events.push(NetEvent::PacketMoved(
+                        get_utc_now(),
+                        *pid,
+                        epoch_location.clone(),
+                    ));
+                }
+
+                events.push(NetEvent::EpochCreated(get_utc_now(), epoch_id));
+                events.push(NetEvent::InputSalvoTriggered(
+                    get_utc_now(),
+                    epoch_id,
+                    salvo_cond_data.name.clone(),
+                ));
+
+                // Only one salvo condition can trigger per node per call
+                return (true, events);
+            }
+        }
+
+        (false, events)
+    }
+
     fn run_until_blocked(&mut self) -> NetActionResponse {
         let mut all_events: Vec<NetEvent> = Vec::new();
 
         loop {
             let mut made_progress = false;
 
+            // Phase 1: Move packets from edges to input ports
             // Collect all edge locations and their first packet (FIFO)
             // We need to extract data before mutating to avoid borrow issues
             struct EdgeMoveCandidate {
@@ -483,159 +634,29 @@ impl NetSim {
                 made_progress = true;
 
                 // Check input salvo conditions on the target node
-                // Extract all needed data from the graph first
-                let node = self
-                    .graph
-                    .nodes()
-                    .get(&candidate.target_node_name)
-                    .expect("Edge targets a non-existent node");
-
-                let in_port_names: Vec<PortName> = node.in_ports.keys().cloned().collect();
-                let in_ports_clone: HashMap<PortName, Port> = node
-                    .in_ports
-                    .iter()
-                    .map(|(k, v)| {
-                        (
-                            k.clone(),
-                            Port {
-                                slots_spec: match v.slots_spec {
-                                    PortSlotSpec::Infinite => PortSlotSpec::Infinite,
-                                    PortSlotSpec::Finite(n) => PortSlotSpec::Finite(n),
-                                },
-                            },
-                        )
-                    })
-                    .collect();
-
-                // Collect salvo condition data
-                struct SalvoConditionData {
-                    name: SalvoConditionName,
-                    ports: HashMap<PortName, PacketCount>,
-                    term: SalvoConditionTerm,
+                let (triggered, events) = self.try_trigger_input_salvo(&candidate.target_node_name);
+                all_events.extend(events);
+                if triggered {
+                    // Progress was already marked by the packet move
                 }
+            }
 
-                let salvo_conditions: Vec<SalvoConditionData> = node
-                    .in_salvo_conditions
-                    .iter()
-                    .map(|(name, cond)| SalvoConditionData {
-                        name: name.clone(),
-                        ports: cond.ports.clone(),
-                        term: cond.term.clone(),
-                    })
-                    .collect();
-
-                // Check salvo conditions in order - first satisfied one wins
-                for salvo_cond_data in salvo_conditions {
-                    // Calculate packet counts for all input ports
-                    let port_packet_counts: HashMap<PortName, u64> = in_port_names
-                        .iter()
-                        .map(|port_name| {
-                            let count = self
-                                ._packets_by_location
-                                .get(&PacketLocation::InputPort(
-                                    candidate.target_node_name.clone(),
-                                    port_name.clone(),
-                                ))
-                                .map(|packets| packets.len() as u64)
-                                .unwrap_or(0);
-                            (port_name.clone(), count)
-                        })
-                        .collect();
-
-                    // Check if salvo condition is satisfied
-                    if evaluate_salvo_condition(
-                        &salvo_cond_data.term,
-                        &port_packet_counts,
-                        &in_ports_clone,
-                    ) {
-                        // Create a new epoch
-                        let epoch_id = Ulid::new();
-
-                        // Collect packets from the ports listed in salvo_condition.ports
-                        let mut salvo_packets: Vec<(PortName, PacketID)> = Vec::new();
-                        let mut packets_to_move: Vec<(PacketID, PortName)> = Vec::new();
-
-                        for (port_name, packet_count) in &salvo_cond_data.ports {
-                            let port_location = PacketLocation::InputPort(
-                                candidate.target_node_name.clone(),
-                                port_name.clone(),
-                            );
-                            if let Some(packet_ids) = self._packets_by_location.get(&port_location)
-                            {
-                                let take_count = match packet_count {
-                                    PacketCount::All => packet_ids.len(),
-                                    PacketCount::Count(n) => {
-                                        std::cmp::min(*n as usize, packet_ids.len())
-                                    }
-                                };
-                                for pid in packet_ids.iter().take(take_count) {
-                                    salvo_packets.push((port_name.clone(), *pid));
-                                    packets_to_move.push((*pid, port_name.clone()));
-                                }
-                            }
-                        }
-
-                        // Create the salvo
-                        let in_salvo = Salvo {
-                            salvo_condition: salvo_cond_data.name.clone(),
-                            packets: salvo_packets,
-                        };
-
-                        // Create the epoch
-                        let epoch = Epoch {
-                            id: epoch_id,
-                            node_name: candidate.target_node_name.clone(),
-                            in_salvo,
-                            out_salvos: Vec::new(),
-                            state: EpochState::Startable,
-                        };
-
-                        // Register the epoch
-                        self._epochs.insert(epoch_id, epoch);
-                        self._startable_epochs.insert(epoch_id);
-                        self._node_to_epochs
-                            .entry(candidate.target_node_name.clone())
-                            .or_default()
-                            .push(epoch_id);
-
-                        // Create a location entry for packets inside the epoch
-                        let epoch_location = PacketLocation::Node(epoch_id);
-                        self._packets_by_location
-                            .insert(epoch_location.clone(), IndexSet::new());
-
-                        // Create output port location entries for this epoch
-                        let node = self
-                            .graph
-                            .nodes()
-                            .get(&candidate.target_node_name)
-                            .expect("Node not found for epoch creation");
-                        for port_name in node.out_ports.keys() {
-                            let output_port_location =
-                                PacketLocation::OutputPort(epoch_id, port_name.clone());
-                            self._packets_by_location
-                                .insert(output_port_location, IndexSet::new());
-                        }
-
-                        // Move packets from input ports into the epoch
-                        for (pid, _port_name) in &packets_to_move {
-                            self.move_packet(pid, epoch_location.clone());
-                            all_events.push(NetEvent::PacketMoved(
-                                get_utc_now(),
-                                *pid,
-                                epoch_location.clone(),
-                            ));
-                        }
-
-                        all_events.push(NetEvent::EpochCreated(get_utc_now(), epoch_id));
-                        all_events.push(NetEvent::InputSalvoTriggered(
-                            get_utc_now(),
-                            epoch_id,
-                            salvo_cond_data.name.clone(),
-                        ));
-
-                        // Only one salvo condition can trigger per node per iteration
-                        break;
+            // Phase 2: Check salvo conditions for all nodes with packets at input ports
+            // This handles packets that were transported directly to input ports
+            let mut nodes_with_input_packets: Vec<NodeName> = Vec::new();
+            for (location, packets) in &self._packets_by_location {
+                if let PacketLocation::InputPort(node_name, _) = location {
+                    if !packets.is_empty() && !nodes_with_input_packets.contains(node_name) {
+                        nodes_with_input_packets.push(node_name.clone());
                     }
+                }
+            }
+
+            for node_name in nodes_with_input_packets {
+                let (triggered, events) = self.try_trigger_input_salvo(&node_name);
+                all_events.extend(events);
+                if triggered {
+                    made_progress = true;
                 }
             }
 
