@@ -204,10 +204,13 @@ async def run_async_pipeline():
     print(f"\nTotal results: {len(results)}")
     print(f"Net state: {net.state}")
 
-# Run the async pipeline
-asyncio.run(run_async_pipeline())
-
 # %% nbs/examples/03_async_nodes.ipynb 10
+try:
+    asyncio.get_running_loop()
+except RuntimeError:
+    asyncio.run(run_async_pipeline())
+
+# %% nbs/examples/03_async_nodes.ipynb 14
 # Create a fresh net for this demonstration
 net2 = Net(
     graph,
@@ -263,4 +266,8 @@ async def run_async_value_demo():
     assert all(r.get("computed_async") for r in results2)
     print("\nAll values were computed asynchronously!")
 
-asyncio.run(run_async_value_demo())
+# %% nbs/examples/03_async_nodes.ipynb 15
+try:
+    asyncio.get_running_loop()
+except RuntimeError:
+    asyncio.run(run_async_pipeline())

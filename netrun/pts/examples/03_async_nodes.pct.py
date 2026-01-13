@@ -248,8 +248,22 @@ async def run_async_pipeline():
     print(f"\nTotal results: {len(results)}")
     print(f"Net state: {net.state}")
 
+# %% [markdown]
+# If in a `.py` file, then we're outside the event loop, so we run with `asyncio.run`:
+
+# %%
+#|export
+try:
+    asyncio.get_running_loop()
+except RuntimeError:
+    asyncio.run(run_async_pipeline())
+
+# %% [markdown]
+# Otherwise we use `await`:
+
+# %%
 # Run the async pipeline
-asyncio.run(run_async_pipeline())
+await run_async_pipeline()
 
 # %% [markdown]
 # ## Part 4: Demonstrate Async Value Functions
@@ -313,7 +327,16 @@ async def run_async_value_demo():
     assert all(r.get("computed_async") for r in results2)
     print("\nAll values were computed asynchronously!")
 
-asyncio.run(run_async_value_demo())
+# %%
+#|export
+try:
+    asyncio.get_running_loop()
+except RuntimeError:
+    asyncio.run(run_async_pipeline())
+
+# %%
+# Run the async pipeline
+await run_async_pipeline()
 
 # %% [markdown]
 # ## Summary
