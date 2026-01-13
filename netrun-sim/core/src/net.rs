@@ -570,7 +570,6 @@ impl NetSim {
             // We need to extract data before mutating to avoid borrow issues
             struct EdgeMoveCandidate {
                 packet_id: PacketID,
-                target_node_name: NodeName,
                 input_port_location: PacketLocation,
                 can_move: bool,
             }
@@ -613,7 +612,6 @@ impl NetSim {
 
                         edge_candidates.push(EdgeMoveCandidate {
                             packet_id: *first_packet_id,
-                            target_node_name,
                             input_port_location,
                             can_move,
                         });
@@ -621,7 +619,7 @@ impl NetSim {
                 }
             }
 
-            // Process each edge that can move a packet
+            // Phase 1: Move packets from edges to input ports
             for candidate in edge_candidates {
                 if !candidate.can_move {
                     continue;
@@ -635,17 +633,9 @@ impl NetSim {
                     candidate.input_port_location.clone(),
                 ));
                 made_progress = true;
-
-                // Check input salvo conditions on the target node
-                let (triggered, events) = self.try_trigger_input_salvo(&candidate.target_node_name);
-                all_events.extend(events);
-                if triggered {
-                    // Progress was already marked by the packet move
-                }
             }
 
             // Phase 2: Check salvo conditions for all nodes with packets at input ports
-            // This handles packets that were transported directly to input ports
             let mut nodes_with_input_packets: Vec<NodeName> = Vec::new();
             for (location, packets) in &self._packets_by_location {
                 if let PacketLocation::InputPort(node_name, _) = location {
