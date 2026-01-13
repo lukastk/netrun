@@ -287,6 +287,12 @@ class Net:
         # Track manually-created Running epochs that need execution
         self._pending_running_epochs: set[str] = set()
 
+        # Rate limiting and parallel epoch control (Milestone 7)
+        # Track currently running epochs per node
+        self._running_epochs_by_node: Dict[str, set] = {}
+        # Track epoch start timestamps per node for rate limiting
+        self._epoch_start_times_by_node: Dict[str, List[float]] = {}
+
     # -------------------------------------------------------------------------
     # Properties
     # -------------------------------------------------------------------------
@@ -439,6 +445,69 @@ class Net:
         return epoch_id
 
     # -------------------------------------------------------------------------
+    # Rate Limiting and Parallel Epoch Control (Milestone 7)
+    # -------------------------------------------------------------------------
+
+    def _can_start_epoch(self, node_name: str) -> tuple[bool, Optional[float]]:
+        """
+        Check if an epoch can start for a node based on rate limiting and parallelism.
+
+        Returns:
+            (can_start, wait_time): can_start is True if epoch can start now,
+            wait_time is the time to wait if rate limited (None if not rate limited)
+        """
+        config = self.get_node_config(node_name)
+
+        # Check max_parallel_epochs
+        if config.max_parallel_epochs is not None:
+            running = self._running_epochs_by_node.get(node_name, set())
+            if len(running) >= config.max_parallel_epochs:
+                return (False, None)
+
+        # Check rate_limit_per_second
+        if config.rate_limit_per_second is not None and config.rate_limit_per_second > 0:
+            now = time.time()
+            window = 1.0 / config.rate_limit_per_second
+
+            # Get recent start times
+            start_times = self._epoch_start_times_by_node.get(node_name, [])
+
+            # Clean up old timestamps (older than 1 second)
+            cutoff = now - 1.0
+            start_times = [t for t in start_times if t > cutoff]
+            self._epoch_start_times_by_node[node_name] = start_times
+
+            if start_times:
+                last_start = start_times[-1]
+                time_since_last = now - last_start
+                if time_since_last < window:
+                    wait_time = window - time_since_last
+                    return (False, wait_time)
+
+        return (True, None)
+
+    def _record_epoch_start(self, node_name: str, epoch_id: str) -> None:
+        """Record that an epoch has started for rate limiting tracking."""
+        # Track running epoch
+        if node_name not in self._running_epochs_by_node:
+            self._running_epochs_by_node[node_name] = set()
+        self._running_epochs_by_node[node_name].add(epoch_id)
+
+        # Track start time for rate limiting
+        if node_name not in self._epoch_start_times_by_node:
+            self._epoch_start_times_by_node[node_name] = []
+        self._epoch_start_times_by_node[node_name].append(time.time())
+
+    def _record_epoch_end(self, node_name: str, epoch_id: str) -> None:
+        """Record that an epoch has ended."""
+        if node_name in self._running_epochs_by_node:
+            self._running_epochs_by_node[node_name].discard(epoch_id)
+
+    def get_running_epochs_count(self, node_name: str) -> int:
+        """Get the number of currently running epochs for a node."""
+        return len(self._running_epochs_by_node.get(node_name, set()))
+
+    # -------------------------------------------------------------------------
     # Internal Execution Methods
     # -------------------------------------------------------------------------
 
@@ -487,138 +556,146 @@ class Net:
         # Remove from pending running epochs if present
         self._pending_running_epochs.discard(epoch_id)
 
-        # Get input packets
-        input_packets = self._get_input_packets(epoch)
+        # Record epoch start for rate limiting tracking
+        self._record_epoch_start(node_name, epoch_id)
 
-        # Build input packet IDs for dead letter queue
-        input_packet_ids = {}
-        for port_name, pkts in input_packets.items():
-            input_packet_ids[port_name] = [str(pkt.id) for pkt in pkts]
+        try:
+            # Get input packets
+            input_packets = self._get_input_packets(epoch)
 
-        # Retry state
-        max_attempts = config.retries + 1
-        retry_timestamps: List[datetime] = []
-        retry_exceptions: List[Exception] = []
-        final_exception = None
-        success = False
+            # Build input packet IDs for dead letter queue
+            input_packet_ids = {}
+            for port_name, pkts in input_packets.items():
+                input_packet_ids[port_name] = [str(pkt.id) for pkt in pkts]
 
-        # Track start time for timeout
-        start_time = time.time()
+            # Retry state
+            max_attempts = config.retries + 1
+            retry_timestamps: List[datetime] = []
+            retry_exceptions: List[Exception] = []
+            final_exception = None
+            success = False
 
-        for attempt in range(max_attempts):
-            retry_count = attempt
-            exception_raised = None
+            # Track start time for timeout
+            start_time = time.time()
 
-            # Create fresh execution context for each attempt
-            ctx = NodeExecutionContext(
-                net=self,
-                epoch_id=epoch_id,
-                node_name=node_name,
-                defer_net_actions=config.defer_net_actions,
-                retry_count=retry_count,
-                retry_timestamps=retry_timestamps.copy(),
-                retry_exceptions=retry_exceptions.copy(),
-            )
+            for attempt in range(max_attempts):
+                retry_count = attempt
+                exception_raised = None
 
-            try:
-                # Check for timeout before execution
-                if config.timeout is not None:
-                    elapsed = time.time() - start_time
-                    if elapsed >= config.timeout:
-                        raise EpochTimeout(node_name, epoch_id, config.timeout)
+                # Create fresh execution context for each attempt
+                ctx = NodeExecutionContext(
+                    net=self,
+                    epoch_id=epoch_id,
+                    node_name=node_name,
+                    defer_net_actions=config.defer_net_actions,
+                    retry_count=retry_count,
+                    retry_timestamps=retry_timestamps.copy(),
+                    retry_exceptions=retry_exceptions.copy(),
+                )
 
-                # Execute the node function
-                exec_funcs.exec_func(ctx, input_packets)
+                try:
+                    # Check for timeout before execution
+                    if config.timeout is not None:
+                        elapsed = time.time() - start_time
+                        if elapsed >= config.timeout:
+                            raise EpochTimeout(node_name, epoch_id, config.timeout)
 
-                # Success - commit deferred actions if any
-                if config.defer_net_actions and ctx._deferred_queue is not None:
-                    _commit_deferred_actions(self, epoch_id, ctx._deferred_queue)
+                    # Execute the node function
+                    exec_funcs.exec_func(ctx, input_packets)
 
-                # Finish the epoch
-                action = NetAction.finish_epoch(epoch_id)
-                self._sim.do_action(action)
-                success = True
-                break
+                    # Success - commit deferred actions if any
+                    if config.defer_net_actions and ctx._deferred_queue is not None:
+                        _commit_deferred_actions(self, epoch_id, ctx._deferred_queue)
 
-            except EpochCancelled:
-                # Epoch was cancelled by the node
+                    # Finish the epoch
+                    action = NetAction.finish_epoch(epoch_id)
+                    self._sim.do_action(action)
+                    success = True
+                    break
+
+                except EpochCancelled:
+                    # Epoch was cancelled by the node
+                    action = NetAction.cancel_epoch(epoch_id)
+                    self._sim.do_action(action)
+                    raise
+
+                except (EpochTimeout, Exception) as e:
+                    exception_raised = e
+                    retry_timestamps.append(datetime.now())
+                    retry_exceptions.append(e)
+
+                    # Call failed_func after each failure
+                    if exec_funcs.failed_func is not None:
+                        failure_ctx = NodeFailureContext(
+                            epoch_id=epoch_id,
+                            node_name=node_name,
+                            retry_count=retry_count,
+                            retry_timestamps=retry_timestamps.copy(),
+                            retry_exceptions=retry_exceptions.copy(),
+                            input_salvo=input_packets,
+                            packet_values=ctx._get_consumed_values(),
+                            exception=exception_raised,
+                        )
+                        try:
+                            exec_funcs.failed_func(failure_ctx)
+                        except Exception:
+                            pass
+
+                    # Check if we have more retries
+                    if attempt < max_attempts - 1:
+                        # Unconsume packets for retry
+                        if config.defer_net_actions:
+                            consumed_values = ctx._get_consumed_values()
+                            _unconsume_packets_for_retry(self, consumed_values)
+
+                        # Wait before retry
+                        if config.retry_wait > 0:
+                            time.sleep(config.retry_wait)
+
+                        continue
+                    else:
+                        # Max retries exceeded
+                        final_exception = exception_raised
+
+            # Handle final failure
+            if not success and final_exception is not None:
+                # Cancel the epoch
                 action = NetAction.cancel_epoch(epoch_id)
                 self._sim.do_action(action)
-                raise
 
-            except (EpochTimeout, Exception) as e:
-                exception_raised = e
-                retry_timestamps.append(datetime.now())
-                retry_exceptions.append(e)
-
-                # Call failed_func after each failure
-                if exec_funcs.failed_func is not None:
-                    failure_ctx = NodeFailureContext(
+                # Add to dead letter queue if enabled
+                if config.dead_letter_queue:
+                    dlq_entry = DeadLetterEntry(
                         epoch_id=epoch_id,
                         node_name=node_name,
-                        retry_count=retry_count,
-                        retry_timestamps=retry_timestamps.copy(),
-                        retry_exceptions=retry_exceptions.copy(),
-                        input_salvo=input_packets,
-                        packet_values=ctx._get_consumed_values(),
-                        exception=exception_raised,
+                        exception=final_exception,
+                        retry_count=len(retry_exceptions) - 1,
+                        retry_timestamps=retry_timestamps,
+                        retry_exceptions=retry_exceptions,
+                        input_packets=input_packet_ids,
+                        packet_values=ctx._get_consumed_values() if ctx else {},
+                        timestamp=datetime.now(),
                     )
+                    self._dead_letter_queue.add(dlq_entry)
+
+                # Call error callback if set
+                if self._error_callback is not None:
                     try:
-                        exec_funcs.failed_func(failure_ctx)
+                        self._error_callback(final_exception, node_name, epoch_id)
                     except Exception:
                         pass
 
-                # Check if we have more retries
-                if attempt < max_attempts - 1:
-                    # Unconsume packets for retry
-                    if config.defer_net_actions:
-                        consumed_values = ctx._get_consumed_values()
-                        _unconsume_packets_for_retry(self, consumed_values)
+                # Handle based on on_error setting
+                if self._on_error == "raise":
+                    self._state = NetState.PAUSED
+                    raise NodeExecutionFailed(node_name, epoch_id, final_exception) from final_exception
+                elif self._on_error == "pause":
+                    self._state = NetState.PAUSED
+                # "continue" - just keep going
 
-                    # Wait before retry
-                    if config.retry_wait > 0:
-                        time.sleep(config.retry_wait)
-
-                    continue
-                else:
-                    # Max retries exceeded
-                    final_exception = exception_raised
-
-        # Handle final failure
-        if not success and final_exception is not None:
-            # Cancel the epoch
-            action = NetAction.cancel_epoch(epoch_id)
-            self._sim.do_action(action)
-
-            # Add to dead letter queue if enabled
-            if config.dead_letter_queue:
-                dlq_entry = DeadLetterEntry(
-                    epoch_id=epoch_id,
-                    node_name=node_name,
-                    exception=final_exception,
-                    retry_count=len(retry_exceptions) - 1,
-                    retry_timestamps=retry_timestamps,
-                    retry_exceptions=retry_exceptions,
-                    input_packets=input_packet_ids,
-                    packet_values=ctx._get_consumed_values() if ctx else {},
-                    timestamp=datetime.now(),
-                )
-                self._dead_letter_queue.add(dlq_entry)
-
-            # Call error callback if set
-            if self._error_callback is not None:
-                try:
-                    self._error_callback(final_exception, node_name, epoch_id)
-                except Exception:
-                    pass
-
-            # Handle based on on_error setting
-            if self._on_error == "raise":
-                self._state = NetState.PAUSED
-                raise NodeExecutionFailed(node_name, epoch_id, final_exception) from final_exception
-            elif self._on_error == "pause":
-                self._state = NetState.PAUSED
-            # "continue" - just keep going
+        finally:
+            # Record epoch end for rate limiting tracking
+            self._record_epoch_end(node_name, epoch_id)
 
     async def _execute_epoch_async(self, epoch_id: str) -> None:
         """
@@ -646,136 +723,144 @@ class Net:
         # Remove from pending running epochs if present
         self._pending_running_epochs.discard(epoch_id)
 
-        # Get input packets
-        input_packets = self._get_input_packets(epoch)
+        # Record epoch start for rate limiting tracking
+        self._record_epoch_start(node_name, epoch_id)
 
-        # Build input packet IDs for dead letter queue
-        input_packet_ids = {}
-        for port_name, pkts in input_packets.items():
-            input_packet_ids[port_name] = [str(pkt.id) for pkt in pkts]
+        try:
+            # Get input packets
+            input_packets = self._get_input_packets(epoch)
 
-        # Retry state
-        max_attempts = config.retries + 1
-        retry_timestamps: List[datetime] = []
-        retry_exceptions: List[Exception] = []
-        final_exception = None
-        success = False
+            # Build input packet IDs for dead letter queue
+            input_packet_ids = {}
+            for port_name, pkts in input_packets.items():
+                input_packet_ids[port_name] = [str(pkt.id) for pkt in pkts]
 
-        # Track start time for timeout
-        start_time = time.time()
+            # Retry state
+            max_attempts = config.retries + 1
+            retry_timestamps: List[datetime] = []
+            retry_exceptions: List[Exception] = []
+            final_exception = None
+            success = False
 
-        for attempt in range(max_attempts):
-            retry_count = attempt
-            exception_raised = None
+            # Track start time for timeout
+            start_time = time.time()
 
-            # Create fresh execution context for each attempt
-            ctx = NodeExecutionContext(
-                net=self,
-                epoch_id=epoch_id,
-                node_name=node_name,
-                defer_net_actions=config.defer_net_actions,
-                retry_count=retry_count,
-                retry_timestamps=retry_timestamps.copy(),
-                retry_exceptions=retry_exceptions.copy(),
-            )
+            for attempt in range(max_attempts):
+                retry_count = attempt
+                exception_raised = None
 
-            try:
-                # Check for timeout before execution
-                if config.timeout is not None:
-                    elapsed = time.time() - start_time
-                    if elapsed >= config.timeout:
-                        raise EpochTimeout(node_name, epoch_id, config.timeout)
+                # Create fresh execution context for each attempt
+                ctx = NodeExecutionContext(
+                    net=self,
+                    epoch_id=epoch_id,
+                    node_name=node_name,
+                    defer_net_actions=config.defer_net_actions,
+                    retry_count=retry_count,
+                    retry_timestamps=retry_timestamps.copy(),
+                    retry_exceptions=retry_exceptions.copy(),
+                )
 
-                # Execute the node function (async)
-                result = exec_funcs.exec_func(ctx, input_packets)
-                if asyncio.iscoroutine(result):
-                    await result
+                try:
+                    # Check for timeout before execution
+                    if config.timeout is not None:
+                        elapsed = time.time() - start_time
+                        if elapsed >= config.timeout:
+                            raise EpochTimeout(node_name, epoch_id, config.timeout)
 
-                # Success - commit deferred actions if any
-                if config.defer_net_actions and ctx._deferred_queue is not None:
-                    _commit_deferred_actions(self, epoch_id, ctx._deferred_queue)
+                    # Execute the node function (async)
+                    result = exec_funcs.exec_func(ctx, input_packets)
+                    if asyncio.iscoroutine(result):
+                        await result
 
-                # Finish the epoch
-                action = NetAction.finish_epoch(epoch_id)
-                self._sim.do_action(action)
-                success = True
-                break
+                    # Success - commit deferred actions if any
+                    if config.defer_net_actions and ctx._deferred_queue is not None:
+                        _commit_deferred_actions(self, epoch_id, ctx._deferred_queue)
 
-            except EpochCancelled:
+                    # Finish the epoch
+                    action = NetAction.finish_epoch(epoch_id)
+                    self._sim.do_action(action)
+                    success = True
+                    break
+
+                except EpochCancelled:
+                    action = NetAction.cancel_epoch(epoch_id)
+                    self._sim.do_action(action)
+                    raise
+
+                except (EpochTimeout, Exception) as e:
+                    exception_raised = e
+                    retry_timestamps.append(datetime.now())
+                    retry_exceptions.append(e)
+
+                    # Call failed_func after each failure
+                    if exec_funcs.failed_func is not None:
+                        failure_ctx = NodeFailureContext(
+                            epoch_id=epoch_id,
+                            node_name=node_name,
+                            retry_count=retry_count,
+                            retry_timestamps=retry_timestamps.copy(),
+                            retry_exceptions=retry_exceptions.copy(),
+                            input_salvo=input_packets,
+                            packet_values=ctx._get_consumed_values(),
+                            exception=exception_raised,
+                        )
+                        try:
+                            result = exec_funcs.failed_func(failure_ctx)
+                            if asyncio.iscoroutine(result):
+                                await result
+                        except Exception:
+                            pass
+
+                    # Check if we have more retries
+                    if attempt < max_attempts - 1:
+                        if config.defer_net_actions:
+                            consumed_values = ctx._get_consumed_values()
+                            _unconsume_packets_for_retry(self, consumed_values)
+
+                        # Wait before retry (async sleep)
+                        if config.retry_wait > 0:
+                            await asyncio.sleep(config.retry_wait)
+
+                        continue
+                    else:
+                        final_exception = exception_raised
+
+            # Handle final failure
+            if not success and final_exception is not None:
                 action = NetAction.cancel_epoch(epoch_id)
                 self._sim.do_action(action)
-                raise
 
-            except (EpochTimeout, Exception) as e:
-                exception_raised = e
-                retry_timestamps.append(datetime.now())
-                retry_exceptions.append(e)
-
-                # Call failed_func after each failure
-                if exec_funcs.failed_func is not None:
-                    failure_ctx = NodeFailureContext(
+                if config.dead_letter_queue:
+                    dlq_entry = DeadLetterEntry(
                         epoch_id=epoch_id,
                         node_name=node_name,
-                        retry_count=retry_count,
-                        retry_timestamps=retry_timestamps.copy(),
-                        retry_exceptions=retry_exceptions.copy(),
-                        input_salvo=input_packets,
-                        packet_values=ctx._get_consumed_values(),
-                        exception=exception_raised,
+                        exception=final_exception,
+                        retry_count=len(retry_exceptions) - 1,
+                        retry_timestamps=retry_timestamps,
+                        retry_exceptions=retry_exceptions,
+                        input_packets=input_packet_ids,
+                        packet_values=ctx._get_consumed_values() if ctx else {},
+                        timestamp=datetime.now(),
                     )
+                    self._dead_letter_queue.add(dlq_entry)
+
+                if self._error_callback is not None:
                     try:
-                        result = exec_funcs.failed_func(failure_ctx)
+                        result = self._error_callback(final_exception, node_name, epoch_id)
                         if asyncio.iscoroutine(result):
                             await result
                     except Exception:
                         pass
 
-                # Check if we have more retries
-                if attempt < max_attempts - 1:
-                    if config.defer_net_actions:
-                        consumed_values = ctx._get_consumed_values()
-                        _unconsume_packets_for_retry(self, consumed_values)
+                if self._on_error == "raise":
+                    self._state = NetState.PAUSED
+                    raise NodeExecutionFailed(node_name, epoch_id, final_exception) from final_exception
+                elif self._on_error == "pause":
+                    self._state = NetState.PAUSED
 
-                    # Wait before retry (async sleep)
-                    if config.retry_wait > 0:
-                        await asyncio.sleep(config.retry_wait)
-
-                    continue
-                else:
-                    final_exception = exception_raised
-
-        # Handle final failure
-        if not success and final_exception is not None:
-            action = NetAction.cancel_epoch(epoch_id)
-            self._sim.do_action(action)
-
-            if config.dead_letter_queue:
-                dlq_entry = DeadLetterEntry(
-                    epoch_id=epoch_id,
-                    node_name=node_name,
-                    exception=final_exception,
-                    retry_count=len(retry_exceptions) - 1,
-                    retry_timestamps=retry_timestamps,
-                    retry_exceptions=retry_exceptions,
-                    input_packets=input_packet_ids,
-                    packet_values=ctx._get_consumed_values() if ctx else {},
-                    timestamp=datetime.now(),
-                )
-                self._dead_letter_queue.add(dlq_entry)
-
-            if self._error_callback is not None:
-                try:
-                    result = self._error_callback(final_exception, node_name, epoch_id)
-                    if asyncio.iscoroutine(result):
-                        await result
-                except Exception:
-                    pass
-
-            if self._on_error == "raise":
-                self._state = NetState.PAUSED
-                raise NodeExecutionFailed(node_name, epoch_id, final_exception) from final_exception
-            elif self._on_error == "pause":
-                self._state = NetState.PAUSED
+        finally:
+            # Record epoch end for rate limiting tracking
+            self._record_epoch_end(node_name, epoch_id)
 
     def _call_start_funcs(self) -> None:
         """Call start_node_func for all nodes that have one defined."""
@@ -838,6 +923,8 @@ class Net:
         epochs_to_execute = startable + pending_running
 
         executed_count = 0
+        skipped_due_to_limits = 0
+
         for epoch_id in epochs_to_execute:
             # Convert ULID to string if needed
             epoch_id = str(epoch_id)
@@ -855,6 +942,20 @@ class Net:
             # Skip nodes without exec_func
             if exec_funcs is None or exec_funcs.exec_func is None:
                 continue
+
+            # Check rate limiting and max parallel epochs
+            can_start, wait_time = self._can_start_epoch(node_name)
+            if not can_start:
+                if wait_time is not None:
+                    # Rate limited - wait and then proceed
+                    time.sleep(wait_time)
+                    # Re-check after waiting
+                    can_start, _ = self._can_start_epoch(node_name)
+
+                if not can_start:
+                    # Still can't start (max_parallel_epochs reached)
+                    skipped_due_to_limits += 1
+                    continue
 
             try:
                 self._execute_epoch(epoch_id)
@@ -1045,6 +1146,8 @@ class Net:
         epochs_to_execute = startable + pending_running
 
         executed_count = 0
+        skipped_due_to_limits = 0
+
         for epoch_id in epochs_to_execute:
             epoch_id = str(epoch_id)
 
@@ -1060,6 +1163,20 @@ class Net:
 
             if exec_funcs is None or exec_funcs.exec_func is None:
                 continue
+
+            # Check rate limiting and max parallel epochs
+            can_start, wait_time = self._can_start_epoch(node_name)
+            if not can_start:
+                if wait_time is not None:
+                    # Rate limited - wait asynchronously and then proceed
+                    await asyncio.sleep(wait_time)
+                    # Re-check after waiting
+                    can_start, _ = self._can_start_epoch(node_name)
+
+                if not can_start:
+                    # Still can't start (max_parallel_epochs reached)
+                    skipped_due_to_limits += 1
+                    continue
 
             try:
                 # Check if exec_func is async
