@@ -75,6 +75,17 @@ from netrun.deferred import (
 # Re-export context
 from netrun.context import NodeExecutionContext, NodeFailureContext
 
+# Re-export pools
+from netrun.pools import (
+    PoolType,
+    PoolConfig,
+    PoolInitMode,
+    WorkerState,
+    ManagedPool,
+    PoolManager,
+    BackgroundNetRunner,
+)
+
 # Re-export Net and netrun_sim types
 from netrun.net import (
     # Main class

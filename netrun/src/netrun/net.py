@@ -54,6 +54,14 @@ from .deferred import (
     DeferredActionQueue,
 )
 from .context import NodeExecutionContext, NodeFailureContext
+from .pools import (
+    PoolType,
+    PoolConfig,
+    PoolInitMode,
+    ManagedPool,
+    PoolManager,
+    BackgroundNetRunner,
+)
 
 
 class NetState(Enum):
@@ -240,9 +248,14 @@ class Net:
         self._node_configs: Dict[str, NodeConfig] = {}
         self._node_exec_funcs: Dict[str, NodeExecFuncs] = {}
 
-        # Pool configurations (to be implemented in Milestone 6)
-        self._thread_pools_config = thread_pools or {}
-        self._process_pools_config = process_pools or {}
+        # Pool manager
+        self._pool_manager = PoolManager(
+            thread_pools=thread_pools,
+            process_pools=process_pools,
+        )
+
+        # Background runner for threaded execution
+        self._background_runner: Optional[BackgroundNetRunner] = None
 
         # Error handling
         self._on_error = on_error
@@ -297,6 +310,11 @@ class Net:
     def value_store(self) -> PacketValueStore:
         """The packet value store."""
         return self._value_store
+
+    @property
+    def pool_manager(self) -> PoolManager:
+        """The pool manager for parallel execution."""
+        return self._pool_manager
 
     # -------------------------------------------------------------------------
     # Node Configuration
@@ -761,6 +779,9 @@ class Net:
 
     def _call_start_funcs(self) -> None:
         """Call start_node_func for all nodes that have one defined."""
+        # Start pools first
+        self._pool_manager.start()
+
         for node_name in self._graph.nodes():
             exec_funcs = self.get_node_exec_funcs(node_name)
             if exec_funcs is not None and exec_funcs.start_func is not None:
@@ -773,11 +794,14 @@ class Net:
             if exec_funcs is not None and exec_funcs.stop_func is not None:
                 exec_funcs.stop_func(self)
 
+        # Stop pools after node stop_funcs
+        self._pool_manager.stop()
+
     # -------------------------------------------------------------------------
     # Sync Execution Methods
     # -------------------------------------------------------------------------
 
-    def run_step(self, start_epochs: bool = True, threaded: bool = False) -> None:
+    def run_step(self, start_epochs: bool = True) -> bool:
         """
         Run one step of the network.
 
@@ -788,16 +812,16 @@ class Net:
 
         Args:
             start_epochs: Whether to start and execute ready epochs
-            threaded: Run in background thread (Milestone 6)
+
+        Returns:
+            True if work was done (epochs executed), False otherwise
         """
-        if threaded:
-            raise NotImplementedError("threaded=True will be implemented in Milestone 6")
 
         if self._state == NetState.STOPPED:
             raise RuntimeError("Cannot run_step on a stopped net")
 
         if self._state == NetState.PAUSED:
-            return  # Don't do anything if paused
+            return False  # Don't do anything if paused
 
         self._state = NetState.RUNNING
 
@@ -806,13 +830,14 @@ class Net:
         self._sim.do_action(action)
 
         if not start_epochs:
-            return
+            return False
 
         # Combine startable epochs and pending running epochs
         startable = list(self._sim.get_startable_epochs())
         pending_running = list(self._pending_running_epochs)
         epochs_to_execute = startable + pending_running
 
+        executed_count = 0
         for epoch_id in epochs_to_execute:
             # Convert ULID to string if needed
             epoch_id = str(epoch_id)
@@ -833,14 +858,18 @@ class Net:
 
             try:
                 self._execute_epoch(epoch_id)
+                executed_count += 1
             except EpochCancelled:
-                pass  # Epoch was cancelled, continue with others
+                executed_count += 1  # Still counts as work done
             except NodeExecutionFailed:
+                executed_count += 1  # Still counts as work done
                 if self._on_error == "raise":
                     raise
                 # For "pause" and "continue", error is already handled
 
-    def start(self, threaded: bool = False) -> None:
+        return executed_count > 0
+
+    def start(self, threaded: bool = False) -> Optional[BackgroundNetRunner]:
         """
         Start the network and run until fully blocked.
 
@@ -850,10 +879,20 @@ class Net:
         3. Calls stop_node_func for all nodes when done
 
         Args:
-            threaded: Run in background thread (Milestone 6)
+            threaded: If True, run in background thread and return BackgroundNetRunner
+
+        Returns:
+            BackgroundNetRunner if threaded=True, else None
         """
         if threaded:
-            raise NotImplementedError("threaded=True will be implemented in Milestone 6")
+            # Start pools and start_funcs
+            self._call_start_funcs()
+            self._state = NetState.RUNNING
+
+            # Create and start background runner
+            self._background_runner = BackgroundNetRunner(self)
+            self._background_runner.start()
+            return self._background_runner
 
         if self._state == NetState.STOPPED:
             raise RuntimeError("Cannot start a stopped net")
@@ -904,21 +943,37 @@ class Net:
             if self._state == NetState.RUNNING:
                 self._state = NetState.PAUSED
 
+        return None
+
     def pause(self) -> None:
         """
         Pause the network (finish running epochs, don't start new ones).
 
-        (To be implemented in Milestone 6)
+        Sets state to PAUSED, which will cause the run loop to stop
+        starting new epochs after current ones finish.
         """
-        # For now, just set state
         self._state = NetState.PAUSED
+
+        # If running in background, stop the runner
+        if self._background_runner is not None:
+            self._background_runner.pause()
 
     def stop(self) -> None:
         """
         Stop the network entirely.
 
-        (To be implemented in Milestone 6)
+        Sets state to STOPPED, stops background runner if any, and
+        calls stop_funcs.
         """
+        # Stop background runner if any
+        if self._background_runner is not None:
+            self._background_runner.stop()
+            self._background_runner = None
+
+        # Call stop funcs if we were running
+        if self._state == NetState.RUNNING:
+            self._call_stop_funcs()
+
         self._state = NetState.STOPPED
 
     # -------------------------------------------------------------------------
@@ -927,6 +982,9 @@ class Net:
 
     async def _call_start_funcs_async(self) -> None:
         """Async version: call start_node_func for all nodes."""
+        # Start pools first
+        self._pool_manager.start()
+
         for node_name in self._graph.nodes():
             exec_funcs = self.get_node_exec_funcs(node_name)
             if exec_funcs is not None and exec_funcs.start_func is not None:
@@ -943,7 +1001,10 @@ class Net:
                 if asyncio.iscoroutine(result):
                     await result
 
-    async def async_run_step(self, start_epochs: bool = True) -> None:
+        # Stop pools after node stop_funcs
+        self._pool_manager.stop()
+
+    async def async_run_step(self, start_epochs: bool = True) -> bool:
         """
         Async version of run_step.
 
@@ -959,12 +1020,15 @@ class Net:
 
         Args:
             start_epochs: Whether to start and execute ready epochs
+
+        Returns:
+            True if work was done (epochs executed), False otherwise
         """
         if self._state == NetState.STOPPED:
             raise RuntimeError("Cannot run_step on a stopped net")
 
         if self._state == NetState.PAUSED:
-            return
+            return False
 
         self._state = NetState.RUNNING
 
@@ -973,13 +1037,14 @@ class Net:
         self._sim.do_action(action)
 
         if not start_epochs:
-            return
+            return False
 
         # Combine startable epochs and pending running epochs
         startable = list(self._sim.get_startable_epochs())
         pending_running = list(self._pending_running_epochs)
         epochs_to_execute = startable + pending_running
 
+        executed_count = 0
         for epoch_id in epochs_to_execute:
             epoch_id = str(epoch_id)
 
@@ -1002,11 +1067,15 @@ class Net:
                     await self._execute_epoch_async(epoch_id)
                 else:
                     self._execute_epoch(epoch_id)
+                executed_count += 1
             except EpochCancelled:
-                pass
+                executed_count += 1
             except NodeExecutionFailed:
+                executed_count += 1
                 if self._on_error == "raise":
                     raise
+
+        return executed_count > 0
 
     async def async_start(self) -> None:
         """

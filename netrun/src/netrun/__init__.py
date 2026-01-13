@@ -58,6 +58,17 @@ from .deferred import (
 # Re-export context
 from .context import NodeExecutionContext, NodeFailureContext
 
+# Re-export pools
+from .pools import (
+    PoolType,
+    PoolConfig,
+    PoolInitMode,
+    WorkerState,
+    ManagedPool,
+    PoolManager,
+    BackgroundNetRunner,
+)
+
 # Re-export Net and netrun_sim types
 from .net import (
     # Main class
