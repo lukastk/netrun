@@ -69,6 +69,17 @@ from .pools import (
     BackgroundNetRunner,
 )
 
+# Re-export history and logging
+from .history import (
+    HistoryEntry,
+    EventHistory,
+    NodeLogEntry,
+    NodeLog,
+    NodeLogManager,
+    StdoutCapture,
+    capture_stdout,
+)
+
 # Re-export Net and netrun_sim types
 from .net import (
     # Main class

@@ -62,6 +62,15 @@ from .pools import (
     PoolManager,
     BackgroundNetRunner,
 )
+from .history import (
+    HistoryEntry,
+    EventHistory,
+    NodeLogEntry,
+    NodeLog,
+    NodeLogManager,
+    StdoutCapture,
+    capture_stdout,
+)
 
 
 class NetState(Enum):
@@ -276,11 +285,16 @@ class Net:
                 callback=dead_letter_callback,
             )
 
-        # History config (to be implemented in Milestone 8)
-        self._history_max_size = history_max_size
-        self._history_file = Path(history_file) if history_file else None
-        self._history_chunk_size = history_chunk_size
-        self._history_flush_on_pause = history_flush_on_pause
+        # Event history
+        self._event_history = EventHistory(
+            max_size=history_max_size,
+            file_path=history_file,
+            chunk_size=history_chunk_size,
+            flush_on_pause=history_flush_on_pause,
+        )
+
+        # Node log manager
+        self._node_log_manager = NodeLogManager()
 
         # Runtime state
         self._state = NetState.CREATED
@@ -321,6 +335,56 @@ class Net:
     def pool_manager(self) -> PoolManager:
         """The pool manager for parallel execution."""
         return self._pool_manager
+
+    @property
+    def event_history(self) -> EventHistory:
+        """The event history recorder."""
+        return self._event_history
+
+    @property
+    def node_log_manager(self) -> NodeLogManager:
+        """The node log manager."""
+        return self._node_log_manager
+
+    # -------------------------------------------------------------------------
+    # Logging Methods
+    # -------------------------------------------------------------------------
+
+    def get_node_log(
+        self,
+        node_name: str,
+        limit: Optional[int] = None,
+    ) -> List[NodeLogEntry]:
+        """
+        Get log entries for a node.
+
+        Args:
+            node_name: Name of the node
+            limit: Maximum entries to return (most recent)
+
+        Returns:
+            List of log entries
+        """
+        return self._node_log_manager.get_node_log(node_name, limit=limit)
+
+    def get_epoch_log(
+        self,
+        node_name: str,
+        epoch_id: str,
+        limit: Optional[int] = None,
+    ) -> List[NodeLogEntry]:
+        """
+        Get log entries for a specific epoch.
+
+        Args:
+            node_name: Name of the node
+            epoch_id: ID of the epoch
+            limit: Maximum entries to return
+
+        Returns:
+            List of log entries
+        """
+        return self._node_log_manager.get_epoch_log(node_name, epoch_id, limit=limit)
 
     # -------------------------------------------------------------------------
     # Node Configuration
@@ -600,8 +664,13 @@ class Net:
                         if elapsed >= config.timeout:
                             raise EpochTimeout(node_name, epoch_id, config.timeout)
 
-                    # Execute the node function
-                    exec_funcs.exec_func(ctx, input_packets)
+                    # Execute the node function with optional stdout capture
+                    if config.capture_stdout:
+                        node_log = self._node_log_manager.get_log(node_name)
+                        with capture_stdout(node_log, epoch_id, echo=config.echo_stdout):
+                            exec_funcs.exec_func(ctx, input_packets)
+                    else:
+                        exec_funcs.exec_func(ctx, input_packets)
 
                     # Success - commit deferred actions if any
                     if config.defer_net_actions and ctx._deferred_queue is not None:
@@ -767,10 +836,17 @@ class Net:
                         if elapsed >= config.timeout:
                             raise EpochTimeout(node_name, epoch_id, config.timeout)
 
-                    # Execute the node function (async)
-                    result = exec_funcs.exec_func(ctx, input_packets)
-                    if asyncio.iscoroutine(result):
-                        await result
+                    # Execute the node function (async) with optional stdout capture
+                    if config.capture_stdout:
+                        node_log = self._node_log_manager.get_log(node_name)
+                        with capture_stdout(node_log, epoch_id, echo=config.echo_stdout):
+                            result = exec_funcs.exec_func(ctx, input_packets)
+                            if asyncio.iscoroutine(result):
+                                await result
+                    else:
+                        result = exec_funcs.exec_func(ctx, input_packets)
+                        if asyncio.iscoroutine(result):
+                            await result
 
                     # Success - commit deferred actions if any
                     if config.defer_net_actions and ctx._deferred_queue is not None:
@@ -1054,6 +1130,10 @@ class Net:
         starting new epochs after current ones finish.
         """
         self._state = NetState.PAUSED
+
+        # Flush history if configured
+        if self._event_history.flush_on_pause:
+            self._event_history.flush()
 
         # If running in background, stop the runner
         if self._background_runner is not None:
