@@ -102,6 +102,43 @@ impl PacketLocation {
         }
     }
 
+    /// Get the node name (for InputPort locations).
+    #[getter]
+    fn node_name(&self) -> Option<String> {
+        match &self.inner {
+            CorePacketLocation::InputPort(node_name, _) => Some(node_name.clone()),
+            _ => None,
+        }
+    }
+
+    /// Get the port name (for InputPort and OutputPort locations).
+    #[getter]
+    fn port_name(&self) -> Option<String> {
+        match &self.inner {
+            CorePacketLocation::InputPort(_, port_name) => Some(port_name.clone()),
+            CorePacketLocation::OutputPort(_, port_name) => Some(port_name.clone()),
+            _ => None,
+        }
+    }
+
+    /// Get the epoch ID (for Node and OutputPort locations).
+    #[getter]
+    fn epoch_id(&self) -> Option<String> {
+        match &self.inner {
+            CorePacketLocation::Node(epoch_id) => Some(epoch_id.to_string()),
+            CorePacketLocation::OutputPort(epoch_id, _) => Some(epoch_id.to_string()),
+            _ => None,
+        }
+    }
+
+    /// Get the edge (for Edge locations).
+    fn get_edge(&self) -> Option<CoreEdge> {
+        match &self.inner {
+            CorePacketLocation::Edge(edge) => Some(edge.clone()),
+            _ => None,
+        }
+    }
+
     fn __repr__(&self) -> String {
         match &self.inner {
             CorePacketLocation::Node(id) => format!("PacketLocation.node('{}')", id),

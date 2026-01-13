@@ -351,6 +351,59 @@ impl SalvoConditionTerm {
         }
     }
 
+    /// Get the term kind: "Port", "And", "Or", or "Not".
+    #[getter]
+    fn kind(&self) -> String {
+        match &self.inner {
+            CoreSalvoConditionTerm::Port { .. } => "Port".to_string(),
+            CoreSalvoConditionTerm::And(_) => "And".to_string(),
+            CoreSalvoConditionTerm::Or(_) => "Or".to_string(),
+            CoreSalvoConditionTerm::Not(_) => "Not".to_string(),
+        }
+    }
+
+    /// Get the port name (for Port terms only).
+    fn get_port_name(&self) -> Option<String> {
+        match &self.inner {
+            CoreSalvoConditionTerm::Port { port_name, .. } => Some(port_name.clone()),
+            _ => None,
+        }
+    }
+
+    /// Get the port state (for Port terms only).
+    fn get_port_state(&self, py: Python<'_>) -> PyResult<Option<PyObject>> {
+        match &self.inner {
+            CoreSalvoConditionTerm::Port { state, .. } => {
+                let py_state = core_port_state_to_py(py, state)?;
+                Ok(Some(py_state))
+            }
+            _ => Ok(None),
+        }
+    }
+
+    /// Get the sub-terms (for And and Or terms only).
+    fn get_terms(&self) -> Option<Vec<SalvoConditionTerm>> {
+        match &self.inner {
+            CoreSalvoConditionTerm::And(terms) => {
+                Some(terms.iter().map(|t| SalvoConditionTerm { inner: t.clone() }).collect())
+            }
+            CoreSalvoConditionTerm::Or(terms) => {
+                Some(terms.iter().map(|t| SalvoConditionTerm { inner: t.clone() }).collect())
+            }
+            _ => None,
+        }
+    }
+
+    /// Get the inner term (for Not terms only).
+    fn get_inner(&self) -> Option<SalvoConditionTerm> {
+        match &self.inner {
+            CoreSalvoConditionTerm::Not(inner) => {
+                Some(SalvoConditionTerm { inner: (**inner).clone() })
+            }
+            _ => None,
+        }
+    }
+
     fn __repr__(&self) -> String {
         format_term(&self.inner)
     }
@@ -397,6 +450,50 @@ fn extract_port_state(obj: &Bound<'_, PyAny>) -> PyResult<CorePortState> {
     Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
         "Expected PortState or PortStateNumeric",
     ))
+}
+
+fn core_port_state_to_py(py: Python<'_>, state: &CorePortState) -> PyResult<PyObject> {
+    match state {
+        CorePortState::Empty => Ok(PortState::Empty.into_pyobject(py)?.unbind().into_any()),
+        CorePortState::Full => Ok(PortState::Full.into_pyobject(py)?.unbind().into_any()),
+        CorePortState::NonEmpty => Ok(PortState::NonEmpty.into_pyobject(py)?.unbind().into_any()),
+        CorePortState::NonFull => Ok(PortState::NonFull.into_pyobject(py)?.unbind().into_any()),
+        CorePortState::Equals(n) => Ok(PyPortStateNumeric {
+            kind: "equals".to_string(),
+            value: *n,
+        }
+        .into_pyobject(py)?
+        .unbind()
+        .into_any()),
+        CorePortState::LessThan(n) => Ok(PyPortStateNumeric {
+            kind: "less_than".to_string(),
+            value: *n,
+        }
+        .into_pyobject(py)?
+        .unbind()
+        .into_any()),
+        CorePortState::GreaterThan(n) => Ok(PyPortStateNumeric {
+            kind: "greater_than".to_string(),
+            value: *n,
+        }
+        .into_pyobject(py)?
+        .unbind()
+        .into_any()),
+        CorePortState::EqualsOrLessThan(n) => Ok(PyPortStateNumeric {
+            kind: "equals_or_less_than".to_string(),
+            value: *n,
+        }
+        .into_pyobject(py)?
+        .unbind()
+        .into_any()),
+        CorePortState::EqualsOrGreaterThan(n) => Ok(PyPortStateNumeric {
+            kind: "equals_or_greater_than".to_string(),
+            value: *n,
+        }
+        .into_pyobject(py)?
+        .unbind()
+        .into_any()),
+    }
 }
 
 /// A port on a node.
