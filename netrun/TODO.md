@@ -517,35 +517,37 @@ and can be used to handle SIGINT at the application level if needed.
 
 ---
 
-## Milestone 14: Integration and Polish
+## Milestone 14: Integration and Polish (IN PROGRESS)
 
 **Goal:** Final integration, documentation, and examples.
 
 ### 14.1 Integration Tests
-- [ ] End-to-end test: complex multi-node flow
-- [ ] Test with real-world patterns:
+- [x] End-to-end test: complex multi-node flow
+- [x] Test with real-world patterns:
   - Producer-consumer
   - Fan-out/fan-in
   - Pipeline with error handling
   - Checkpoint and resume
+  - TOML DSL integration
+  - Combined features (pools, rate limiting, history)
 
 ### 14.2 Documentation
 - [ ] Complete docstrings for all public APIs
-- [ ] Add example notebooks demonstrating:
-  - Basic usage
-  - Async nodes
-  - Thread pools
-  - Error handling and retries
-  - Checkpointing
-  - DSL usage
+- [x] Add example notebooks demonstrating:
+  - Basic usage (00_basic_setup, 01_simple_pipeline)
+  - Async nodes (03_async_nodes)
+  - Thread pools (04_background_runner)
+  - Error handling and retries (02_error_handling)
+  - Checkpointing (10_checkpointing)
+  - DSL usage (08_dsl_format)
 
 ### 14.3 Performance Tests
-- [ ] Benchmark packet throughput
-- [ ] Benchmark with thread/process pools
-- [ ] Memory usage under load
+- [x] Benchmark packet throughput
+- [x] Benchmark with thread/process pools
+- [x] Memory usage under load
 
 ### 14.4 Examples for Milestone 14
-- [ ] `examples/12_complete_application/` - Full real-world example combining all features
+- [x] `examples/11_complete_application/` - Full real-world ETL example combining all features
 
 ---
 
@@ -564,7 +566,7 @@ and can be used to handle SIGINT at the application level if needed.
 11. **Milestone 11**: DSL Format ✅
 12. **Milestone 12**: Node Factories ✅
 13. **Milestone 13**: Checkpointing ✅
-14. **Milestone 14**: Integration and Polish
+14. **Milestone 14**: Integration and Polish (MOSTLY COMPLETE - missing: complete docstrings)
 
 ---
 

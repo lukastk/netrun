@@ -563,10 +563,15 @@ def _packet_count_to_value(pc) -> Union[str, int]:
     return "all"
 
 
-def _ports_to_serializable(ports) -> Union[str, Dict[str, Any]]:
+def _ports_to_serializable(ports) -> Union[str, List[str], Dict[str, Any]]:
     """Convert ports specification to a serializable format."""
     if isinstance(ports, str):
         return ports
+    if isinstance(ports, list):
+        # Return list as-is for TOML serialization
+        if len(ports) == 1:
+            return ports[0]
+        return list(ports)
     if isinstance(ports, dict):
         # Convert PacketCount values to strings/ints
         result = {}
@@ -594,16 +599,8 @@ def salvo_condition_to_dict(cond: SalvoCondition) -> Dict[str, Any]:
     ports_serialized = _ports_to_serializable(cond.ports)
     result["ports"] = ports_serialized
 
-    # Term (expression) - simplified for now
-    # Would need full introspection of SalvoConditionTerm to serialize properly
-    # For now, we store a placeholder based on the first port
-    if isinstance(ports_serialized, str):
-        result["when"] = f"nonempty({ports_serialized})"
-    elif isinstance(ports_serialized, dict):
-        first_port = list(ports_serialized.keys())[0]
-        result["when"] = f"nonempty({first_port})"
-    else:
-        result["when"] = "true"
+    # Term (expression) - serialize the actual term
+    result["when"] = salvo_term_to_expr(cond.term)
 
     return result
 
@@ -617,16 +614,39 @@ def dict_to_salvo_condition(data: Dict[str, Any]) -> SalvoCondition:
     else:
         max_salvos = MaxSalvos.finite(int(max_salvos_val))
 
-    # Get ports
-    ports = data.get("ports", "")
+    # Get ports - can be string, list, or dict
+    ports_data = data.get("ports", "")
+    if isinstance(ports_data, str):
+        ports = ports_data
+    elif isinstance(ports_data, list):
+        # Keep as list for SalvoCondition
+        ports = ports_data
+    elif isinstance(ports_data, dict):
+        # Convert dict values back to PacketCount objects
+        ports = {}
+        for port_name, count_val in ports_data.items():
+            if count_val == "all":
+                ports[port_name] = PacketCount.all()
+            else:
+                ports[port_name] = PacketCount.n(int(count_val))
+    else:
+        ports = str(ports_data)
 
     # Parse the when expression
     when_expr = data.get("when", "")
     if when_expr:
         term = parse_salvo_condition_expr(when_expr)
     else:
-        # Default to non-empty check on the ports
-        term = SalvoConditionTerm.port(ports, PortState.non_empty())
+        # Default to non-empty check on the first port
+        if isinstance(ports, str):
+            first_port = ports
+        elif isinstance(ports, list):
+            first_port = ports[0] if ports else "in"
+        elif isinstance(ports, dict):
+            first_port = list(ports.keys())[0] if ports else "in"
+        else:
+            first_port = "in"
+        term = SalvoConditionTerm.port(first_port, PortState.non_empty())
 
     return SalvoCondition(max_salvos, ports, term)
 
