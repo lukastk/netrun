@@ -159,47 +159,47 @@ This document outlines the development plan for the `netrun` Python package, whi
 
 ---
 
-## Milestone 4: Error Handling and Retries
+## Milestone 4: Error Handling and Retries ✅ COMPLETED
 
 **Goal:** Implement robust error handling, retries, and dead letter queue.
 
 ### 4.1 Retry System
-- [ ] Implement retry logic in `_execute_epoch()`:
+- [x] Implement retry logic in `_execute_epoch()`:
   - Respect `retries` config (number of attempts)
   - Respect `retry_wait` config (delay between retries)
   - Track `retry_timestamps` and `retry_exceptions`
   - Enforce `defer_net_actions=True` when `retries > 0`
-- [ ] Call `exec_failed_node_func` after each failure (including final)
+- [x] Call `exec_failed_node_func` after each failure (including final)
 
 ### 4.2 Dead Letter Queue
-- [ ] Implement `DeadLetterQueue` class:
+- [x] Implement `DeadLetterQueue` class:
   - Modes: "memory", "file", callback
   - Store failed packets with context (node, exception, timestamps)
-- [ ] Implement `Net.dead_letter_queue` property
-- [ ] Methods: `get_all()`, `get_by_node(node_name)`
+- [x] Implement `Net.dead_letter_queue` property
+- [x] Methods: `get_all()`, `get_by_node(node_name)`
 
 ### 4.3 Net-Level Error Handling
-- [ ] Implement `on_error` config with three modes:
+- [x] Implement `on_error` config with three modes:
   - `"continue"`: Net continues running other nodes; failed epoch is cancelled
   - `"pause"`: Net pauses (finishes running epochs, doesn't start new ones)
   - `"raise"`: Net pauses first, then raises the exception to the caller
-- [ ] Implement `error_callback` config
+- [x] Implement `error_callback` config
 
 ### 4.4 Tests for Milestone 4
-- [ ] Test retry execution (success on retry N)
-- [ ] Test retry wait timing
-- [ ] Test max retries exceeded behavior
-- [ ] Test `exec_failed_node_func` calls
-- [ ] Test dead letter queue (memory mode)
-- [ ] Test dead letter queue (file mode)
-- [ ] Test dead letter queue (callback mode)
-- [ ] Test `on_error="continue"` behavior
-- [ ] Test `on_error="pause"` behavior
-- [ ] Test `on_error="raise"` behavior
-- [ ] Test `error_callback` invocation
+- [x] Test retry execution (success on retry N)
+- [x] Test retry wait timing
+- [x] Test max retries exceeded behavior
+- [x] Test `exec_failed_node_func` calls
+- [x] Test dead letter queue (memory mode)
+- [x] Test dead letter queue (file mode)
+- [x] Test dead letter queue (callback mode)
+- [x] Test `on_error="continue"` behavior
+- [x] Test `on_error="pause"` behavior
+- [x] Test `on_error="raise"` behavior
+- [x] Test `error_callback` invocation
 
 ### 4.5 Examples for Milestone 4
-- [ ] `examples/03_error_handling/` - Retries and error recovery patterns
+- [x] `examples/02_error_handling/` - Retries and error recovery patterns
 
 ---
 
@@ -548,7 +548,7 @@ This document outlines the development plan for the `netrun` Python package, whi
 1. **Milestone 1**: Core Foundation (errors, packet store, basic Net) ✅
 2. **Milestone 2**: Execution Contexts (NodeExecutionContext, deferred actions) ✅
 3. **Milestone 3**: Single-Threaded Execution (run_step, start) ✅
-4. **Milestone 4**: Error Handling (retries, dead letter queue)
+4. **Milestone 4**: Error Handling (retries, dead letter queue) ✅
 5. **Milestone 5**: Async Execution
 6. **Milestone 6**: Thread and Process Pools
 7. **Milestone 7**: Rate Limiting and Parallel Control

@@ -369,6 +369,7 @@ class PacketValueStore:
 #|export
 from dataclasses import dataclass
 from typing import List
+from datetime import datetime
 
 
 @dataclass
@@ -401,6 +402,124 @@ class NodeExecFuncs:
     start_func: Optional[Callable] = None
     stop_func: Optional[Callable] = None
     failed_func: Optional[Callable] = None
+
+
+@dataclass
+class DeadLetterEntry:
+    """An entry in the dead letter queue."""
+    epoch_id: str
+    node_name: str
+    exception: Exception
+    retry_count: int
+    retry_timestamps: List[datetime]
+    retry_exceptions: List[Exception]
+    input_packets: dict  # port_name -> list of packet IDs
+    packet_values: dict  # packet_id -> value (for consumed packets)
+    timestamp: datetime
+
+
+class DeadLetterQueue:
+    """
+    Queue for failed epochs that exhausted all retries.
+
+    Supports three modes:
+    - "memory": Store entries in memory only
+    - "file": Persist entries to a JSON/pickle file
+    - callback: Call a user-provided function for each entry
+
+    Entries contain full context about the failure for debugging
+    and potential manual recovery.
+    """
+
+    def __init__(
+        self,
+        mode: str = "memory",
+        file_path: Optional[Path] = None,
+        callback: Optional[Callable[[DeadLetterEntry], None]] = None,
+    ):
+        """
+        Initialize the dead letter queue.
+
+        Args:
+            mode: Storage mode - "memory", "file", or "callback"
+            file_path: Path to file for "file" mode
+            callback: Function to call for each entry in "callback" mode
+        """
+        if mode not in ("memory", "file", "callback"):
+            raise ValueError(f"Invalid DLQ mode: {mode}")
+
+        if mode == "file" and file_path is None:
+            raise ValueError("file_path required for file mode")
+
+        if mode == "callback" and callback is None:
+            raise ValueError("callback required for callback mode")
+
+        self._mode = mode
+        self._file_path = file_path
+        self._callback = callback
+        self._entries: List[DeadLetterEntry] = []
+
+    @property
+    def mode(self) -> str:
+        """The storage mode."""
+        return self._mode
+
+    def add(self, entry: DeadLetterEntry) -> None:
+        """Add an entry to the dead letter queue."""
+        if self._mode == "callback":
+            # Call the callback immediately
+            if self._callback is not None:
+                self._callback(entry)
+        else:
+            # Store in memory
+            self._entries.append(entry)
+
+            # Persist to file if in file mode
+            if self._mode == "file" and self._file_path is not None:
+                self._persist_to_file()
+
+    def _persist_to_file(self) -> None:
+        """Persist entries to file."""
+        import json
+
+        # Convert entries to JSON-serializable format
+        data = []
+        for entry in self._entries:
+            data.append({
+                "epoch_id": entry.epoch_id,
+                "node_name": entry.node_name,
+                "exception_type": type(entry.exception).__name__,
+                "exception_message": str(entry.exception),
+                "retry_count": entry.retry_count,
+                "retry_timestamps": [ts.isoformat() for ts in entry.retry_timestamps],
+                "retry_exception_messages": [str(e) for e in entry.retry_exceptions],
+                "input_packets": entry.input_packets,
+                "timestamp": entry.timestamp.isoformat(),
+                # Note: packet_values may not be JSON-serializable
+            })
+
+        with open(self._file_path, 'w') as f:
+            json.dump(data, f, indent=2)
+
+    def get_all(self) -> List[DeadLetterEntry]:
+        """Get all entries in the queue."""
+        return list(self._entries)
+
+    def get_by_node(self, node_name: str) -> List[DeadLetterEntry]:
+        """Get all entries for a specific node."""
+        return [e for e in self._entries if e.node_name == node_name]
+
+    def clear(self) -> None:
+        """Clear all entries from the queue."""
+        self._entries.clear()
+        if self._mode == "file" and self._file_path is not None:
+            # Clear the file too
+            if self._file_path.exists():
+                self._file_path.unlink()
+
+    def __len__(self) -> int:
+        """Return the number of entries in the queue."""
+        return len(self._entries)
 
 # %% [markdown]
 # ## The Net Class
@@ -506,10 +625,20 @@ class Net:
         self._on_error = on_error
         self._error_callback = error_callback
 
-        # Dead letter queue config (to be implemented in Milestone 4)
-        self._dlq_mode = dead_letter_queue
-        self._dlq_path = Path(dead_letter_path) if dead_letter_path else None
-        self._dlq_callback = dead_letter_callback
+        # Dead letter queue
+        dlq_path = Path(dead_letter_path) if dead_letter_path else None
+        if callable(dead_letter_queue):
+            # If a callable is passed, use callback mode
+            self._dead_letter_queue = DeadLetterQueue(
+                mode="callback",
+                callback=dead_letter_queue,
+            )
+        else:
+            self._dead_letter_queue = DeadLetterQueue(
+                mode=dead_letter_queue,
+                file_path=dlq_path,
+                callback=dead_letter_callback,
+            )
 
         # History config (to be implemented in Milestone 8)
         self._history_max_size = history_max_size
@@ -648,6 +777,11 @@ class Net:
         """Access the packet value store."""
         return self._value_store
 
+    @property
+    def dead_letter_queue(self) -> DeadLetterQueue:
+        """Access the dead letter queue for failed epochs."""
+        return self._dead_letter_queue
+
     # -------------------------------------------------------------------------
     # Execution Methods (Milestone 3)
     # -------------------------------------------------------------------------
@@ -709,14 +843,14 @@ class Net:
 
     def _execute_epoch(self, epoch_id: str) -> None:
         """
-        Execute a single epoch synchronously.
+        Execute a single epoch synchronously with retry support.
 
         This method:
         1. Gets the epoch and its input packets
         2. Creates a NodeExecutionContext
         3. Calls the node's exec_func
         4. On success: commits deferred actions and finishes the epoch
-        5. On failure: calls failed_func and handles based on on_error setting
+        5. On failure: retries based on config, then handles based on on_error setting
         """
         import time
         from datetime import datetime
@@ -745,91 +879,134 @@ class Net:
         # Get input packets
         input_packets = self._get_input_packets(epoch)
 
-        # Create execution context
-        ctx = NodeExecutionContext(
-            net=self,
-            epoch_id=epoch_id,
-            node_name=node_name,
-            defer_net_actions=config.defer_net_actions,
-            retry_count=0,
-            retry_timestamps=[],
-            retry_exceptions=[],
-        )
+        # Build input packet IDs for dead letter queue
+        input_packet_ids = {}
+        for port_name, pkts in input_packets.items():
+            input_packet_ids[port_name] = [str(pkt.id) for pkt in pkts]
+
+        # Retry state
+        max_attempts = config.retries + 1  # Initial attempt + retries
+        retry_timestamps: List[datetime] = []
+        retry_exceptions: List[Exception] = []
+        final_exception = None
+        success = False
 
         # Track start time for timeout
         start_time = time.time()
-        exception_raised = None
 
-        try:
-            # Check for timeout before execution
-            if config.timeout is not None:
-                elapsed = time.time() - start_time
-                if elapsed >= config.timeout:
-                    raise EpochTimeout(node_name, epoch_id, config.timeout)
+        for attempt in range(max_attempts):
+            retry_count = attempt
+            exception_raised = None
 
-            # Execute the node function
-            exec_funcs.exec_func(ctx, input_packets)
+            # Create fresh execution context for each attempt
+            ctx = NodeExecutionContext(
+                net=self,
+                epoch_id=epoch_id,
+                node_name=node_name,
+                defer_net_actions=config.defer_net_actions,
+                retry_count=retry_count,
+                retry_timestamps=retry_timestamps.copy(),
+                retry_exceptions=retry_exceptions.copy(),
+            )
 
-            # Success - commit deferred actions if any
-            if config.defer_net_actions and ctx._deferred_queue is not None:
-                _commit_deferred_actions(self, epoch_id, ctx._deferred_queue)
+            try:
+                # Check for timeout before execution
+                if config.timeout is not None:
+                    elapsed = time.time() - start_time
+                    if elapsed >= config.timeout:
+                        raise EpochTimeout(node_name, epoch_id, config.timeout)
 
-            # Finish the epoch
-            action = NetAction.finish_epoch(epoch_id)
-            self._sim.do_action(action)
+                # Execute the node function
+                exec_funcs.exec_func(ctx, input_packets)
 
-        except EpochCancelled:
-            # Epoch was cancelled by the node - cancel in NetSim
-            action = NetAction.cancel_epoch(epoch_id)
-            self._sim.do_action(action)
-            raise
+                # Success - commit deferred actions if any
+                if config.defer_net_actions and ctx._deferred_queue is not None:
+                    _commit_deferred_actions(self, epoch_id, ctx._deferred_queue)
 
-        except EpochTimeout as e:
-            exception_raised = e
+                # Finish the epoch
+                action = NetAction.finish_epoch(epoch_id)
+                self._sim.do_action(action)
+                success = True
+                break  # Exit retry loop on success
+
+            except EpochCancelled:
+                # Epoch was cancelled by the node - cancel in NetSim
+                action = NetAction.cancel_epoch(epoch_id)
+                self._sim.do_action(action)
+                raise  # Re-raise without retrying
+
+            except (EpochTimeout, Exception) as e:
+                exception_raised = e
+                retry_timestamps.append(datetime.now())
+                retry_exceptions.append(e)
+
+                # Call failed_func after each failure (including intermediate retries)
+                if exec_funcs.failed_func is not None:
+                    failure_ctx = NodeFailureContext(
+                        epoch_id=epoch_id,
+                        node_name=node_name,
+                        retry_count=retry_count,
+                        retry_timestamps=retry_timestamps.copy(),
+                        retry_exceptions=retry_exceptions.copy(),
+                        input_salvo=input_packets,
+                        packet_values=ctx._get_consumed_values(),
+                        exception=exception_raised,
+                    )
+                    try:
+                        exec_funcs.failed_func(failure_ctx)
+                    except Exception:
+                        pass  # Ignore errors in failed_func
+
+                # Check if we have more retries
+                if attempt < max_attempts - 1:
+                    # More retries available
+                    # Restore consumed packet values so they can be consumed again
+                    if config.defer_net_actions:
+                        consumed_values = ctx._get_consumed_values()
+                        _unconsume_packets_for_retry(self, consumed_values)
+
+                    # Wait before retry (if configured)
+                    if config.retry_wait > 0:
+                        time.sleep(config.retry_wait)
+
+                    # Continue to next attempt
+                    continue
+                else:
+                    # No more retries - this is the final failure
+                    final_exception = exception_raised
+
+        # Handle final failure
+        if not success and final_exception is not None:
             # Cancel the epoch
             action = NetAction.cancel_epoch(epoch_id)
             self._sim.do_action(action)
 
-        except Exception as e:
-            exception_raised = e
-            # Execution failed
-            # For Milestone 3, we just handle the error based on on_error setting
-            # Retry logic will be added in Milestone 4
-
-            # Cancel the epoch (cleanup)
-            action = NetAction.cancel_epoch(epoch_id)
-            self._sim.do_action(action)
-
-        # Handle failure
-        if exception_raised is not None:
-            # Call failed_func if defined
-            if exec_funcs.failed_func is not None:
-                failure_ctx = NodeFailureContext(
+            # Add to dead letter queue if enabled for this node
+            if config.dead_letter_queue:
+                dlq_entry = DeadLetterEntry(
                     epoch_id=epoch_id,
                     node_name=node_name,
-                    retry_count=0,
-                    retry_timestamps=[datetime.now()],
-                    retry_exceptions=[exception_raised],
-                    input_salvo=input_packets,
-                    packet_values=ctx._get_consumed_values(),
-                    exception=exception_raised,
+                    exception=final_exception,
+                    retry_count=len(retry_exceptions) - 1,  # 0-indexed
+                    retry_timestamps=retry_timestamps,
+                    retry_exceptions=retry_exceptions,
+                    input_packets=input_packet_ids,
+                    packet_values=ctx._get_consumed_values() if ctx else {},
+                    timestamp=datetime.now(),
                 )
-                try:
-                    exec_funcs.failed_func(failure_ctx)
-                except Exception:
-                    pass  # Ignore errors in failed_func
+                self._dead_letter_queue.add(dlq_entry)
 
             # Call error callback if defined
             if self._error_callback is not None:
                 try:
-                    self._error_callback(exception_raised, node_name, epoch_id)
+                    self._error_callback(final_exception, node_name, epoch_id)
                 except Exception:
                     pass
 
             # Handle based on on_error setting
             if self._on_error == "raise":
                 self._state = NetState.PAUSED
-                raise NodeExecutionFailed(node_name, epoch_id, exception_raised) from exception_raised
+                raise NodeExecutionFailed(node_name, epoch_id, final_exception) from final_exception
             elif self._on_error == "pause":
                 self._state = NetState.PAUSED
             # "continue" - just keep going
