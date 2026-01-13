@@ -534,6 +534,17 @@ impl NetSim {
                         .insert(output_port_location, IndexSet::new());
                 }
 
+                // Emit events in logical order:
+                // 1. InputSalvoTriggered - the condition was met, triggering epoch creation
+                // 2. EpochCreated - the epoch is created as a result
+                // 3. PacketMoved - packets move into the newly created epoch
+                events.push(NetEvent::InputSalvoTriggered(
+                    get_utc_now(),
+                    epoch_id,
+                    salvo_cond_data.name.clone(),
+                ));
+                events.push(NetEvent::EpochCreated(get_utc_now(), epoch_id));
+
                 // Move packets from input ports into the epoch
                 for (pid, port_name) in &packets_to_move {
                     let from_location = PacketLocation::InputPort(node_name.clone(), port_name.clone());
@@ -545,13 +556,6 @@ impl NetSim {
                         epoch_location.clone(),
                     ));
                 }
-
-                events.push(NetEvent::EpochCreated(get_utc_now(), epoch_id));
-                events.push(NetEvent::InputSalvoTriggered(
-                    get_utc_now(),
-                    epoch_id,
-                    salvo_cond_data.name.clone(),
-                ));
 
                 // Only one salvo condition can trigger per node per call
                 return (true, events);
