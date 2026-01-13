@@ -5,7 +5,7 @@ build-backend = "maturin"
 [project]
 name = "netrun-sim"
 version = "0.1.1"
-requires-python = ">=3.8"
+requires-python = ">=3.10"
 dependencies = ["python-ulid>=1.0"]
 classifiers = [
     "Programming Language :: Rust",
@@ -22,6 +22,7 @@ dev = [
     "git-cliff>=2.11.0",
     "jupyterlab>=4.3.8",
     "maturin>=1.10.2",
+    "nblite>=1.1.1",
     "python-ulid>=1.1.0",
     "twine>=6.1.0",
     "typing-extensions>=4.13.2",
