@@ -519,6 +519,8 @@ class Net:
 
         # Runtime state
         self._state = NetState.CREATED
+        # Track manually-created Running epochs that need execution
+        self._pending_running_epochs: set[str] = set()
 
     # -------------------------------------------------------------------------
     # Node Configuration
@@ -647,27 +649,331 @@ class Net:
         return self._value_store
 
     # -------------------------------------------------------------------------
-    # Placeholder methods (to be implemented in later milestones)
+    # Execution Methods (Milestone 3)
     # -------------------------------------------------------------------------
+
+    def inject_source_epoch(self, node_name: str, input_salvo: Optional["Salvo"] = None) -> str:
+        """
+        Manually create and start an epoch for a source node (or any node).
+
+        This is used for nodes without input ports (sources) or when manually
+        injecting data into a node. The epoch is created as Running and
+        marked for execution by run_step().
+
+        Args:
+            node_name: Name of the node to create an epoch for
+            input_salvo: Optional Salvo for input packets. Defaults to empty.
+
+        Returns:
+            The epoch ID of the created epoch.
+        """
+        if input_salvo is None:
+            input_salvo = Salvo("", [])
+
+        action = NetAction.create_and_start_epoch(node_name, input_salvo)
+        events = self._sim.do_action(action)
+
+        # Find the epoch ID from events
+        epoch_id = None
+        for e in events[1]:
+            if hasattr(e, 'epoch_id'):
+                epoch_id = str(e.epoch_id)
+                break
+
+        if epoch_id is None:
+            raise RuntimeError(f"Failed to create epoch for {node_name}")
+
+        # Mark this epoch as needing execution
+        self._pending_running_epochs.add(epoch_id)
+        return epoch_id
+
+    def _get_input_packets(self, epoch) -> dict[str, list]:
+        """
+        Get input packets for an epoch organized by port name.
+
+        Returns dict[port_name, list[Packet]].
+        """
+        in_salvo = epoch.in_salvo
+        if in_salvo is None:
+            return {}
+
+        # in_salvo.packets is a list of (port_name, packet_id) tuples
+        result = {}
+        for port_name, pkt_id in in_salvo.packets:
+            pkt = self._sim.get_packet(pkt_id)
+            if pkt is not None:
+                if port_name not in result:
+                    result[port_name] = []
+                result[port_name].append(pkt)
+        return result
+
+    def _execute_epoch(self, epoch_id: str) -> None:
+        """
+        Execute a single epoch synchronously.
+
+        This method:
+        1. Gets the epoch and its input packets
+        2. Creates a NodeExecutionContext
+        3. Calls the node's exec_func
+        4. On success: commits deferred actions and finishes the epoch
+        5. On failure: calls failed_func and handles based on on_error setting
+        """
+        import time
+        from datetime import datetime
+
+        epoch = self._sim.get_epoch(epoch_id)
+        if epoch is None:
+            raise ValueError(f"Epoch {epoch_id} not found")
+
+        node_name = epoch.node_name
+        config = self.get_node_config(node_name)
+        exec_funcs = self.get_node_exec_funcs(node_name)
+
+        # Skip if no exec_func defined (epoch stays Startable)
+        if exec_funcs is None or exec_funcs.exec_func is None:
+            return
+
+        # Start the epoch if not already Running
+        # (Epochs from inject_source_epoch are already Running)
+        if epoch.state == EpochState.Startable:
+            action = NetAction.start_epoch(epoch_id)
+            self._sim.do_action(action)
+
+        # Remove from pending running epochs if present
+        self._pending_running_epochs.discard(epoch_id)
+
+        # Get input packets
+        input_packets = self._get_input_packets(epoch)
+
+        # Create execution context
+        ctx = NodeExecutionContext(
+            net=self,
+            epoch_id=epoch_id,
+            node_name=node_name,
+            defer_net_actions=config.defer_net_actions,
+            retry_count=0,
+            retry_timestamps=[],
+            retry_exceptions=[],
+        )
+
+        # Track start time for timeout
+        start_time = time.time()
+        exception_raised = None
+
+        try:
+            # Check for timeout before execution
+            if config.timeout is not None:
+                elapsed = time.time() - start_time
+                if elapsed >= config.timeout:
+                    raise EpochTimeout(node_name, epoch_id, config.timeout)
+
+            # Execute the node function
+            exec_funcs.exec_func(ctx, input_packets)
+
+            # Success - commit deferred actions if any
+            if config.defer_net_actions and ctx._deferred_queue is not None:
+                _commit_deferred_actions(self, epoch_id, ctx._deferred_queue)
+
+            # Finish the epoch
+            action = NetAction.finish_epoch(epoch_id)
+            self._sim.do_action(action)
+
+        except EpochCancelled:
+            # Epoch was cancelled by the node - cancel in NetSim
+            action = NetAction.cancel_epoch(epoch_id)
+            self._sim.do_action(action)
+            raise
+
+        except EpochTimeout as e:
+            exception_raised = e
+            # Cancel the epoch
+            action = NetAction.cancel_epoch(epoch_id)
+            self._sim.do_action(action)
+
+        except Exception as e:
+            exception_raised = e
+            # Execution failed
+            # For Milestone 3, we just handle the error based on on_error setting
+            # Retry logic will be added in Milestone 4
+
+            # Cancel the epoch (cleanup)
+            action = NetAction.cancel_epoch(epoch_id)
+            self._sim.do_action(action)
+
+        # Handle failure
+        if exception_raised is not None:
+            # Call failed_func if defined
+            if exec_funcs.failed_func is not None:
+                failure_ctx = NodeFailureContext(
+                    epoch_id=epoch_id,
+                    node_name=node_name,
+                    retry_count=0,
+                    retry_timestamps=[datetime.now()],
+                    retry_exceptions=[exception_raised],
+                    input_salvo=input_packets,
+                    packet_values=ctx._get_consumed_values(),
+                    exception=exception_raised,
+                )
+                try:
+                    exec_funcs.failed_func(failure_ctx)
+                except Exception:
+                    pass  # Ignore errors in failed_func
+
+            # Call error callback if defined
+            if self._error_callback is not None:
+                try:
+                    self._error_callback(exception_raised, node_name, epoch_id)
+                except Exception:
+                    pass
+
+            # Handle based on on_error setting
+            if self._on_error == "raise":
+                self._state = NetState.PAUSED
+                raise NodeExecutionFailed(node_name, epoch_id, exception_raised) from exception_raised
+            elif self._on_error == "pause":
+                self._state = NetState.PAUSED
+            # "continue" - just keep going
+
+    def _call_start_funcs(self) -> None:
+        """Call start_node_func for all nodes that have one defined."""
+        for node_name in self._graph.nodes():
+            exec_funcs = self.get_node_exec_funcs(node_name)
+            if exec_funcs is not None and exec_funcs.start_func is not None:
+                exec_funcs.start_func(self)
+
+    def _call_stop_funcs(self) -> None:
+        """Call stop_node_func for all nodes that have one defined."""
+        for node_name in self._graph.nodes():
+            exec_funcs = self.get_node_exec_funcs(node_name)
+            if exec_funcs is not None and exec_funcs.stop_func is not None:
+                exec_funcs.stop_func(self)
 
     def run_step(self, start_epochs: bool = True, threaded: bool = False) -> None:
         """
         Run one step of the network.
 
-        Executes RunNetUntilBlocked, optionally starts ready epochs,
-        and waits for completion.
+        This method:
+        1. Runs NetSim until blocked (moves packets, creates startable epochs)
+        2. If start_epochs=True, executes all startable epochs
+        3. Returns when no more progress can be made in this step
 
-        (To be implemented in Milestone 3)
+        Args:
+            start_epochs: Whether to start and execute ready epochs
+            threaded: Run in background thread (Milestone 6)
         """
-        raise NotImplementedError("run_step will be implemented in Milestone 3")
+        if threaded:
+            raise NotImplementedError("threaded=True will be implemented in Milestone 6")
+
+        if self._state == NetState.STOPPED:
+            raise RuntimeError("Cannot run_step on a stopped net")
+
+        if self._state == NetState.PAUSED:
+            return  # Don't do anything if paused
+
+        self._state = NetState.RUNNING
+
+        # Run NetSim until blocked
+        action = NetAction.run_net_until_blocked()
+        self._sim.do_action(action)
+
+        if not start_epochs:
+            return
+
+        # Combine startable epochs and pending running epochs
+        startable = list(self._sim.get_startable_epochs())
+        pending_running = list(self._pending_running_epochs)
+        epochs_to_execute = startable + pending_running
+
+        for epoch_id in epochs_to_execute:
+            # Convert ULID to string if needed
+            epoch_id = str(epoch_id)
+
+            if self._state == NetState.PAUSED:
+                break  # Stop if we got paused during execution
+
+            epoch = self._sim.get_epoch(epoch_id)
+            if epoch is None:
+                continue
+
+            node_name = epoch.node_name
+            exec_funcs = self.get_node_exec_funcs(node_name)
+
+            # Skip nodes without exec_func
+            if exec_funcs is None or exec_funcs.exec_func is None:
+                continue
+
+            try:
+                self._execute_epoch(epoch_id)
+            except EpochCancelled:
+                pass  # Epoch was cancelled, continue with others
+            except NodeExecutionFailed:
+                if self._on_error == "raise":
+                    raise
+                # For "pause" and "continue", error is already handled
 
     def start(self, threaded: bool = False) -> None:
         """
         Start the network and run until fully blocked.
 
-        (To be implemented in Milestone 3)
+        This method:
+        1. Calls start_node_func for all nodes
+        2. Runs run_step() in a loop until no more progress
+        3. Calls stop_node_func for all nodes when done
+
+        Args:
+            threaded: Run in background thread (Milestone 6)
         """
-        raise NotImplementedError("start will be implemented in Milestone 3")
+        if threaded:
+            raise NotImplementedError("threaded=True will be implemented in Milestone 6")
+
+        if self._state == NetState.STOPPED:
+            raise RuntimeError("Cannot start a stopped net")
+
+        # Call start functions
+        self._call_start_funcs()
+
+        self._state = NetState.RUNNING
+
+        try:
+            # Run until fully blocked
+            while self._state == NetState.RUNNING:
+                # Check what epochs we can execute before this step
+                startable_before = set(self._sim.get_startable_epochs())
+                pending_before = set(self._pending_running_epochs)
+                epochs_before = startable_before | pending_before
+
+                self.run_step(start_epochs=True)
+
+                # After run_step, move any new packets from edges to input ports
+                # This ensures epochs created by output packets are visible
+                action = NetAction.run_net_until_blocked()
+                self._sim.do_action(action)
+
+                # Check what epochs we can execute after this step
+                startable_after = set(self._sim.get_startable_epochs())
+                pending_after = set(self._pending_running_epochs)
+                epochs_after = startable_after | pending_after
+
+                # Check if we're fully blocked
+                # Fully blocked = no epochs to execute and no progress was made
+                can_execute = False
+                for epoch_id in epochs_after:
+                    epoch = self._sim.get_epoch(str(epoch_id))
+                    if epoch:
+                        exec_funcs = self.get_node_exec_funcs(epoch.node_name)
+                        if exec_funcs and exec_funcs.exec_func:
+                            can_execute = True
+                            break
+
+                if not can_execute and epochs_before == epochs_after:
+                    # No progress made and no executable epochs
+                    break
+
+        finally:
+            # Call stop functions
+            self._call_stop_funcs()
+            if self._state == NetState.RUNNING:
+                self._state = NetState.PAUSED
 
     def pause(self) -> None:
         """
