@@ -576,7 +576,7 @@ enum NetEventKind {
     EpochStarted(i128, String),
     EpochFinished(i128, String),
     EpochCancelled(i128, String),
-    PacketMoved(i128, String, PacketLocation),
+    PacketMoved(i128, String, PacketLocation, PacketLocation), // (ts, packet_id, from, to)
     InputSalvoTriggered(i128, String, String),
     OutputSalvoTriggered(i128, String, String),
 }
@@ -593,7 +593,7 @@ impl NetEvent {
             NetEventKind::EpochStarted(_, _) => "EpochStarted".to_string(),
             NetEventKind::EpochFinished(_, _) => "EpochFinished".to_string(),
             NetEventKind::EpochCancelled(_, _) => "EpochCancelled".to_string(),
-            NetEventKind::PacketMoved(_, _, _) => "PacketMoved".to_string(),
+            NetEventKind::PacketMoved(_, _, _, _) => "PacketMoved".to_string(),
             NetEventKind::InputSalvoTriggered(_, _, _) => "InputSalvoTriggered".to_string(),
             NetEventKind::OutputSalvoTriggered(_, _, _) => "OutputSalvoTriggered".to_string(),
         }
@@ -609,7 +609,7 @@ impl NetEvent {
             | NetEventKind::EpochStarted(ts, _)
             | NetEventKind::EpochFinished(ts, _)
             | NetEventKind::EpochCancelled(ts, _)
-            | NetEventKind::PacketMoved(ts, _, _)
+            | NetEventKind::PacketMoved(ts, _, _, _)
             | NetEventKind::InputSalvoTriggered(ts, _, _)
             | NetEventKind::OutputSalvoTriggered(ts, _, _) => *ts,
         }
@@ -621,7 +621,7 @@ impl NetEvent {
             NetEventKind::PacketCreated(_, id)
             | NetEventKind::PacketConsumed(_, id)
             | NetEventKind::PacketDestroyed(_, id)
-            | NetEventKind::PacketMoved(_, id, _) => Some(id.clone()),
+            | NetEventKind::PacketMoved(_, id, _, _) => Some(id.clone()),
             _ => None,
         }
     }
@@ -640,9 +640,17 @@ impl NetEvent {
     }
 
     #[getter]
-    fn location(&self) -> Option<PacketLocation> {
+    fn from_location(&self) -> Option<PacketLocation> {
         match &self.inner {
-            NetEventKind::PacketMoved(_, _, loc) => Some(loc.clone()),
+            NetEventKind::PacketMoved(_, _, from_loc, _) => Some(from_loc.clone()),
+            _ => None,
+        }
+    }
+
+    #[getter]
+    fn to_location(&self) -> Option<PacketLocation> {
+        match &self.inner {
+            NetEventKind::PacketMoved(_, _, _, to_loc) => Some(to_loc.clone()),
             _ => None,
         }
     }
@@ -679,12 +687,13 @@ impl NetEvent {
             NetEventKind::EpochCancelled(ts, id) => {
                 format!("NetEvent.EpochCancelled(ts={}, epoch_id='{}')", ts, id)
             }
-            NetEventKind::PacketMoved(ts, id, loc) => {
+            NetEventKind::PacketMoved(ts, id, from_loc, to_loc) => {
                 format!(
-                    "NetEvent.PacketMoved(ts={}, packet_id='{}', location={})",
+                    "NetEvent.PacketMoved(ts={}, packet_id='{}', from={}, to={})",
                     ts,
                     id,
-                    loc.__repr__()
+                    from_loc.__repr__(),
+                    to_loc.__repr__()
                 )
             }
             NetEventKind::InputSalvoTriggered(ts, eid, cond) => {
@@ -719,8 +728,13 @@ impl NetEvent {
             CoreNetSimEvent::EpochCancelled(ts, id) => {
                 NetEventKind::EpochCancelled(*ts, id.to_string())
             }
-            CoreNetSimEvent::PacketMoved(ts, id, loc) => {
-                NetEventKind::PacketMoved(*ts, id.to_string(), PacketLocation::from_core(loc))
+            CoreNetSimEvent::PacketMoved(ts, id, from_loc, to_loc) => {
+                NetEventKind::PacketMoved(
+                    *ts,
+                    id.to_string(),
+                    PacketLocation::from_core(from_loc),
+                    PacketLocation::from_core(to_loc),
+                )
             }
             CoreNetSimEvent::InputSalvoTriggered(ts, eid, cond) => {
                 NetEventKind::InputSalvoTriggered(*ts, eid.to_string(), cond.clone())

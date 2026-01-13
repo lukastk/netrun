@@ -430,7 +430,7 @@ fn test_fifo_packet_ordering() {
     let packet_move_order: Vec<PacketID> = events
         .iter()
         .filter_map(|event| {
-            if let NetEvent::PacketMoved(_, packet_id, PacketLocation::InputPort(_, _)) = event
+            if let NetEvent::PacketMoved(_, packet_id, _, PacketLocation::InputPort(_, _)) = event
             {
                 Some(packet_id.clone())
             } else {
