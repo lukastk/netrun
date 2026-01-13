@@ -71,6 +71,11 @@ from .history import (
     StdoutCapture,
     capture_stdout,
 )
+from .port_types import (
+    PortTypeSpec,
+    PortTypeRegistry,
+    check_value_type,
+)
 
 
 class NetState(Enum):
@@ -296,6 +301,9 @@ class Net:
         # Node log manager
         self._node_log_manager = NodeLogManager()
 
+        # Port type registry
+        self._port_type_registry = PortTypeRegistry()
+
         # Runtime state
         self._state = NetState.CREATED
         # Track manually-created Running epochs that need execution
@@ -345,6 +353,11 @@ class Net:
     def node_log_manager(self) -> NodeLogManager:
         """The node log manager."""
         return self._node_log_manager
+
+    @property
+    def port_type_registry(self) -> PortTypeRegistry:
+        """The port type registry for type checking."""
+        return self._port_type_registry
 
     # -------------------------------------------------------------------------
     # Logging Methods
@@ -461,6 +474,65 @@ class Net:
     def get_node_exec_funcs(self, node_name: str) -> Optional[NodeExecFuncs]:
         """Get the execution functions for a node."""
         return self._node_exec_funcs.get(node_name)
+
+    # -------------------------------------------------------------------------
+    # Port Type Configuration
+    # -------------------------------------------------------------------------
+
+    def set_input_port_type(
+        self,
+        node_name: str,
+        port_name: str,
+        type_spec: Union[str, type, dict, None],
+    ) -> None:
+        """
+        Set the expected type for an input port.
+
+        Args:
+            node_name: Name of the node
+            port_name: Name of the input port
+            type_spec: Type specification:
+                - str: Class name to match against __class__.__name__
+                - type: Class to check with isinstance
+                - dict: {"class": Type, "isinstance": bool} or
+                        {"class": Type, "subclass": bool}
+                - None: No type checking
+        """
+        # Validate node exists
+        nodes = self._sim.graph.nodes()
+        if node_name not in nodes:
+            raise NodeNotFoundError(f"Node '{node_name}' not found in graph")
+
+        self._port_type_registry.set_input_port_type(node_name, port_name, type_spec)
+
+    def set_output_port_type(
+        self,
+        node_name: str,
+        port_name: str,
+        type_spec: Union[str, type, dict, None],
+    ) -> None:
+        """
+        Set the expected type for an output port.
+
+        Args:
+            node_name: Name of the node
+            port_name: Name of the output port
+            type_spec: Type specification (see set_input_port_type)
+        """
+        # Validate node exists
+        nodes = self._sim.graph.nodes()
+        if node_name not in nodes:
+            raise NodeNotFoundError(f"Node '{node_name}' not found in graph")
+
+        self._port_type_registry.set_output_port_type(node_name, port_name, type_spec)
+
+    def get_input_port_type(self, node_name: str, port_name: str) -> Optional[Any]:
+        """Get the type specification for an input port."""
+        return self._port_type_registry.get_input_port_type(node_name, port_name)
+
+    def get_output_port_type(self, node_name: str, port_name: str) -> Optional[Any]:
+        """Get the type specification for an output port."""
+        return self._port_type_registry.get_output_port_type(node_name, port_name)
 
     # -------------------------------------------------------------------------
     # Wrapper Methods (hide NetSim)
@@ -632,6 +704,12 @@ class Net:
             for port_name, pkts in input_packets.items():
                 input_packet_ids[port_name] = [str(pkt.id) for pkt in pkts]
 
+            # Build packet-to-port map for type checking
+            packet_to_port_map = {}
+            for port_name, pkts in input_packets.items():
+                for pkt in pkts:
+                    packet_to_port_map[pkt.id] = port_name
+
             # Retry state
             max_attempts = config.retries + 1
             retry_timestamps: List[datetime] = []
@@ -655,6 +733,7 @@ class Net:
                     retry_count=retry_count,
                     retry_timestamps=retry_timestamps.copy(),
                     retry_exceptions=retry_exceptions.copy(),
+                    packet_to_port_map=packet_to_port_map,
                 )
 
                 try:
@@ -804,6 +883,12 @@ class Net:
             for port_name, pkts in input_packets.items():
                 input_packet_ids[port_name] = [str(pkt.id) for pkt in pkts]
 
+            # Build packet-to-port map for type checking
+            packet_to_port_map = {}
+            for port_name, pkts in input_packets.items():
+                for pkt in pkts:
+                    packet_to_port_map[pkt.id] = port_name
+
             # Retry state
             max_attempts = config.retries + 1
             retry_timestamps: List[datetime] = []
@@ -827,6 +912,7 @@ class Net:
                     retry_count=retry_count,
                     retry_timestamps=retry_timestamps.copy(),
                     retry_exceptions=retry_exceptions.copy(),
+                    packet_to_port_map=packet_to_port_map,
                 )
 
                 try:

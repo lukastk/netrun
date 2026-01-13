@@ -97,6 +97,13 @@ from netrun.history import (
     capture_stdout,
 )
 
+# Re-export port types
+from netrun.port_types import (
+    PortTypeSpec,
+    PortTypeRegistry,
+    check_value_type,
+)
+
 # Re-export Net and netrun_sim types
 from netrun.net import (
     # Main class

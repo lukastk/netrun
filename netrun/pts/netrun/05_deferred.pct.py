@@ -38,15 +38,19 @@ class DeferredPacket:
     but the actual PacketID is not assigned until deferred actions are committed.
     """
 
-    def __init__(self, deferred_id: str):
+    def __init__(self, deferred_id: str, value: Any = None, value_func: Optional[Callable] = None):
         """
         Initialize a deferred packet with a temporary internal ID.
 
         Args:
             deferred_id: Internal ID used to track this packet until commit
+            value: Direct value stored in the packet (if not using value_func)
+            value_func: Value function to call when consuming (if not using value)
         """
         self._deferred_id = deferred_id
         self._resolved_packet: Optional[Packet] = None
+        self._value = value
+        self._value_func = value_func
 
     @property
     def id(self) -> str:
@@ -133,7 +137,7 @@ class DeferredActionQueue:
         """Queue a packet creation with a direct value."""
         deferred_id = f"deferred-{self._deferred_packet_counter}"
         self._deferred_packet_counter += 1
-        deferred_packet = DeferredPacket(deferred_id)
+        deferred_packet = DeferredPacket(deferred_id, value=value)
         self._actions.append(DeferredAction(
             action_type=DeferredActionType.CREATE_PACKET,
             value=value,
@@ -145,7 +149,7 @@ class DeferredActionQueue:
         """Queue a packet creation with a value function."""
         deferred_id = f"deferred-{self._deferred_packet_counter}"
         self._deferred_packet_counter += 1
-        deferred_packet = DeferredPacket(deferred_id)
+        deferred_packet = DeferredPacket(deferred_id, value_func=func)
         self._actions.append(DeferredAction(
             action_type=DeferredActionType.CREATE_PACKET_FROM_FUNC,
             value_func=func,

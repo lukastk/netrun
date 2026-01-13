@@ -26,7 +26,7 @@ from datetime import datetime
 
 from netrun_sim import Packet, NetAction
 
-from netrun.errors import EpochCancelled
+from netrun.errors import EpochCancelled, PacketTypeMismatch
 from netrun.deferred import DeferredPacket, DeferredActionQueue
 
 if TYPE_CHECKING:
@@ -50,6 +50,7 @@ class NodeExecutionContext:
         retry_count: int = 0,
         retry_timestamps: Optional[List[datetime]] = None,
         retry_exceptions: Optional[List[Exception]] = None,
+        packet_to_port_map: Optional[dict[str, str]] = None,
     ):
         """
         Initialize the execution context.
@@ -62,6 +63,7 @@ class NodeExecutionContext:
             retry_count: Current retry attempt (0 = first attempt)
             retry_timestamps: Timestamps of previous retry attempts
             retry_exceptions: Exceptions from previous retries
+            packet_to_port_map: Mapping of packet IDs to their source input port names
         """
         self._net = net
         self._epoch_id = epoch_id
@@ -70,6 +72,7 @@ class NodeExecutionContext:
         self._retry_count = retry_count
         self._retry_timestamps = retry_timestamps or []
         self._retry_exceptions = retry_exceptions or []
+        self._packet_to_port_map = packet_to_port_map or {}
 
         # Deferred action queue (only used if defer_net_actions=True)
         self._deferred_queue: Optional[DeferredActionQueue] = (
@@ -164,6 +167,8 @@ class NodeExecutionContext:
 
         Removes the packet from the network and returns the stored value.
         If the packet has a value function, it is called.
+
+        Raises PacketTypeMismatch if the value doesn't match the input port's type spec.
         """
         if isinstance(packet, DeferredPacket):
             if not packet.is_resolved:
@@ -175,6 +180,15 @@ class NodeExecutionContext:
         # Get the value (this calls value functions if needed)
         value = self._net._value_store.consume(packet_id)
         self._consumed_values[packet_id] = value
+
+        # Check input port type if configured
+        port_name = self._packet_to_port_map.get(packet_id)
+        if port_name is not None:
+            matches, expected, actual = self._net._port_type_registry.check_input_port_value(
+                self._node_name, port_name, value
+            )
+            if not matches:
+                raise PacketTypeMismatch(packet_id, expected, actual, port_name)
 
         if self._defer_net_actions and self._deferred_queue is not None:
             # Defer the consume action
@@ -191,7 +205,29 @@ class NodeExecutionContext:
         Load a packet into an output port.
 
         The packet must have been created in this epoch.
+
+        Raises PacketTypeMismatch if the value doesn't match the output port's type spec.
         """
+        # Check output port type if configured
+        if isinstance(packet, DeferredPacket):
+            # For deferred packets, use the stored value for type checking
+            # If using a value func, call it to get the value
+            if packet._value_func is not None:
+                value = packet._value_func()
+            else:
+                value = packet._value
+            packet_id = "deferred"
+        else:
+            packet_id = packet.id
+            # For immediate mode, retrieve value from store (peek, don't consume)
+            value = self._net._value_store.get_value(packet_id)
+
+        matches, expected, actual = self._net._port_type_registry.check_output_port_value(
+            self._node_name, port_name, value
+        )
+        if not matches:
+            raise PacketTypeMismatch(packet_id, expected, actual, port_name)
+
         if self._defer_net_actions and self._deferred_queue is not None:
             self._deferred_queue.load_output_port(port_name, packet)
             return
@@ -200,8 +236,6 @@ class NodeExecutionContext:
         if isinstance(packet, DeferredPacket):
             if not packet.is_resolved:
                 raise ValueError("Cannot load an unresolved deferred packet")
-            packet_id = packet.id
-        else:
             packet_id = packet.id
 
         action = NetAction.load_packet_into_output_port(packet_id, port_name)
@@ -230,6 +264,8 @@ class NodeExecutionContext:
         Async version of consume_packet.
 
         Supports async value functions.
+
+        Raises PacketTypeMismatch if the value doesn't match the input port's type spec.
         """
         if isinstance(packet, DeferredPacket):
             if not packet.is_resolved:
@@ -241,6 +277,15 @@ class NodeExecutionContext:
         # Get the value (async to support async value functions)
         value = await self._net._value_store.async_consume(packet_id)
         self._consumed_values[packet_id] = value
+
+        # Check input port type if configured
+        port_name = self._packet_to_port_map.get(packet_id)
+        if port_name is not None:
+            matches, expected, actual = self._net._port_type_registry.check_input_port_value(
+                self._node_name, port_name, value
+            )
+            if not matches:
+                raise PacketTypeMismatch(packet_id, expected, actual, port_name)
 
         if self._defer_net_actions and self._deferred_queue is not None:
             self._deferred_queue.consume_packet(packet, value)

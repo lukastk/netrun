@@ -80,6 +80,13 @@ from .history import (
     capture_stdout,
 )
 
+# Re-export port types
+from .port_types import (
+    PortTypeSpec,
+    PortTypeRegistry,
+    check_value_type,
+)
+
 # Re-export Net and netrun_sim types
 from .net import (
     # Main class
