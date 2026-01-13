@@ -192,19 +192,75 @@ class PortStateNumeric:
 
 
 class SalvoConditionTerm:
-    """Boolean expression over port states."""
+    """Boolean expression over port states.
+
+    Use the static methods to construct terms:
+    - `true_()` / `false_()`: Constant boolean values
+    - `port(name, state)`: Check if a port matches a state predicate
+    - `and_(terms)` / `or_(terms)`: Logical combinations
+    - `not_(term)`: Logical negation
+
+    Example:
+        # Trigger when both input ports have packets
+        term = SalvoConditionTerm.and_([
+            SalvoConditionTerm.port("in1", PortState.non_empty()),
+            SalvoConditionTerm.port("in2", PortState.non_empty()),
+        ])
+
+        # Source node with no input ports
+        term = SalvoConditionTerm.true_()
+    """
 
     @staticmethod
-    def port(port_name: str, state: Union[PortState, PortStateNumeric]) -> SalvoConditionTerm: ...
+    def true_() -> SalvoConditionTerm:
+        """Create a term that is always true. Useful for source nodes with no input ports."""
+        ...
 
     @staticmethod
-    def and_(terms: List[SalvoConditionTerm]) -> SalvoConditionTerm: ...
+    def false_() -> SalvoConditionTerm:
+        """Create a term that is always false. Useful as a placeholder or with not_()."""
+        ...
 
     @staticmethod
-    def or_(terms: List[SalvoConditionTerm]) -> SalvoConditionTerm: ...
+    def port(port_name: str, state: Union[PortState, PortStateNumeric]) -> SalvoConditionTerm:
+        """Create a term that checks if a port matches a state predicate."""
+        ...
 
     @staticmethod
-    def not_(term: SalvoConditionTerm) -> SalvoConditionTerm: ...
+    def and_(terms: List[SalvoConditionTerm]) -> SalvoConditionTerm:
+        """Create a term that is true when all sub-terms are true."""
+        ...
+
+    @staticmethod
+    def or_(terms: List[SalvoConditionTerm]) -> SalvoConditionTerm:
+        """Create a term that is true when at least one sub-term is true."""
+        ...
+
+    @staticmethod
+    def not_(term: SalvoConditionTerm) -> SalvoConditionTerm:
+        """Create a term that is true when the sub-term is false."""
+        ...
+
+    @property
+    def kind(self) -> str:
+        """Get the term kind: 'True', 'False', 'Port', 'And', 'Or', or 'Not'."""
+        ...
+
+    def get_port_name(self) -> Optional[str]:
+        """Get the port name (for Port terms only, None otherwise)."""
+        ...
+
+    def get_port_state(self) -> Optional[Union[PortState, PortStateNumeric]]:
+        """Get the port state (for Port terms only, None otherwise)."""
+        ...
+
+    def get_terms(self) -> Optional[List[SalvoConditionTerm]]:
+        """Get the sub-terms (for And/Or terms only, None otherwise)."""
+        ...
+
+    def get_inner(self) -> Optional[SalvoConditionTerm]:
+        """Get the inner term (for Not terms only, None otherwise)."""
+        ...
 
 
 class Port:
@@ -316,25 +372,70 @@ class Graph:
 # === NetSim Types ===
 
 class PacketLocation:
-    """Where a packet is located in the network."""
+    """Where a packet is located in the network.
+
+    Packets can be in one of five locations:
+    - `node(epoch_id)`: Inside a running/startable epoch
+    - `input_port(node_name, port_name)`: Waiting at a node's input port
+    - `output_port(epoch_id, port_name)`: Loaded into an epoch's output port
+    - `edge(edge)`: In transit between nodes
+    - `outside_net()`: External to the network
+
+    Example:
+        loc = PacketLocation.input_port("NodeB", "in")
+        assert loc.kind == "InputPort"
+        assert loc.node_name == "NodeB"
+        assert loc.port_name == "in"
+    """
 
     @staticmethod
-    def node(epoch_id: Union[ULID, str]) -> PacketLocation: ...
+    def node(epoch_id: Union[ULID, str]) -> PacketLocation:
+        """Create a location inside an epoch."""
+        ...
 
     @staticmethod
-    def input_port(node_name: str, port_name: str) -> PacketLocation: ...
+    def input_port(node_name: str, port_name: str) -> PacketLocation:
+        """Create a location at a node's input port."""
+        ...
 
     @staticmethod
-    def output_port(epoch_id: Union[ULID, str], port_name: str) -> PacketLocation: ...
+    def output_port(epoch_id: Union[ULID, str], port_name: str) -> PacketLocation:
+        """Create a location at an epoch's output port."""
+        ...
 
     @staticmethod
-    def edge(edge: Edge) -> PacketLocation: ...
+    def edge(edge: Edge) -> PacketLocation:
+        """Create a location on an edge (in transit)."""
+        ...
 
     @staticmethod
-    def outside_net() -> PacketLocation: ...
+    def outside_net() -> PacketLocation:
+        """Create a location outside the network."""
+        ...
 
     @property
-    def kind(self) -> str: ...
+    def kind(self) -> str:
+        """Get the location kind: 'Node', 'InputPort', 'OutputPort', 'Edge', or 'OutsideNet'."""
+        ...
+
+    @property
+    def node_name(self) -> Optional[str]:
+        """Get the node name (for InputPort locations only, None otherwise)."""
+        ...
+
+    @property
+    def port_name(self) -> Optional[str]:
+        """Get the port name (for InputPort and OutputPort locations only, None otherwise)."""
+        ...
+
+    @property
+    def epoch_id(self) -> Optional[str]:
+        """Get the epoch ID (for Node and OutputPort locations only, None otherwise)."""
+        ...
+
+    def get_edge(self) -> Optional[Edge]:
+        """Get the edge (for Edge locations only, None otherwise)."""
+        ...
 
 
 class EpochState:
@@ -385,37 +486,117 @@ class Epoch:
 
 
 class NetAction:
-    """An action to perform on the network."""
+    """An action to perform on the network.
+
+    Actions are executed via `NetSim.do_action()` and return a tuple of
+    (response_data, events).
+
+    Example:
+        # Create and start an epoch manually
+        salvo = Salvo(salvo_condition="trigger", packets=[("in", packet_id)])
+        response, events = net.do_action(NetAction.create_epoch("NodeB", salvo))
+        epoch = response.epoch  # CreatedEpoch response
+
+        response, events = net.do_action(NetAction.start_epoch(epoch.id))
+        epoch = response.epoch  # StartedEpoch response
+    """
 
     @staticmethod
-    def run_net_until_blocked() -> NetAction: ...
+    def run_net_until_blocked() -> NetAction:
+        """Run automatic packet flow until no progress can be made.
+
+        Moves packets from edges to input ports, then checks input salvo
+        conditions to create new epochs. Repeats until blocked.
+        """
+        ...
 
     @staticmethod
-    def create_packet(epoch_id: Optional[Union[ULID, str]] = None) -> NetAction: ...
+    def create_packet(epoch_id: Optional[Union[ULID, str]] = None) -> NetAction:
+        """Create a new packet.
+
+        Args:
+            epoch_id: If provided, create packet inside this epoch.
+                     If None, create packet outside the network.
+
+        Returns NetActionResponseData.Packet with the new packet ID.
+        """
+        ...
 
     @staticmethod
-    def consume_packet(packet_id: Union[ULID, str]) -> NetAction: ...
+    def consume_packet(packet_id: Union[ULID, str]) -> NetAction:
+        """Consume a packet (normal removal from the network)."""
+        ...
 
     @staticmethod
-    def start_epoch(epoch_id: Union[ULID, str]) -> NetAction: ...
+    def destroy_packet(packet_id: Union[ULID, str]) -> NetAction:
+        """Destroy a packet (abnormal removal, e.g., due to error)."""
+        ...
 
     @staticmethod
-    def finish_epoch(epoch_id: Union[ULID, str]) -> NetAction: ...
+    def start_epoch(epoch_id: Union[ULID, str]) -> NetAction:
+        """Start a Startable epoch, transitioning it to Running state.
+
+        Returns NetActionResponseData.StartedEpoch with the epoch.
+        """
+        ...
 
     @staticmethod
-    def cancel_epoch(epoch_id: Union[ULID, str]) -> NetAction: ...
+    def finish_epoch(epoch_id: Union[ULID, str]) -> NetAction:
+        """Finish a Running epoch.
+
+        The epoch must be empty (no packets inside) and all output salvos
+        must have been sent.
+
+        Returns NetActionResponseData.FinishedEpoch with the epoch.
+        """
+        ...
 
     @staticmethod
-    def create_and_start_epoch(node_name: str, salvo: Salvo) -> NetAction: ...
+    def cancel_epoch(epoch_id: Union[ULID, str]) -> NetAction:
+        """Cancel an epoch and destroy all packets inside it.
+
+        Returns NetActionResponseData.CancelledEpoch with the epoch and
+        list of destroyed packet IDs.
+        """
+        ...
 
     @staticmethod
-    def load_packet_into_output_port(packet_id: Union[ULID, str], port_name: str) -> NetAction: ...
+    def create_epoch(node_name: str, salvo: Salvo) -> NetAction:
+        """Manually create an epoch with specified packets.
+
+        Bypasses the normal salvo condition triggering mechanism.
+        The epoch is created in Startable state - call start_epoch() to
+        begin execution.
+
+        Args:
+            node_name: The node to create the epoch on.
+            salvo: The input salvo (packets must be at the node's input ports).
+                  For source nodes with no inputs, use an empty packets list.
+
+        Returns NetActionResponseData.CreatedEpoch with the epoch.
+        """
+        ...
 
     @staticmethod
-    def send_output_salvo(epoch_id: Union[ULID, str], salvo_condition_name: str) -> NetAction: ...
+    def load_packet_into_output_port(packet_id: Union[ULID, str], port_name: str) -> NetAction:
+        """Move a packet from inside an epoch to one of its output ports."""
+        ...
 
     @staticmethod
-    def transport_packet_to_location(packet_id: Union[ULID, str], destination: PacketLocation) -> NetAction: ...
+    def send_output_salvo(epoch_id: Union[ULID, str], salvo_condition_name: str) -> NetAction:
+        """Send packets from output ports onto edges.
+
+        The salvo condition must be satisfied for this to succeed.
+        """
+        ...
+
+    @staticmethod
+    def transport_packet_to_location(packet_id: Union[ULID, str], destination: PacketLocation) -> NetAction:
+        """Transport a packet to a new location.
+
+        Cannot move packets into or out of Running epochs.
+        """
+        ...
 
 
 class NetEvent:
@@ -436,44 +617,116 @@ class NetEvent:
 
 
 class NetActionResponseData:
-    """Response data from a successful action."""
+    """Response data from a successful action.
+
+    The response type depends on the action:
+    - `create_packet()` -> `Packet`
+    - `create_epoch()` -> `CreatedEpoch`
+    - `start_epoch()` -> `StartedEpoch`
+    - `finish_epoch()` -> `FinishedEpoch`
+    - `cancel_epoch()` -> `CancelledEpoch`
+    - Other actions -> `Empty`
+
+    Use `isinstance()` or check the type to determine which response you have.
+    """
 
     class Packet:
+        """Response from create_packet()."""
         packet_id: str
 
+    class CreatedEpoch:
+        """Response from create_epoch(). Epoch is in Startable state."""
+        epoch: Epoch
+
     class StartedEpoch:
+        """Response from start_epoch(). Epoch is in Running state."""
         epoch: Epoch
 
     class FinishedEpoch:
+        """Response from finish_epoch(). Epoch is in Finished state."""
         epoch: Epoch
 
     class CancelledEpoch:
+        """Response from cancel_epoch()."""
         epoch: Epoch
         destroyed_packets: List[str]
 
     class Empty:
+        """Response from actions that don't return specific data."""
         pass
 
 
 class NetSim:
-    """The runtime state of a flow-based network."""
+    """The runtime state of a flow-based network.
 
-    def __init__(self, graph: Graph) -> None: ...
+    NetSim simulates packet flow through a network of nodes. It tracks packet
+    locations, validates flow conditions, and manages epoch lifecycles.
 
-    def do_action(self, action: NetAction) -> Tuple[NetActionResponseData, List[NetEvent]]: ...
+    Example:
+        # Create a network
+        graph = Graph(nodes=[...], edges=[...])
+        net = NetSim(graph)
 
-    def packet_count_at(self, location: PacketLocation) -> int: ...
+        # Create a packet and place it on an edge
+        response, events = net.do_action(NetAction.create_packet())
+        packet_id = response.packet_id
 
-    def get_packets_at_location(self, location: PacketLocation) -> List[ULID]: ...
+        edge = graph.edges()[0]
+        net.do_action(NetAction.transport_packet_to_location(
+            packet_id,
+            PacketLocation.edge(edge)
+        ))
 
-    def get_epoch(self, epoch_id: Union[ULID, str]) -> Optional[Epoch]: ...
+        # Run the network - packet will flow to input ports and trigger epochs
+        net.do_action(NetAction.run_net_until_blocked())
 
-    def get_startable_epochs(self) -> List[ULID]: ...
+        # Check for startable epochs
+        startable = net.get_startable_epochs()
+    """
 
-    def get_packet(self, packet_id: Union[ULID, str]) -> Optional[Packet]: ...
+    def __init__(self, graph: Graph) -> None:
+        """Create a new network simulation from a graph topology."""
+        ...
+
+    def do_action(self, action: NetAction) -> Tuple[NetActionResponseData, List[NetEvent]]:
+        """Execute an action on the network.
+
+        Args:
+            action: The action to perform.
+
+        Returns:
+            A tuple of (response_data, events) where response_data contains
+            action-specific results and events is a list of things that happened.
+
+        Raises:
+            Various exceptions depending on the action (see exception classes).
+        """
+        ...
+
+    def packet_count_at(self, location: PacketLocation) -> int:
+        """Get the number of packets at a location."""
+        ...
+
+    def get_packets_at_location(self, location: PacketLocation) -> List[ULID]:
+        """Get the IDs of all packets at a location."""
+        ...
+
+    def get_epoch(self, epoch_id: Union[ULID, str]) -> Optional[Epoch]:
+        """Get an epoch by ID, or None if not found."""
+        ...
+
+    def get_startable_epochs(self) -> List[ULID]:
+        """Get IDs of all epochs in Startable state."""
+        ...
+
+    def get_packet(self, packet_id: Union[ULID, str]) -> Optional[Packet]:
+        """Get a packet by ID, or None if not found."""
+        ...
 
     @property
-    def graph(self) -> Graph: ...
+    def graph(self) -> Graph:
+        """The graph topology this simulation is running on."""
+        ...
 
 
 # === Re-exports ===
