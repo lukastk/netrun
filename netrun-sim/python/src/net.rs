@@ -334,7 +334,7 @@ enum NetActionKind {
     StartEpoch(String),
     FinishEpoch(String),
     CancelEpoch(String),
-    CreateAndStartEpoch(String, Salvo),
+    CreateEpoch(String, Salvo),
     LoadPacketIntoOutputPort(String, String),
     SendOutputSalvo(String, String),
     TransportPacketToLocation(String, PacketLocation),
@@ -403,11 +403,12 @@ impl NetAction {
         })
     }
 
-    /// Manually create and start an epoch.
+    /// Manually create an epoch with specified packets.
+    /// The epoch is created in Startable state - call start_epoch to begin execution.
     #[staticmethod]
-    fn create_and_start_epoch(node_name: String, salvo: Salvo) -> Self {
+    fn create_epoch(node_name: String, salvo: Salvo) -> Self {
         NetAction {
-            inner: NetActionKind::CreateAndStartEpoch(node_name, salvo),
+            inner: NetActionKind::CreateEpoch(node_name, salvo),
         }
     }
 
@@ -462,8 +463,8 @@ impl NetAction {
             NetActionKind::StartEpoch(id) => format!("NetAction.start_epoch('{}')", id),
             NetActionKind::FinishEpoch(id) => format!("NetAction.finish_epoch('{}')", id),
             NetActionKind::CancelEpoch(id) => format!("NetAction.cancel_epoch('{}')", id),
-            NetActionKind::CreateAndStartEpoch(name, _) => {
-                format!("NetAction.create_and_start_epoch({:?}, ...)", name)
+            NetActionKind::CreateEpoch(name, _) => {
+                format!("NetAction.create_epoch({:?}, ...)", name)
             }
             NetActionKind::LoadPacketIntoOutputPort(pid, port) => {
                 format!(
@@ -531,8 +532,8 @@ impl NetAction {
                 })?;
                 Ok(CoreNetSimAction::CancelEpoch(ulid))
             }
-            NetActionKind::CreateAndStartEpoch(name, salvo) => Ok(
-                CoreNetSimAction::CreateAndStartEpoch(name.clone(), salvo.to_core()),
+            NetActionKind::CreateEpoch(name, salvo) => Ok(
+                CoreNetSimAction::CreateEpoch(name.clone(), salvo.to_core()),
             ),
             NetActionKind::LoadPacketIntoOutputPort(pid, port) => {
                 let ulid = ulid::Ulid::from_string(pid).map_err(|e| {
@@ -739,6 +740,8 @@ pub enum NetActionResponseData {
     #[pyo3(constructor = (packet_id))]
     Packet { packet_id: String },
     #[pyo3(constructor = (epoch))]
+    CreatedEpoch { epoch: Epoch },
+    #[pyo3(constructor = (epoch))]
     StartedEpoch { epoch: Epoch },
     #[pyo3(constructor = (epoch))]
     FinishedEpoch { epoch: Epoch },
@@ -785,6 +788,11 @@ impl NetSim {
                     CoreNetSimActionResponseData::Packet(id) => NetActionResponseData::Packet {
                         packet_id: id.to_string(),
                     },
+                    CoreNetSimActionResponseData::CreatedEpoch(epoch) => {
+                        NetActionResponseData::CreatedEpoch {
+                            epoch: Epoch::from_core(&epoch),
+                        }
+                    }
                     CoreNetSimActionResponseData::StartedEpoch(epoch) => {
                         NetActionResponseData::StartedEpoch {
                             epoch: Epoch::from_core(&epoch),
