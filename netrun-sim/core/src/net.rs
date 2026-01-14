@@ -461,7 +461,10 @@ impl NetSim {
                 .map(|port_name| {
                     let count = self
                         ._packets_by_location
-                        .get(&PacketLocation::InputPort(node_name.clone(), port_name.clone()))
+                        .get(&PacketLocation::InputPort(
+                            node_name.clone(),
+                            port_name.clone(),
+                        ))
                         .map(|packets| packets.len() as u64)
                         .unwrap_or(0);
                     (port_name.clone(), count)
@@ -547,7 +550,8 @@ impl NetSim {
 
                 // Move packets from input ports into the epoch
                 for (pid, port_name) in &packets_to_move {
-                    let from_location = PacketLocation::InputPort(node_name.clone(), port_name.clone());
+                    let from_location =
+                        PacketLocation::InputPort(node_name.clone(), port_name.clone());
                     self.move_packet(pid, epoch_location.clone());
                     events.push(NetEvent::PacketMoved(
                         get_utc_now(),
@@ -1086,7 +1090,12 @@ impl NetSim {
         self.move_packet(packet_id, new_location.clone());
         NetActionResponse::Success(
             NetActionResponseData::None,
-            vec![NetEvent::PacketMoved(get_utc_now(), *packet_id, old_location, new_location)],
+            vec![NetEvent::PacketMoved(
+                get_utc_now(),
+                *packet_id,
+                old_location,
+                new_location,
+            )],
         )
     }
 
@@ -1159,7 +1168,8 @@ impl NetSim {
 
         // Get the locations to send packets to
         // Tuple: (packet_id, port_name, from_location, to_location)
-        let mut packets_to_move: Vec<(PacketID, PortName, PacketLocation, PacketLocation)> = Vec::new();
+        let mut packets_to_move: Vec<(PacketID, PortName, PacketLocation, PacketLocation)> =
+            Vec::new();
         for (port_name, packet_count) in &salvo_condition.ports {
             let from_location = PacketLocation::OutputPort(*epoch_id, port_name.clone());
             let packets = self
@@ -1193,7 +1203,12 @@ impl NetSim {
                 PacketCount::Count(n) => std::cmp::min(*n as usize, packets.len()),
             };
             for packet_id in packets.into_iter().take(take_count) {
-                packets_to_move.push((packet_id, port_name.clone(), from_location.clone(), to_location.clone()));
+                packets_to_move.push((
+                    packet_id,
+                    port_name.clone(),
+                    from_location.clone(),
+                    to_location.clone(),
+                ));
             }
         }
 

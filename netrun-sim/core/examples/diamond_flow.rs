@@ -16,7 +16,9 @@ use netrun_sim::graph::{
     Edge, Graph, MaxSalvos, Node, PacketCount, Port, PortRef, PortSlotSpec, PortState, PortType,
     SalvoCondition, SalvoConditionTerm,
 };
-use netrun_sim::net::{NetSim, NetAction, NetActionResponse, NetActionResponseData, PacketLocation};
+use netrun_sim::net::{
+    NetAction, NetActionResponse, NetActionResponseData, NetSim, PacketLocation,
+};
 use std::collections::HashMap;
 
 fn main() {
@@ -225,9 +227,7 @@ fn create_simple_node(name: &str) -> Node {
             "default".to_string(),
             SalvoCondition {
                 max_salvos: MaxSalvos::Finite(1),
-                ports: [("in".to_string(), PacketCount::All)]
-                    .into_iter()
-                    .collect(),
+                ports: [("in".to_string(), PacketCount::All)].into_iter().collect(),
                 term: SalvoConditionTerm::Port {
                     port_name: "in".to_string(),
                     state: PortState::NonEmpty,

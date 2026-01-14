@@ -4,7 +4,7 @@ mod common;
 
 use netrun_sim::graph::{Edge, PortRef, PortType};
 use netrun_sim::net::{
-    Epoch, EpochState, NetSim, NetAction, NetActionResponse, NetActionResponseData, NetEvent,
+    Epoch, EpochState, NetAction, NetActionResponse, NetActionResponseData, NetEvent, NetSim,
     PacketLocation, Salvo,
 };
 
@@ -126,8 +126,7 @@ fn test_linear_flow_with_output_salvo() {
         salvo_condition: "manual".to_string(),
         packets: vec![("in".to_string(), input_packet_id.clone())],
     };
-    let epoch =
-        get_created_epoch(&net.do_action(&NetAction::CreateEpoch("B".to_string(), salvo)));
+    let epoch = get_created_epoch(&net.do_action(&NetAction::CreateEpoch("B".to_string(), salvo)));
     let epoch = get_started_epoch(&net.do_action(&NetAction::StartEpoch(epoch.id)));
 
     // 3. Consume input packet
@@ -299,8 +298,7 @@ fn test_cancel_epoch_workflow() {
         salvo_condition: "manual".to_string(),
         packets: vec![("in".to_string(), packet_id.clone())],
     };
-    let epoch =
-        get_created_epoch(&net.do_action(&NetAction::CreateEpoch("B".to_string(), salvo)));
+    let epoch = get_created_epoch(&net.do_action(&NetAction::CreateEpoch("B".to_string(), salvo)));
     let epoch = get_started_epoch(&net.do_action(&NetAction::StartEpoch(epoch.id)));
 
     // Cancel the epoch

@@ -11,7 +11,9 @@ use netrun_sim::graph::{
     Edge, Graph, MaxSalvos, Node, PacketCount, Port, PortRef, PortSlotSpec, PortState, PortType,
     SalvoCondition, SalvoConditionTerm,
 };
-use netrun_sim::net::{NetSim, NetAction, NetActionResponse, NetActionResponseData, PacketLocation};
+use netrun_sim::net::{
+    NetAction, NetActionResponse, NetActionResponseData, NetSim, PacketLocation,
+};
 use std::collections::HashMap;
 
 fn main() {

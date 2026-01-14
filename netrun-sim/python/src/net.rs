@@ -9,9 +9,10 @@ pub use netrun_sim::net::EpochState;
 
 use netrun_sim::graph::Edge as CoreEdge;
 use netrun_sim::net::{
-    Epoch as CoreEpoch, NetSim as CoreNetSim, NetAction as CoreNetSimAction,
-    NetActionResponse as CoreNetSimActionResponse, NetActionResponseData as CoreNetSimActionResponseData,
-    NetEvent as CoreNetSimEvent, Packet as CorePacket, PacketLocation as CorePacketLocation,
+    Epoch as CoreEpoch, NetAction as CoreNetSimAction,
+    NetActionResponse as CoreNetSimActionResponse,
+    NetActionResponseData as CoreNetSimActionResponseData, NetEvent as CoreNetSimEvent,
+    NetSim as CoreNetSim, Packet as CorePacket, PacketLocation as CorePacketLocation,
     Salvo as CoreSalvo,
 };
 
@@ -298,9 +299,7 @@ impl Epoch {
         };
         format!(
             "Epoch(id='{}', node_name={:?}, state={})",
-            self.id,
-            self.node_name,
-            state_repr
+            self.id, self.node_name, state_repr
         )
     }
 }
@@ -532,14 +531,17 @@ impl NetAction {
                 })?;
                 Ok(CoreNetSimAction::CancelEpoch(ulid))
             }
-            NetActionKind::CreateEpoch(name, salvo) => Ok(
-                CoreNetSimAction::CreateEpoch(name.clone(), salvo.to_core()),
-            ),
+            NetActionKind::CreateEpoch(name, salvo) => {
+                Ok(CoreNetSimAction::CreateEpoch(name.clone(), salvo.to_core()))
+            }
             NetActionKind::LoadPacketIntoOutputPort(pid, port) => {
                 let ulid = ulid::Ulid::from_string(pid).map_err(|e| {
                     PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
                 })?;
-                Ok(CoreNetSimAction::LoadPacketIntoOutputPort(ulid, port.clone()))
+                Ok(CoreNetSimAction::LoadPacketIntoOutputPort(
+                    ulid,
+                    port.clone(),
+                ))
             }
             NetActionKind::SendOutputSalvo(eid, cond) => {
                 let ulid = ulid::Ulid::from_string(eid).map_err(|e| {
@@ -715,27 +717,33 @@ impl NetEvent {
 impl NetEvent {
     pub fn from_core(event: &CoreNetSimEvent) -> Self {
         let inner = match event {
-            CoreNetSimEvent::PacketCreated(ts, id) => NetEventKind::PacketCreated(*ts, id.to_string()),
+            CoreNetSimEvent::PacketCreated(ts, id) => {
+                NetEventKind::PacketCreated(*ts, id.to_string())
+            }
             CoreNetSimEvent::PacketConsumed(ts, id) => {
                 NetEventKind::PacketConsumed(*ts, id.to_string())
             }
             CoreNetSimEvent::PacketDestroyed(ts, id) => {
                 NetEventKind::PacketDestroyed(*ts, id.to_string())
             }
-            CoreNetSimEvent::EpochCreated(ts, id) => NetEventKind::EpochCreated(*ts, id.to_string()),
-            CoreNetSimEvent::EpochStarted(ts, id) => NetEventKind::EpochStarted(*ts, id.to_string()),
-            CoreNetSimEvent::EpochFinished(ts, id) => NetEventKind::EpochFinished(*ts, id.to_string()),
+            CoreNetSimEvent::EpochCreated(ts, id) => {
+                NetEventKind::EpochCreated(*ts, id.to_string())
+            }
+            CoreNetSimEvent::EpochStarted(ts, id) => {
+                NetEventKind::EpochStarted(*ts, id.to_string())
+            }
+            CoreNetSimEvent::EpochFinished(ts, id) => {
+                NetEventKind::EpochFinished(*ts, id.to_string())
+            }
             CoreNetSimEvent::EpochCancelled(ts, id) => {
                 NetEventKind::EpochCancelled(*ts, id.to_string())
             }
-            CoreNetSimEvent::PacketMoved(ts, id, from_loc, to_loc) => {
-                NetEventKind::PacketMoved(
-                    *ts,
-                    id.to_string(),
-                    PacketLocation::from_core(from_loc),
-                    PacketLocation::from_core(to_loc),
-                )
-            }
+            CoreNetSimEvent::PacketMoved(ts, id, from_loc, to_loc) => NetEventKind::PacketMoved(
+                *ts,
+                id.to_string(),
+                PacketLocation::from_core(from_loc),
+                PacketLocation::from_core(to_loc),
+            ),
             CoreNetSimEvent::InputSalvoTriggered(ts, eid, cond) => {
                 NetEventKind::InputSalvoTriggered(*ts, eid.to_string(), cond.clone())
             }
