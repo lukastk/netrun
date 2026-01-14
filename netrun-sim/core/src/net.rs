@@ -651,10 +651,11 @@ impl NetSim {
             // Phase 2: Check salvo conditions for all nodes with packets at input ports
             let mut nodes_with_input_packets: Vec<NodeName> = Vec::new();
             for (location, packets) in &self._packets_by_location {
-                if let PacketLocation::InputPort(node_name, _) = location {
-                    if !packets.is_empty() && !nodes_with_input_packets.contains(node_name) {
-                        nodes_with_input_packets.push(node_name.clone());
-                    }
+                if let PacketLocation::InputPort(node_name, _) = location
+                    && !packets.is_empty()
+                    && !nodes_with_input_packets.contains(node_name)
+                {
+                    nodes_with_input_packets.push(node_name.clone());
                 }
             }
 
@@ -838,13 +839,13 @@ impl NetSim {
             .expect("Epoch references non-existent node");
         for port_name in node.out_ports.keys() {
             let output_port_loc = PacketLocation::OutputPort(*epoch_id, port_name.clone());
-            if let Some(packets) = self._packets_by_location.get(&output_port_loc) {
-                if !packets.is_empty() {
-                    return NetActionResponse::Error(NetActionError::UnsentOutputSalvo {
-                        epoch_id: *epoch_id,
-                        port_name: port_name.clone(),
-                    });
-                }
+            if let Some(packets) = self._packets_by_location.get(&output_port_loc)
+                && !packets.is_empty()
+            {
+                return NetActionResponse::Error(NetActionError::UnsentOutputSalvo {
+                    epoch_id: *epoch_id,
+                    port_name: port_name.clone(),
+                });
             }
         }
 
