@@ -28,3 +28,12 @@ dev = [
     "twine>=6.1.0",
     "typing-extensions>=4.13.2",
 ]
+
+[tool.ruff.lint]
+# F403: star imports, F405: names from star imports - needed for native extension re-exports
+# E402: module level import not at top - expected in .pct.py notebook files
+ignore = ["E402"]
+
+[tool.ruff.lint.per-file-ignores]
+"python/netrun_sim/__init__.py" = ["F403", "F405"]
+"**/*.pct.py" = ["E402"]
