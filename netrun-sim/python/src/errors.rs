@@ -36,6 +36,13 @@ create_exception!(netrun_sim, EdgeNotFoundError, NetrunError);
 create_exception!(netrun_sim, UnconnectedOutputPortError, NetrunError);
 create_exception!(netrun_sim, GraphValidationError, NetrunError);
 
+// Undo-related exceptions
+create_exception!(netrun_sim, UndoError, NetrunError);
+create_exception!(netrun_sim, UndoStateMismatchError, UndoError);
+create_exception!(netrun_sim, UndoNotFoundError, UndoError);
+create_exception!(netrun_sim, UndoNotUndoableError, UndoError);
+create_exception!(netrun_sim, UndoInternalError, UndoError);
+
 pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("NetrunError", m.py().get_type::<NetrunError>())?;
     m.add(
@@ -115,6 +122,20 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(
         "GraphValidationError",
         m.py().get_type::<GraphValidationError>(),
+    )?;
+    m.add("UndoError", m.py().get_type::<UndoError>())?;
+    m.add(
+        "UndoStateMismatchError",
+        m.py().get_type::<UndoStateMismatchError>(),
+    )?;
+    m.add("UndoNotFoundError", m.py().get_type::<UndoNotFoundError>())?;
+    m.add(
+        "UndoNotUndoableError",
+        m.py().get_type::<UndoNotUndoableError>(),
+    )?;
+    m.add(
+        "UndoInternalError",
+        m.py().get_type::<UndoInternalError>(),
     )?;
     Ok(())
 }
@@ -238,5 +259,24 @@ pub fn net_action_error_to_py_err(err: netrun_sim::net::NetActionError) -> PyErr
             "Output port '{}' on node '{}' is not connected to any edge",
             port_name, node_name
         )),
+    }
+}
+
+/// Convert an UndoError to the appropriate Python exception
+pub fn undo_error_to_py_err(err: netrun_sim::net::UndoError) -> PyErr {
+    use netrun_sim::net::UndoError as CoreUndoError;
+    match err {
+        CoreUndoError::StateMismatch(msg) => {
+            UndoStateMismatchError::new_err(format!("State mismatch: {}", msg))
+        }
+        CoreUndoError::NotFound(msg) => {
+            UndoNotFoundError::new_err(format!("Entity not found: {}", msg))
+        }
+        CoreUndoError::NotUndoable(msg) => {
+            UndoNotUndoableError::new_err(format!("Action not undoable: {}", msg))
+        }
+        CoreUndoError::InternalError(msg) => {
+            UndoInternalError::new_err(format!("Internal error: {}", msg))
+        }
     }
 }

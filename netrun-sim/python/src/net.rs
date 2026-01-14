@@ -315,6 +315,19 @@ impl Epoch {
             state: epoch.state.clone(),
         }
     }
+
+    pub fn to_core(&self) -> PyResult<CoreEpoch> {
+        let id = ulid::Ulid::from_string(&self.id).map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
+        })?;
+        Ok(CoreEpoch {
+            id,
+            node_name: self.node_name.clone(),
+            in_salvo: self.in_salvo.to_core(),
+            out_salvos: self.out_salvos.iter().map(|s| s.to_core()).collect(),
+            state: self.state.clone(),
+        })
+    }
 }
 
 /// An action to perform on the network.
@@ -326,7 +339,7 @@ pub struct NetAction {
 
 #[derive(Clone)]
 enum NetActionKind {
-    RunNetUntilBlocked,
+    RunStep,
     CreatePacket(Option<String>),
     ConsumePacket(String),
     DestroyPacket(String),
@@ -341,11 +354,12 @@ enum NetActionKind {
 
 #[pymethods]
 impl NetAction {
-    /// Run automatic packet flow until blocked.
+    /// Execute one step of automatic packet flow.
+    /// Returns whether progress was made (i.e., not blocked).
     #[staticmethod]
-    fn run_net_until_blocked() -> Self {
+    fn run_step() -> Self {
         NetAction {
-            inner: NetActionKind::RunNetUntilBlocked,
+            inner: NetActionKind::RunStep,
         }
     }
 
@@ -452,7 +466,7 @@ impl NetAction {
 
     fn __repr__(&self) -> String {
         match &self.inner {
-            NetActionKind::RunNetUntilBlocked => "NetAction.run_net_until_blocked()".to_string(),
+            NetActionKind::RunStep => "NetAction.run_step()".to_string(),
             NetActionKind::CreatePacket(id) => match id {
                 Some(id) => format!("NetAction.create_packet('{}')", id),
                 None => "NetAction.create_packet()".to_string(),
@@ -488,7 +502,7 @@ impl NetAction {
 impl NetAction {
     pub fn to_core(&self) -> PyResult<CoreNetSimAction> {
         match &self.inner {
-            NetActionKind::RunNetUntilBlocked => Ok(CoreNetSimAction::RunNetUntilBlocked),
+            NetActionKind::RunStep => Ok(CoreNetSimAction::RunStep),
             NetActionKind::CreatePacket(opt_id) => {
                 let ulid_opt = match opt_id {
                     Some(s) => Some(ulid::Ulid::from_string(s).map_err(|e| {
@@ -572,13 +586,13 @@ pub struct NetEvent {
 #[derive(Clone)]
 enum NetEventKind {
     PacketCreated(i128, String),
-    PacketConsumed(i128, String),
-    PacketDestroyed(i128, String),
+    PacketConsumed(i128, String, PacketLocation),           // (ts, packet_id, location)
+    PacketDestroyed(i128, String, PacketLocation),          // (ts, packet_id, location)
     EpochCreated(i128, String),
     EpochStarted(i128, String),
-    EpochFinished(i128, String),
-    EpochCancelled(i128, String),
-    PacketMoved(i128, String, PacketLocation, PacketLocation), // (ts, packet_id, from, to)
+    EpochFinished(i128, Epoch),                             // (ts, epoch) - full epoch for undo
+    EpochCancelled(i128, Epoch),                            // (ts, epoch) - full epoch for undo
+    PacketMoved(i128, String, PacketLocation, PacketLocation, usize), // (ts, packet_id, from, to, from_index)
     InputSalvoTriggered(i128, String, String),
     OutputSalvoTriggered(i128, String, String),
 }
@@ -589,13 +603,13 @@ impl NetEvent {
     fn kind(&self) -> String {
         match &self.inner {
             NetEventKind::PacketCreated(_, _) => "PacketCreated".to_string(),
-            NetEventKind::PacketConsumed(_, _) => "PacketConsumed".to_string(),
-            NetEventKind::PacketDestroyed(_, _) => "PacketDestroyed".to_string(),
+            NetEventKind::PacketConsumed(_, _, _) => "PacketConsumed".to_string(),
+            NetEventKind::PacketDestroyed(_, _, _) => "PacketDestroyed".to_string(),
             NetEventKind::EpochCreated(_, _) => "EpochCreated".to_string(),
             NetEventKind::EpochStarted(_, _) => "EpochStarted".to_string(),
             NetEventKind::EpochFinished(_, _) => "EpochFinished".to_string(),
             NetEventKind::EpochCancelled(_, _) => "EpochCancelled".to_string(),
-            NetEventKind::PacketMoved(_, _, _, _) => "PacketMoved".to_string(),
+            NetEventKind::PacketMoved(_, _, _, _, _) => "PacketMoved".to_string(),
             NetEventKind::InputSalvoTriggered(_, _, _) => "InputSalvoTriggered".to_string(),
             NetEventKind::OutputSalvoTriggered(_, _, _) => "OutputSalvoTriggered".to_string(),
         }
@@ -605,13 +619,13 @@ impl NetEvent {
     fn timestamp(&self) -> i128 {
         match &self.inner {
             NetEventKind::PacketCreated(ts, _)
-            | NetEventKind::PacketConsumed(ts, _)
-            | NetEventKind::PacketDestroyed(ts, _)
+            | NetEventKind::PacketConsumed(ts, _, _)
+            | NetEventKind::PacketDestroyed(ts, _, _)
             | NetEventKind::EpochCreated(ts, _)
             | NetEventKind::EpochStarted(ts, _)
             | NetEventKind::EpochFinished(ts, _)
             | NetEventKind::EpochCancelled(ts, _)
-            | NetEventKind::PacketMoved(ts, _, _, _)
+            | NetEventKind::PacketMoved(ts, _, _, _, _)
             | NetEventKind::InputSalvoTriggered(ts, _, _)
             | NetEventKind::OutputSalvoTriggered(ts, _, _) => *ts,
         }
@@ -621,9 +635,9 @@ impl NetEvent {
     fn packet_id(&self) -> Option<String> {
         match &self.inner {
             NetEventKind::PacketCreated(_, id)
-            | NetEventKind::PacketConsumed(_, id)
-            | NetEventKind::PacketDestroyed(_, id)
-            | NetEventKind::PacketMoved(_, id, _, _) => Some(id.clone()),
+            | NetEventKind::PacketConsumed(_, id, _)
+            | NetEventKind::PacketDestroyed(_, id, _)
+            | NetEventKind::PacketMoved(_, id, _, _, _) => Some(id.clone()),
             _ => None,
         }
     }
@@ -633,10 +647,22 @@ impl NetEvent {
         match &self.inner {
             NetEventKind::EpochCreated(_, id)
             | NetEventKind::EpochStarted(_, id)
-            | NetEventKind::EpochFinished(_, id)
-            | NetEventKind::EpochCancelled(_, id)
             | NetEventKind::InputSalvoTriggered(_, id, _)
             | NetEventKind::OutputSalvoTriggered(_, id, _) => Some(id.clone()),
+            NetEventKind::EpochFinished(_, epoch) | NetEventKind::EpochCancelled(_, epoch) => {
+                Some(epoch.id.clone())
+            }
+            _ => None,
+        }
+    }
+
+    /// Get the epoch (for EpochFinished and EpochCancelled events).
+    #[getter]
+    fn epoch(&self) -> Option<Epoch> {
+        match &self.inner {
+            NetEventKind::EpochFinished(_, epoch) | NetEventKind::EpochCancelled(_, epoch) => {
+                Some(epoch.clone())
+            }
             _ => None,
         }
     }
@@ -644,7 +670,7 @@ impl NetEvent {
     #[getter]
     fn from_location(&self) -> Option<PacketLocation> {
         match &self.inner {
-            NetEventKind::PacketMoved(_, _, from_loc, _) => Some(from_loc.clone()),
+            NetEventKind::PacketMoved(_, _, from_loc, _, _) => Some(from_loc.clone()),
             _ => None,
         }
     }
@@ -652,7 +678,27 @@ impl NetEvent {
     #[getter]
     fn to_location(&self) -> Option<PacketLocation> {
         match &self.inner {
-            NetEventKind::PacketMoved(_, _, _, to_loc) => Some(to_loc.clone()),
+            NetEventKind::PacketMoved(_, _, _, to_loc, _) => Some(to_loc.clone()),
+            _ => None,
+        }
+    }
+
+    /// Get the from_index (for PacketMoved events - used for undo).
+    #[getter]
+    fn from_index(&self) -> Option<usize> {
+        match &self.inner {
+            NetEventKind::PacketMoved(_, _, _, _, from_index) => Some(*from_index),
+            _ => None,
+        }
+    }
+
+    /// Get the location (for PacketConsumed and PacketDestroyed events).
+    #[getter]
+    fn location(&self) -> Option<PacketLocation> {
+        match &self.inner {
+            NetEventKind::PacketConsumed(_, _, loc) | NetEventKind::PacketDestroyed(_, _, loc) => {
+                Some(loc.clone())
+            }
             _ => None,
         }
     }
@@ -671,11 +717,21 @@ impl NetEvent {
             NetEventKind::PacketCreated(ts, id) => {
                 format!("NetEvent.PacketCreated(ts={}, packet_id='{}')", ts, id)
             }
-            NetEventKind::PacketConsumed(ts, id) => {
-                format!("NetEvent.PacketConsumed(ts={}, packet_id='{}')", ts, id)
+            NetEventKind::PacketConsumed(ts, id, loc) => {
+                format!(
+                    "NetEvent.PacketConsumed(ts={}, packet_id='{}', location={})",
+                    ts,
+                    id,
+                    loc.__repr__()
+                )
             }
-            NetEventKind::PacketDestroyed(ts, id) => {
-                format!("NetEvent.PacketDestroyed(ts={}, packet_id='{}')", ts, id)
+            NetEventKind::PacketDestroyed(ts, id, loc) => {
+                format!(
+                    "NetEvent.PacketDestroyed(ts={}, packet_id='{}', location={})",
+                    ts,
+                    id,
+                    loc.__repr__()
+                )
             }
             NetEventKind::EpochCreated(ts, id) => {
                 format!("NetEvent.EpochCreated(ts={}, epoch_id='{}')", ts, id)
@@ -683,19 +739,28 @@ impl NetEvent {
             NetEventKind::EpochStarted(ts, id) => {
                 format!("NetEvent.EpochStarted(ts={}, epoch_id='{}')", ts, id)
             }
-            NetEventKind::EpochFinished(ts, id) => {
-                format!("NetEvent.EpochFinished(ts={}, epoch_id='{}')", ts, id)
-            }
-            NetEventKind::EpochCancelled(ts, id) => {
-                format!("NetEvent.EpochCancelled(ts={}, epoch_id='{}')", ts, id)
-            }
-            NetEventKind::PacketMoved(ts, id, from_loc, to_loc) => {
+            NetEventKind::EpochFinished(ts, epoch) => {
                 format!(
-                    "NetEvent.PacketMoved(ts={}, packet_id='{}', from={}, to={})",
+                    "NetEvent.EpochFinished(ts={}, epoch={})",
+                    ts,
+                    epoch.__repr__()
+                )
+            }
+            NetEventKind::EpochCancelled(ts, epoch) => {
+                format!(
+                    "NetEvent.EpochCancelled(ts={}, epoch={})",
+                    ts,
+                    epoch.__repr__()
+                )
+            }
+            NetEventKind::PacketMoved(ts, id, from_loc, to_loc, from_index) => {
+                format!(
+                    "NetEvent.PacketMoved(ts={}, packet_id='{}', from={}, to={}, from_index={})",
                     ts,
                     id,
                     from_loc.__repr__(),
-                    to_loc.__repr__()
+                    to_loc.__repr__(),
+                    from_index
                 )
             }
             NetEventKind::InputSalvoTriggered(ts, eid, cond) => {
@@ -720,11 +785,11 @@ impl NetEvent {
             CoreNetSimEvent::PacketCreated(ts, id) => {
                 NetEventKind::PacketCreated(*ts, id.to_string())
             }
-            CoreNetSimEvent::PacketConsumed(ts, id) => {
-                NetEventKind::PacketConsumed(*ts, id.to_string())
+            CoreNetSimEvent::PacketConsumed(ts, id, location) => {
+                NetEventKind::PacketConsumed(*ts, id.to_string(), PacketLocation::from_core(location))
             }
-            CoreNetSimEvent::PacketDestroyed(ts, id) => {
-                NetEventKind::PacketDestroyed(*ts, id.to_string())
+            CoreNetSimEvent::PacketDestroyed(ts, id, location) => {
+                NetEventKind::PacketDestroyed(*ts, id.to_string(), PacketLocation::from_core(location))
             }
             CoreNetSimEvent::EpochCreated(ts, id) => {
                 NetEventKind::EpochCreated(*ts, id.to_string())
@@ -732,18 +797,21 @@ impl NetEvent {
             CoreNetSimEvent::EpochStarted(ts, id) => {
                 NetEventKind::EpochStarted(*ts, id.to_string())
             }
-            CoreNetSimEvent::EpochFinished(ts, id) => {
-                NetEventKind::EpochFinished(*ts, id.to_string())
+            CoreNetSimEvent::EpochFinished(ts, epoch) => {
+                NetEventKind::EpochFinished(*ts, Epoch::from_core(epoch))
             }
-            CoreNetSimEvent::EpochCancelled(ts, id) => {
-                NetEventKind::EpochCancelled(*ts, id.to_string())
+            CoreNetSimEvent::EpochCancelled(ts, epoch) => {
+                NetEventKind::EpochCancelled(*ts, Epoch::from_core(epoch))
             }
-            CoreNetSimEvent::PacketMoved(ts, id, from_loc, to_loc) => NetEventKind::PacketMoved(
-                *ts,
-                id.to_string(),
-                PacketLocation::from_core(from_loc),
-                PacketLocation::from_core(to_loc),
-            ),
+            CoreNetSimEvent::PacketMoved(ts, id, from_loc, to_loc, from_index) => {
+                NetEventKind::PacketMoved(
+                    *ts,
+                    id.to_string(),
+                    PacketLocation::from_core(from_loc),
+                    PacketLocation::from_core(to_loc),
+                    *from_index,
+                )
+            }
             CoreNetSimEvent::InputSalvoTriggered(ts, eid, cond) => {
                 NetEventKind::InputSalvoTriggered(*ts, eid.to_string(), cond.clone())
             }
@@ -752,6 +820,72 @@ impl NetEvent {
             }
         };
         NetEvent { inner }
+    }
+
+    /// Convert to core NetEvent (for undo_action)
+    pub fn to_core(&self) -> PyResult<CoreNetSimEvent> {
+        match &self.inner {
+            NetEventKind::PacketCreated(ts, id) => {
+                let ulid = ulid::Ulid::from_string(id).map_err(|e| {
+                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
+                })?;
+                Ok(CoreNetSimEvent::PacketCreated(*ts, ulid))
+            }
+            NetEventKind::PacketConsumed(ts, id, loc) => {
+                let ulid = ulid::Ulid::from_string(id).map_err(|e| {
+                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
+                })?;
+                Ok(CoreNetSimEvent::PacketConsumed(*ts, ulid, loc.to_core()))
+            }
+            NetEventKind::PacketDestroyed(ts, id, loc) => {
+                let ulid = ulid::Ulid::from_string(id).map_err(|e| {
+                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
+                })?;
+                Ok(CoreNetSimEvent::PacketDestroyed(*ts, ulid, loc.to_core()))
+            }
+            NetEventKind::EpochCreated(ts, id) => {
+                let ulid = ulid::Ulid::from_string(id).map_err(|e| {
+                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
+                })?;
+                Ok(CoreNetSimEvent::EpochCreated(*ts, ulid))
+            }
+            NetEventKind::EpochStarted(ts, id) => {
+                let ulid = ulid::Ulid::from_string(id).map_err(|e| {
+                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
+                })?;
+                Ok(CoreNetSimEvent::EpochStarted(*ts, ulid))
+            }
+            NetEventKind::EpochFinished(ts, epoch) => {
+                Ok(CoreNetSimEvent::EpochFinished(*ts, epoch.to_core()?))
+            }
+            NetEventKind::EpochCancelled(ts, epoch) => {
+                Ok(CoreNetSimEvent::EpochCancelled(*ts, epoch.to_core()?))
+            }
+            NetEventKind::PacketMoved(ts, id, from_loc, to_loc, from_index) => {
+                let ulid = ulid::Ulid::from_string(id).map_err(|e| {
+                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
+                })?;
+                Ok(CoreNetSimEvent::PacketMoved(
+                    *ts,
+                    ulid,
+                    from_loc.to_core(),
+                    to_loc.to_core(),
+                    *from_index,
+                ))
+            }
+            NetEventKind::InputSalvoTriggered(ts, id, cond) => {
+                let ulid = ulid::Ulid::from_string(id).map_err(|e| {
+                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
+                })?;
+                Ok(CoreNetSimEvent::InputSalvoTriggered(*ts, ulid, cond.clone()))
+            }
+            NetEventKind::OutputSalvoTriggered(ts, id, cond) => {
+                let ulid = ulid::Ulid::from_string(id).map_err(|e| {
+                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
+                })?;
+                Ok(CoreNetSimEvent::OutputSalvoTriggered(*ts, ulid, cond.clone()))
+            }
+        }
     }
 }
 
@@ -772,6 +906,8 @@ pub enum NetActionResponseData {
         epoch: Epoch,
         destroyed_packets: Vec<String>,
     },
+    #[pyo3(constructor = (made_progress))]
+    StepResult { made_progress: bool },
     #[pyo3(constructor = ())]
     Empty {},
 }
@@ -831,6 +967,9 @@ impl NetSim {
                             destroyed_packets: destroyed.iter().map(|id| id.to_string()).collect(),
                         }
                     }
+                    CoreNetSimActionResponseData::StepResult { made_progress } => {
+                        NetActionResponseData::StepResult { made_progress }
+                    }
                     CoreNetSimActionResponseData::None => NetActionResponseData::Empty {},
                 };
 
@@ -843,6 +982,46 @@ impl NetSim {
             }
             CoreNetSimActionResponse::Error(err) => Err(net_action_error_to_py_err(err)),
         }
+    }
+
+    /// Check if the network is blocked (no progress can be made).
+    fn is_blocked(&self) -> bool {
+        self.inner.is_blocked()
+    }
+
+    /// Run the network until blocked, returning all events.
+    fn run_until_blocked(&mut self, py: Python<'_>) -> PyResult<Py<PyList>> {
+        let events = self.inner.run_until_blocked();
+        let events_list = PyList::empty(py);
+        for event in events {
+            events_list.append(NetEvent::from_core(&event))?;
+        }
+        Ok(events_list.unbind())
+    }
+
+    /// Undo a previously executed action.
+    ///
+    /// Args:
+    ///     action: The original action that was executed
+    ///     events: The events that were produced by the action
+    ///
+    /// Raises:
+    ///     UndoError: If the undo operation fails
+    fn undo_action(&mut self, action: &NetAction, events: &Bound<'_, PyList>) -> PyResult<()> {
+        use crate::errors::undo_error_to_py_err;
+
+        let core_action = action.to_core()?;
+
+        // Convert Python events list to Vec<CoreNetSimEvent>
+        let mut core_events = Vec::new();
+        for item in events.iter() {
+            let event: NetEvent = item.extract()?;
+            core_events.push(event.to_core()?);
+        }
+
+        self.inner
+            .undo_action(&core_action, &core_events)
+            .map_err(undo_error_to_py_err)
     }
 
     /// Get the number of packets at a location.

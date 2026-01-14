@@ -53,7 +53,7 @@ fn main() {
     println!("Placed packet on edge A -> B");
 
     // Run the network - packet moves to B's input port and triggers an epoch
-    net.do_action(&NetAction::RunNetUntilBlocked);
+    net.run_until_blocked();
     println!("Ran network until blocked");
 
     // Check for startable epochs
@@ -100,7 +100,7 @@ fn main() {
                 println!("Finished epoch");
 
                 // Run the network again - packet moves to C
-                net.do_action(&NetAction::RunNetUntilBlocked);
+                net.run_until_blocked();
                 println!("Ran network until blocked again");
 
                 // Check for new startable epochs at C
