@@ -12,9 +12,7 @@ fn get_packet_id(response: &NetActionResponse) -> PacketID {
 // Helper to extract epoch from create response
 fn get_created_epoch(response: &NetActionResponse) -> Epoch {
     match response {
-        NetActionResponse::Success(NetActionResponseData::CreatedEpoch(epoch), _) => {
-            epoch.clone()
-        }
+        NetActionResponse::Success(NetActionResponseData::CreatedEpoch(epoch), _) => epoch.clone(),
         _ => panic!("Expected CreatedEpoch response, got: {:?}", response),
     }
 }
@@ -22,9 +20,7 @@ fn get_created_epoch(response: &NetActionResponse) -> Epoch {
 // Helper to extract epoch from start response
 fn get_started_epoch(response: &NetActionResponse) -> Epoch {
     match response {
-        NetActionResponse::Success(NetActionResponseData::StartedEpoch(epoch), _) => {
-            epoch.clone()
-        }
+        NetActionResponse::Success(NetActionResponseData::StartedEpoch(epoch), _) => epoch.clone(),
         _ => panic!("Expected StartedEpoch response, got: {:?}", response),
     }
 }
@@ -168,9 +164,7 @@ fn test_cannot_finish_epoch_with_packets() {
         salvo_condition: "manual".to_string(),
         packets: vec![("in".to_string(), packet_id)],
     };
-    let epoch = get_created_epoch(
-        &net.do_action(&NetAction::CreateEpoch("B".to_string(), salvo)),
-    );
+    let epoch = get_created_epoch(&net.do_action(&NetAction::CreateEpoch("B".to_string(), salvo)));
     let epoch = get_started_epoch(&net.do_action(&NetAction::StartEpoch(epoch.id)));
 
     // Try to finish without consuming packet
@@ -205,9 +199,7 @@ fn test_cannot_finish_epoch_with_unsent_output_salvo() {
         salvo_condition: "manual".to_string(),
         packets: vec![("in".to_string(), packet_id.clone())],
     };
-    let epoch = get_created_epoch(
-        &net.do_action(&NetAction::CreateEpoch("B".to_string(), salvo)),
-    );
+    let epoch = get_created_epoch(&net.do_action(&NetAction::CreateEpoch("B".to_string(), salvo)));
     let epoch = get_started_epoch(&net.do_action(&NetAction::StartEpoch(epoch.id)));
 
     // Consume the input packet
@@ -253,9 +245,7 @@ fn test_cancel_epoch_destroys_packets() {
         salvo_condition: "manual".to_string(),
         packets: vec![("in".to_string(), packet_id.clone())],
     };
-    let epoch = get_created_epoch(
-        &net.do_action(&NetAction::CreateEpoch("B".to_string(), salvo)),
-    );
+    let epoch = get_created_epoch(&net.do_action(&NetAction::CreateEpoch("B".to_string(), salvo)));
     let epoch = get_started_epoch(&net.do_action(&NetAction::StartEpoch(epoch.id)));
 
     // Cancel the epoch
@@ -430,8 +420,7 @@ fn test_fifo_packet_ordering() {
     let packet_move_order: Vec<PacketID> = events
         .iter()
         .filter_map(|event| {
-            if let NetEvent::PacketMoved(_, packet_id, _, PacketLocation::InputPort(_, _)) = event
-            {
+            if let NetEvent::PacketMoved(_, packet_id, _, PacketLocation::InputPort(_, _)) = event {
                 Some(packet_id.clone())
             } else {
                 None
@@ -484,9 +473,7 @@ fn test_load_packet_into_output_port() {
         salvo_condition: "manual".to_string(),
         packets: vec![("in".to_string(), packet_id.clone())],
     };
-    let epoch = get_created_epoch(
-        &net.do_action(&NetAction::CreateEpoch("B".to_string(), salvo)),
-    );
+    let epoch = get_created_epoch(&net.do_action(&NetAction::CreateEpoch("B".to_string(), salvo)));
     let epoch = get_started_epoch(&net.do_action(&NetAction::StartEpoch(epoch.id)));
 
     // Load packet into output port
@@ -527,9 +514,7 @@ fn test_send_output_salvo() {
         salvo_condition: "manual".to_string(),
         packets: vec![("in".to_string(), packet_id.clone())],
     };
-    let epoch = get_created_epoch(
-        &net.do_action(&NetAction::CreateEpoch("B".to_string(), salvo)),
-    );
+    let epoch = get_created_epoch(&net.do_action(&NetAction::CreateEpoch("B".to_string(), salvo)));
     let epoch = get_started_epoch(&net.do_action(&NetAction::StartEpoch(epoch.id)));
 
     // Load packet into output port
@@ -589,9 +574,7 @@ fn test_create_epoch() {
         salvo_condition: "manual".to_string(),
         packets: vec![("in".to_string(), packet_id.clone())],
     };
-    let epoch = get_created_epoch(
-        &net.do_action(&NetAction::CreateEpoch("B".to_string(), salvo)),
-    );
+    let epoch = get_created_epoch(&net.do_action(&NetAction::CreateEpoch("B".to_string(), salvo)));
 
     assert!(matches!(epoch.state, EpochState::Startable));
     assert_eq!(epoch.node_name, "B");
@@ -613,10 +596,7 @@ fn test_create_epoch_validates_node() {
         salvo_condition: "manual".to_string(),
         packets: vec![],
     };
-    let response = net.do_action(&NetAction::CreateEpoch(
-        "NonExistent".to_string(),
-        salvo,
-    ));
+    let response = net.do_action(&NetAction::CreateEpoch("NonExistent".to_string(), salvo));
     assert!(matches!(
         response,
         NetActionResponse::Error(NetActionError::NodeNotFound { .. })

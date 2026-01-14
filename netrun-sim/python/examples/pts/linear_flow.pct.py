@@ -21,16 +21,29 @@
 # %%
 from netrun_sim import (
     # Graph types
-    Graph, Node, Edge, Port, PortRef, PortType, PortSlotSpec,
-    PortState, SalvoCondition, SalvoConditionTerm, MaxSalvos,
+    Graph,
+    Node,
+    Edge,
+    Port,
+    PortRef,
+    PortType,
+    PortSlotSpec,
+    PortState,
+    SalvoCondition,
+    SalvoConditionTerm,
+    MaxSalvos,
     # NetSim types
-    NetSim, NetAction, NetActionResponseData, PacketLocation,
+    NetSim,
+    NetAction,
+    NetActionResponseData,
+    PacketLocation,
 )
 
 # %% [markdown]
 # ## Helper Functions
 #
 # Let's define some helper functions to reduce boilerplate when creating edges and nodes.
+
 
 # %%
 def create_edge(src_node: str, src_port: str, tgt_node: str, tgt_port: str) -> Edge:
@@ -41,7 +54,9 @@ def create_edge(src_node: str, src_port: str, tgt_node: str, tgt_port: str) -> E
     )
 
 
-def edge_location(src_node: str, src_port: str, tgt_node: str, tgt_port: str) -> PacketLocation:
+def edge_location(
+    src_node: str, src_port: str, tgt_node: str, tgt_port: str
+) -> PacketLocation:
     """Create a PacketLocation for an edge."""
     return PacketLocation.edge(
         Edge(
@@ -49,6 +64,7 @@ def edge_location(src_node: str, src_port: str, tgt_node: str, tgt_port: str) ->
             PortRef(tgt_node, PortType.Input, tgt_port),
         )
     )
+
 
 # %% [markdown]
 # ## Creating the Graph
@@ -68,7 +84,7 @@ node_a = Node(
     out_ports={"out": Port(PortSlotSpec.infinite())},
 )
 
-print(f"Created node A with output port 'out'")
+print("Created node A with output port 'out'")
 
 # %%
 # Node B: Middle node - one input, one output
@@ -93,7 +109,7 @@ node_b = Node(
     },
 )
 
-print(f"Created node B with input 'in' and output 'out'")
+print("Created node B with input 'in' and output 'out'")
 
 # %%
 # Node C: Sink node - just an input port, no outputs
@@ -109,7 +125,7 @@ node_c = Node(
     },
 )
 
-print(f"Created node C with input 'in'")
+print("Created node C with input 'in'")
 
 # %% [markdown]
 # ## Creating Edges
@@ -168,12 +184,11 @@ print(f"Created packet: {packet_id}")
 # Place the packet on the edge A → B
 net.do_action(
     NetAction.transport_packet_to_location(
-        packet_id, 
-        edge_location("A", "out", "B", "in")
+        packet_id, edge_location("A", "out", "B", "in")
     )
 )
 
-print(f"Placed packet on edge A → B")
+print("Placed packet on edge A → B")
 
 # %% [markdown]
 # ## Running the Network
@@ -186,7 +201,7 @@ print(f"Placed packet on edge A → B")
 # %%
 response, events = net.do_action(NetAction.run_net_until_blocked())
 
-print(f"Network ran until blocked")
+print("Network ran until blocked")
 print(f"Events: {len(events)}")
 for event in events:
     print(f"  - {event.kind}")

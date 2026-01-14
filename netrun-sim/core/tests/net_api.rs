@@ -4,7 +4,7 @@ mod common;
 
 use netrun_sim::graph::{Edge, PortRef, PortType};
 use netrun_sim::net::{
-    Epoch, NetSim, NetAction, NetActionError, NetActionResponse, NetActionResponseData, NetEvent,
+    Epoch, NetAction, NetActionError, NetActionResponse, NetActionResponseData, NetEvent, NetSim,
     PacketLocation, Salvo,
 };
 
@@ -194,10 +194,7 @@ fn test_create_epoch_with_invalid_node() {
         packets: vec![],
     };
 
-    let response = net.do_action(&NetAction::CreateEpoch(
-        "NonExistent".to_string(),
-        salvo,
-    ));
+    let response = net.do_action(&NetAction::CreateEpoch("NonExistent".to_string(), salvo));
 
     assert!(matches!(
         response,
@@ -215,10 +212,7 @@ fn test_create_epoch_node_not_found_error_contains_name() {
         packets: vec![],
     };
 
-    let response = net.do_action(&NetAction::CreateEpoch(
-        "MissingNode".to_string(),
-        salvo,
-    ));
+    let response = net.do_action(&NetAction::CreateEpoch("MissingNode".to_string(), salvo));
 
     match response {
         NetActionResponse::Error(NetActionError::NodeNotFound { node_name }) => {
@@ -385,8 +379,7 @@ fn test_get_epoch() {
         salvo_condition: "manual".to_string(),
         packets: vec![("in".to_string(), packet_id)],
     };
-    let epoch =
-        get_created_epoch(&net.do_action(&NetAction::CreateEpoch("B".to_string(), salvo)));
+    let epoch = get_created_epoch(&net.do_action(&NetAction::CreateEpoch("B".to_string(), salvo)));
     let epoch = get_started_epoch(&net.do_action(&NetAction::StartEpoch(epoch.id)));
 
     // Should find the epoch

@@ -10,9 +10,9 @@ pub use netrun_sim::graph::{Edge, PortRef, PortType};
 // Import core types with aliases for internal use
 use netrun_sim::graph::{
     Graph as CoreGraph, MaxSalvos as CoreMaxSalvos, Node as CoreNode,
-    PacketCount as CorePacketCount, Port as CorePort, PortName,
-    PortSlotSpec as CorePortSlotSpec, PortState as CorePortState,
-    SalvoCondition as CoreSalvoCondition, SalvoConditionTerm as CoreSalvoConditionTerm,
+    PacketCount as CorePacketCount, Port as CorePort, PortName, PortSlotSpec as CorePortSlotSpec,
+    PortState as CorePortState, SalvoCondition as CoreSalvoCondition,
+    SalvoConditionTerm as CoreSalvoConditionTerm,
 };
 
 /// Specifies how many packets to take from a port in a salvo.
@@ -402,12 +402,18 @@ impl SalvoConditionTerm {
     /// Get the sub-terms (for And and Or terms only).
     fn get_terms(&self) -> Option<Vec<SalvoConditionTerm>> {
         match &self.inner {
-            CoreSalvoConditionTerm::And(terms) => {
-                Some(terms.iter().map(|t| SalvoConditionTerm { inner: t.clone() }).collect())
-            }
-            CoreSalvoConditionTerm::Or(terms) => {
-                Some(terms.iter().map(|t| SalvoConditionTerm { inner: t.clone() }).collect())
-            }
+            CoreSalvoConditionTerm::And(terms) => Some(
+                terms
+                    .iter()
+                    .map(|t| SalvoConditionTerm { inner: t.clone() })
+                    .collect(),
+            ),
+            CoreSalvoConditionTerm::Or(terms) => Some(
+                terms
+                    .iter()
+                    .map(|t| SalvoConditionTerm { inner: t.clone() })
+                    .collect(),
+            ),
             _ => None,
         }
     }
@@ -415,9 +421,9 @@ impl SalvoConditionTerm {
     /// Get the inner term (for Not terms only).
     fn get_inner(&self) -> Option<SalvoConditionTerm> {
         match &self.inner {
-            CoreSalvoConditionTerm::Not(inner) => {
-                Some(SalvoConditionTerm { inner: (**inner).clone() })
-            }
+            CoreSalvoConditionTerm::Not(inner) => Some(SalvoConditionTerm {
+                inner: (**inner).clone(),
+            }),
             _ => None,
         }
     }
@@ -626,10 +632,9 @@ impl SalvoCondition {
     #[getter]
     fn max_salvos(&self, py: Python<'_>) -> PyResult<PyObject> {
         match &self.max_salvos_internal {
-            CoreMaxSalvos::Infinite => Ok(MaxSalvos::Infinite
-                .into_pyobject(py)?
-                .unbind()
-                .into_any()),
+            CoreMaxSalvos::Infinite => {
+                Ok(MaxSalvos::Infinite.into_pyobject(py)?.unbind().into_any())
+            }
             CoreMaxSalvos::Finite(n) => Ok(PyMaxSalvosFinite { max: *n }
                 .into_pyobject(py)?
                 .unbind()
@@ -690,8 +695,10 @@ fn extract_ports_map(obj: &Bound<'_, PyAny>) -> PyResult<HashMap<String, CorePac
 
     // Try as a list of strings
     if let Ok(list) = obj.extract::<Vec<String>>() {
-        let map: HashMap<String, CorePacketCount> =
-            list.into_iter().map(|s| (s, CorePacketCount::All)).collect();
+        let map: HashMap<String, CorePacketCount> = list
+            .into_iter()
+            .map(|s| (s, CorePacketCount::All))
+            .collect();
         return Ok(map);
     }
 

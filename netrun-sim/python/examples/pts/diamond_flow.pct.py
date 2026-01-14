@@ -30,14 +30,27 @@
 # %%
 from netrun_sim import (
     # Graph types
-    Graph, Node, Edge, Port, PortRef, PortType, PortSlotSpec,
-    PortState, SalvoCondition, SalvoConditionTerm, MaxSalvos,
+    Graph,
+    Node,
+    Edge,
+    Port,
+    PortRef,
+    PortType,
+    PortSlotSpec,
+    PortState,
+    SalvoCondition,
+    SalvoConditionTerm,
+    MaxSalvos,
     # NetSim types
-    NetSim, NetAction, NetActionResponseData, PacketLocation,
+    NetSim,
+    NetAction,
+    NetActionResponseData,
+    PacketLocation,
 )
 
 # %% [markdown]
 # ## Helper Functions
+
 
 # %%
 def create_edge(src_node: str, src_port: str, tgt_node: str, tgt_port: str) -> Edge:
@@ -48,7 +61,9 @@ def create_edge(src_node: str, src_port: str, tgt_node: str, tgt_port: str) -> E
     )
 
 
-def edge_location(src_node: str, src_port: str, tgt_node: str, tgt_port: str) -> PacketLocation:
+def edge_location(
+    src_node: str, src_port: str, tgt_node: str, tgt_port: str
+) -> PacketLocation:
     """Create a PacketLocation for an edge."""
     return PacketLocation.edge(
         Edge(
@@ -56,6 +71,7 @@ def edge_location(src_node: str, src_port: str, tgt_node: str, tgt_port: str) ->
             PortRef(tgt_node, PortType.Input, tgt_port),
         )
     )
+
 
 # %% [markdown]
 # ## Creating the Nodes
@@ -79,6 +95,7 @@ print("Node A: source with outputs 'out1' (→ B) and 'out2' (→ C)")
 # ### Nodes B and C: Middle Nodes
 #
 # B and C are simple pass-through nodes. Each has one input and one output.
+
 
 # %%
 def create_simple_node(name: str) -> Node:
@@ -129,10 +146,12 @@ node_d = Node(
             max_salvos=MaxSalvos.finite(1),
             ports=["in1", "in2"],
             # Require BOTH inputs to be non-empty (synchronization!)
-            term=SalvoConditionTerm.and_([
-                SalvoConditionTerm.port("in1", PortState.non_empty()),
-                SalvoConditionTerm.port("in2", PortState.non_empty()),
-            ]),
+            term=SalvoConditionTerm.and_(
+                [
+                    SalvoConditionTerm.port("in1", PortState.non_empty()),
+                    SalvoConditionTerm.port("in2", PortState.non_empty()),
+                ]
+            ),
         ),
     },
 )
@@ -200,8 +219,7 @@ print(f"Created packet 2: {packet2}")
 # Place packet1 on edge A → B
 net.do_action(
     NetAction.transport_packet_to_location(
-        packet1, 
-        edge_location("A", "out1", "B", "in")
+        packet1, edge_location("A", "out1", "B", "in")
     )
 )
 print("Placed packet 1 on edge A → B")
@@ -209,8 +227,7 @@ print("Placed packet 1 on edge A → B")
 # Place packet2 on edge A → C
 net.do_action(
     NetAction.transport_packet_to_location(
-        packet2, 
-        edge_location("A", "out2", "C", "in")
+        packet2, edge_location("A", "out2", "C", "in")
     )
 )
 print("Placed packet 2 on edge A → C")
@@ -239,6 +256,7 @@ for epoch_id in startable:
 # 3. Create an output packet
 # 4. Send it to D
 
+
 # %%
 def process_node(net: NetSim, epoch_id) -> None:
     """Process a simple pass-through node."""
@@ -247,26 +265,27 @@ def process_node(net: NetSim, epoch_id) -> None:
     assert isinstance(response, NetActionResponseData.StartedEpoch)
     epoch = response.epoch
     print(f"\nProcessing node {epoch.node_name}:")
-    
+
     # Consume input packet
     input_packet = epoch.in_salvo.packets[0][1]
     net.do_action(NetAction.consume_packet(input_packet))
-    print(f"  Consumed input packet")
-    
+    print("  Consumed input packet")
+
     # Create output packet
     response, _ = net.do_action(NetAction.create_packet(epoch.id))
     assert isinstance(response, NetActionResponseData.Packet)
     output_packet = response.packet_id
-    print(f"  Created output packet")
-    
+    print("  Created output packet")
+
     # Load and send
     net.do_action(NetAction.load_packet_into_output_port(output_packet, "out"))
     net.do_action(NetAction.send_output_salvo(epoch.id, "default"))
-    print(f"  Sent output to downstream edge")
+    print("  Sent output to downstream edge")
 
     # Finish
     net.do_action(NetAction.finish_epoch(epoch.id))
-    print(f"  Finished epoch")
+    print("  Finished epoch")
+
 
 # %%
 # Process both B and C
@@ -300,10 +319,10 @@ print(f"Startable epochs at D: {len(startable_d)}")
 
 if startable_d:
     d_epoch = net.get_epoch(startable_d[0])
-    print(f"\nEpoch details:")
+    print("\nEpoch details:")
     print(f"  Node: {d_epoch.node_name}")
     print(f"  Packets in input salvo: {len(d_epoch.in_salvo.packets)}")
-    
+
     for port_name, packet_id in d_epoch.in_salvo.packets:
         print(f"    - Port '{port_name}': packet {packet_id[:12]}...")
 

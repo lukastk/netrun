@@ -24,6 +24,7 @@ dev = [
     "maturin>=1.10.2",
     "nblite>=1.1.1",
     "python-ulid>=1.1.0",
+    "ruff>=0.14.11",
     "twine>=6.1.0",
     "typing-extensions>=4.13.2",
 ]
