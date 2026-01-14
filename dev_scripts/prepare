@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+
+# Temporary unset the VIRTUAL_ENV environment variable
+unset VIRTUAL_ENV
+
+
+### netrun ###
+echo "netrun"
+
+set -euo pipefail
+
+REPO_FOLDER="$(dirname "$(dirname "$0")")"
+PREV_CWD=$(pwd)
+cd "$REPO_FOLDER/netrun"
+
+# 'nbl prepare' the project in such a way that it is compatible with ruff
+echo " nbl prepare"
+uv run nbl prepare 1>/dev/null
+
+# Run ruff on the project, ignoring ipynb files
+echo " ruff check --fix"
+uv run ruff check --fix 1>/dev/null
+echo " ruff format"
+uv run ruff format 1>/dev/null
+# Export the project in reverse, so that the ipynb files also get the linting
+# Note: This is mainly for project where the *.ipynb files are ignored, which should be the case for nblite projects.
+echo " nbl export --reverse"
+uv run nbl export --reverse 1>/dev/null
+echo " nbl export"
+uv run nbl export 1>/dev/null
+echo " ruff check --fix"
+uv run ruff check --fix 1>/dev/null
+echo " ruff format"
+uv run ruff format 1>/dev/null
+
+cd "$PREV_CWD"
+
+
+### netrun-sim ###
+echo "netrun-sim"
+
+cd "$REPO_FOLDER/netrun-sim"
+
+echo " cargo fmt"
+cargo fmt 1>/dev/null
+echo " cargo clippy --fix"
+cargo clippy --fix
+
+
+### netrun-sim/python###
+echo "netrun-sim/python"
+
+cd "$REPO_FOLDER/netrun-sim/python"
+
+# Run ruff on the project, ignoring ipynb files
+echo " ruff check --fix"
+ruff check --fix
+echo " ruff format"
+ruff format
+
