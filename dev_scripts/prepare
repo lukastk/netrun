@@ -33,6 +33,9 @@ uv run ruff check --fix 1>/dev/null
 echo " ruff format"
 uv run ruff format 1>/dev/null
 
+echo " generate stubs for package"
+uv run python -c "from dev.utils import generate_stubs_for_package; generate_stubs_for_package('netrun', 'src/netrun')"
+
 cd "$PREV_CWD"
 
 
