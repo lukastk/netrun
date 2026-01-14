@@ -229,15 +229,9 @@ fn test_run_until_blocked_on_empty_net() {
     let graph = common::linear_graph_3();
     let mut net = NetSim::new(graph);
 
-    let response = net.do_action(&NetAction::RunNetUntilBlocked);
+    let events = net.run_until_blocked();
 
-    // Should succeed with no events (nothing to do)
-    assert!(matches!(
-        response,
-        NetActionResponse::Success(NetActionResponseData::None, _)
-    ));
-
-    let events = get_events(&response);
+    // Should return empty events (nothing to do)
     assert!(events.is_empty());
 }
 
@@ -295,9 +289,10 @@ fn test_packet_consumed_event_structure() {
 
     assert_eq!(events.len(), 1);
     match &events[0] {
-        NetEvent::PacketConsumed(timestamp, consumed_id) => {
+        NetEvent::PacketConsumed(timestamp, consumed_id, location) => {
             assert!(*timestamp > 0);
             assert_eq!(*consumed_id, packet_id);
+            assert!(matches!(location, PacketLocation::OutsideNet));
         }
         _ => panic!("Expected PacketConsumed event"),
     }
@@ -420,7 +415,7 @@ fn test_get_startable_epochs() {
     ));
 
     // Run until blocked
-    net.do_action(&NetAction::RunNetUntilBlocked);
+    net.run_until_blocked();
 
     // Should now have a startable epoch
     let startable = net.get_startable_epochs();
