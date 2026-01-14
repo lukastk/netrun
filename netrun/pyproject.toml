@@ -5,13 +5,80 @@ description = "A flow-based development (FBD) runtime system."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "nblite>=1.1.1",
     "netrun-sim>=0.1.1",
 ]
 
+[project.urls]
+Homepage = "https://github.com/lukastk/netrun"
+Documentation = "https://github.com/lukastk/netrun"
+Repository = "https://github.com/lukastk/netrun"
+
 [dependency-groups]
 dev = [
+    "dev",
     "jupyterlab>=4.5.1",
+    "mypy>=1.19.1",
     "nblite>=1.0.4",
     "pytest>=9.0.2",
     "ruff>=0.8.0",
 ]
+
+[tool.uv.sources]
+netrun-sim = { path = "../netrun-sim/python", editable = true }
+dev = { path = "src/dev", editable = true }
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build]
+ignore-vcs = true
+packages = ["src/netrun"]
+include = []
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+exclude = []
+extend-exclude = [
+    "__*.pct.py",
+    "*.ipynb"
+] # ruff does not play nice with nblite
+
+[tool.ruff.lint]
+select = [
+    "E",      # pycodestyle errors
+    "W",      # pycodestyle warnings
+    "F",      # pyflakes
+    "I",      # isort
+    "B",      # flake8-bugbear
+    "C4",     # flake8-comprehensions
+    "UP",     # pyupgrade
+]
+ignore = [
+    "E501",   # line too long (handled by formatter)
+    "B008",   # do not perform function calls in argument defaults
+]
+
+[tool.ruff.lint.isort]
+known-first-party = ["nblite"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+disallow_incomplete_defs = true
+check_untyped_defs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_functions = ["test_*"]
+addopts = "-v --tb=short"
