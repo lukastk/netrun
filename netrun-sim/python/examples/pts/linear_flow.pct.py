@@ -44,7 +44,6 @@ from netrun_sim import (
 #
 # Let's define some helper functions to reduce boilerplate when creating edges and nodes.
 
-
 # %%
 def create_edge(src_node: str, src_port: str, tgt_node: str, tgt_port: str) -> Edge:
     """Create an edge between two ports."""
@@ -64,7 +63,6 @@ def edge_location(
             PortRef(tgt_node, PortType.Input, tgt_port),
         )
     )
-
 
 # %% [markdown]
 # ## Creating the Graph

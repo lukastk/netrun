@@ -51,7 +51,7 @@ fn main() {
     println!("Placed packet2 on edge A -> C");
 
     // Run network - packets move to B and C, triggering epochs
-    net.do_action(&NetAction::RunNetUntilBlocked);
+    net.run_until_blocked();
 
     let startable = net.get_startable_epochs();
     println!(
@@ -94,7 +94,7 @@ fn main() {
     }
 
     // Run network - packets move from B->D and C->D edges to D's input ports
-    net.do_action(&NetAction::RunNetUntilBlocked);
+    net.run_until_blocked();
 
     // Check D's input ports
     let d_in1 = PacketLocation::InputPort("D".to_string(), "in1".to_string());
