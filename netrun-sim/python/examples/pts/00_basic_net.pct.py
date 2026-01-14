@@ -148,7 +148,7 @@ net = NetSim(graph)
 # Try running the net until blocked. Should do nothing.
 
 # %%
-response_data, events = net.do_action(NetAction.run_net_until_blocked())
+events = net.run_until_blocked()
 assert events == []
 
 # %% [markdown]
@@ -208,7 +208,7 @@ response_data, events = net.do_action(NetAction.finish_epoch(epoch_id))
 # Run the net until blocked
 
 # %%
-response_data, events = net.do_action(NetAction.run_net_until_blocked())
+events = net.run_until_blocked()
 
 print("Events in the net:")
 for event in events:
