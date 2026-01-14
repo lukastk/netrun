@@ -235,7 +235,7 @@ print("Placed packet 2 on edge A → C")
 # Running the network will move packets from edges to input ports, triggering epochs at both B and C.
 
 # %%
-net.do_action(NetAction.run_net_until_blocked())
+net.run_until_blocked()
 
 startable = net.get_startable_epochs()
 print(f"Startable epochs: {len(startable)}")
@@ -293,7 +293,7 @@ for epoch_id in startable:
 # Now let's run the network again. The packets from B and C will move to D's input ports.
 
 # %%
-net.do_action(NetAction.run_net_until_blocked())
+net.run_until_blocked()
 
 # Check D's input ports
 d_in1 = PacketLocation.input_port("D", "in1")

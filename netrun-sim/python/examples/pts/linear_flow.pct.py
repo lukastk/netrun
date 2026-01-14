@@ -197,7 +197,7 @@ print("Placed packet on edge A → B")
 # 3. Create a startable epoch at node B
 
 # %%
-response, events = net.do_action(NetAction.run_net_until_blocked())
+events = net.run_until_blocked()
 
 print("Network ran until blocked")
 print(f"Events: {len(events)}")
@@ -268,7 +268,7 @@ print("Finished epoch at node B")
 
 # %%
 # Run network again
-net.do_action(NetAction.run_net_until_blocked())
+net.run_until_blocked()
 
 # Check for startable epochs at C
 startable = net.get_startable_epochs()
