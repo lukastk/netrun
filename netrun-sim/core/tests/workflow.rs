@@ -79,8 +79,7 @@ fn test_complete_linear_flow_a_to_b() {
     ));
 
     // 3. Run until blocked - packet should move to input port and trigger epoch
-    let response = net.do_action(&NetAction::RunNetUntilBlocked);
-    let events = get_events(&response);
+    let events = net.run_until_blocked();
 
     // Should have events: PacketMoved (to input port), PacketMoved (to node), EpochCreated, InputSalvoTriggered
     assert!(
@@ -182,7 +181,7 @@ fn test_branching_flow() {
     ));
 
     // Run until blocked
-    net.do_action(&NetAction::RunNetUntilBlocked);
+    net.run_until_blocked();
 
     // Both B and C should have startable epochs
     let epoch_ids = net.get_startable_epochs();
@@ -214,7 +213,7 @@ fn test_merging_flow_both_inputs_required() {
     ));
 
     // Run until blocked
-    net.do_action(&NetAction::RunNetUntilBlocked);
+    net.run_until_blocked();
 
     // C should NOT have a startable epoch (needs both in1 and in2)
     // The default salvo condition is AND of all input ports
@@ -229,7 +228,7 @@ fn test_merging_flow_both_inputs_required() {
     ));
 
     // Run again
-    net.do_action(&NetAction::RunNetUntilBlocked);
+    net.run_until_blocked();
 
     // Now C should have a startable epoch (both inputs present)
     let epoch_ids = net.get_startable_epochs();
@@ -263,7 +262,7 @@ fn test_diamond_flow_synchronization() {
     ));
 
     // Run until blocked
-    net.do_action(&NetAction::RunNetUntilBlocked);
+    net.run_until_blocked();
 
     // B and C should have startable epochs, but not D
     let epoch_ids = net.get_startable_epochs();
@@ -317,7 +316,7 @@ fn test_cancel_epoch_workflow() {
             assert!(
                 events
                     .iter()
-                    .any(|e| matches!(e, NetEvent::PacketDestroyed(_, _)))
+                    .any(|e| matches!(e, NetEvent::PacketDestroyed(_, _, _)))
             );
             assert!(
                 events

@@ -10,7 +10,7 @@
 # |hide
 from nblite import nbl_export
 
-nbl_export()
+nbl_export();
 
 # %%
 from netrun_sim import (
@@ -225,4 +225,4 @@ assert set([net.get_epoch(epoch_id).node_name for epoch_id in startable_epochs])
     "B2",
 }
 
-# %%
+# %% [markdown]
