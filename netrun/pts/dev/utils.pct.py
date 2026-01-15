@@ -11,21 +11,23 @@
 
 # %%
 #|hide
-from nblite import nbl_export, show_doc; nbl_export();
+from nblite import nbl_export, show_doc; nbl_export()
 import dev.utils as this_module
-
-# %%
-#|hide
-show_doc(this_module.patch_to)
 
 # %%
 #|export
 import inspect
-import typing
+import importlib
 from types import ModuleType
 from pathlib import Path
 from typing import get_type_hints
 
+# %%
+#|hide
+show_doc(this_module.generate_stub_for_class)
+
+# %%
+#|export
 def generate_stub_for_class(cls, indent: int = 0) -> str:
     """Generate a .pyi stub string for a class by runtime inspection.
 
@@ -43,9 +45,9 @@ def generate_stub_for_class(cls, indent: int = 0) -> str:
 
     # Get type hints for the class itself (for class variables)
     try:
-        class_hints = get_type_hints(cls) if hasattr(cls, '__annotations__') else {}
+        class_hints = get_type_hints(cls) if hasattr(cls, "__annotations__") else {}
     except Exception:
-        class_hints = getattr(cls, '__annotations__', {})
+        class_hints = getattr(cls, "__annotations__", {})
 
     # Class variables
     for name, type_hint in class_hints.items():
@@ -57,7 +59,21 @@ def generate_stub_for_class(cls, indent: int = 0) -> str:
     # Methods
     for name, method in inspect.getmembers(cls):
         # Skip private/dunder (except __init__)
-        if name.startswith('_') and name not in ('__init__', '__len__', '__iter__', '__next__', '__getitem__', '__setitem__', '__delitem__', '__contains__', '__repr__', '__str__', '__eq__', '__hash__', '__call__'):
+        if name.startswith("_") and name not in (
+            "__init__",
+            "__len__",
+            "__iter__",
+            "__next__",
+            "__getitem__",
+            "__setitem__",
+            "__delitem__",
+            "__contains__",
+            "__repr__",
+            "__str__",
+            "__eq__",
+            "__hash__",
+            "__call__",
+        ):
             continue
 
         if inspect.isfunction(method) or inspect.ismethod(method):
@@ -74,7 +90,7 @@ def generate_stub_for_class(cls, indent: int = 0) -> str:
     if not has_members:
         lines.append(f"{ind}    ...")
 
-    return '\n'.join(lines)
+    return "\n".join(lines)
 
 
 def _format_type(type_hint) -> str:
@@ -91,37 +107,37 @@ def _format_type(type_hint) -> str:
         return type_hint
 
     # Handle typing special forms
-    origin = getattr(type_hint, '__origin__', None)
-    args = getattr(type_hint, '__args__', None)
+    origin = getattr(type_hint, "__origin__", None)
+    args = getattr(type_hint, "__args__", None)
 
     if origin is not None:
-        origin_name = getattr(origin, '__name__', str(origin))
+        origin_name = getattr(origin, "__name__", str(origin))
         # Clean up origin name
-        if origin_name == 'dict':
-            origin_name = 'dict'
-        elif origin_name == 'list':
-            origin_name = 'list'
-        elif origin_name == 'set':
-            origin_name = 'set'
-        elif origin_name == 'tuple':
-            origin_name = 'tuple'
-        elif origin_name == 'Union':
+        if origin_name == "dict":
+            origin_name = "dict"
+        elif origin_name == "list":
+            origin_name = "list"
+        elif origin_name == "set":
+            origin_name = "set"
+        elif origin_name == "tuple":
+            origin_name = "tuple"
+        elif origin_name == "Union":
             if args and len(args) == 2 and type(None) in args:
                 # Optional[X] -> X | None
                 other = args[0] if args[1] is type(None) else args[1]
                 return f"{_format_type(other)} | None"
-            return ' | '.join(_format_type(a) for a in args) if args else 'Any'
+            return " | ".join(_format_type(a) for a in args) if args else "Any"
 
         if args:
-            args_str = ', '.join(_format_type(a) for a in args)
+            args_str = ", ".join(_format_type(a) for a in args)
             return f"{origin_name}[{args_str}]"
         return origin_name
 
     # Handle regular types
-    if hasattr(type_hint, '__name__'):
+    if hasattr(type_hint, "__name__"):
         return type_hint.__name__
 
-    return str(type_hint).replace('typing.', '')
+    return str(type_hint).replace("typing.", "")
 
 
 def _generate_method_stub(name: str, method, indent: int) -> str:
@@ -137,7 +153,7 @@ def _generate_method_stub(name: str, method, indent: int) -> str:
     try:
         hints = get_type_hints(method)
     except Exception:
-        hints = getattr(method, '__annotations__', {})
+        hints = getattr(method, "__annotations__", {})
 
     # Build parameters
     params = []
@@ -170,7 +186,7 @@ def _generate_method_stub(name: str, method, indent: int) -> str:
             params.append(pname)
 
     # Return type
-    ret_hint = hints.get('return', sig.return_annotation)
+    ret_hint = hints.get("return", sig.return_annotation)
     if ret_hint != inspect.Parameter.empty and ret_hint is not None:
         ret_str = _format_type(ret_hint)
     else:
@@ -187,7 +203,7 @@ def _generate_property_stub(name: str, prop: property, indent: int) -> str:
     if prop.fget:
         try:
             hints = get_type_hints(prop.fget)
-            ret_type = hints.get('return', '...')
+            ret_type = hints.get("return", "...")
             type_str = _format_type(ret_type)
         except Exception:
             type_str = "..."
@@ -197,9 +213,11 @@ def _generate_property_stub(name: str, prop: property, indent: int) -> str:
     lines = [f"{ind}@property", f"{ind}def {name}(self) -> {type_str}: ..."]
 
     if prop.fset:
-        lines.extend([f"{ind}@{name}.setter", f"{ind}def {name}(self, value: {type_str}) -> None: ..."])
+        lines.extend(
+            [f"{ind}@{name}.setter", f"{ind}def {name}(self, value: {type_str}) -> None: ..."]
+        )
 
-    return '\n'.join(lines)
+    return "\n".join(lines)
 
 # %%
 #|hide
@@ -223,10 +241,10 @@ def generate_stub_for_module(module: ModuleType) -> str:
     imports.add("from typing import Any")
 
     # Get __all__ if defined, otherwise use dir()
-    if hasattr(module, '__all__'):
+    if hasattr(module, "__all__"):
         names = module.__all__
     else:
-        names = [n for n in dir(module) if not n.startswith('_')]
+        names = [n for n in dir(module) if not n.startswith("_")]
 
     # Process each exported name
     for name in sorted(names):
@@ -244,8 +262,8 @@ def generate_stub_for_module(module: ModuleType) -> str:
             lines.append("")
 
     # Build final output
-    header = '\n'.join(sorted(imports))
-    body = '\n'.join(lines)
+    header = "\n".join(sorted(imports))
+    body = "\n".join(lines)
 
     return f"{header}\n\n{body}"
 
@@ -255,8 +273,6 @@ show_doc(this_module.generate_stubs_for_package)
 
 # %%
 #|export
-import importlib
-
 def generate_stubs_for_package(package_name: str, output_dir: str) -> list[str]:
     """Generate .pyi stub files for an entire package by runtime inspection.
 
@@ -286,7 +302,7 @@ def generate_stubs_for_package(package_name: str, output_dir: str) -> list[str]:
     package_dir = Path(package.__file__).parent
 
     for py_file in package_dir.glob("*.py"):
-        if py_file.name.startswith('_'):
+        if py_file.name.startswith("_"):
             continue
 
         module_name = f"{package_name}.{py_file.stem}"
