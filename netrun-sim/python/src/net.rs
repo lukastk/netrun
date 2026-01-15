@@ -586,12 +586,12 @@ pub struct NetEvent {
 #[derive(Clone)]
 enum NetEventKind {
     PacketCreated(i128, String),
-    PacketConsumed(i128, String, PacketLocation),           // (ts, packet_id, location)
-    PacketDestroyed(i128, String, PacketLocation),          // (ts, packet_id, location)
+    PacketConsumed(i128, String, PacketLocation), // (ts, packet_id, location)
+    PacketDestroyed(i128, String, PacketLocation), // (ts, packet_id, location)
     EpochCreated(i128, String),
     EpochStarted(i128, String),
-    EpochFinished(i128, Epoch),                             // (ts, epoch) - full epoch for undo
-    EpochCancelled(i128, Epoch),                            // (ts, epoch) - full epoch for undo
+    EpochFinished(i128, Epoch),  // (ts, epoch) - full epoch for undo
+    EpochCancelled(i128, Epoch), // (ts, epoch) - full epoch for undo
     PacketMoved(i128, String, PacketLocation, PacketLocation, usize), // (ts, packet_id, from, to, from_index)
     InputSalvoTriggered(i128, String, String),
     OutputSalvoTriggered(i128, String, String),
@@ -785,12 +785,16 @@ impl NetEvent {
             CoreNetSimEvent::PacketCreated(ts, id) => {
                 NetEventKind::PacketCreated(*ts, id.to_string())
             }
-            CoreNetSimEvent::PacketConsumed(ts, id, location) => {
-                NetEventKind::PacketConsumed(*ts, id.to_string(), PacketLocation::from_core(location))
-            }
-            CoreNetSimEvent::PacketDestroyed(ts, id, location) => {
-                NetEventKind::PacketDestroyed(*ts, id.to_string(), PacketLocation::from_core(location))
-            }
+            CoreNetSimEvent::PacketConsumed(ts, id, location) => NetEventKind::PacketConsumed(
+                *ts,
+                id.to_string(),
+                PacketLocation::from_core(location),
+            ),
+            CoreNetSimEvent::PacketDestroyed(ts, id, location) => NetEventKind::PacketDestroyed(
+                *ts,
+                id.to_string(),
+                PacketLocation::from_core(location),
+            ),
             CoreNetSimEvent::EpochCreated(ts, id) => {
                 NetEventKind::EpochCreated(*ts, id.to_string())
             }
@@ -877,13 +881,21 @@ impl NetEvent {
                 let ulid = ulid::Ulid::from_string(id).map_err(|e| {
                     PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
                 })?;
-                Ok(CoreNetSimEvent::InputSalvoTriggered(*ts, ulid, cond.clone()))
+                Ok(CoreNetSimEvent::InputSalvoTriggered(
+                    *ts,
+                    ulid,
+                    cond.clone(),
+                ))
             }
             NetEventKind::OutputSalvoTriggered(ts, id, cond) => {
                 let ulid = ulid::Ulid::from_string(id).map_err(|e| {
                     PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
                 })?;
-                Ok(CoreNetSimEvent::OutputSalvoTriggered(*ts, ulid, cond.clone()))
+                Ok(CoreNetSimEvent::OutputSalvoTriggered(
+                    *ts,
+                    ulid,
+                    cond.clone(),
+                ))
             }
         }
     }

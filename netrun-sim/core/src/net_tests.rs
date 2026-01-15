@@ -784,7 +784,8 @@ fn test_undo_create_packet() {
     assert!(net.get_packet(&packet_id).is_some());
 
     // Undo the creation
-    net.undo_action(&action, &events).expect("Undo should succeed");
+    net.undo_action(&action, &events)
+        .expect("Undo should succeed");
 
     // Verify packet no longer exists
     assert!(net.get_packet(&packet_id).is_none());
@@ -810,11 +811,15 @@ fn test_undo_consume_packet() {
     assert!(net.get_packet(&packet_id).is_none());
 
     // Undo the consumption
-    net.undo_action(&action, &events).expect("Undo should succeed");
+    net.undo_action(&action, &events)
+        .expect("Undo should succeed");
 
     // Verify packet is restored at original location
     assert!(net.get_packet(&packet_id).is_some());
-    assert_eq!(net.get_packet(&packet_id).unwrap().location, PacketLocation::OutsideNet);
+    assert_eq!(
+        net.get_packet(&packet_id).unwrap().location,
+        PacketLocation::OutsideNet
+    );
 }
 
 #[test]
@@ -851,14 +856,21 @@ fn test_undo_start_epoch() {
     };
 
     // Verify epoch is Running
-    assert!(matches!(net.get_epoch(&epoch_id).unwrap().state, EpochState::Running));
+    assert!(matches!(
+        net.get_epoch(&epoch_id).unwrap().state,
+        EpochState::Running
+    ));
     assert!(!net.get_startable_epochs().contains(&epoch_id));
 
     // Undo the start
-    net.undo_action(&action, &events).expect("Undo should succeed");
+    net.undo_action(&action, &events)
+        .expect("Undo should succeed");
 
     // Verify epoch is back to Startable
-    assert!(matches!(net.get_epoch(&epoch_id).unwrap().state, EpochState::Startable));
+    assert!(matches!(
+        net.get_epoch(&epoch_id).unwrap().state,
+        EpochState::Startable
+    ));
     assert!(net.get_startable_epochs().contains(&epoch_id));
 }
 
@@ -903,11 +915,15 @@ fn test_undo_finish_epoch() {
     assert!(net.get_epoch(&epoch_id).is_none());
 
     // Undo the finish
-    net.undo_action(&action, &events).expect("Undo should succeed");
+    net.undo_action(&action, &events)
+        .expect("Undo should succeed");
 
     // Verify epoch is restored and Running
     assert!(net.get_epoch(&epoch_id).is_some());
-    assert!(matches!(net.get_epoch(&epoch_id).unwrap().state, EpochState::Running));
+    assert!(matches!(
+        net.get_epoch(&epoch_id).unwrap().state,
+        EpochState::Running
+    ));
 }
 
 #[test]
@@ -930,10 +946,14 @@ fn test_undo_transport_packet_to_location() {
     assert_eq!(net.get_packet(&packet_id).unwrap().location, input_port);
 
     // Undo the transport
-    net.undo_action(&action, &events).expect("Undo should succeed");
+    net.undo_action(&action, &events)
+        .expect("Undo should succeed");
 
     // Verify packet is back at OutsideNet
-    assert_eq!(net.get_packet(&packet_id).unwrap().location, PacketLocation::OutsideNet);
+    assert_eq!(
+        net.get_packet(&packet_id).unwrap().location,
+        PacketLocation::OutsideNet
+    );
 }
 
 #[test]
@@ -977,7 +997,8 @@ fn test_undo_run_step() {
     let epoch_id = net.get_startable_epochs()[0];
 
     // Undo the step
-    net.undo_action(&action, &events).expect("Undo should succeed");
+    net.undo_action(&action, &events)
+        .expect("Undo should succeed");
 
     // Verify epoch is gone
     assert!(net.get_epoch(&epoch_id).is_none());
@@ -1016,12 +1037,16 @@ fn test_undo_preserves_packet_ordering() {
     assert_eq!(after_move, vec![packet1, packet3]);
 
     // Undo the transport
-    net.undo_action(&action, &events).expect("Undo should succeed");
+    net.undo_action(&action, &events)
+        .expect("Undo should succeed");
 
     // Verify order is restored perfectly (packet2 back in its original position)
     let restored_order = net.get_packets_at_location(&PacketLocation::OutsideNet);
-    assert_eq!(restored_order, vec![packet1, packet2, packet3],
-        "Packet order should be perfectly restored after undo");
+    assert_eq!(
+        restored_order,
+        vec![packet1, packet2, packet3],
+        "Packet order should be perfectly restored after undo"
+    );
 }
 
 #[test]
@@ -1063,15 +1088,22 @@ fn test_undo_cancel_epoch() {
     assert!(net.get_packet(&packet_id).is_none());
 
     // Undo the cancel
-    net.undo_action(&action, &events).expect("Undo should succeed");
+    net.undo_action(&action, &events)
+        .expect("Undo should succeed");
 
     // Verify epoch is restored
     assert!(net.get_epoch(&epoch_id).is_some());
-    assert!(matches!(net.get_epoch(&epoch_id).unwrap().state, EpochState::Running));
+    assert!(matches!(
+        net.get_epoch(&epoch_id).unwrap().state,
+        EpochState::Running
+    ));
 
     // Verify packet is restored inside the epoch
     assert!(net.get_packet(&packet_id).is_some());
-    assert_eq!(net.get_packet(&packet_id).unwrap().location, PacketLocation::Node(epoch_id));
+    assert_eq!(
+        net.get_packet(&packet_id).unwrap().location,
+        PacketLocation::Node(epoch_id)
+    );
 }
 
 #[test]
@@ -1102,7 +1134,10 @@ fn test_undo_send_output_salvo() {
     net.do_action(&NetAction::StartEpoch(epoch_id));
 
     // Load packet into output port
-    net.do_action(&NetAction::LoadPacketIntoOutputPort(packet_id, "out".to_string()));
+    net.do_action(&NetAction::LoadPacketIntoOutputPort(
+        packet_id,
+        "out".to_string(),
+    ));
 
     let output_port_loc = PacketLocation::OutputPort(epoch_id, "out".to_string());
     assert_eq!(net.packet_count_at(&output_port_loc), 1);
@@ -1131,7 +1166,8 @@ fn test_undo_send_output_salvo() {
     assert_eq!(net.get_epoch(&epoch_id).unwrap().out_salvos.len(), 1);
 
     // Undo the send
-    net.undo_action(&action, &events).expect("Undo should succeed");
+    net.undo_action(&action, &events)
+        .expect("Undo should succeed");
 
     // Verify packet is back at output port
     assert_eq!(net.packet_count_at(&output_port_loc), 1);
@@ -1172,10 +1208,14 @@ fn test_undo_create_epoch() {
 
     // Verify epoch exists and packet is inside it
     assert!(net.get_epoch(&epoch_id).is_some());
-    assert_eq!(net.get_packet(&packet_id).unwrap().location, PacketLocation::Node(epoch_id));
+    assert_eq!(
+        net.get_packet(&packet_id).unwrap().location,
+        PacketLocation::Node(epoch_id)
+    );
 
     // Undo the creation
-    net.undo_action(&action, &events).expect("Undo should succeed");
+    net.undo_action(&action, &events)
+        .expect("Undo should succeed");
 
     // Verify epoch is gone
     assert!(net.get_epoch(&epoch_id).is_none());
@@ -1204,14 +1244,19 @@ fn test_undo_create_packet_exact_state() {
     };
 
     // Undo
-    net.undo_action(&action, &events).expect("Undo should succeed");
+    net.undo_action(&action, &events)
+        .expect("Undo should succeed");
 
     // Capture state after undo
     let after = NetSimSnapshot::capture(&net);
 
     // Compare
     let diffs = before.diff(&after);
-    assert!(diffs.is_empty(), "State not exactly restored:\n{}", diffs.join("\n"));
+    assert!(
+        diffs.is_empty(),
+        "State not exactly restored:\n{}",
+        diffs.join("\n")
+    );
 }
 
 #[test]
@@ -1234,14 +1279,19 @@ fn test_undo_transport_packet_exact_state() {
     };
 
     // Undo
-    net.undo_action(&action, &events).expect("Undo should succeed");
+    net.undo_action(&action, &events)
+        .expect("Undo should succeed");
 
     // Capture state after undo
     let after = NetSimSnapshot::capture(&net);
 
     // Compare
     let diffs = before.diff(&after);
-    assert!(diffs.is_empty(), "State not exactly restored:\n{}", diffs.join("\n"));
+    assert!(
+        diffs.is_empty(),
+        "State not exactly restored:\n{}",
+        diffs.join("\n")
+    );
 }
 
 #[test]
@@ -1284,14 +1334,19 @@ fn test_undo_run_step_exact_state() {
     };
 
     // Undo
-    net.undo_action(&action, &events).expect("Undo should succeed");
+    net.undo_action(&action, &events)
+        .expect("Undo should succeed");
 
     // Capture state after undo
     let after = NetSimSnapshot::capture(&net);
 
     // Compare
     let diffs = before.diff(&after);
-    assert!(diffs.is_empty(), "State not exactly restored:\n{}", diffs.join("\n"));
+    assert!(
+        diffs.is_empty(),
+        "State not exactly restored:\n{}",
+        diffs.join("\n")
+    );
 }
 
 #[test]
@@ -1327,14 +1382,19 @@ fn test_undo_create_epoch_exact_state() {
     };
 
     // Undo
-    net.undo_action(&action, &events).expect("Undo should succeed");
+    net.undo_action(&action, &events)
+        .expect("Undo should succeed");
 
     // Capture state after undo
     let after = NetSimSnapshot::capture(&net);
 
     // Compare
     let diffs = before.diff(&after);
-    assert!(diffs.is_empty(), "State not exactly restored:\n{}", diffs.join("\n"));
+    assert!(
+        diffs.is_empty(),
+        "State not exactly restored:\n{}",
+        diffs.join("\n")
+    );
 }
 
 #[test]
@@ -1372,14 +1432,19 @@ fn test_undo_start_epoch_exact_state() {
     };
 
     // Undo
-    net.undo_action(&action, &events).expect("Undo should succeed");
+    net.undo_action(&action, &events)
+        .expect("Undo should succeed");
 
     // Capture state after undo
     let after = NetSimSnapshot::capture(&net);
 
     // Compare
     let diffs = before.diff(&after);
-    assert!(diffs.is_empty(), "State not exactly restored:\n{}", diffs.join("\n"));
+    assert!(
+        diffs.is_empty(),
+        "State not exactly restored:\n{}",
+        diffs.join("\n")
+    );
 }
 
 #[test]
@@ -1419,14 +1484,19 @@ fn test_undo_finish_epoch_exact_state() {
     };
 
     // Undo
-    net.undo_action(&action, &events).expect("Undo should succeed");
+    net.undo_action(&action, &events)
+        .expect("Undo should succeed");
 
     // Capture state after undo
     let after = NetSimSnapshot::capture(&net);
 
     // Compare
     let diffs = before.diff(&after);
-    assert!(diffs.is_empty(), "State not exactly restored:\n{}", diffs.join("\n"));
+    assert!(
+        diffs.is_empty(),
+        "State not exactly restored:\n{}",
+        diffs.join("\n")
+    );
 }
 
 #[test]
@@ -1465,14 +1535,19 @@ fn test_undo_cancel_epoch_exact_state() {
     };
 
     // Undo
-    net.undo_action(&action, &events).expect("Undo should succeed");
+    net.undo_action(&action, &events)
+        .expect("Undo should succeed");
 
     // Capture state after undo
     let after = NetSimSnapshot::capture(&net);
 
     // Compare
     let diffs = before.diff(&after);
-    assert!(diffs.is_empty(), "State not exactly restored:\n{}", diffs.join("\n"));
+    assert!(
+        diffs.is_empty(),
+        "State not exactly restored:\n{}",
+        diffs.join("\n")
+    );
 }
 
 #[test]
@@ -1494,14 +1569,19 @@ fn test_undo_consume_packet_exact_state() {
     };
 
     // Undo
-    net.undo_action(&action, &events).expect("Undo should succeed");
+    net.undo_action(&action, &events)
+        .expect("Undo should succeed");
 
     // Capture state after undo
     let after = NetSimSnapshot::capture(&net);
 
     // Compare
     let diffs = before.diff(&after);
-    assert!(diffs.is_empty(), "State not exactly restored:\n{}", diffs.join("\n"));
+    assert!(
+        diffs.is_empty(),
+        "State not exactly restored:\n{}",
+        diffs.join("\n")
+    );
 }
 
 #[test]
@@ -1528,7 +1608,10 @@ fn test_undo_send_output_salvo_exact_state() {
     };
     let epoch = get_created_epoch(&net.do_action(&NetAction::CreateEpoch("B".to_string(), salvo)));
     net.do_action(&NetAction::StartEpoch(epoch.id));
-    net.do_action(&NetAction::LoadPacketIntoOutputPort(packet_id, "out".to_string()));
+    net.do_action(&NetAction::LoadPacketIntoOutputPort(
+        packet_id,
+        "out".to_string(),
+    ));
 
     // Capture state before SendOutputSalvo
     let before = NetSimSnapshot::capture(&net);
@@ -1541,14 +1624,19 @@ fn test_undo_send_output_salvo_exact_state() {
     };
 
     // Undo
-    net.undo_action(&action, &events).expect("Undo should succeed");
+    net.undo_action(&action, &events)
+        .expect("Undo should succeed");
 
     // Capture state after undo
     let after = NetSimSnapshot::capture(&net);
 
     // Compare
     let diffs = before.diff(&after);
-    assert!(diffs.is_empty(), "State not exactly restored:\n{}", diffs.join("\n"));
+    assert!(
+        diffs.is_empty(),
+        "State not exactly restored:\n{}",
+        diffs.join("\n")
+    );
 }
 
 #[test]
@@ -1587,14 +1675,19 @@ fn test_undo_load_packet_into_output_port_exact_state() {
     };
 
     // Undo
-    net.undo_action(&action, &events).expect("Undo should succeed");
+    net.undo_action(&action, &events)
+        .expect("Undo should succeed");
 
     // Capture state after undo
     let after = NetSimSnapshot::capture(&net);
 
     // Compare
     let diffs = before.diff(&after);
-    assert!(diffs.is_empty(), "State not exactly restored:\n{}", diffs.join("\n"));
+    assert!(
+        diffs.is_empty(),
+        "State not exactly restored:\n{}",
+        diffs.join("\n")
+    );
 }
 
 #[test]
@@ -1626,19 +1719,27 @@ fn test_undo_multiple_packets_exact_ordering() {
     assert_eq!(order_after_move, vec![p1, p2, p4, p5]);
 
     // Undo
-    net.undo_action(&action, &events).expect("Undo should succeed");
+    net.undo_action(&action, &events)
+        .expect("Undo should succeed");
 
     // Capture state after undo
     let after = NetSimSnapshot::capture(&net);
 
     // Verify exact ordering restored: should be [p1, p2, p3, p4, p5]
     let order_after_undo = net.get_packets_at_location(&PacketLocation::OutsideNet);
-    assert_eq!(order_after_undo, vec![p1, p2, p3, p4, p5],
-        "Exact packet ordering must be restored");
+    assert_eq!(
+        order_after_undo,
+        vec![p1, p2, p3, p4, p5],
+        "Exact packet ordering must be restored"
+    );
 
     // Full state comparison
     let diffs = before.diff(&after);
-    assert!(diffs.is_empty(), "State not exactly restored:\n{}", diffs.join("\n"));
+    assert!(
+        diffs.is_empty(),
+        "State not exactly restored:\n{}",
+        diffs.join("\n")
+    );
 }
 
 #[test]
@@ -1712,7 +1813,8 @@ fn test_undo_complex_run_step_exact_state() {
     assert_eq!(net.get_startable_epochs().len(), 2);
 
     // Undo
-    net.undo_action(&action, &events).expect("Undo should succeed");
+    net.undo_action(&action, &events)
+        .expect("Undo should succeed");
 
     // Capture state after undo
     let after = NetSimSnapshot::capture(&net);
@@ -1722,5 +1824,9 @@ fn test_undo_complex_run_step_exact_state() {
 
     // Full state comparison
     let diffs = before.diff(&after);
-    assert!(diffs.is_empty(), "State not exactly restored:\n{}", diffs.join("\n"));
+    assert!(
+        diffs.is_empty(),
+        "State not exactly restored:\n{}",
+        diffs.join("\n")
+    );
 }
