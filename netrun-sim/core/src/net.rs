@@ -769,7 +769,11 @@ impl NetSim {
                 self._packets.remove(packet_id);
                 NetActionResponse::Success(
                     NetActionResponseData::None,
-                    vec![NetEvent::PacketConsumed(get_utc_now(), *packet_id, location)],
+                    vec![NetEvent::PacketConsumed(
+                        get_utc_now(),
+                        *packet_id,
+                        location,
+                    )],
                 )
             } else {
                 panic!(
@@ -796,7 +800,11 @@ impl NetSim {
                 self._packets.remove(packet_id);
                 NetActionResponse::Success(
                     NetActionResponseData::None,
-                    vec![NetEvent::PacketDestroyed(get_utc_now(), *packet_id, location)],
+                    vec![NetEvent::PacketDestroyed(
+                        get_utc_now(),
+                        *packet_id,
+                        location,
+                    )],
                 )
             } else {
                 panic!(
@@ -1694,7 +1702,11 @@ impl NetSim {
     ///     net.undo_action(&action, &events)?;
     /// }
     /// ```
-    pub fn undo_action(&mut self, action: &NetAction, events: &[NetEvent]) -> Result<(), UndoError> {
+    pub fn undo_action(
+        &mut self,
+        action: &NetAction,
+        events: &[NetEvent],
+    ) -> Result<(), UndoError> {
         // Process events in reverse order
         for event in events.iter().rev() {
             self.undo_event(action, event)?;
@@ -1705,27 +1717,17 @@ impl NetSim {
     /// Undo a single event.
     fn undo_event(&mut self, action: &NetAction, event: &NetEvent) -> Result<(), UndoError> {
         match event {
-            NetEvent::PacketCreated(_, packet_id) => {
-                self.undo_packet_created(packet_id)
-            }
+            NetEvent::PacketCreated(_, packet_id) => self.undo_packet_created(packet_id),
             NetEvent::PacketConsumed(_, packet_id, location) => {
                 self.undo_packet_consumed(packet_id, location)
             }
             NetEvent::PacketDestroyed(_, packet_id, location) => {
                 self.undo_packet_destroyed(packet_id, location)
             }
-            NetEvent::EpochCreated(_, epoch_id) => {
-                self.undo_epoch_created(epoch_id)
-            }
-            NetEvent::EpochStarted(_, epoch_id) => {
-                self.undo_epoch_started(epoch_id)
-            }
-            NetEvent::EpochFinished(_, epoch) => {
-                self.undo_epoch_finished(epoch)
-            }
-            NetEvent::EpochCancelled(_, epoch) => {
-                self.undo_epoch_cancelled(epoch)
-            }
+            NetEvent::EpochCreated(_, epoch_id) => self.undo_epoch_created(epoch_id),
+            NetEvent::EpochStarted(_, epoch_id) => self.undo_epoch_started(epoch_id),
+            NetEvent::EpochFinished(_, epoch) => self.undo_epoch_finished(epoch),
+            NetEvent::EpochCancelled(_, epoch) => self.undo_epoch_cancelled(epoch),
             NetEvent::PacketMoved(_, packet_id, from, to, from_index) => {
                 self.undo_packet_moved(packet_id, from, to, *from_index)
             }
@@ -1818,10 +1820,7 @@ impl NetSim {
         let epoch = match self._epochs.get(epoch_id) {
             Some(e) => e.clone(),
             None => {
-                return Err(UndoError::NotFound(format!(
-                    "epoch {} not found",
-                    epoch_id
-                )));
+                return Err(UndoError::NotFound(format!("epoch {} not found", epoch_id)));
             }
         };
 
@@ -1860,10 +1859,7 @@ impl NetSim {
         let epoch = match self._epochs.get_mut(epoch_id) {
             Some(e) => e,
             None => {
-                return Err(UndoError::NotFound(format!(
-                    "epoch {} not found",
-                    epoch_id
-                )));
+                return Err(UndoError::NotFound(format!("epoch {} not found", epoch_id)));
             }
         };
 
@@ -1999,10 +1995,7 @@ impl NetSim {
         }
 
         // Insert back into `from` at original index using shift_insert
-        let packets_at_from = self
-            ._packets_by_location
-            .entry(from.clone())
-            .or_default();
+        let packets_at_from = self._packets_by_location.entry(from.clone()).or_default();
         packets_at_from.shift_insert(from_index, *packet_id);
 
         // Update packet's location
@@ -2026,10 +2019,7 @@ impl NetSim {
         let epoch = match self._epochs.get_mut(epoch_id) {
             Some(e) => e,
             None => {
-                return Err(UndoError::NotFound(format!(
-                    "epoch {} not found",
-                    epoch_id
-                )));
+                return Err(UndoError::NotFound(format!("epoch {} not found", epoch_id)));
             }
         };
 

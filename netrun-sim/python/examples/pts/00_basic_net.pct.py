@@ -10,7 +10,7 @@
 # |hide
 from nblite import nbl_export
 
-nbl_export();
+nbl_export()
 
 # %%
 from netrun_sim import (

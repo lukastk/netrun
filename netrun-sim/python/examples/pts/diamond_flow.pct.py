@@ -51,6 +51,7 @@ from netrun_sim import (
 # %% [markdown]
 # ## Helper Functions
 
+
 # %%
 def create_edge(src_node: str, src_port: str, tgt_node: str, tgt_port: str) -> Edge:
     """Create an edge between two ports."""
@@ -70,6 +71,7 @@ def edge_location(
             PortRef(tgt_node, PortType.Input, tgt_port),
         )
     )
+
 
 # %% [markdown]
 # ## Creating the Nodes
@@ -93,6 +95,7 @@ print("Node A: source with outputs 'out1' (→ B) and 'out2' (→ C)")
 # ### Nodes B and C: Middle Nodes
 #
 # B and C are simple pass-through nodes. Each has one input and one output.
+
 
 # %%
 def create_simple_node(name: str) -> Node:
@@ -253,6 +256,7 @@ for epoch_id in startable:
 # 3. Create an output packet
 # 4. Send it to D
 
+
 # %%
 def process_node(net: NetSim, epoch_id) -> None:
     """Process a simple pass-through node."""
@@ -281,6 +285,7 @@ def process_node(net: NetSim, epoch_id) -> None:
     # Finish
     net.do_action(NetAction.finish_epoch(epoch.id))
     print("  Finished epoch")
+
 
 # %%
 # Process both B and C

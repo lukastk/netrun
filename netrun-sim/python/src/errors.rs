@@ -133,10 +133,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         "UndoNotUndoableError",
         m.py().get_type::<UndoNotUndoableError>(),
     )?;
-    m.add(
-        "UndoInternalError",
-        m.py().get_type::<UndoInternalError>(),
-    )?;
+    m.add("UndoInternalError", m.py().get_type::<UndoInternalError>())?;
     Ok(())
 }
 
