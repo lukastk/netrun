@@ -7,7 +7,7 @@
 # ---
 
 # %%
-# |hide
+#|hide
 from nblite import nbl_export
 
 nbl_export()
