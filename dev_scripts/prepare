@@ -3,25 +3,29 @@
 # Temporary unset the VIRTUAL_ENV environment variable
 unset VIRTUAL_ENV
 
-
 ### netrun ###
-echo "netrun"
+echo -e "\033[1mnetrun\033[0m"
 
-set -euo pipefail
+if [[ "$1" != "1" ]]; then
+    set -euo pipefail
+fi
 
 REPO_FOLDER="$(dirname "$(dirname "$0")")"
 PREV_CWD=$(pwd)
 cd "$REPO_FOLDER/netrun"
 
+echo " nbl clear --all"
+uv run nbl clear --all 1>/dev/null
+
 # 'nbl prepare' the project in such a way that it is compatible with ruff
 echo " nbl prepare"
-uv run nbl prepare 1>/dev/null
+uv run nbl prepare 1>/dev/null 2>/dev/null
 
 # Run ruff on the project, ignoring ipynb files
 echo " ruff check --fix"
 uv run ruff check --fix 1>/dev/null
-echo " ruff format"
-uv run ruff format 1>/dev/null
+# echo " ruff format"
+# uv run ruff format 1>/dev/null
 # Export the project in reverse, so that the ipynb files also get the linting
 # Note: This is mainly for project where the *.ipynb files are ignored, which should be the case for nblite projects.
 echo " nbl export --reverse"
@@ -30,34 +34,40 @@ echo " nbl export"
 uv run nbl export 1>/dev/null
 echo " ruff check --fix"
 uv run ruff check --fix 1>/dev/null
-echo " ruff format"
-uv run ruff format 1>/dev/null
+# echo " ruff format"
+# uv run ruff format 1>/dev/null
 
-echo " generate stubs for package"
-uv run python -c "from dev.utils import generate_stubs_for_package; generate_stubs_for_package('netrun', 'src/netrun')"
+# this doesn't work as desired yet
+# echo " generate stubs for package"
+# uv run python -c "from dev.utils import generate_stubs_for_package; generate_stubs_for_package('netrun', 'src/netrun')"
 
 cd "$PREV_CWD"
 
 
+### netrun-sim/python ###
+echo -e "\033[1mnetrun-sim/python\033[0m"
+
+cd "$REPO_FOLDER/netrun-sim/python"
+
+# Run ruff on the project, ignoring ipynb files
+echo " ruff check --fix"
+uv run ruff check --fix 1>/dev/null
+# echo " ruff format"
+# ruff format
+
+
 ### netrun-sim ###
-echo "netrun-sim"
+echo -e "\033[1mnetrun-sim\033[0m"
 
 cd "$REPO_FOLDER/netrun-sim"
 
 echo " cargo fmt"
 cargo fmt 1>/dev/null
 echo " cargo clippy --fix"
-cargo clippy --fix
+cargo clippy --fix 1>/dev/null 2>/dev/null
 
 
-### netrun-sim/python###
-echo "netrun-sim/python"
 
-cd "$REPO_FOLDER/netrun-sim/python"
-
-# Run ruff on the project, ignoring ipynb files
-echo " ruff check --fix"
-ruff check --fix
-echo " ruff format"
-ruff format
+# Done
+echo -e "\n\n\033[0;32mDONE!\033[0m"
 
