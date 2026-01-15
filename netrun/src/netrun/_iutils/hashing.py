@@ -3,23 +3,29 @@
 __all__ = ['HashMethod', 'adler32', 'blake2b', 'crc32', 'hash', 'sha256', 'xxh64']
 
 # %% nbs/netrun/01_iutils/01_hashing.ipynb 2
-import binascii
-import hashlib
-import pickle
-import pickletools
-import struct
-import zlib
-from enum import Enum
 from typing import Any
 
+import pickle
+import pickletools
+import zlib
+import binascii
+import hashlib
+import struct
 import xxhash
+import json
+from enum import Enum
 
+# %% nbs/netrun/01_iutils/01_hashing.ipynb 4
+def _preprocess_data(data: Any, pickle_protocol: int, try_json_dump: bool):
+    """
+    Preprocesses and converts the data to bytes for hashing.
+    """
+    if try_json_dump:
+        try:
+            data = json.dumps(data).encode("utf-8")
+        except TypeError:
+            pass
 
-# %% nbs/netrun/01_iutils/01_hashing.ipynb 5
-def _to_bytes(data: Any, pickle_protocol: int):
-    """
-    Converts data to bytes for hashing.
-    """
     type_data = type(data)
 
     if type_data is bytes:
@@ -34,49 +40,44 @@ def _to_bytes(data: Any, pickle_protocol: int):
         _data = pickle.dumps(data, protocol=pickle_protocol)
         return pickletools.optimize(_data)
 
-# %% nbs/netrun/01_iutils/01_hashing.ipynb 7
-def adler32(data: Any, pickle_protocol: int) -> int:
+# %% nbs/netrun/01_iutils/01_hashing.ipynb 6
+def adler32(bdata: bytes) -> int:
     """
     Compute portable hash for given data.
     """
     mask = 0xFFFFFFFF
-    _bdata = _to_bytes(data, pickle_protocol=pickle_protocol)
-    return zlib.adler32(_bdata) & mask
+    return zlib.adler32(bdata) & mask
 
-# %% nbs/netrun/01_iutils/01_hashing.ipynb 9
-def crc32(data: Any, pickle_protocol: int) -> int:
+# %% nbs/netrun/01_iutils/01_hashing.ipynb 8
+def crc32(bdata: bytes) -> int:
     """
     Compute portable hash using CRC32.
     """
     mask = 0xFFFFFFFF
-    _bdata = _to_bytes(data, pickle_protocol=pickle_protocol)
-    return binascii.crc32(_bdata) & mask
+    return binascii.crc32(bdata) & mask
 
-# %% nbs/netrun/01_iutils/01_hashing.ipynb 11
-def sha256(data: Any, pickle_protocol: int) -> int:
+# %% nbs/netrun/01_iutils/01_hashing.ipynb 10
+def sha256(bdata: bytes) -> int:
     """
     Compute hash using SHA-256.
     """
-    _bdata = _to_bytes(data, pickle_protocol=pickle_protocol)
-    return int.from_bytes(hashlib.sha256(_bdata).digest(), byteorder="big")
+    return int.from_bytes(hashlib.sha256(bdata).digest(), byteorder="big")
 
-# %% nbs/netrun/01_iutils/01_hashing.ipynb 13
-def blake2b(data: Any, pickle_protocol: int) -> int:
+# %% nbs/netrun/01_iutils/01_hashing.ipynb 12
+def blake2b(bdata: bytes) -> int:
     """
     Compute hash using BLAKE2b.
     """
-    _bdata = _to_bytes(data, pickle_protocol=pickle_protocol)
-    return int.from_bytes(hashlib.blake2b(_bdata).digest(), byteorder="big")
+    return int.from_bytes(hashlib.blake2b(bdata).digest(), byteorder="big")
 
-# %% nbs/netrun/01_iutils/01_hashing.ipynb 15
-def xxh64(data: Any, pickle_protocol: int) -> int:
+# %% nbs/netrun/01_iutils/01_hashing.ipynb 14
+def xxh64(bdata: bytes) -> int:
     """
     Compute hash using xxHash (64-bit).
     """
-    _bdata = _to_bytes(data, pickle_protocol=pickle_protocol)
-    return xxhash.xxh64(_bdata).intdigest()
+    return xxhash.xxh64(bdata).intdigest()
 
-# %% nbs/netrun/01_iutils/01_hashing.ipynb 17
+# %% nbs/netrun/01_iutils/01_hashing.ipynb 16
 class HashMethod(Enum):
     adler32 = "adler32"
     crc32 = "crc32"
@@ -84,16 +85,17 @@ class HashMethod(Enum):
     blake2b = "blake2b"
     xxh64 = "xxh64"
 
-def hash(data: Any, method: HashMethod, pickle_protocol: int) -> int:
+def hash(data: Any, method: HashMethod, pickle_protocol: int, try_json_dump: bool) -> int:
+    bdata = _preprocess_data(data, pickle_protocol=pickle_protocol, try_json_dump=try_json_dump)
     if method == HashMethod.adler32:
-        return adler32(data, pickle_protocol=pickle_protocol)
+        return adler32(bdata)
     elif method == HashMethod.crc32:
-        return crc32(data, pickle_protocol=pickle_protocol)
+        return crc32(bdata)
     elif method == HashMethod.sha256:
-        return sha256(data, pickle_protocol=pickle_protocol)
+        return sha256(bdata)
     elif method == HashMethod.blake2b:
-        return blake2b(data, pickle_protocol=pickle_protocol)
+        return blake2b(bdata)
     elif method == HashMethod.xxh64:
-        return xxh64(data, pickle_protocol=pickle_protocol)
+        return xxh64(bdata)
     else:
         raise ValueError(f"Invalid hash method: {method}")
