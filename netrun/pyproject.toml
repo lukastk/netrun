@@ -24,6 +24,7 @@ dev = [
     "mypy>=1.19.1",
     "nblite>=1.1.5",
     "pytest>=9.0.2",
+    "pytest-asyncio>=1.3.0",
     "ruff>=0.8.0",
 ]
 
@@ -90,7 +91,9 @@ check_untyped_defs = true
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
-testpaths = ["tests"]
+testpaths = ["src/tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
 addopts = "-v --tb=short"
+asyncio_mode = "auto"
+pythonpath = ["src"]
