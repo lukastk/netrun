@@ -11,9 +11,7 @@
 
 # %%
 #|hide
-from nblite import nbl_export, show_doc
-
-nbl_export()
+from nblite import nbl_export, show_doc; nbl_export();
 import netrun._iutils.hashing as this_module
 
 # %%

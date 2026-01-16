@@ -11,7 +11,7 @@
 
 # %%
 #|hide
-from nblite import nbl_export, show_doc; nbl_export()
+from nblite import nbl_export, show_doc; nbl_export();
 import dev.utils as this_module
 
 # %%
