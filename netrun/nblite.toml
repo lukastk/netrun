@@ -15,9 +15,6 @@ docs_title="netrun"
 
 readme_nb_path = "nbs/netrun/index.ipynb"
 
-[fill]
-code_locations = ["nbs", "nbs_dev", "nbs_examples"]
-
 [cl.lib]
 path="src/netrun"
 format="module"
