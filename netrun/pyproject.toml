@@ -22,7 +22,7 @@ dev = [
     "dev",
     "jupyterlab>=4.5.1",
     "mypy>=1.19.1",
-    "nblite>=1.0.4",
+    "nblite>=1.1.4",
     "pytest>=9.0.2",
     "ruff>=0.8.0",
 ]
