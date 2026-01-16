@@ -7,20 +7,19 @@ import asyncio
 import threading
 from typing import Any
 
-from ..pool.base import (
-    PoolAlreadyStarted,
-    PoolNotStarted,
-    WorkerFn,
-    WorkerId,
-    WorkerMessage,
-)
 from ..rpc.base import ChannelClosed, RecvTimeout
 from ..rpc.thread import (
-    SyncThreadChannel,
     ThreadChannel,
+    SyncThreadChannel,
     create_thread_channel_pair,
 )
-
+from ..pool.base import (
+    WorkerId,
+    WorkerFn,
+    WorkerMessage,
+    PoolNotStarted,
+    PoolAlreadyStarted,
+)
 
 # %% nbs/netrun/03_pool/01_thread.ipynb 5
 class ThreadPool:
@@ -52,7 +51,7 @@ class ThreadPool:
         self._channels: list[ThreadChannel] = []
         self._threads: list[threading.Thread] = []
         self._recv_queue: asyncio.Queue = asyncio.Queue()
-        self._recv_tasks_started = False
+        self._recv_tasks: list[asyncio.Task] = []
 
     @property
     def num_workers(self) -> int:
@@ -110,7 +109,16 @@ class ThreadPool:
         if not self._running:
             return
 
-        self._recv_tasks_started = False
+        self._running = False
+
+        # Cancel recv tasks first
+        for task in self._recv_tasks:
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
 
         # Close all channels
         for channel in self._channels:
@@ -123,7 +131,7 @@ class ThreadPool:
         self._channels = []
         self._threads = []
         self._recv_queue = asyncio.Queue()
-        self._running = False
+        self._recv_tasks = []
 
     async def send(self, worker_id: WorkerId, key: str, data: Any) -> None:
         """Send a message to a specific worker."""
@@ -137,9 +145,8 @@ class ThreadPool:
 
     def _start_recv_tasks(self) -> None:
         """Start background tasks that forward messages to the queue."""
-        if self._recv_tasks_started:
+        if self._recv_tasks:
             return
-        self._recv_tasks_started = True
 
         async def recv_loop(worker_id: WorkerId, channel: ThreadChannel):
             try:
@@ -147,13 +154,14 @@ class ThreadPool:
                     key, data = await channel.recv()
                     msg = WorkerMessage(worker_id=worker_id, key=key, data=data)
                     await self._recv_queue.put(msg)
-            except ChannelClosed:
+            except (ChannelClosed, asyncio.CancelledError):
                 pass
             except Exception:
                 pass
 
         for worker_id, channel in enumerate(self._channels):
-            asyncio.create_task(recv_loop(worker_id, channel))
+            task = asyncio.create_task(recv_loop(worker_id, channel))
+            self._recv_tasks.append(task)
 
     async def recv(self, timeout: float | None = None) -> WorkerMessage:
         """Receive a message from any worker."""

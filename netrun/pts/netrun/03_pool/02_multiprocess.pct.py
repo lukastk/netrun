@@ -268,7 +268,7 @@ class MultiprocessPool:
         self._channels: list[ProcessChannel] = []
         self._processes: list[mp.Process] = []
         self._recv_queue: asyncio.Queue = asyncio.Queue()
-        self._recv_tasks_started = False
+        self._recv_tasks: list[asyncio.Task] = []
 
     @property
     def num_workers(self) -> int:
@@ -332,7 +332,16 @@ class MultiprocessPool:
         if not self._running:
             return
 
-        self._recv_tasks_started = False
+        self._running = False
+
+        # Cancel recv tasks first
+        for task in self._recv_tasks:
+            if not task.done():
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
 
         # Close all channels
         for channel in self._channels:
@@ -347,7 +356,7 @@ class MultiprocessPool:
         self._channels = []
         self._processes = []
         self._recv_queue = asyncio.Queue()
-        self._running = False
+        self._recv_tasks = []
 
     async def send(self, worker_id: WorkerId, key: str, data: Any) -> None:
         """Send a message to a specific worker."""
@@ -362,9 +371,8 @@ class MultiprocessPool:
 
     def _start_recv_tasks(self) -> None:
         """Start background tasks that forward messages to the queue."""
-        if self._recv_tasks_started:
+        if self._recv_tasks:
             return
-        self._recv_tasks_started = True
 
         async def recv_loop(process_idx: int, channel: ProcessChannel):
             try:
@@ -378,13 +386,14 @@ class MultiprocessPool:
                         # Put error as a special message
                         msg = WorkerMessage(worker_id=-1, key="__error__", data=data)
                         await self._recv_queue.put(msg)
-            except ChannelClosed:
+            except (ChannelClosed, asyncio.CancelledError):
                 pass
             except Exception:
                 pass
 
         for process_idx, channel in enumerate(self._channels):
-            asyncio.create_task(recv_loop(process_idx, channel))
+            task = asyncio.create_task(recv_loop(process_idx, channel))
+            self._recv_tasks.append(task)
 
     async def recv(self, timeout: float | None = None) -> WorkerMessage:
         """Receive a message from any worker."""
