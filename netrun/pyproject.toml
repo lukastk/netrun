@@ -5,8 +5,11 @@ description = "A flow-based development (FBD) runtime system."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "diskcache>=5.6.3",
     "nblite>=1.1.1",
     "netrun-sim>=0.1.1",
+    "websockets>=16.0",
+    "xxhash>=3.6.0",
 ]
 
 [project.urls]
@@ -43,8 +46,8 @@ line-length = 100
 exclude = []
 extend-exclude = [
     "__*.pct.py",
-    "*.ipynb"
-] # ruff does not play nice with nblite
+    "*.ipynb", # ruff does not play nice with nblite
+] 
 
 [tool.ruff.lint]
 select = [
@@ -59,6 +62,14 @@ select = [
 ignore = [
     "E501",   # line too long (handled by formatter)
     "B008",   # do not perform function calls in argument defaults
+    "E402",   # Module level import not at top (module-level-import-not-at-top)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"*.pct.py" = [
+    "I001", # Unsorted imports
+    "E701", # Multiple statements on one line newline (no-multiple-statements)
+    "E702", # Multiple statements on one line semicolon (no-multiple-statements)
 ]
 
 [tool.ruff.lint.isort]
