@@ -136,6 +136,19 @@ def _subprocess_main(
             except Exception:
                 break
 
+        # Drain any remaining messages before exiting
+        while True:
+            try:
+                msg = response_queue.get_nowait()
+                if msg is None:
+                    break
+                worker_id, key, data = msg
+                parent_channel.send("response", (worker_id, key, data))
+            except queue.Empty:
+                break
+            except Exception:
+                break
+
     # Start response forwarder thread
     forwarder = threading.Thread(target=response_forwarder, daemon=True)
     forwarder.start()
@@ -157,12 +170,20 @@ def _subprocess_main(
     except ChannelClosed:
         pass
     finally:
-        shutdown = True
         # Signal workers to stop
         for q in worker_send_queues:
             q.put((SHUTDOWN_KEY, None))
-        # Signal forwarder
+
+        # Wait for worker threads to finish sending their responses
+        for t in threads:
+            t.join(timeout=2.0)
+
+        # Now signal forwarder to stop (after workers are done)
+        shutdown = True
         response_queue.put(None)
+
+        # Wait for forwarder to finish draining
+        forwarder.join(timeout=2.0)
 
 # %%
 #|export
@@ -465,7 +486,7 @@ from netrun.rpc.base import ChannelClosed
 def echo_worker(channel, worker_id):
     """Echo worker that runs in subprocess."""
     import os
-    print(f"[Worker {worker_id}] Started in process {os.getpid()}")
+    print(f"[Worker {worker_id}] Started process")
     try:
         while True:
             key, data = channel.recv()

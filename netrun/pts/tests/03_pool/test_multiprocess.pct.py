@@ -339,3 +339,101 @@ async def test_compute_workers():
 
 # %%
 await test_compute_workers();
+
+# %% [markdown]
+# ## Test Consistency
+#
+# These tests verify that all messages are reliably delivered across multiple runs.
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_consistency_single_run():
+    """Test that all messages are received in a single run."""
+    async with MultiprocessPool(echo_worker, num_processes=2, threads_per_process=2) as pool:
+        num_messages = pool.num_workers
+
+        # Send to each worker
+        for i in range(num_messages):
+            await pool.send(worker_id=i, key="ping", data=i)
+
+        # Receive all responses
+        received = []
+        for _ in range(num_messages):
+            msg = await pool.recv(timeout=10.0)
+            received.append(msg.worker_id)
+
+        # All workers should have responded
+        assert sorted(received) == list(range(num_messages)), f"Missing responses: expected {list(range(num_messages))}, got {sorted(received)}"
+
+# %%
+await test_consistency_single_run();
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_consistency_multiple_runs():
+    """Test consistency across multiple pool create/destroy cycles."""
+    for run in range(5):
+        async with MultiprocessPool(echo_worker, num_processes=2, threads_per_process=2) as pool:
+            num_messages = pool.num_workers
+
+            # Send to each worker
+            for i in range(num_messages):
+                await pool.send(worker_id=i, key="ping", data=i)
+
+            # Receive all responses
+            received = []
+            for _ in range(num_messages):
+                msg = await pool.recv(timeout=10.0)
+                received.append(msg.worker_id)
+
+            assert sorted(received) == list(range(num_messages)), f"Run {run}: Missing responses"
+
+# %%
+await test_consistency_multiple_runs();
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_consistency_many_messages():
+    """Test consistency with many messages per worker."""
+    async with MultiprocessPool(echo_worker, num_processes=2, threads_per_process=2) as pool:
+        messages_per_worker = 10
+        total_messages = pool.num_workers * messages_per_worker
+
+        # Send multiple messages to each worker
+        for round_num in range(messages_per_worker):
+            for worker_id in range(pool.num_workers):
+                await pool.send(worker_id, key=f"msg{round_num}", data=round_num)
+
+        # Receive all responses
+        received_count = 0
+        for _ in range(total_messages):
+            msg = await pool.recv(timeout=10.0)
+            received_count += 1
+
+        assert received_count == total_messages, f"Expected {total_messages} messages, got {received_count}"
+
+# %%
+await test_consistency_many_messages();
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_consistency_rapid_cycles():
+    """Test consistency with rapid pool creation and destruction."""
+    for run in range(10):
+        async with MultiprocessPool(echo_worker, num_processes=1, threads_per_process=2) as pool:
+            # Quick send/recv cycle
+            await pool.send(worker_id=0, key="quick", data=run)
+            await pool.send(worker_id=1, key="quick", data=run)
+
+            msg1 = await pool.recv(timeout=10.0)
+            msg2 = await pool.recv(timeout=10.0)
+
+            worker_ids = sorted([msg1.worker_id, msg2.worker_id])
+            assert worker_ids == [0, 1], f"Run {run}: Expected workers [0, 1], got {worker_ids}"
+
+# %%
+await test_consistency_rapid_cycles();
