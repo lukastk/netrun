@@ -12,7 +12,7 @@ This document provides guidance for LLM agents contributing to nblite projects.
 
 1. **Never modify the exported Python module directly.** Those files are auto-generated and will be overwritten by `nbl export`.
 
-2. **If you edit `.pct.py` files, always run `nbl export --export-pipeline "pts->nbs"` afterward.** Otherwise, when `nbl export` runs (which typically goes `nbs->pts->lib`), your changes in `pts` will be overwritten by the older `nbs` versions.
+2. **If you edit `.pct.py` files, always run `nbl export --pipeline "pts->nbs"` afterward.** Otherwise, when `nbl export` runs (which typically goes `nbs->pts->lib`), your changes in `pts` will be overwritten by the older `nbs` versions.
 
 ---
 
@@ -95,7 +95,7 @@ Percent notebooks are plaintext Python files that use `# %%` to delimit cells. T
 
 After editing a `.pct.py` file, run:
 ```bash
-nbl export --export-pipeline "pts->nbs"
+nbl export --pipeline "pts->nbs"
 ```
 
 This syncs your changes back to the `.ipynb` notebooks. If you skip this step, your changes will be lost when someone runs `nbl export` (which exports nbs->pts->lib).
@@ -307,8 +307,8 @@ Export notebooks to modules:
 
 ```bash
 nbl export                              # Use config pipeline
-nbl export --export-pipeline "pts->lib" # Custom pipeline
-nbl export --export-pipeline "pts->nbs" # Reverse: sync pts back to nbs
+nbl export --pipeline "pts->lib" # Custom pipeline
+nbl export --pipeline "pts->nbs" # Reverse: sync pts back to nbs
 nbl export --dry-run                    # Preview without writing
 ```
 
@@ -366,7 +366,7 @@ nbl clean path/to/nb.ipynb  # Clean specific notebook
 
 3. **Sync back to ipynb** (if the project uses nbs as source of truth):
    ```bash
-   nbl export --export-pipeline "pts->nbs"
+   nbl export --pipeline "pts->nbs"
    ```
 
 4. **Export to module**:
@@ -387,7 +387,7 @@ nbl clean path/to/nb.ipynb  # Clean specific notebook
 
 3. **Sync and export**:
    ```bash
-   nbl export --export-pipeline "pts->nbs"  # If editing pts
+   nbl export --pipeline "pts->nbs"  # If editing pts
    nbl export                                # Generate module
    ```
 
@@ -430,7 +430,7 @@ from my_package.core import something  # Becomes: from ..core import something
 
 1. **Editing the Python module directly** - Changes will be overwritten. This should only be done if you want to quickly test something, or add a debug `print` statement, and if it is not a concern that it may get overwritten.
 
-2. **Forgetting `nbl export --export-pipeline "pts->nbs"`** - If you edit `.pct.py` files, sync them back to `.ipynb` before committing, otherwise your changes get lost
+2. **Forgetting `nbl export --pipeline "pts->nbs"`** - If you edit `.pct.py` files, sync them back to `.ipynb` before committing, otherwise your changes get lost
 
 3. **Missing `#|export` directive** - Code without this directive won't appear in the module
 
@@ -465,7 +465,7 @@ from my_package.core import something  # Becomes: from ..core import something
 
 1. **Edit `.pct.py` files** when available (easier than `.ipynb`)
 2. **Never edit the Python module** - it's auto-generated
-3. **Run `nbl export --export-pipeline "pts->nbs"`** after editing `.pct.py` files
+3. **Run `nbl export --pipeline "pts->nbs"`** after editing `.pct.py` files
 4. **Run `nbl export`** to generate the Python module
 5. **Follow literate programming style**: exported code + markdown documentation + example cells
 6. **Run `nbl test`** to verify notebooks execute correctly
