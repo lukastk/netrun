@@ -153,8 +153,13 @@ class ThreadPool:
             except Exception:
                 pass
 
-    async def close(self) -> None:
-        """Shut down all workers and clean up resources."""
+    async def close(self, timeout: float | None = None) -> None:
+        """Shut down all workers and clean up resources.
+
+        Args:
+            timeout: Max seconds to wait for each worker to finish gracefully.
+                     If None, wait indefinitely.
+        """
         if not self._running:
             return
 
@@ -175,7 +180,7 @@ class ThreadPool:
 
         # Wait for threads to finish
         for thread in self._threads:
-            thread.join(timeout=2.0)
+            thread.join(timeout=timeout)
 
         self._channels = []
         self._threads = []

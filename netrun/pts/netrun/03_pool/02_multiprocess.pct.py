@@ -126,7 +126,7 @@ def _subprocess_main(
         """Forward responses from workers to parent."""
         while not shutdown:
             try:
-                msg = response_queue.get(timeout=0.1)
+                msg = response_queue.get(timeout=None)
                 if msg is None:
                     break
                 worker_id, key, data = msg
@@ -176,14 +176,14 @@ def _subprocess_main(
 
         # Wait for worker threads to finish sending their responses
         for t in threads:
-            t.join(timeout=2.0)
+            t.join()
 
         # Now signal forwarder to stop (after workers are done)
         shutdown = True
         response_queue.put(None)
 
         # Wait for forwarder to finish draining
-        forwarder.join(timeout=2.0)
+        forwarder.join()
 
 # %%
 #|export
@@ -348,8 +348,14 @@ class MultiprocessPool:
 
         self._running = True
 
-    async def close(self) -> None:
-        """Shut down all processes and clean up resources."""
+    async def close(self, timeout: float | None = None) -> None:
+        """Shut down all processes and clean up resources.
+
+        Args:
+            timeout: Max seconds to wait for each process to finish gracefully.
+                     If None, wait indefinitely. If timeout expires, processes
+                     are forcefully terminated.
+        """
         if not self._running:
             return
 
@@ -370,7 +376,7 @@ class MultiprocessPool:
 
         # Wait for processes to finish
         for proc in self._processes:
-            proc.join(timeout=2.0)
+            proc.join(timeout=timeout)
             if proc.is_alive():
                 proc.terminate()
 

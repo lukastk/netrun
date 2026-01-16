@@ -161,7 +161,7 @@ class RemotePoolServer:
         try:
             while pool.is_running and not channel.is_closed:
                 try:
-                    msg = await pool.recv(timeout=0.5)
+                    msg = await pool.recv(timeout=None)
                     await channel.send(MSG_RECV, {
                         "worker_id": msg.worker_id,
                         "key": msg.key,
@@ -245,7 +245,7 @@ class RemotePoolClient:
         })
 
         # Wait for response
-        key, data = await self._channel.recv(timeout=30.0)
+        key, data = await self._channel.recv(timeout=None)
 
         if key == MSG_ERROR:
             raise PoolError(f"Server error: {data}")
@@ -266,7 +266,7 @@ class RemotePoolClient:
         try:
             while self._running and self._channel and not self._channel.is_closed:
                 try:
-                    key, data = await self._channel.recv(timeout=1.0)
+                    key, data = await self._channel.recv(timeout=None)
                     if key == MSG_RECV:
                         await self._recv_queue.put(data)
                     elif key == MSG_ERROR:
@@ -278,8 +278,12 @@ class RemotePoolClient:
         except Exception:
             pass
 
-    async def close(self) -> None:
-        """Close the connection and remote pool."""
+    async def close(self, timeout: float | None = None) -> None:
+        """Close the connection and remote pool.
+
+        Args:
+            timeout: Not used for RemotePoolClient (included for protocol compatibility).
+        """
         self._running = False
 
         if self._recv_task and not self._recv_task.done():
