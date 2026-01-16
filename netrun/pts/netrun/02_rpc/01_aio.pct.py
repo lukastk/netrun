@@ -7,17 +7,21 @@
 # ---
 
 # %%
-#|default_exp rpc.thread
+#|default_exp rpc.aio
 
 # %%
 #|hide
 from nblite import nbl_export; nbl_export();
 
 # %% [markdown]
-# # Thread RPC
+# # Async RPC
 #
 # Channel for communication between async tasks within the same event loop.
-# Uses `asyncio.Queue` for message passing.
+# Uses `asyncio.Queue` for message passing - lightweight and efficient for
+# coroutine-to-coroutine communication.
+#
+# **Note:** This is for async tasks only, not OS threads. For OS thread
+# communication, use the `thread` module instead.
 
 # %%
 #|export
@@ -31,15 +35,18 @@ from netrun.rpc.base import (
 )
 
 # %% [markdown]
-# ## ThreadChannel
+# ## AsyncChannel
 
 # %%
 #|export
-class ThreadChannel:
+class AsyncChannel:
     """Async RPC channel using asyncio queues.
 
     For communication between async tasks in the same event loop.
-    Thread-safe for use from multiple coroutines.
+    Safe for use from multiple coroutines.
+
+    Note: This is NOT for OS thread communication. Use ThreadChannel
+    from the thread module for that.
     """
 
     def __init__(
@@ -120,15 +127,15 @@ class ThreadChannel:
 
 # %%
 #|export
-def create_channel_pair() -> tuple[ThreadChannel, ThreadChannel]:
-    """Create a pair of connected ThreadChannels.
+def create_async_channel_pair() -> tuple[AsyncChannel, AsyncChannel]:
+    """Create a pair of connected AsyncChannels.
 
     Returns:
         (channel_a, channel_b) where messages sent on one are received on the other.
 
     Example:
         ```python
-        ch_a, ch_b = create_channel_pair()
+        ch_a, ch_b = create_async_channel_pair()
 
         await ch_a.send("hello", "world")
         key, data = await ch_b.recv()  # ("hello", "world")
@@ -140,8 +147,8 @@ def create_channel_pair() -> tuple[ThreadChannel, ThreadChannel]:
     queue_a_to_b: asyncio.Queue = asyncio.Queue()
     queue_b_to_a: asyncio.Queue = asyncio.Queue()
 
-    channel_a = ThreadChannel(send_queue=queue_a_to_b, recv_queue=queue_b_to_a)
-    channel_b = ThreadChannel(send_queue=queue_b_to_a, recv_queue=queue_a_to_b)
+    channel_a = AsyncChannel(send_queue=queue_a_to_b, recv_queue=queue_b_to_a)
+    channel_b = AsyncChannel(send_queue=queue_b_to_a, recv_queue=queue_a_to_b)
 
     return channel_a, channel_b
 
@@ -158,7 +165,7 @@ async def example_basic_communication():
     print("=" * 50)
 
     # Create a pair of connected channels
-    channel_a, channel_b = create_channel_pair()
+    channel_a, channel_b = create_async_channel_pair()
 
     # Send from A, receive on B
     await channel_a.send("greeting", "Hello from A!")
@@ -186,9 +193,9 @@ async def example_worker_task():
     print("Example 2: Worker Task Pattern")
     print("=" * 50)
 
-    channel_a, channel_b = create_channel_pair()
+    channel_a, channel_b = create_async_channel_pair()
 
-    async def worker(channel: ThreadChannel):
+    async def worker(channel: AsyncChannel):
         """Worker that processes requests and sends responses."""
         print("[Worker] Started")
         try:
@@ -242,10 +249,10 @@ async def example_bidirectional_workers():
     print("Example 3: Bidirectional Workers")
     print("=" * 50)
 
-    channel_a, channel_b = create_channel_pair()
+    channel_a, channel_b = create_async_channel_pair()
     results = []
 
-    async def ping_worker(channel: ThreadChannel, name: str, count: int):
+    async def ping_worker(channel: AsyncChannel, name: str, count: int):
         """Worker that sends pings and waits for pongs."""
         print(f"[{name}] Started")
         try:
@@ -258,7 +265,7 @@ async def example_bidirectional_workers():
             print(f"[{name}] Channel closed")
         print(f"[{name}] Done")
 
-    async def pong_worker(channel: ThreadChannel, name: str, count: int):
+    async def pong_worker(channel: AsyncChannel, name: str, count: int):
         """Worker that receives pings and sends pongs."""
         print(f"[{name}] Started")
         try:
