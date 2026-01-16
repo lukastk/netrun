@@ -102,8 +102,13 @@ class Pool(Protocol):
         """Start all workers in the pool."""
         ...
 
-    async def close(self) -> None:
-        """Shut down all workers and clean up resources."""
+    async def close(self, timeout: float | None = None) -> None:
+        """Shut down all workers and clean up resources.
+
+        Args:
+            timeout: Max seconds to wait for each worker to finish gracefully.
+                     If None, wait indefinitely.
+        """
         ...
 
     async def send(self, worker_id: WorkerId, key: str, data: Any) -> None:

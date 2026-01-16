@@ -239,7 +239,7 @@ class RemotePoolServer:
         try:
             while pool.is_running and not channel.is_closed:
                 try:
-                    msg = await pool.recv(timeout=0.5)
+                    msg = await pool.recv(timeout=None)
                     await channel.send(MSG_RECV, {
                         "worker_id": msg.worker_id,
                         "key": msg.key,
@@ -327,7 +327,7 @@ class RemotePoolClient:
         })
 
         # Wait for response
-        key, data = await self._channel.recv(timeout=30.0)
+        key, data = await self._channel.recv(timeout=None)
 
         if key == MSG_ERROR:
             raise PoolError(f"Server error: {data}")
@@ -348,7 +348,7 @@ class RemotePoolClient:
         try:
             while self._running and self._channel and not self._channel.is_closed:
                 try:
-                    key, data = await self._channel.recv(timeout=1.0)
+                    key, data = await self._channel.recv(timeout=None)
                     if key == MSG_RECV:
                         await self._recv_queue.put(data)
                     elif key == MSG_ERROR:
@@ -360,8 +360,12 @@ class RemotePoolClient:
         except Exception:
             pass
 
-    async def close(self) -> None:
-        """Close the connection and remote pool."""
+    async def close(self, timeout: float | None = None) -> None:
+        """Close the connection and remote pool.
+
+        Args:
+            timeout: Not used for RemotePoolClient (included for protocol compatibility).
+        """
         self._running = False
 
         if self._recv_task and not self._recv_task.done():
@@ -455,94 +459,82 @@ class RemotePoolClient:
 # Demonstrates a server and client communicating.
 
 # %%
-# Check for websockets
-try:
-    import websockets
-    _has_websockets = True
-except ImportError:
-    _has_websockets = False
-    print("websockets not installed - examples will be skipped")
+import tempfile
+import sys
+from pathlib import Path
 
-# %%
-if _has_websockets:
-    import tempfile
-    import sys
-    from pathlib import Path
-
-    # Create temp module with worker function
-    _temp_dir = tempfile.mkdtemp(prefix="remote_pool_example_")
-    _worker_code = '''
+# Create temp module with worker function
+_temp_dir = tempfile.mkdtemp(prefix="remote_pool_example_")
+_worker_code = '''
 """Worker for remote pool example."""
 from netrun.rpc.base import ChannelClosed
 
 def remote_echo_worker(channel, worker_id):
-    """Echo worker for remote pool."""
-    import os
-    print(f"[Remote Worker {worker_id}] Started in process {os.getpid()}")
-    try:
-        while True:
-            key, data = channel.recv()
-            print(f"[Remote Worker {worker_id}] Received: {key}={data}")
-            channel.send(f"echo:{key}", {"worker_id": worker_id, "data": data})
-    except ChannelClosed:
-        print(f"[Remote Worker {worker_id}] Stopping")
+"""Echo worker for remote pool."""
+import os
+print(f"[Remote Worker {worker_id}] Started in process {os.getpid()}")
+try:
+    while True:
+        key, data = channel.recv()
+        print(f"[Remote Worker {worker_id}] Received: {key}={data}")
+        channel.send(f"echo:{key}", {"worker_id": worker_id, "data": data})
+except ChannelClosed:
+    print(f"[Remote Worker {worker_id}] Stopping")
 '''
 
-    _worker_path = Path(_temp_dir) / "remote_workers.py"
-    _worker_path.write_text(_worker_code)
-    print(f"Created worker module at: {_worker_path}")
+_worker_path = Path(_temp_dir) / "remote_workers.py"
+_worker_path.write_text(_worker_code)
+print(f"Created worker module at: {_worker_path}")
 
-    if _temp_dir not in sys.path:
-        sys.path.insert(0, _temp_dir)
-
-# %%
-if _has_websockets:
-    from remote_workers import remote_echo_worker
-    # Import from installed module to avoid pickling issues with __main__
-    from netrun.pool.remote import RemotePoolServer as _RemotePoolServer
-    from netrun.pool.remote import RemotePoolClient as _RemotePoolClient
-
-    async def example_remote_pool():
-        """Example: remote pool server and client."""
-        print("=" * 50)
-        print("Example: Remote Pool")
-        print("=" * 50)
-
-        # Create server
-        server = _RemotePoolServer()
-        server.register_worker("echo", remote_echo_worker)
-
-        async with server.serve_background("127.0.0.1", 19999):
-            print("[Main] Server started")
-
-            # Connect client
-            async with _RemotePoolClient("ws://127.0.0.1:19999") as client:
-                print("[Main] Client connected")
-
-                # Create pool
-                await client.create_pool(
-                    worker_name="echo",
-                    num_processes=2,
-                    threads_per_process=2,
-                )
-                print(f"[Main] Pool created with {client.num_workers} workers")
-
-                # Send to each worker
-                for worker_id in range(client.num_workers):
-                    await client.send(worker_id, "hello", f"message-{worker_id}")
-
-                # Receive responses
-                for _ in range(client.num_workers):
-                    msg = await client.recv(timeout=10.0)
-                    print(f"[Main] Got from worker {msg.worker_id}: {msg.key}={msg.data}")
-
-        print("Done!\n")
-
-    await example_remote_pool()
+if _temp_dir not in sys.path:
+    sys.path.insert(0, _temp_dir)
 
 # %%
-if _has_websockets:
-    # Clean up
-    import shutil
-    shutil.rmtree(_temp_dir, ignore_errors=True)
-    print(f"Cleaned up: {_temp_dir}")
+from remote_workers import remote_echo_worker
+# Import from installed module to avoid pickling issues with __main__
+from netrun.pool.remote import RemotePoolServer as _RemotePoolServer
+from netrun.pool.remote import RemotePoolClient as _RemotePoolClient
+
+async def example_remote_pool():
+    """Example: remote pool server and client."""
+    print("=" * 50)
+    print("Example: Remote Pool")
+    print("=" * 50)
+
+    # Create server
+    server = _RemotePoolServer()
+    server.register_worker("echo", remote_echo_worker)
+
+    async with server.serve_background("127.0.0.1", 19999):
+        print("[Main] Server started")
+
+        # Connect client
+        async with _RemotePoolClient("ws://127.0.0.1:19999") as client:
+            print("[Main] Client connected")
+
+            # Create pool
+            await client.create_pool(
+                worker_name="echo",
+                num_processes=2,
+                threads_per_process=2,
+            )
+            print(f"[Main] Pool created with {client.num_workers} workers")
+
+            # Send to each worker
+            for worker_id in range(client.num_workers):
+                await client.send(worker_id, "hello", f"message-{worker_id}")
+
+            # Receive responses
+            for _ in range(client.num_workers):
+                msg = await client.recv(timeout=10.0)
+                print(f"[Main] Got from worker {msg.worker_id}: {msg.key}={msg.data}")
+
+    print("Done!\n")
+
+await example_remote_pool()
+
+# %%
+# Clean up
+import shutil
+shutil.rmtree(_temp_dir, ignore_errors=True)
+print(f"Cleaned up: {_temp_dir}")
