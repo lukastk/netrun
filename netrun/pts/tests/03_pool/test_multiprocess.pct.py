@@ -30,7 +30,7 @@ from netrun.pool.multiprocess import MultiprocessPool
 
 # %%
 #|export
-from .workers import echo_worker, compute_worker, pid_worker
+from tests.pool.workers import echo_worker, compute_worker, pid_worker
 
 # %% [markdown]
 # ## Test Pool Creation

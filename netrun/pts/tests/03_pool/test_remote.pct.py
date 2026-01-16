@@ -42,7 +42,7 @@ from netrun.pool.remote import RemotePoolServer, RemotePoolClient
 
 # %%
 #|export
-from .workers import echo_worker, compute_worker
+from tests.pool.workers import echo_worker, compute_worker
 
 # %% [markdown]
 # ## Test Server Creation

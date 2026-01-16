@@ -100,7 +100,7 @@ await test_same_process_send_recv();
 
 # %%
 #|export
-from .workers import echo_worker, compute_worker
+from tests.rpc.workers import echo_worker, compute_worker
 
 # %%
 #|export

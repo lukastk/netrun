@@ -340,7 +340,7 @@ from netrun.rpc.base import ChannelClosed
 def echo_worker(send_q, recv_q):
     """Simple echo worker."""
     channel = SyncProcessChannel(send_q, recv_q)
-    print(f"[Worker] Started in process {os.getpid()}")
+    print(f"[Worker] Started worker process")
 
     try:
         while True:
@@ -375,7 +375,7 @@ async def run_dynamic_example():
     # Start subprocess with our dynamic worker
     proc = Process(target=echo_worker, args=child_queues)
     proc.start()
-    print(f"[Parent] Started worker process {proc.pid}")
+    print("[Parent] Started worker process")
 
     # Send some messages
     await parent_channel.send("hello", "world")

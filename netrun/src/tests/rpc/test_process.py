@@ -65,7 +65,7 @@ async def test_same_process_send_recv():
     assert data == 42
 
 # %% nbs/tests/02_rpc/test_process.ipynb 12
-from .workers import compute_worker, echo_worker
+from ..rpc.workers import compute_worker, echo_worker
 
 
 # %% nbs/tests/02_rpc/test_process.ipynb 13

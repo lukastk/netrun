@@ -4,24 +4,25 @@ __all__ = ['MultiprocessPool']
 
 # %% nbs/netrun/03_pool/02_multiprocess.ipynb 3
 import asyncio
+import multiprocessing as mp
 import queue
 import threading
-import multiprocessing as mp
 from typing import Any
 
-from ..rpc.base import ChannelClosed, RecvTimeout, SHUTDOWN_KEY
+from ..pool.base import (
+    PoolAlreadyStarted,
+    PoolNotStarted,
+    WorkerFn,
+    WorkerId,
+    WorkerMessage,
+)
+from ..rpc.base import SHUTDOWN_KEY, ChannelClosed, RecvTimeout
 from ..rpc.process import (
     ProcessChannel,
     SyncProcessChannel,
     create_queue_pair,
 )
-from ..pool.base import (
-    WorkerId,
-    WorkerFn,
-    WorkerMessage,
-    PoolNotStarted,
-    PoolAlreadyStarted,
-)
+
 
 # %% nbs/netrun/03_pool/02_multiprocess.ipynb 5
 def _subprocess_main(

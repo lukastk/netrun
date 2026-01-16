@@ -3,17 +3,20 @@
 __all__ = ['test_broadcast', 'test_compute_workers', 'test_consistency_many_messages', 'test_consistency_multiple_runs', 'test_consistency_rapid_cycles', 'test_consistency_single_run', 'test_context_manager', 'test_double_start_raises', 'test_invalid_worker_id', 'test_pool_creation', 'test_pool_default_threads', 'test_pool_invalid_num_processes', 'test_pool_invalid_threads_per_process', 'test_recv_before_start_raises', 'test_recv_timeout', 'test_send_before_start_raises', 'test_send_recv_multiple_workers', 'test_send_recv_single', 'test_start_and_close', 'test_try_recv_empty', 'test_try_recv_with_message', 'test_worker_id_mapping']
 
 # %% nbs/tests/03_pool/test_multiprocess.ipynb 2
-import pytest
 import asyncio
-from netrun.rpc.base import RecvTimeout
+
+import pytest
+
 from netrun.pool.base import (
-    PoolNotStarted,
     PoolAlreadyStarted,
+    PoolNotStarted,
 )
 from netrun.pool.multiprocess import MultiprocessPool
+from netrun.rpc.base import RecvTimeout
 
 # %% nbs/tests/03_pool/test_multiprocess.ipynb 4
-from .workers import echo_worker, compute_worker, pid_worker
+from ..pool.workers import compute_worker, echo_worker, pid_worker
+
 
 # %% nbs/tests/03_pool/test_multiprocess.ipynb 6
 def test_pool_creation():
