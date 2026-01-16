@@ -1,0 +1,287 @@
+# ---
+# jupyter:
+#   kernelspec:
+#     display_name: .venv
+#     language: python
+#     name: python3
+# ---
+
+# %%
+#|default_exp storage
+
+# %%
+#|hide
+from nblite import nbl_export, show_doc
+
+nbl_export()
+import netrun.storage as this_module
+
+# %%
+#|export
+from pydantic import BaseModel
+from dataclasses import dataclass
+from typing import Any
+import threading
+import pickle
+import importlib
+from pathlib import Path
+from ulid import ULID
+
+from netrun._iutils.hashing import hash, HashMethod
+
+# %%
+#|hide
+show_doc(this_module.LazyPacketValueSpecError, show_class_methods=False)
+
+# %%
+#|export
+class LazyPacketValueSpecError(Exception):
+    """Exception raised when a LazyPacketValueSpec raises during evaluation."""
+
+    def __init__(self, packet_id: ULID, original_exception: Exception):
+        self.packet_id = packet_id
+        self.original_exception = original_exception
+        super().__init__(
+            f"LazyPacketValueSpec for packet '{packet_id}' raised an exception: {original_exception}"
+        )
+
+# %%
+#|hide
+show_doc(this_module.PacketStoreConfig)
+
+# %%
+#|export
+class PacketStoreConfig(BaseModel):
+    """Configuration for the PacketStore."""
+    hash_method: HashMethod = HashMethod.xxh64
+    hash_pickle_protocol: int = 4
+    try_json_dump_in_hash: bool = False
+    evaluate_lazy_value_for_hash: bool = False
+
+# %%
+#|hide
+show_doc(this_module.LazyPacketValueSpec, show_class_methods=False)
+
+# %%
+#|export
+@dataclass
+class LazyPacketValueSpec:
+    """Lazy value for a packet."""
+
+    func_import_path: str
+    args: tuple
+    kwargs: dict
+
+# %%
+#|hide
+show_doc(this_module.PacketStore, show_class_methods=False)
+
+# %%
+#|export
+class PacketStore:
+    """Stores packet values and lazy values. Thread-safe.
+
+    Values are stored until consumed or destroyed. Lazy values are evaluated
+    only at consumption time.
+
+    Example:
+    ```python
+    >>> store = PacketStore()
+    >>> store.register("pkt-1", 42)
+    >>> store.consume("pkt-1")
+    42
+    >>> store.exists("pkt-1")
+    False
+    ```
+    """
+
+    def __init__(self, config: PacketStoreConfig):
+        """Initialize the packet store.
+
+        Args:
+            config: Configuration options. Defaults to PacketStoreConfig().
+        """
+        self._config = config
+        self._store: dict[ULID, Any | LazyPacketValueSpec] = {}
+        self._hashes: dict[ULID, int] = {}
+        self._lock = threading.RLock()
+
+    @property
+    def config(self) -> PacketStoreConfig:
+        """The store's configuration."""
+        return self._config
+
+    def register(self, packet_id: ULID, value_or_lazy: Any | LazyPacketValueSpec) -> None:
+        """Register a value or lazy value for a packet.
+
+        Args:
+            packet_id: The packet ID to register.
+            value_or_lazy: The value or LazyPacketValueSpec to store.
+
+        Raises:
+            ValueError: If the packet ID is already registered.
+        """
+        with self._lock:
+            if packet_id in self._store:
+                raise ValueError(f"Packet '{packet_id}' is already registered")
+            self._store[packet_id] = value_or_lazy
+
+    def _evaluate_lazy_value(self, lazy_value: LazyPacketValueSpec) -> Any:
+        module_path = lazy_value.func_import_path.rsplit(".", 1)
+        mod = importlib.import_module(module_path)
+        if hasattr(mod, lazy_value.func_name):
+            func = getattr(mod, lazy_value.func_name)
+        else:
+            raise ValueError(
+                f"Function '{lazy_value.func_name}' not found in module '{module_path}'"
+            )
+        try:
+            return func(*lazy_value.args, **lazy_value.kwargs)
+        except Exception as e:
+            raise LazyPacketValueSpecError(packet_id, e) from e
+
+    def get_hash(self, packet_id: ULID) -> int:
+        """Get the hash of the packet.
+
+        Returns:
+            The hash of the packet.
+        """
+        with self._lock:
+            if packet_id not in self._hashes:
+                value_or_lazy = self._get(packet_id)
+                if self.config.evaluate_lazy_value_for_hash:
+                    value_or_lazy = self._evaluate_lazy_value(value_or_lazy)
+                self._hashes[packet_id] = hash(
+                    value_or_lazy,
+                    method=self.config.hash_method,
+                    try_json_dump=self.config.try_json_dump_in_hash,
+                    pickle_protocol=self.config.hash_pickle_protocol,
+                )
+            return self._hashes[packet_id]
+
+    def destroy(self, packet_id: ULID) -> None:
+        """Remove packet without returning value (for cancelled epochs).
+
+        Raises:
+            KeyError: If the packet ID is not found.
+        """
+        with self._lock:
+            if packet_id not in self._store:
+                raise KeyError(f"Packet '{packet_id}' not found")
+            del self._store[packet_id]
+            if packet_id in self._hashes:
+                del self._hashes[packet_id]
+
+    def consume(self, packet_id: ULID) -> Any:
+        """Remove packet and return its value. Evaluates LazyPacketValueSpec if needed.
+
+        Returns:
+            The packet's value.
+
+        Raises:
+            KeyError: If the packet ID is not found.
+            LazyPacketValueSpecError: If a LazyPacketValueSpec raises during evaluation.
+        """
+        with self._lock:
+            if packet_id not in self._store:
+                raise KeyError(f"Packet '{packet_id}' not found")
+            value_or_lazy = self._store.pop(packet_id)
+            if packet_id in self._hashes:
+                del self._hashes[packet_id]
+
+        if isinstance(value_or_lazy, LazyPacketValueSpec):
+            return self._evaluate_lazy_value(value_or_lazy)
+            
+        return value_or_lazy
+
+
+
+    def _get(self, packet_id: ULID) -> Any | LazyPacketValueSpec:
+        """Get the raw value or LazyPacketValueSpec without evaluating or removing.
+
+        Raises:
+            KeyError: If the packet ID is not found.
+        """
+        with self._lock:
+            if not self.exists(packet_id):
+                raise KeyError(f"Packet '{packet_id}' not found")
+            return self._store[packet_id]
+
+    def exists(self, packet_id: ULID) -> bool:
+        """Check if a packet ID exists in the store."""
+        with self._lock:
+            return packet_id in self._store
+
+    def list_ids(self) -> list[ULID]:
+        """List all packet IDs in the store."""
+        with self._lock:
+            return list(self._store.keys())
+
+    def save(self, path: str) -> None:
+        """Save all current values to a .pkl file.
+
+        Args:
+            path: The path to save to. Will be created if it doesn't exist.
+
+        Raises:
+            pickle.PicklingError: If a value cannot be pickled.
+        """
+        from pathlib import Path
+
+        path = Path(path)
+
+        with self._lock:
+            # Convert ULID objects to strings
+            data = {
+                "hashes": {str(k) : v for k, v in self._hashes.items()}, 
+                "store": {str(k) : v for k, v in self._store.items()},
+            }
+
+        with open(path, "wb") as f:
+            pickle.dump(data, f)
+
+    def load(self, path: str) -> None:
+        """Load values from a pickled PacketStore.
+
+        Replaces the current store contents with loaded values.
+
+        Args:
+            path: The path to load from.
+
+        Raises:
+            FileNotFoundError: If the file doesn't exist.
+        """
+        path = Path(path)
+
+        with open(path, "rb") as f:
+            packet_store_data = pickle.load(f)
+
+        with self._lock:
+            self._store = {ULID.from_str(k) : v for k, v in packet_store_data["store"].items()}
+            self._hashes = {ULID.from_str(k) : v for k, v in packet_store_data["hashes"].items()}
+
+# %%
+config = PacketStoreConfig()
+packet_store = PacketStore(config)
+
+# Test registering and consumption
+packet_id = ULID()
+packet_store.register(packet_id, "my_value")
+assert packet_store._get(packet_id) == "my_value"
+assert packet_store.consume(packet_id) == "my_value"
+assert not packet_store.exists(packet_id)
+
+# Test getting hashes
+packet_id = ULID()
+packet_store.register(packet_id, "my_value")
+packet_store.get_hash(packet_id)
+
+# Test checkpointing
+import tempfile
+packet_id = ULID()
+packet_store.register(packet_id, "my_other_value")
+tmp_path = tempfile.mktemp(suffix=".pkl")
+packet_store.save(tmp_path)
+loaded_packet_store = PacketStore(config)
+loaded_packet_store.load(tmp_path)
+assert loaded_packet_store._get(packet_id) == "my_other_value"
