@@ -6,15 +6,16 @@ __all__ = ['SyncThreadChannel', 'ThreadChannel', 'create_thread_channel_pair']
 import asyncio
 import queue
 import threading
-from typing import Any
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any
 
 from ..rpc.base import (
-    ChannelClosed,
-    ChannelBroken,
-    RecvTimeout,
     SHUTDOWN_KEY,
+    ChannelBroken,
+    ChannelClosed,
+    RecvTimeout,
 )
+
 
 # %% nbs/netrun/02_rpc/02_thread.ipynb 5
 class SyncThreadChannel:
