@@ -7,15 +7,16 @@ import asyncio
 import multiprocessing as mp
 import queue
 import threading
-from typing import Any
 from concurrent.futures import ThreadPoolExecutor
+from typing import Any
 
 from ..rpc.base import (
-    ChannelClosed,
-    ChannelBroken,
-    RecvTimeout,
     SHUTDOWN_KEY,
+    ChannelBroken,
+    ChannelClosed,
+    RecvTimeout,
 )
+
 
 # %% nbs/netrun/02_rpc/02_process.ipynb 5
 class SyncProcessChannel:

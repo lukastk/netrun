@@ -7,10 +7,11 @@ import asyncio
 from typing import Any
 
 from ..rpc.base import (
+    SHUTDOWN_KEY,
     ChannelClosed,
     RecvTimeout,
-    SHUTDOWN_KEY,
 )
+
 
 # %% nbs/netrun/02_rpc/01_thread.ipynb 5
 class ThreadChannel:
@@ -54,7 +55,7 @@ class ThreadChannel:
                     self._recv_queue.get(),
                     timeout=timeout,
                 )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             raise RecvTimeout(f"Receive timed out after {timeout}s")
 
         if result[0] == SHUTDOWN_KEY:

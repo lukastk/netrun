@@ -3,17 +3,18 @@
 __all__ = ['HashMethod', 'adler32', 'blake2b', 'crc32', 'hash', 'sha256', 'xxh64']
 
 # %% nbs/netrun/00_iutils/01_hashing.ipynb 2
-from typing import Any
-
-import pickle
-import pickletools
-import zlib
 import binascii
 import hashlib
-import struct
-import xxhash
 import json
+import pickle
+import pickletools
+import struct
+import zlib
 from enum import Enum
+from typing import Any
+
+import xxhash
+
 
 # %% nbs/netrun/00_iutils/01_hashing.ipynb 4
 def _preprocess_data(data: Any, pickle_protocol: int, try_json_dump: bool):

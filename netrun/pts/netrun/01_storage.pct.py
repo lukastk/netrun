@@ -189,7 +189,7 @@ class PacketStore:
 
         if isinstance(value_or_lazy, LazyPacketValueSpec):
             return self._evaluate_lazy_value(value_or_lazy)
-            
+
         return value_or_lazy
 
 
@@ -231,7 +231,7 @@ class PacketStore:
         with self._lock:
             # Convert ULID objects to strings
             data = {
-                "hashes": {str(k) : v for k, v in self._hashes.items()}, 
+                "hashes": {str(k) : v for k, v in self._hashes.items()},
                 "store": {str(k) : v for k, v in self._store.items()},
             }
 
