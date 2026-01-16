@@ -6,16 +6,15 @@ __all__ = ['SyncThreadChannel', 'ThreadChannel', 'create_thread_channel_pair']
 import asyncio
 import queue
 import threading
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any
+from concurrent.futures import ThreadPoolExecutor
 
 from ..rpc.base import (
-    SHUTDOWN_KEY,
-    ChannelBroken,
     ChannelClosed,
+    ChannelBroken,
     RecvTimeout,
+    SHUTDOWN_KEY,
 )
-
 
 # %% nbs/netrun/02_rpc/02_thread.ipynb 5
 class SyncThreadChannel:
@@ -197,8 +196,14 @@ class ThreadChannel:
         with self._lock:
             if not self._closed:
                 self._closed = True
+                # Send shutdown to worker
                 try:
                     self._send_queue.put_nowait((SHUTDOWN_KEY, None))
+                except Exception:
+                    pass
+                # Also put shutdown on recv queue to unblock any recv() calls
+                try:
+                    self._recv_queue.put_nowait((SHUTDOWN_KEY, None))
                 except Exception:
                     pass
 

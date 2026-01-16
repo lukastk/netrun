@@ -251,8 +251,14 @@ class ProcessChannel:
         with self._lock:
             if not self._closed:
                 self._closed = True
+                # Send shutdown to child process
                 try:
                     self._send_queue.put_nowait((SHUTDOWN_KEY, None))
+                except Exception:
+                    pass
+                # Also put shutdown on recv queue to unblock any recv() calls
+                try:
+                    self._recv_queue.put_nowait((SHUTDOWN_KEY, None))
                 except Exception:
                     pass
 

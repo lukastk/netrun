@@ -7,16 +7,15 @@ import asyncio
 import multiprocessing as mp
 import queue
 import threading
-from concurrent.futures import ThreadPoolExecutor
 from typing import Any
+from concurrent.futures import ThreadPoolExecutor
 
 from ..rpc.base import (
-    SHUTDOWN_KEY,
-    ChannelBroken,
     ChannelClosed,
+    ChannelBroken,
     RecvTimeout,
+    SHUTDOWN_KEY,
 )
-
 
 # %% nbs/netrun/02_rpc/03_process.ipynb 5
 class SyncProcessChannel:
@@ -198,8 +197,14 @@ class ProcessChannel:
         with self._lock:
             if not self._closed:
                 self._closed = True
+                # Send shutdown to child process
                 try:
                     self._send_queue.put_nowait((SHUTDOWN_KEY, None))
+                except Exception:
+                    pass
+                # Also put shutdown on recv queue to unblock any recv() calls
+                try:
+                    self._recv_queue.put_nowait((SHUTDOWN_KEY, None))
                 except Exception:
                     pass
 
