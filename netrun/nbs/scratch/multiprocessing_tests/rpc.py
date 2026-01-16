@@ -4,14 +4,15 @@ import itertools
 import multiprocessing as mp
 import queue
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any
 
 # req:  (req_id, kind, payload)
 # resp: (req_id, ok, payload_or_error_string)
 # sig:  (kind, payload)
 
-Signal = Tuple[str, Any]
+Signal = tuple[str, Any]
 
 
 @dataclass
@@ -51,7 +52,7 @@ class WorkerRPC:
             return
 
         self._demux_started = True
-        self._pending: Dict[str, "queue.Queue[Tuple[bool, Any]]"] = {}
+        self._pending: dict[str, queue.Queue[tuple[bool, Any]]] = {}
         self._pending_lock = threading.Lock()
         self._stop_evt = threading.Event()
 
@@ -92,7 +93,7 @@ class WorkerRPC:
         """One-way signal to main (progress/log/telemetry)."""
         self._sig_q.put((kind, payload))
 
-    def call(self, kind: str, payload: Any, timeout: Optional[float] = None) -> Any:
+    def call(self, kind: str, payload: Any, timeout: float | None = None) -> Any:
         """
         Worker -> main request/response. Safe to call from multiple threads
         once start_worker_side() has been called.
@@ -102,7 +103,7 @@ class WorkerRPC:
             self.start_worker_side()
 
         req_id = self._next_id()
-        waiter_q: "queue.Queue[Tuple[bool, Any]]" = queue.Queue(maxsize=1)
+        waiter_q: queue.Queue[tuple[bool, Any]] = queue.Queue(maxsize=1)
 
         with self._pending_lock:
             self._pending[req_id] = waiter_q
@@ -165,7 +166,7 @@ class WorkerRPC:
         self,
         handler: Callable[[str, Any], Any],
         *,
-        stop_when: Optional[Callable[[], bool]] = None,
+        stop_when: Callable[[], bool] | None = None,
         poll_interval: float = 0.05,
     ) -> None:
         """
@@ -191,7 +192,7 @@ class WorkerRPC:
                 # Keep error payload picklable
                 self._resp_q.put((req_id, False, f"{type(e).__name__}: {e}"))
 
-    def recv_signal(self, timeout: float = 0.0) -> Optional[Signal]:
+    def recv_signal(self, timeout: float = 0.0) -> Signal | None:
         """Main: receive one-way signals from worker."""
         try:
             return self._sig_q.get(timeout=timeout)
@@ -199,7 +200,7 @@ class WorkerRPC:
             return None
 
 
-def make_worker_rpc(*, ctx: Optional[mp.context.BaseContext] = None) -> WorkerRPC:
+def make_worker_rpc(*, ctx: mp.context.BaseContext | None = None) -> WorkerRPC:
     ctx = ctx or mp.get_context()
     return WorkerRPC(
         _req_q=ctx.Queue(),

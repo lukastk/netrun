@@ -11,7 +11,7 @@
 
 # %%
 #|hide
-from nblite import nbl_export, show_doc; nbl_export();
+from nblite import nbl_export; nbl_export();
 
 # %% [markdown]
 # # Thread RPC
@@ -76,7 +76,7 @@ class ThreadChannel:
                     self._recv_queue.get(),
                     timeout=timeout,
                 )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             raise RecvTimeout(f"Receive timed out after {timeout}s")
 
         if result[0] == SHUTDOWN_KEY:

@@ -3,16 +3,18 @@
 __all__ = ['LazyPacketValueEvaluationError', 'LazyPacketValueSpec', 'PacketStore', 'PacketStoreConfig']
 
 # %% nbs/netrun/01_storage.ipynb 2
-from pydantic import BaseModel
-from dataclasses import dataclass
-from typing import Any
-import threading
-import pickle
 import importlib
+import pickle
+import threading
+from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
+
+from pydantic import BaseModel
 from ulid import ULID
 
-from ._iutils.hashing import hash, HashMethod
+from ._iutils.hashing import HashMethod, hash
+
 
 # %% nbs/netrun/01_storage.ipynb 4
 class LazyPacketValueEvaluationError(Exception):
@@ -156,7 +158,7 @@ class PacketStore:
 
         if isinstance(value_or_lazy, LazyPacketValueSpec):
             return self._evaluate_lazy_value(value_or_lazy)
-            
+
         return value_or_lazy
 
 
@@ -198,7 +200,7 @@ class PacketStore:
         with self._lock:
             # Convert ULID objects to strings
             data = {
-                "hashes": {str(k) : v for k, v in self._hashes.items()}, 
+                "hashes": {str(k) : v for k, v in self._hashes.items()},
                 "store": {str(k) : v for k, v in self._store.items()},
             }
 

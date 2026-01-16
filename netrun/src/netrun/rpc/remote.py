@@ -4,17 +4,19 @@ __all__ = ['ConnectionHandler', 'WebSocketChannel', 'connect', 'connect_channel'
 
 # %% nbs/netrun/02_rpc/03_remote.ipynb 3
 import asyncio
-import pickle
 import json
-from typing import Any, Callable, Awaitable
+import pickle
+from collections.abc import Awaitable, Callable
 from contextlib import asynccontextmanager
+from typing import Any
 
 from ..rpc.base import (
-    ChannelClosed,
-    ChannelBroken,
-    RecvTimeout,
     SHUTDOWN_KEY,
+    ChannelBroken,
+    ChannelClosed,
+    RecvTimeout,
 )
+
 
 # %% nbs/netrun/02_rpc/03_remote.ipynb 5
 class WebSocketChannel:
@@ -91,7 +93,7 @@ class WebSocketChannel:
                     self._recv_queue.get(),
                     timeout=timeout,
                 )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             raise RecvTimeout(f"Receive timed out after {timeout}s")
 
         key, data = result
@@ -230,7 +232,7 @@ async def connect_channel(url: str) -> WebSocketChannel:
 
 # %% nbs/netrun/02_rpc/03_remote.ipynb 10
 ConnectionHandler = Callable[[WebSocketChannel], Awaitable[None]]
-"""Type for connection handler functions.""";
+"""Type for connection handler functions."""
 
 # %% nbs/netrun/02_rpc/03_remote.ipynb 11
 async def serve(

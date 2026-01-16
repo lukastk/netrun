@@ -11,7 +11,7 @@
 
 # %%
 #|hide
-from nblite import nbl_export, show_doc; nbl_export();
+from nblite import nbl_export; nbl_export();
 
 # %% [markdown]
 # # Process RPC
@@ -319,7 +319,6 @@ def create_queue_pair(
 # %%
 import tempfile
 import sys
-import os
 from pathlib import Path
 
 # Create a temporary directory for our worker module

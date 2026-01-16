@@ -1,32 +1,29 @@
 # RPC module - bidirectional (key, data) message passing channels
 from netrun.rpc.base import (
-    RPCError,
-    ChannelClosed,
+    SHUTDOWN_KEY,
     ChannelBroken,
+    ChannelClosed,
     RecvTimeout,
     RPCChannel,
+    RPCError,
     SyncRPCChannel,
-    SHUTDOWN_KEY,
 )
-
-from netrun.rpc.thread import (
-    ThreadChannel,
-    create_channel_pair,
-)
-
 from netrun.rpc.process import (
-    SyncProcessChannel,
     ProcessChannel,
+    SyncProcessChannel,
     create_queue_pair,
 )
-
 from netrun.rpc.remote import (
-    WebSocketChannel,
     ConnectionHandler,
+    WebSocketChannel,
     connect,
     connect_channel,
     serve,
     serve_background,
+)
+from netrun.rpc.thread import (
+    ThreadChannel,
+    create_channel_pair,
 )
 
 __all__ = [

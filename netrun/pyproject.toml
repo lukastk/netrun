@@ -42,7 +42,7 @@ include = []
 
 [tool.ruff]
 target-version = "py311"
-line-length = 100
+line-length = 120
 exclude = []
 extend-exclude = [
     "__*.pct.py",
@@ -70,6 +70,7 @@ ignore = [
     "I001", # Unsorted imports
     "E701", # Multiple statements on one line newline (no-multiple-statements)
     "E702", # Multiple statements on one line semicolon (no-multiple-statements)
+    "E703", # useless-semicolon
 ]
 
 [tool.ruff.lint.isort]
