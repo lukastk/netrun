@@ -31,11 +31,11 @@ from netrun._iutils.hashing import hash, HashMethod
 
 # %%
 #|hide
-show_doc(this_module.LazyPacketValueSpecError, show_class_methods=False)
+show_doc(this_module.LazyPacketValueEvaluationError, show_class_methods=False)
 
 # %%
 #|export
-class LazyPacketValueSpecError(Exception):
+class LazyPacketValueEvaluationError(Exception):
     """Exception raised when a LazyPacketValueSpec raises during evaluation."""
 
     def __init__(self, packet_id: ULID, original_exception: Exception):
@@ -138,7 +138,7 @@ class PacketStore:
         try:
             return func(*lazy_value.args, **lazy_value.kwargs)
         except Exception as e:
-            raise LazyPacketValueSpecError(packet_id, e) from e
+            raise LazyPacketValueEvaluationError(packet_id, e) from e
 
     def get_hash(self, packet_id: ULID) -> int:
         """Get the hash of the packet.
@@ -180,7 +180,7 @@ class PacketStore:
 
         Raises:
             KeyError: If the packet ID is not found.
-            LazyPacketValueSpecError: If a LazyPacketValueSpec raises during evaluation.
+            LazyPacketValueEvaluationError: If a LazyPacketValueSpec raises during evaluation.
         """
         with self._lock:
             if packet_id not in self._store:
