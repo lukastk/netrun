@@ -172,6 +172,7 @@ class RemotePoolServer:
     async def _handle_client(self, channel: WebSocketChannel) -> None:
         """Handle a single client connection."""
         pool: MultiprocessPool | None = None
+        forward_task: asyncio.Task | None = None
 
         try:
             while True:
@@ -186,6 +187,15 @@ class RemotePoolServer:
                     if worker_name not in self._workers:
                         await channel.send(MSG_ERROR, f"Unknown worker: {worker_name}")
                         continue
+
+                    # Clean up existing pool and forward task if any
+                    if forward_task is not None:
+                        forward_task.cancel()
+                        try:
+                            await forward_task
+                        except asyncio.CancelledError:
+                            pass
+                        forward_task = None
 
                     if pool is not None:
                         await pool.close()
@@ -204,7 +214,7 @@ class RemotePoolServer:
                     })
 
                     # Start forwarding responses from pool to client
-                    asyncio.create_task(self._forward_responses(pool, channel))
+                    forward_task = asyncio.create_task(self._forward_responses(pool, channel))
 
                 elif key == MSG_SEND:
                     if pool is None:
@@ -231,6 +241,14 @@ class RemotePoolServer:
         except ChannelClosed:
             pass
         finally:
+            # Cancel forward task first
+            if forward_task is not None:
+                forward_task.cancel()
+                try:
+                    await forward_task
+                except asyncio.CancelledError:
+                    pass
+
             if pool is not None:
                 await pool.close()
 
@@ -239,7 +257,8 @@ class RemotePoolServer:
         try:
             while pool.is_running and not channel.is_closed:
                 try:
-                    msg = await pool.recv(timeout=None)
+                    # Use a timeout so we can periodically check if we should stop
+                    msg = await pool.recv(timeout=0.5)
                     await channel.send(MSG_RECV, {
                         "worker_id": msg.worker_id,
                         "key": msg.key,
@@ -249,6 +268,8 @@ class RemotePoolServer:
                     continue
                 except ChannelClosed:
                     break
+        except asyncio.CancelledError:
+            raise  # Re-raise to properly signal cancellation
         except Exception:
             pass
 
