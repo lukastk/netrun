@@ -2,16 +2,21 @@ export_pipeline = """
 nbs -> pts
 nbs -> lib
 
-nbs_test -> pts_test
-nbs_test -> lib_test
+nbs_tests -> pts_tests
+nbs_tests -> lib_tests
 
 nbs_dev -> pts_dev
 nbs_dev -> lib_dev
+
+nbs_examples -> pts_examples
 """
 docs_cl='nbs'
 docs_title="netrun"
 
 readme_nb_path = "nbs/netrun/index.ipynb"
+
+[fill]
+code_locations = ["nbs", "nbs_dev", "nbs_examples"]
 
 [cl.lib]
 path="src/netrun"
@@ -26,15 +31,15 @@ path="pts/netrun"
 format="percent"
 
 
-[cl.lib_test]
+[cl.lib_tests]
 path="src/tests"
 format="module"
 
-[cl.nbs_test]
+[cl.nbs_tests]
 path="nbs/tests"
 format="ipynb"
 
-[cl.pts_test]
+[cl.pts_tests]
 path="pts/tests"
 format="percent"
 
@@ -51,7 +56,10 @@ format="percent"
 path="src/dev"
 format="module"
 
-
-[cl.examples]
+[cl.nbs_examples]
 path="nbs/examples"
 format="ipynb"
+
+[cl.pts_examples]
+path="pts/examples"
+format="percent"
