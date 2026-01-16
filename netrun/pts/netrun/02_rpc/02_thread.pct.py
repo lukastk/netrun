@@ -1,42 +1,42 @@
 # ---
 # jupyter:
 #   kernelspec:
-#     display_name: netrun
+#     display_name: .venv
 #     language: python
-#     name: netrun
+#     name: python3
 # ---
 
 # %%
-#|default_exp rpc.process
+#|default_exp rpc.thread
 
 # %%
 #|hide
 from nblite import nbl_export; nbl_export();
 
 # %% [markdown]
-# # Process RPC
+# # Thread RPC
 #
-# Channel for communication with subprocesses using `multiprocessing.Queue`.
-# Provides both async (for parent) and sync (for worker) channel classes.
+# Channel for communication between OS threads using `queue.Queue`.
+# Provides both async (for main thread) and sync (for worker threads) channel classes.
 #
 # ## Usage
 #
 # ```python
-# import multiprocessing as mp
-# from netrun.rpc.process import create_queue_pair, SyncProcessChannel
+# import threading
+# from netrun.rpc.thread import create_thread_channel_pair, SyncThreadChannel
 #
 # def worker(send_q, recv_q):
-#     channel = SyncProcessChannel(send_q, recv_q)
+#     channel = SyncThreadChannel(send_q, recv_q)
 #     while True:
 #         key, data = channel.recv()
 #         channel.send("result", process(data))
 #
 # # Create queues and parent channel
-# parent_channel, child_queues = create_queue_pair()
+# parent_channel, child_queues = create_thread_channel_pair()
 #
-# # Start subprocess
-# proc = mp.Process(target=worker, args=child_queues)
-# proc.start()
+# # Start thread
+# thread = threading.Thread(target=worker, args=child_queues)
+# thread.start()
 #
 # # Parent uses async channel
 # await parent_channel.send("task", data)
@@ -46,7 +46,6 @@ from nblite import nbl_export; nbl_export();
 # %%
 #|export
 import asyncio
-import multiprocessing as mp
 import queue
 import threading
 from typing import Any
@@ -60,24 +59,24 @@ from netrun.rpc.base import (
 )
 
 # %% [markdown]
-# ## SyncProcessChannel
+# ## SyncThreadChannel
 #
-# Synchronous channel for use in worker subprocesses.
+# Synchronous channel for use in worker threads.
 
 # %%
 #|export
-class SyncProcessChannel:
-    """Synchronous RPC channel over multiprocessing queues.
+class SyncThreadChannel:
+    """Synchronous RPC channel over thread-safe queues.
 
-    For use in worker subprocesses. Thread-safe.
+    For use in worker threads. Thread-safe.
     """
 
     def __init__(
         self,
-        send_queue: mp.Queue,
-        recv_queue: mp.Queue,
+        send_queue: queue.Queue,
+        recv_queue: queue.Queue,
     ):
-        """Create a channel from multiprocessing queues.
+        """Create a channel from thread-safe queues.
 
         Args:
             send_queue: Queue for outgoing messages (to parent)
@@ -95,7 +94,7 @@ class SyncProcessChannel:
 
         try:
             self._send_queue.put((key, data))
-        except (BrokenPipeError, EOFError, OSError) as e:
+        except Exception as e:
             self._closed = True
             raise ChannelBroken(f"Channel broken: {e}")
 
@@ -108,7 +107,7 @@ class SyncProcessChannel:
             result = self._recv_queue.get(timeout=timeout)
         except queue.Empty:
             raise RecvTimeout(f"Receive timed out after {timeout}s")
-        except (BrokenPipeError, EOFError, OSError) as e:
+        except Exception as e:
             self._closed = True
             raise ChannelBroken(f"Channel broken: {e}")
 
@@ -127,7 +126,7 @@ class SyncProcessChannel:
             result = self._recv_queue.get_nowait()
         except queue.Empty:
             return None
-        except (BrokenPipeError, EOFError, OSError) as e:
+        except Exception as e:
             self._closed = True
             raise ChannelBroken(f"Channel broken: {e}")
 
@@ -152,29 +151,29 @@ class SyncProcessChannel:
         return self._closed
 
 # %% [markdown]
-# ## ProcessChannel
+# ## ThreadChannel
 #
-# Async channel for use in the parent process.
+# Async channel for use in the main thread with an event loop.
 
 # %%
 #|export
-class ProcessChannel:
-    """Async RPC channel over multiprocessing queues.
+class ThreadChannel:
+    """Async RPC channel over thread-safe queues.
 
-    For use in the parent process. Thread-safe.
+    For use in the main thread with an asyncio event loop. Thread-safe.
     """
 
     def __init__(
         self,
-        send_queue: mp.Queue,
-        recv_queue: mp.Queue,
+        send_queue: queue.Queue,
+        recv_queue: queue.Queue,
         executor: ThreadPoolExecutor | None = None,
     ):
-        """Create a channel from multiprocessing queues.
+        """Create a channel from thread-safe queues.
 
         Args:
-            send_queue: Queue for outgoing messages (to child)
-            recv_queue: Queue for incoming messages (from child)
+            send_queue: Queue for outgoing messages (to worker)
+            recv_queue: Queue for incoming messages (from worker)
             executor: Thread pool for async operations (created if None)
         """
         self._send_queue = send_queue
@@ -196,7 +195,7 @@ class ProcessChannel:
                 self._send_queue.put,
                 (key, data),
             )
-        except (BrokenPipeError, EOFError, OSError) as e:
+        except Exception as e:
             self._closed = True
             raise ChannelBroken(f"Channel broken: {e}")
 
@@ -217,7 +216,7 @@ class ProcessChannel:
             result = await loop.run_in_executor(self._executor, blocking_recv)
         except RecvTimeout:
             raise
-        except (BrokenPipeError, EOFError, OSError) as e:
+        except Exception as e:
             self._closed = True
             raise ChannelBroken(f"Channel broken: {e}")
 
@@ -236,7 +235,7 @@ class ProcessChannel:
             result = self._recv_queue.get_nowait()
         except queue.Empty:
             return None
-        except (BrokenPipeError, EOFError, OSError) as e:
+        except Exception as e:
             self._closed = True
             raise ChannelBroken(f"Channel broken: {e}")
 
@@ -264,46 +263,38 @@ class ProcessChannel:
         return self._closed
 
 # %% [markdown]
-# ## create_queue_pair
+# ## create_thread_channel_pair
 
 # %%
 #|export
-def create_queue_pair(
-    ctx: mp.context.BaseContext | None = None,
-) -> tuple[ProcessChannel, tuple[mp.Queue, mp.Queue]]:
-    """Create queues and a parent channel for subprocess communication.
-
-    Args:
-        ctx: Multiprocessing context (uses spawn by default)
+def create_thread_channel_pair() -> tuple[ThreadChannel, tuple[queue.Queue, queue.Queue]]:
+    """Create queues and a parent channel for thread communication.
 
     Returns:
         (parent_channel, (child_send_queue, child_recv_queue))
 
     Example:
         ```python
-        import multiprocessing as mp
-        from netrun.rpc.process import create_queue_pair, SyncProcessChannel
+        import threading
+        from netrun.rpc.thread import create_thread_channel_pair, SyncThreadChannel
 
         def worker(send_q, recv_q):
-            channel = SyncProcessChannel(send_q, recv_q)
+            channel = SyncThreadChannel(send_q, recv_q)
             key, data = channel.recv()
             channel.send("echo", data)
 
-        parent_channel, child_queues = create_queue_pair()
-        proc = mp.Process(target=worker, args=child_queues)
-        proc.start()
+        parent_channel, child_queues = create_thread_channel_pair()
+        thread = threading.Thread(target=worker, args=child_queues)
+        thread.start()
 
         await parent_channel.send("hello", "world")
         key, data = await parent_channel.recv()
         ```
     """
-    if ctx is None:
-        ctx = mp.get_context("spawn")
+    parent_to_child: queue.Queue = queue.Queue()
+    child_to_parent: queue.Queue = queue.Queue()
 
-    parent_to_child = ctx.Queue()
-    child_to_parent = ctx.Queue()
-
-    parent_channel = ProcessChannel(
+    parent_channel = ThreadChannel(
         send_queue=parent_to_child,
         recv_queue=child_to_parent,
     )
@@ -314,62 +305,38 @@ def create_queue_pair(
     return parent_channel, child_queues
 
 # %% [markdown]
-# ## Example
+# ## Example: Worker Thread
+#
+# This example demonstrates communication with a worker thread.
 
 # %%
-import tempfile
-import sys
-from pathlib import Path
 
-# Create a temporary directory for our worker module
-_temp_dir = tempfile.mkdtemp(prefix="rpc_example_")
-
-# Write a simple worker script
-_worker_code = '''
-"""Dynamically generated worker module."""
-import os
-from netrun.rpc.process import SyncProcessChannel
-from netrun.rpc.base import ChannelClosed
-
-def echo_worker(send_q, recv_q):
-    """Simple echo worker."""
-    channel = SyncProcessChannel(send_q, recv_q)
-    print(f"[Worker] Started in process {os.getpid()}")
-
-    try:
-        while True:
-            key, data = channel.recv()
-            print(f"[Worker] Received: {key}={data}")
-            channel.send(f"echo:{key}", data)
-    except ChannelClosed:
-        print("[Worker] Channel closed, exiting")
-'''
-
-_worker_path = Path(_temp_dir) / "dynamic_worker.py"
-_worker_path.write_text(_worker_code)
-
-# Add temp dir to sys.path so the subprocess can import it
-if _temp_dir not in sys.path:
-    sys.path.insert(0, _temp_dir)
-
-# %%
-# Now import and use the dynamically created worker
-from dynamic_worker import echo_worker
-from multiprocessing import Process
-
-async def run_dynamic_example():
-    """Run the dynamic worker example."""
+async def example_echo_worker():
+    """Example: simple echo worker thread."""
     print("=" * 50)
-    print("Dynamic Worker Example")
+    print("Example 1: Echo Worker Thread")
     print("=" * 50)
 
-    # Create queue pair
-    parent_channel, child_queues = create_queue_pair()
+    def echo_worker(send_q, recv_q):
+        """Worker that echoes back messages."""
+        channel = SyncThreadChannel(send_q, recv_q)
+        thread_id = threading.current_thread().name
+        print(f"[Worker {thread_id}] Started")
 
-    # Start subprocess with our dynamic worker
-    proc = Process(target=echo_worker, args=child_queues)
-    proc.start()
-    print(f"[Parent] Started worker process {proc.pid}")
+        try:
+            while True:
+                key, data = channel.recv()
+                print(f"[Worker {thread_id}] Received: {key}={data}")
+                channel.send(f"echo:{key}", data)
+        except ChannelClosed:
+            print(f"[Worker {thread_id}] Channel closed, exiting")
+
+    # Create channel pair
+    parent_channel, child_queues = create_thread_channel_pair()
+
+    # Start worker thread
+    thread = threading.Thread(target=echo_worker, args=child_queues, name="EchoWorker")
+    thread.start()
 
     # Send some messages
     await parent_channel.send("hello", "world")
@@ -379,15 +346,118 @@ async def run_dynamic_example():
     # Receive responses
     for _ in range(3):
         key, data = await parent_channel.recv(timeout=5.0)
-        print(f"[Parent] Received: {key}={data}")
+        print(f"[Main] Received: {key}={data}")
 
     # Clean up
     await parent_channel.close()
-    proc.join(timeout=2.0)
-    if proc.is_alive():
-        proc.terminate()
+    thread.join(timeout=2.0)
 
-    print("Done!")
+    print("Done!\n")
 
 # %%
-await run_dynamic_example()
+await example_echo_worker()
+
+# %%
+async def example_compute_worker():
+    """Example: compute worker thread."""
+    print("=" * 50)
+    print("Example 2: Compute Worker Thread")
+    print("=" * 50)
+
+    def compute_worker(send_q, recv_q):
+        """Worker that performs computations."""
+        channel = SyncThreadChannel(send_q, recv_q)
+        print("[Worker] Started")
+
+        try:
+            while True:
+                key, data = channel.recv()
+                print(f"[Worker] Computing: {key}({data})")
+
+                if key == "square":
+                    result = data * data
+                elif key == "factorial":
+                    result = 1
+                    for i in range(1, data + 1):
+                        result *= i
+                elif key == "sum":
+                    result = sum(data)
+                else:
+                    result = f"unknown: {key}"
+
+                channel.send("result", result)
+        except ChannelClosed:
+            print("[Worker] Channel closed, exiting")
+
+    parent_channel, child_queues = create_thread_channel_pair()
+    thread = threading.Thread(target=compute_worker, args=child_queues)
+    thread.start()
+
+    # Test various computations
+    await parent_channel.send("square", 7)
+    _, result = await parent_channel.recv(timeout=5.0)
+    print(f"square(7) = {result}")
+
+    await parent_channel.send("factorial", 5)
+    _, result = await parent_channel.recv(timeout=5.0)
+    print(f"factorial(5) = {result}")
+
+    await parent_channel.send("sum", [1, 2, 3, 4, 5])
+    _, result = await parent_channel.recv(timeout=5.0)
+    print(f"sum([1,2,3,4,5]) = {result}")
+
+    await parent_channel.close()
+    thread.join(timeout=2.0)
+
+    print("Done!\n")
+
+# %%
+await example_compute_worker()
+
+# %%
+async def example_multiple_workers():
+    """Example: multiple worker threads."""
+    print("=" * 50)
+    print("Example 3: Multiple Worker Threads")
+    print("=" * 50)
+
+    def worker(send_q, recv_q, worker_id):
+        """Worker that processes messages with an ID."""
+        channel = SyncThreadChannel(send_q, recv_q)
+        print(f"[Worker {worker_id}] Started")
+
+        try:
+            while True:
+                key, data = channel.recv()
+                print(f"[Worker {worker_id}] Processing: {key}={data}")
+                channel.send("result", f"Worker {worker_id} processed: {data}")
+        except ChannelClosed:
+            print(f"[Worker {worker_id}] Channel closed, exiting")
+
+    # Start multiple workers
+    workers = []
+    for i in range(3):
+        parent_channel, child_queues = create_thread_channel_pair()
+        thread = threading.Thread(target=worker, args=(*child_queues, i))
+        thread.start()
+        workers.append((parent_channel, thread))
+        print(f"[Main] Started worker {i}")
+
+    # Send a message to each worker
+    for i, (channel, _) in enumerate(workers):
+        await channel.send("task", f"message {i}")
+
+    # Receive responses
+    for i, (channel, _) in enumerate(workers):
+        _, data = await channel.recv(timeout=5.0)
+        print(f"[Main] From worker {i}: {data}")
+
+    # Clean up
+    for channel, thread in workers:
+        await channel.close()
+        thread.join(timeout=2.0)
+
+    print("Done!\n")
+
+# %%
+await example_multiple_workers()

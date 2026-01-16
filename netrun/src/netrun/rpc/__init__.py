@@ -1,4 +1,8 @@
 # RPC module - bidirectional (key, data) message passing channels
+from netrun.rpc.aio import (
+    AsyncChannel,
+    create_async_channel_pair,
+)
 from netrun.rpc.base import (
     SHUTDOWN_KEY,
     ChannelBroken,
@@ -22,8 +26,9 @@ from netrun.rpc.remote import (
     serve_background,
 )
 from netrun.rpc.thread import (
+    SyncThreadChannel,
     ThreadChannel,
-    create_channel_pair,
+    create_thread_channel_pair,
 )
 
 __all__ = [
@@ -35,14 +40,18 @@ __all__ = [
     "RPCChannel",
     "SyncRPCChannel",
     "SHUTDOWN_KEY",
-    # Thread
+    # Async (coroutine-to-coroutine, same event loop)
+    "AsyncChannel",
+    "create_async_channel_pair",
+    # Thread (OS threads, same process)
+    "SyncThreadChannel",
     "ThreadChannel",
-    "create_channel_pair",
-    # Process
+    "create_thread_channel_pair",
+    # Process (subprocesses)
     "SyncProcessChannel",
     "ProcessChannel",
     "create_queue_pair",
-    # Remote
+    # Remote (network)
     "WebSocketChannel",
     "ConnectionHandler",
     "connect",
