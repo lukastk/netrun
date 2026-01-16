@@ -15,7 +15,6 @@
 # %%
 #|export
 import pytest
-import asyncio
 from netrun.rpc.base import ChannelClosed, RecvTimeout
 from netrun.rpc.aio import AsyncChannel, create_async_channel_pair
 

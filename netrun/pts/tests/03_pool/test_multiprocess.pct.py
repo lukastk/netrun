@@ -16,9 +16,8 @@
 #|export
 import pytest
 import asyncio
-from netrun.rpc.base import ChannelClosed, RecvTimeout
+from netrun.rpc.base import RecvTimeout
 from netrun.pool.base import (
-    WorkerMessage,
     PoolNotStarted,
     PoolAlreadyStarted,
 )
