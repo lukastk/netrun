@@ -263,7 +263,11 @@ class MultiprocessPool:
 
         self._running = False
 
-        # Cancel recv tasks first
+        # Close channels first - this unblocks any recv() calls
+        for channel in self._channels:
+            await channel.close()
+
+        # Now cancel recv tasks (they should exit quickly since channels are closed)
         for task in self._recv_tasks:
             if not task.done():
                 task.cancel()
@@ -271,10 +275,6 @@ class MultiprocessPool:
                     await task
                 except asyncio.CancelledError:
                     pass
-
-        # Close all channels
-        for channel in self._channels:
-            await channel.close()
 
         # Wait for processes to finish
         for proc in self._processes:

@@ -17,7 +17,6 @@
 import pytest
 import asyncio
 import threading
-import time
 from netrun.rpc.base import ChannelClosed, RecvTimeout
 from netrun.rpc.thread import (
     ThreadChannel,

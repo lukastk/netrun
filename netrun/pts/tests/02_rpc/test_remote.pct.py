@@ -32,7 +32,6 @@ from netrun.rpc.base import ChannelClosed, RecvTimeout
 from netrun.rpc.remote import (
     WebSocketChannel,
     connect_channel,
-    serve,
     serve_background,
 )
 

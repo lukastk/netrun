@@ -17,7 +17,6 @@
 import pytest
 from netrun.pool.base import (
     WorkerId,
-    WorkerFn,
     WorkerMessage,
     Pool,
     PoolError,
@@ -125,7 +124,6 @@ test_worker_error();
 #|export
 def test_pool_is_protocol():
     """Pool should be a Protocol."""
-    from typing import runtime_checkable, Protocol
     # Pool is decorated with @runtime_checkable
     assert hasattr(Pool, '__protocol_attrs__') or isinstance(Pool, type)
 
