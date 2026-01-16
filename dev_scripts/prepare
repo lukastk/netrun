@@ -37,6 +37,10 @@ uv run ruff check --fix 1>/dev/null
 # echo " ruff format"
 # uv run ruff format 1>/dev/null
 
+# Fill the project again as all outputs will now have been cleared
+echo " nbl fill"
+uv run nbl fill 1>/dev/null 2>/dev/null
+
 # this doesn't work as desired yet
 # echo " generate stubs for package"
 # uv run python -c "from dev.utils import generate_stubs_for_package; generate_stubs_for_package('netrun', 'src/netrun')"
