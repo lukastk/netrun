@@ -25,7 +25,7 @@ from netrun.pool.remote import RemotePoolClient, RemotePoolServer
 from netrun.rpc.base import RecvTimeout
 
 # %% nbs/tests/03_pool/test_remote.ipynb 5
-from .workers import compute_worker, echo_worker
+from ..pool.workers import compute_worker, echo_worker
 
 
 # %% nbs/tests/03_pool/test_remote.ipynb 7
