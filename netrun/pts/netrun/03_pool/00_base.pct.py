@@ -185,3 +185,76 @@ class WorkerError(PoolError):
     def __init__(self, worker_id: WorkerId, message: str):
         self.worker_id = worker_id
         super().__init__(f"Worker {worker_id}: {message}")
+
+# %%
+#|export
+class WorkerException(PoolError):
+    """Raised when a worker's code raised an exception."""
+    def __init__(self, worker_id: WorkerId, exception: Exception | dict):
+        self.worker_id = worker_id
+        self.original_exception = exception
+        if isinstance(exception, Exception):
+            super().__init__(f"Worker {worker_id} raised {type(exception).__name__}: {exception}")
+        else:
+            exc_type = exception.get("type", "Exception")
+            exc_msg = exception.get("message", "")
+            super().__init__(f"Worker {worker_id} raised {exc_type}: {exc_msg}")
+
+# %%
+#|export
+class WorkerCrashed(PoolError):
+    """Raised when a worker process/thread died unexpectedly."""
+    def __init__(self, worker_id: WorkerId, details: dict):
+        self.worker_id = worker_id
+        self.details = details
+        reason = details.get("reason", "unknown")
+        super().__init__(f"Worker {worker_id} crashed: {reason}")
+
+# %%
+#|export
+class WorkerTimeout(PoolError):
+    """Raised when a worker didn't respond within timeout."""
+    def __init__(self, worker_id: WorkerId, timeout: float):
+        self.worker_id = worker_id
+        self.timeout = timeout
+        super().__init__(f"Worker {worker_id} timed out after {timeout}s")
+
+# %% [markdown]
+# ## Pool Error Codes
+#
+# Standard keys used by pools for error messages from workers.
+# Format: `"__pool-up:error-name"` (upstream: worker → parent)
+
+# %%
+#|export
+POOL_UP_ERROR_EXCEPTION = "__pool-up:error-exception"
+"""Worker code raised an exception. Data: exception object or error dict."""
+
+# %%
+#|export
+POOL_UP_ERROR_CRASHED = "__pool-up:error-crashed"
+"""Worker process/thread died unexpectedly. Data: {exit_code?, signal?, reason}"""
+
+# %%
+#|export
+POOL_UP_ERROR_TIMEOUT = "__pool-up:error-timeout"
+"""Worker didn't respond within timeout. Data: {timeout_seconds, operation}"""
+
+# %%
+#|export
+POOL_UP_ERROR_KEYS = [POOL_UP_ERROR_EXCEPTION, POOL_UP_ERROR_CRASHED, POOL_UP_ERROR_TIMEOUT]
+"""All pool error codes."""
+
+# %%
+#|export
+def _check_error_and_raise(msg: WorkerMessage) -> None:
+    """Check if message is an error code and raise appropriate exception.
+
+    Call this in recv() before returning the message to auto-raise for errors.
+    """
+    if msg.key == POOL_UP_ERROR_EXCEPTION:
+        raise WorkerException(msg.worker_id, msg.data)
+    elif msg.key == POOL_UP_ERROR_CRASHED:
+        raise WorkerCrashed(msg.worker_id, msg.data)
+    elif msg.key == POOL_UP_ERROR_TIMEOUT:
+        raise WorkerTimeout(msg.worker_id, msg.data["timeout_seconds"])

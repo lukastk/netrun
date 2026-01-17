@@ -68,7 +68,7 @@ import threading
 import multiprocessing as mp
 from typing import Any
 
-from netrun.rpc.base import ChannelClosed, RecvTimeout, SHUTDOWN_KEY
+from netrun.rpc.base import ChannelClosed, RecvTimeout, RPC_KEY_SHUTDOWN
 from netrun.rpc.process import (
     ProcessChannel,
     SyncProcessChannel,
@@ -80,7 +80,31 @@ from netrun.pool.base import (
     WorkerMessage,
     PoolNotStarted,
     PoolAlreadyStarted,
+    POOL_UP_ERROR_EXCEPTION,
+    POOL_UP_ERROR_CRASHED,
+    _check_error_and_raise,
 )
+
+# %% [markdown]
+# ## MultiprocessPool Keys
+#
+# Keys for internal routing in multiprocess pools.
+# Downstream: parent → subprocess, Upstream: subprocess → parent
+
+# %%
+#|export
+MP_DOWN_DISPATCH = "__pool-mp-down:dispatch"
+"""Route message to specific worker thread. Data: (thread_idx, key, data)"""
+
+# %%
+#|export
+MP_DOWN_BROADCAST = "__pool-mp-down:broadcast"
+"""Broadcast to all workers in subprocess. Data: (key, data)"""
+
+# %%
+#|export
+MP_UP_RESPONSE = "__pool-mp-up:response"
+"""Wrapper for worker responses. Data: (worker_id, key, data)"""
 
 # %% [markdown]
 # ## Subprocess Worker Entry Point
@@ -130,7 +154,7 @@ def _subprocess_main(
                 if msg is None:
                     break
                 worker_id, key, data = msg
-                parent_channel.send("response", (worker_id, key, data))
+                parent_channel.send(MP_UP_RESPONSE, (worker_id, key, data))
             except queue.Empty:
                 continue
             except Exception:
@@ -143,7 +167,7 @@ def _subprocess_main(
                 if msg is None:
                     break
                 worker_id, key, data = msg
-                parent_channel.send("response", (worker_id, key, data))
+                parent_channel.send(MP_UP_RESPONSE, (worker_id, key, data))
             except queue.Empty:
                 break
             except Exception:
@@ -158,21 +182,21 @@ def _subprocess_main(
         while True:
             key, data = parent_channel.recv()
 
-            if key == "__dispatch__":
+            if key == MP_DOWN_DISPATCH:
                 thread_idx, msg_key, msg_data = data
                 worker_send_queues[thread_idx].put((msg_key, msg_data))
-            elif key == "__broadcast__":
+            elif key == MP_DOWN_BROADCAST:
                 msg_key, msg_data = data
                 for q in worker_send_queues:
                     q.put((msg_key, msg_data))
-            elif key == SHUTDOWN_KEY:
+            elif key == RPC_KEY_SHUTDOWN:
                 break
     except ChannelClosed:
         pass
     finally:
         # Signal workers to stop
         for q in worker_send_queues:
-            q.put((SHUTDOWN_KEY, None))
+            q.put((RPC_KEY_SHUTDOWN, None))
 
         # Wait for worker threads to finish sending their responses
         for t in threads:
@@ -210,7 +234,7 @@ def _thread_worker(
                 raise ChannelClosed("Channel is closed")
             try:
                 key, data = recv_queue.get(timeout=timeout)
-                if key == SHUTDOWN_KEY:
+                if key == RPC_KEY_SHUTDOWN:
                     self._closed = True
                     raise ChannelClosed("Channel was shut down")
                 return key, data
@@ -223,7 +247,7 @@ def _thread_worker(
                 raise ChannelClosed("Channel is closed")
             try:
                 key, data = recv_queue.get_nowait()
-                if key == SHUTDOWN_KEY:
+                if key == RPC_KEY_SHUTDOWN:
                     self._closed = True
                     raise ChannelClosed("Channel was shut down")
                 return key, data
@@ -248,10 +272,10 @@ def _thread_worker(
         import traceback
         try:
             pickle.dumps(e)  # Test if pickleable
-            response_queue.put((worker_id, "__error__", e))
+            response_queue.put((worker_id, POOL_UP_ERROR_EXCEPTION, e))
         except Exception:
             # Fallback to dict with error info
-            response_queue.put((worker_id, "__error__", {
+            response_queue.put((worker_id, POOL_UP_ERROR_EXCEPTION, {
                 "type": type(e).__name__,
                 "message": str(e),
                 "traceback": traceback.format_exc(),
@@ -298,6 +322,8 @@ class MultiprocessPool:
         self._processes: list[mp.Process] = []
         self._recv_queue: asyncio.Queue = asyncio.Queue()
         self._recv_tasks: list[asyncio.Task] = []
+        self._monitor_task: asyncio.Task | None = None
+        self._dead_processes: set[int] = set()  # Track processes we've already reported as dead
 
     @property
     def num_workers(self) -> int:
@@ -355,6 +381,29 @@ class MultiprocessPool:
             self._processes.append(proc)
 
         self._running = True
+        self._dead_processes = set()
+        self._monitor_task = asyncio.create_task(self._monitor_processes())
+
+    async def _monitor_processes(self) -> None:
+        """Background task to detect dead subprocesses."""
+        while self._running:
+            for proc_idx, proc in enumerate(self._processes):
+                if proc_idx not in self._dead_processes and proc.exitcode is not None:
+                    # Process died
+                    self._dead_processes.add(proc_idx)
+                    exit_info = {
+                        "exit_code": proc.exitcode,
+                        "reason": f"Process exited with code {proc.exitcode}",
+                    }
+                    # Signal death for all workers in this process
+                    for thread_idx in range(self._threads_per_process):
+                        worker_id = proc_idx * self._threads_per_process + thread_idx
+                        await self._recv_queue.put(WorkerMessage(
+                            worker_id=worker_id,
+                            key=POOL_UP_ERROR_CRASHED,
+                            data=exit_info
+                        ))
+            await asyncio.sleep(0.5)  # Check every 500ms
 
     async def close(self, timeout: float | None = None) -> None:
         """Shut down all processes and clean up resources.
@@ -368,6 +417,14 @@ class MultiprocessPool:
             return
 
         self._running = False
+
+        # Cancel monitor task
+        if self._monitor_task and not self._monitor_task.done():
+            self._monitor_task.cancel()
+            try:
+                await self._monitor_task
+            except asyncio.CancelledError:
+                pass
 
         # Close channels first - this unblocks any recv() calls
         for channel in self._channels:
@@ -392,6 +449,8 @@ class MultiprocessPool:
         self._processes = []
         self._recv_queue = asyncio.Queue()
         self._recv_tasks = []
+        self._monitor_task = None
+        self._dead_processes = set()
 
     async def send(self, worker_id: WorkerId, key: str, data: Any) -> None:
         """Send a message to a specific worker."""
@@ -402,7 +461,7 @@ class MultiprocessPool:
             raise ValueError(f"worker_id {worker_id} out of range [0, {self._num_workers})")
 
         process_idx, thread_idx = self._worker_id_to_process_thread(worker_id)
-        await self._channels[process_idx].send("__dispatch__", (thread_idx, key, data))
+        await self._channels[process_idx].send(MP_DOWN_DISPATCH, (thread_idx, key, data))
 
     def _start_recv_tasks(self) -> None:
         """Start background tasks that forward messages to the queue."""
@@ -413,7 +472,7 @@ class MultiprocessPool:
             try:
                 while self._running:
                     key, data = await channel.recv()
-                    if key == "response":
+                    if key == MP_UP_RESPONSE:
                         worker_id, msg_key, msg_data = data
                         msg = WorkerMessage(worker_id=worker_id, key=msg_key, data=msg_data)
                         await self._recv_queue.put(msg)
@@ -427,7 +486,14 @@ class MultiprocessPool:
             self._recv_tasks.append(task)
 
     async def recv(self, timeout: float | None = None) -> WorkerMessage:
-        """Receive a message from any worker."""
+        """Receive a message from any worker.
+
+        Raises:
+            WorkerException: If the worker raised an exception
+            WorkerCrashed: If the worker died unexpectedly
+            WorkerTimeout: If the worker timed out
+            RecvTimeout: If this recv() call times out
+        """
         if not self._running:
             raise PoolNotStarted("Pool has not been started")
 
@@ -435,24 +501,35 @@ class MultiprocessPool:
 
         try:
             if timeout is None:
-                return await self._recv_queue.get()
+                msg = await self._recv_queue.get()
             else:
-                return await asyncio.wait_for(
+                msg = await asyncio.wait_for(
                     self._recv_queue.get(),
                     timeout=timeout,
                 )
         except TimeoutError:
             raise RecvTimeout(f"Receive timed out after {timeout}s")
 
+        _check_error_and_raise(msg)
+        return msg
+
     async def try_recv(self) -> WorkerMessage | None:
-        """Non-blocking receive from any worker."""
+        """Non-blocking receive from any worker.
+
+        Raises:
+            WorkerException: If the worker raised an exception
+            WorkerCrashed: If the worker died unexpectedly
+            WorkerTimeout: If the worker timed out
+        """
         if not self._running:
             raise PoolNotStarted("Pool has not been started")
 
         # If recv tasks are running, check the queue first
         if self._recv_tasks:
             try:
-                return self._recv_queue.get_nowait()
+                msg = self._recv_queue.get_nowait()
+                _check_error_and_raise(msg)
+                return msg
             except asyncio.QueueEmpty:
                 return None
 
@@ -461,9 +538,11 @@ class MultiprocessPool:
             result = await channel.try_recv()
             if result is not None:
                 key, data = result
-                if key == "response":
+                if key == MP_UP_RESPONSE:
                     worker_id, msg_key, msg_data = data
-                    return WorkerMessage(worker_id=worker_id, key=msg_key, data=msg_data)
+                    msg = WorkerMessage(worker_id=worker_id, key=msg_key, data=msg_data)
+                    _check_error_and_raise(msg)
+                    return msg
 
         return None
 
@@ -473,7 +552,7 @@ class MultiprocessPool:
             raise PoolNotStarted("Pool has not been started")
 
         for channel in self._channels:
-            await channel.send("__broadcast__", (key, data))
+            await channel.send(MP_DOWN_BROADCAST, (key, data))
 
     async def __aenter__(self) -> "MultiprocessPool":
         """Context manager entry - starts the pool."""

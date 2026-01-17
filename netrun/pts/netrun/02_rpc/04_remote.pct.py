@@ -59,7 +59,9 @@ from netrun.rpc.base import (
     ChannelClosed,
     ChannelBroken,
     RecvTimeout,
-    SHUTDOWN_KEY,
+    RPC_KEY_SHUTDOWN,
+    RPC_KEY_ERROR,
+    RPC_KEY_BROKEN,
 )
 
 # %% [markdown]
@@ -106,10 +108,10 @@ class WebSocketChannel:
                     payload = pickle.loads(bytes.fromhex(data["data_hex"]))
                     await self._recv_queue.put((key, payload))
                 except Exception as e:
-                    await self._recv_queue.put(("__error__", str(e)))
+                    await self._recv_queue.put((RPC_KEY_ERROR, str(e)))
         except Exception as e:
             if not self._closed:
-                await self._recv_queue.put(("__broken__", str(e)))
+                await self._recv_queue.put((RPC_KEY_BROKEN, str(e)))
         finally:
             self._closed = True
 
@@ -148,13 +150,13 @@ class WebSocketChannel:
 
         key, data = result
 
-        if key == SHUTDOWN_KEY:
+        if key == RPC_KEY_SHUTDOWN:
             self._closed = True
             raise ChannelClosed("Channel was shut down")
-        if key == "__broken__":
+        if key == RPC_KEY_BROKEN:
             self._closed = True
             raise ChannelBroken(f"Connection broken: {data}")
-        if key == "__error__":
+        if key == RPC_KEY_ERROR:
             raise ChannelBroken(f"Receive error: {data}")
 
         return key, data
@@ -173,10 +175,10 @@ class WebSocketChannel:
 
         key, data = result
 
-        if key == SHUTDOWN_KEY:
+        if key == RPC_KEY_SHUTDOWN:
             self._closed = True
             raise ChannelClosed("Channel was shut down")
-        if key == "__broken__":
+        if key == RPC_KEY_BROKEN:
             self._closed = True
             raise ChannelBroken(f"Connection broken: {data}")
 
@@ -188,7 +190,7 @@ class WebSocketChannel:
             self._closed = True
             try:
                 await self._ws.send(json.dumps({
-                    "key": SHUTDOWN_KEY,
+                    "key": RPC_KEY_SHUTDOWN,
                     "data_hex": pickle.dumps(None).hex(),
                 }))
             except Exception:

@@ -76,10 +76,10 @@ test_shutdown_key_is_string();
 
 # %%
 #|export
-def test_shutdown_key_is_dunder():
-    """SHUTDOWN_KEY should be a dunder key to avoid collisions."""
+def test_shutdown_key_follows_convention():
+    """SHUTDOWN_KEY should follow __layer:name convention to avoid collisions."""
     assert SHUTDOWN_KEY.startswith("__")
-    assert SHUTDOWN_KEY.endswith("__")
+    assert ":" in SHUTDOWN_KEY
 
 # %%
-test_shutdown_key_is_dunder();
+test_shutdown_key_follows_convention();

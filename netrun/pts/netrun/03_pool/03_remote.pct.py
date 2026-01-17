@@ -86,24 +86,58 @@ from netrun.pool.base import (
     WorkerMessage,
     PoolError,
     PoolNotStarted,
+    WorkerException,
+    WorkerCrashed,
 )
 from netrun.pool.multiprocess import MultiprocessPool
 
 # %% [markdown]
-# ## Protocol Messages
+# ## RemotePool Keys
 #
-# Messages between client and server.
+# Keys for communication between client and server.
+# Downstream: client → server, Upstream: server → client
 
 # %%
 #|export
-# Message types
-MSG_CREATE_POOL = "create_pool"
-MSG_POOL_CREATED = "pool_created"
-MSG_SEND = "send"
-MSG_RECV = "recv"
-MSG_BROADCAST = "broadcast"
-MSG_CLOSE = "close"
-MSG_ERROR = "error"
+# Downstream: client → server
+RP_DOWN_CREATE_POOL = "__pool-rp-down:create_pool"
+"""Client requests pool creation. Data: {worker_name, num_processes, threads_per_process}"""
+
+# %%
+#|export
+RP_DOWN_SEND = "__pool-rp-down:send"
+"""Client sends to worker. Data: {worker_id, key, data}"""
+
+# %%
+#|export
+RP_DOWN_BROADCAST = "__pool-rp-down:broadcast"
+"""Client broadcasts to all. Data: {key, data}"""
+
+# %%
+#|export
+RP_DOWN_CLOSE = "__pool-rp-down:close"
+"""Client requests pool close."""
+
+# %%
+#|export
+# Upstream: server → client
+RP_UP_POOL_CREATED = "__pool-rp-up:pool_created"
+"""Server confirms pool created. Data: {num_workers}"""
+
+# %%
+#|export
+RP_UP_RECV = "__pool-rp-up:recv"
+"""Server forwards worker response. Data: {worker_id, key, data}"""
+
+# %%
+#|export
+RP_UP_ERROR_EXCEPTION = "__pool-rp-up:error-exception"
+"""Server-side exception. Data: exception object or error dict."""
+
+# %%
+#|export
+RP_UP_ERROR_POOL_FAILED = "__pool-rp-up:error-pool_failed"
+"""Server failed to create/manage pool. Data: error message."""
 
 # %% [markdown]
 # ## RemotePoolServer
@@ -178,14 +212,14 @@ class RemotePoolServer:
             while True:
                 key, data = await channel.recv()
 
-                if key == MSG_CREATE_POOL:
+                if key == RP_DOWN_CREATE_POOL:
                     # Create pool
                     worker_name = data["worker_name"]
                     num_processes = data["num_processes"]
                     threads_per_process = data.get("threads_per_process", 1)
 
                     if worker_name not in self._workers:
-                        await channel.send(MSG_ERROR, f"Unknown worker: {worker_name}")
+                        await channel.send(RP_UP_ERROR_POOL_FAILED, f"Unknown worker: {worker_name}")
                         continue
 
                     # Clean up existing pool and forward task if any
@@ -207,7 +241,7 @@ class RemotePoolServer:
                     )
                     await pool.start()
 
-                    await channel.send(MSG_POOL_CREATED, {
+                    await channel.send(RP_UP_POOL_CREATED, {
                         "num_workers": pool.num_workers,
                         "num_processes": pool.num_processes,
                         "threads_per_process": pool.threads_per_process,
@@ -216,9 +250,9 @@ class RemotePoolServer:
                     # Start forwarding responses from pool to client
                     forward_task = asyncio.create_task(self._forward_responses(pool, channel))
 
-                elif key == MSG_SEND:
+                elif key == RP_DOWN_SEND:
                     if pool is None:
-                        await channel.send(MSG_ERROR, "No pool created")
+                        await channel.send(RP_UP_ERROR_POOL_FAILED, "No pool created")
                         continue
 
                     worker_id = data["worker_id"]
@@ -226,16 +260,16 @@ class RemotePoolServer:
                     msg_data = data["data"]
                     await pool.send(worker_id, msg_key, msg_data)
 
-                elif key == MSG_BROADCAST:
+                elif key == RP_DOWN_BROADCAST:
                     if pool is None:
-                        await channel.send(MSG_ERROR, "No pool created")
+                        await channel.send(RP_UP_ERROR_POOL_FAILED, "No pool created")
                         continue
 
                     msg_key = data["key"]
                     msg_data = data["data"]
                     await pool.broadcast(msg_key, msg_data)
 
-                elif key == MSG_CLOSE:
+                elif key == RP_DOWN_CLOSE:
                     break
 
         except ChannelClosed:
@@ -259,13 +293,29 @@ class RemotePoolServer:
                 try:
                     # Use a timeout so we can periodically check if we should stop
                     msg = await pool.recv(timeout=0.5)
-                    await channel.send(MSG_RECV, {
+                    await channel.send(RP_UP_RECV, {
                         "worker_id": msg.worker_id,
                         "key": msg.key,
                         "data": msg.data,
                     })
                 except RecvTimeout:
                     continue
+                except (WorkerException, WorkerCrashed) as e:
+                    # Forward worker errors to client
+                    if isinstance(e, WorkerException):
+                        error_data = {
+                            "worker_id": e.worker_id,
+                            "type": type(e.original_exception).__name__ if isinstance(e.original_exception, Exception) else e.original_exception.get("type", "Exception"),
+                            "message": str(e.original_exception) if isinstance(e.original_exception, Exception) else e.original_exception.get("message", ""),
+                        }
+                    else:
+                        error_data = {
+                            "worker_id": e.worker_id,
+                            "type": "WorkerCrashed",
+                            "message": str(e),
+                            "details": e.details,
+                        }
+                    await channel.send(RP_UP_ERROR_EXCEPTION, error_data)
                 except ChannelClosed:
                     break
         except asyncio.CancelledError:
@@ -341,7 +391,7 @@ class RemotePoolClient:
         if self._channel is None:
             raise PoolNotStarted("Not connected to server")
 
-        await self._channel.send(MSG_CREATE_POOL, {
+        await self._channel.send(RP_DOWN_CREATE_POOL, {
             "worker_name": worker_name,
             "num_processes": num_processes,
             "threads_per_process": threads_per_process,
@@ -350,10 +400,10 @@ class RemotePoolClient:
         # Wait for response
         key, data = await self._channel.recv(timeout=None)
 
-        if key == MSG_ERROR:
+        if key == RP_UP_ERROR_POOL_FAILED:
             raise PoolError(f"Server error: {data}")
 
-        if key != MSG_POOL_CREATED:
+        if key != RP_UP_POOL_CREATED:
             raise PoolError(f"Unexpected response: {key}")
 
         self._num_workers = data["num_workers"]
@@ -370,10 +420,14 @@ class RemotePoolClient:
             while self._running and self._channel and not self._channel.is_closed:
                 try:
                     key, data = await self._channel.recv(timeout=None)
-                    if key == MSG_RECV:
-                        await self._recv_queue.put(data)
-                    elif key == MSG_ERROR:
-                        print(f"Server error: {data}")
+                    if key == RP_UP_RECV:
+                        await self._recv_queue.put(("msg", data))
+                    elif key == RP_UP_ERROR_EXCEPTION:
+                        # Queue error so it can be raised in recv()
+                        await self._recv_queue.put(("error", data))
+                    elif key == RP_UP_ERROR_POOL_FAILED:
+                        # Queue pool failure error
+                        await self._recv_queue.put(("pool_error", data))
                 except ChannelClosed:
                     break
         except Exception:
@@ -396,7 +450,7 @@ class RemotePoolClient:
 
         if self._channel and not self._channel.is_closed:
             try:
-                await self._channel.send(MSG_CLOSE, None)
+                await self._channel.send(RP_DOWN_CLOSE, None)
             except Exception:
                 pass
             await self._channel.close()
@@ -411,54 +465,90 @@ class RemotePoolClient:
         if worker_id < 0 or worker_id >= self._num_workers:
             raise ValueError(f"worker_id {worker_id} out of range [0, {self._num_workers})")
 
-        await self._channel.send(MSG_SEND, {
+        await self._channel.send(RP_DOWN_SEND, {
             "worker_id": worker_id,
             "key": key,
             "data": data,
         })
 
     async def recv(self, timeout: float | None = None) -> WorkerMessage:
-        """Receive a message from any worker."""
+        """Receive a message from any worker.
+
+        Raises:
+            WorkerException: If the worker raised an exception
+            WorkerCrashed: If the worker died unexpectedly
+            PoolError: If the server reported a pool error
+            RecvTimeout: If this recv() call times out
+        """
         if not self._running:
             raise PoolNotStarted("Pool not created")
 
         try:
             if timeout is None:
-                data = await self._recv_queue.get()
+                item = await self._recv_queue.get()
             else:
-                data = await asyncio.wait_for(
+                item = await asyncio.wait_for(
                     self._recv_queue.get(),
                     timeout=timeout,
                 )
-            return WorkerMessage(
-                worker_id=data["worker_id"],
-                key=data["key"],
-                data=data["data"],
-            )
         except TimeoutError:
             raise RecvTimeout(f"Receive timed out after {timeout}s")
 
+        msg_type, data = item
+        if msg_type == "error":
+            # Raise WorkerException or WorkerCrashed based on error type
+            worker_id = data.get("worker_id", -1)
+            if data.get("type") == "WorkerCrashed":
+                raise WorkerCrashed(worker_id, data.get("details", {"reason": data.get("message", "unknown")}))
+            else:
+                raise WorkerException(worker_id, data)
+        elif msg_type == "pool_error":
+            raise PoolError(f"Server error: {data}")
+
+        return WorkerMessage(
+            worker_id=data["worker_id"],
+            key=data["key"],
+            data=data["data"],
+        )
+
     async def try_recv(self) -> WorkerMessage | None:
-        """Non-blocking receive from any worker."""
+        """Non-blocking receive from any worker.
+
+        Raises:
+            WorkerException: If the worker raised an exception
+            WorkerCrashed: If the worker died unexpectedly
+            PoolError: If the server reported a pool error
+        """
         if not self._running:
             raise PoolNotStarted("Pool not created")
 
         try:
-            data = self._recv_queue.get_nowait()
-            return WorkerMessage(
-                worker_id=data["worker_id"],
-                key=data["key"],
-                data=data["data"],
-            )
+            item = self._recv_queue.get_nowait()
         except asyncio.QueueEmpty:
             return None
+
+        msg_type, data = item
+        if msg_type == "error":
+            worker_id = data.get("worker_id", -1)
+            if data.get("type") == "WorkerCrashed":
+                raise WorkerCrashed(worker_id, data.get("details", {"reason": data.get("message", "unknown")}))
+            else:
+                raise WorkerException(worker_id, data)
+        elif msg_type == "pool_error":
+            raise PoolError(f"Server error: {data}")
+
+        return WorkerMessage(
+            worker_id=data["worker_id"],
+            key=data["key"],
+            data=data["data"],
+        )
 
     async def broadcast(self, key: str, data: Any) -> None:
         """Send a message to all workers."""
         if not self._running or self._channel is None:
             raise PoolNotStarted("Pool not created")
 
-        await self._channel.send(MSG_BROADCAST, {
+        await self._channel.send(RP_DOWN_BROADCAST, {
             "key": key,
             "data": data,
         })
