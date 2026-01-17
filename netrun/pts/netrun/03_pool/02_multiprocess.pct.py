@@ -449,6 +449,14 @@ class MultiprocessPool:
         if not self._running:
             raise PoolNotStarted("Pool has not been started")
 
+        # If recv tasks are running, check the queue first
+        if self._recv_tasks:
+            try:
+                return self._recv_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                return None
+
+        # Otherwise, read directly from channels
         for process_idx, channel in enumerate(self._channels):
             result = await channel.try_recv()
             if result is not None:

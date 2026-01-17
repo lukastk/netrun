@@ -4,22 +4,22 @@ __all__ = ['MSG_BROADCAST', 'MSG_CLOSE', 'MSG_CREATE_POOL', 'MSG_ERROR', 'MSG_PO
 
 # %% nbs/netrun/03_pool/03_remote.ipynb 3
 import asyncio
-from contextlib import asynccontextmanager
 from typing import Any
+from contextlib import asynccontextmanager
 
-from ..pool.base import (
-    PoolError,
-    PoolNotStarted,
-    WorkerFn,
-    WorkerId,
-    WorkerMessage,
-)
-from ..pool.multiprocess import MultiprocessPool
 from ..rpc.base import ChannelClosed, RecvTimeout
 from ..rpc.remote import (
     WebSocketChannel,
     serve_background,
 )
+from ..pool.base import (
+    WorkerId,
+    WorkerFn,
+    WorkerMessage,
+    PoolError,
+    PoolNotStarted,
+)
+from ..pool.multiprocess import MultiprocessPool
 
 # %% nbs/netrun/03_pool/03_remote.ipynb 5
 # Message types
@@ -292,8 +292,6 @@ class RemotePoolClient:
                         await self._recv_queue.put(data)
                     elif key == MSG_ERROR:
                         print(f"Server error: {data}")
-                except RecvTimeout:
-                    continue
                 except ChannelClosed:
                     break
         except Exception:

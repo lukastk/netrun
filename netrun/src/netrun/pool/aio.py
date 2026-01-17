@@ -4,20 +4,20 @@ __all__ = ['AsyncWorkerFn', 'SingleWorkerPool']
 
 # %% nbs/netrun/03_pool/04_aio.ipynb 3
 import asyncio
-from collections.abc import Awaitable, Callable
 from typing import Any
+from collections.abc import Callable, Awaitable
 
-from ..pool.base import (
-    PoolAlreadyStarted,
-    PoolNotStarted,
-    WorkerId,
-    WorkerMessage,
-)
+from ..rpc.base import ChannelClosed, RecvTimeout
 from ..rpc.aio import (
     AsyncChannel,
     create_async_channel_pair,
 )
-from ..rpc.base import ChannelClosed, RecvTimeout
+from ..pool.base import (
+    WorkerId,
+    WorkerMessage,
+    PoolNotStarted,
+    PoolAlreadyStarted,
+)
 
 # %% nbs/netrun/03_pool/04_aio.ipynb 5
 AsyncWorkerFn = Callable[[AsyncChannel, WorkerId], Awaitable[None]]
@@ -188,6 +188,14 @@ class SingleWorkerPool:
         if not self._running:
             raise PoolNotStarted("Pool has not been started")
 
+        # If recv task is running, check the queue first
+        if self._recv_task is not None:
+            try:
+                return self._recv_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                return None
+
+        # Otherwise, read directly from channel
         result = await self._channel.try_recv()
         if result is not None:
             key, data = result

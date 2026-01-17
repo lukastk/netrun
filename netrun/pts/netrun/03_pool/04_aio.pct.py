@@ -237,6 +237,14 @@ class SingleWorkerPool:
         if not self._running:
             raise PoolNotStarted("Pool has not been started")
 
+        # If recv task is running, check the queue first
+        if self._recv_task is not None:
+            try:
+                return self._recv_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                return None
+
+        # Otherwise, read directly from channel
         result = await self._channel.try_recv()
         if result is not None:
             key, data = result
