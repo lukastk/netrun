@@ -417,10 +417,6 @@ class MultiprocessPool:
                         worker_id, msg_key, msg_data = data
                         msg = WorkerMessage(worker_id=worker_id, key=msg_key, data=msg_data)
                         await self._recv_queue.put(msg)
-                    elif key == "__error__":
-                        # Put error as a special message
-                        msg = WorkerMessage(worker_id=-1, key="__error__", data=data)
-                        await self._recv_queue.put(msg)
             except (ChannelClosed, asyncio.CancelledError):
                 pass
             except Exception:
