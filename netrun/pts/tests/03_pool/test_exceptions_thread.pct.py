@@ -334,7 +334,7 @@ async def test_worker_exception_structure():
     assert "test" in str(exc)
 
 # %%
-test_worker_exception_structure()
+await test_worker_exception_structure()
 print("WorkerException: has expected structure")
 
 # %%
@@ -354,7 +354,7 @@ async def test_worker_exception_dict_form():
     assert "Something went wrong" in str(exc)
 
 # %%
-test_worker_exception_dict_form()
+await test_worker_exception_dict_form()
 print("WorkerException: handles error dict form")
 
 # %% [markdown]
@@ -377,7 +377,7 @@ async def test_worker_crashed_exception_structure():
     assert "crashed" in str(exc).lower()
 
 # %%
-test_worker_crashed_exception_structure()
+await test_worker_crashed_exception_structure()
 print("WorkerCrashed: has expected structure")
 
 # %%
