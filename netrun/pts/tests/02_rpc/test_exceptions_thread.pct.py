@@ -40,7 +40,6 @@ from netrun.rpc.base import (
     RPC_KEY_SHUTDOWN,
 )
 from netrun.rpc.thread import (
-    ThreadChannel,
     SyncThreadChannel,
     create_thread_channel_pair,
 )
@@ -584,7 +583,7 @@ print("Async recv without timeout: blocks until message arrives")
 #|export
 def test_channel_broken_exception_structure():
     """ChannelBroken has the expected structure."""
-    from netrun.rpc.base import ChannelBroken, RPCError
+    from netrun.rpc.base import RPCError
 
     # ChannelBroken is an RPCError
     assert issubclass(ChannelBroken, RPCError)
@@ -602,7 +601,7 @@ print("ChannelBroken: properly structured exception class")
 #|export
 def test_channel_broken_vs_closed_distinction():
     """ChannelBroken and ChannelClosed are distinct exceptions."""
-    from netrun.rpc.base import ChannelBroken, ChannelClosed
+    from netrun.rpc.base import ChannelClosed
 
     # They are different exception types
     assert ChannelBroken is not ChannelClosed
@@ -637,7 +636,6 @@ print("ChannelBroken vs ChannelClosed: distinct exception types")
 @pytest.mark.asyncio
 async def test_worker_exception_handling_pattern():
     """Demonstrate proper exception handling pattern for workers."""
-    from netrun.rpc.base import ChannelBroken
 
     parent_channel, child_queues = create_thread_channel_pair()
     send_q, recv_q = child_queues
@@ -694,7 +692,7 @@ print("Worker exception handling: properly distinguishes shutdown reasons")
 #|export
 def test_exception_hierarchy():
     """Verify exception hierarchy is correct."""
-    from netrun.rpc.base import RPCError, ChannelClosed, ChannelBroken, RecvTimeout
+    from netrun.rpc.base import RPCError, ChannelClosed, RecvTimeout
 
     # All are RPCErrors
     assert issubclass(ChannelClosed, RPCError)
@@ -810,7 +808,7 @@ async def example_graceful_shutdown():
     for _ in range(5):
         await parent_channel.recv(timeout=1.0)
 
-    print(f"  Main: Sent 5 items, received 5 responses")
+    print("  Main: Sent 5 items, received 5 responses")
 
     # Graceful shutdown
     await parent_channel.close()

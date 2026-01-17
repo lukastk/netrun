@@ -30,9 +30,8 @@
 # %%
 #|export
 import pytest
-import asyncio
 import time
-from netrun.rpc.base import ChannelClosed, RecvTimeout
+from netrun.rpc.base import RecvTimeout
 from netrun.pool.base import (
     PoolError,
     PoolNotStarted,
@@ -51,7 +50,7 @@ from netrun.pool.multiprocess import MultiprocessPool
 
 # %%
 #|export
-from tests.pool.workers import echo_worker, compute_worker, raising_worker, slow_worker
+from tests.pool.workers import echo_worker, compute_worker
 
 # %% [markdown]
 # ---

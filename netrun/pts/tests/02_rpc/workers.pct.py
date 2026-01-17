@@ -46,3 +46,33 @@ def compute_worker(send_q, recv_q):
                 channel.send("result", data * 2)
     except ChannelClosed:
         pass
+
+# %%
+#|export
+def robust_worker(send_q, recv_q):
+    """used in test_exceptions_multiprocess"""
+    channel = SyncProcessChannel(send_q, recv_q)
+    print("  [Worker] Started")
+    try:
+        while True:
+            key, data = channel.recv()
+            print(f"  [Worker] Processing: {key}={data}")
+            channel.send("result", data * 2)
+    except ChannelClosed:
+        print("  [Worker] Graceful shutdown")
+    except ChannelBroken as e:
+        print(f"  [Worker] Channel broken: {e}")
+
+# %%
+#|export
+def slow_worker(send_q, recv_q):
+    """used in test_exceptions_multiprocess"""
+    import time
+    channel = SyncProcessChannel(send_q, recv_q)
+    try:
+        while True:
+            key, data = channel.recv()
+            time.sleep(1)  # Simulate slow processing
+            channel.send("result", data)
+    except ChannelClosed:
+        pass

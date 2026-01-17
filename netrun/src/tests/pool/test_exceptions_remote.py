@@ -4,9 +4,8 @@ __all__ = ['test_broadcast_before_create_pool', 'test_connection_error_no_server
 
 # %% nbs/tests/03_pool/test_exceptions_remote.ipynb 2
 import pytest
-import asyncio
 import time
-from netrun.rpc.base import ChannelClosed, RecvTimeout
+from netrun.rpc.base import RecvTimeout
 from netrun.pool.base import (
     PoolError,
     PoolNotStarted,

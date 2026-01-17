@@ -11,10 +11,8 @@ from netrun.rpc.base import (
     ChannelBroken,
     RecvTimeout,
     RPCError,
-    RPC_KEY_SHUTDOWN,
 )
 from netrun.rpc.aio import (
-    AsyncChannel,
     create_async_channel_pair,
 )
 

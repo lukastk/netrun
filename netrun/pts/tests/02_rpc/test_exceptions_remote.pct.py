@@ -37,10 +37,8 @@ from netrun.rpc.base import (
     ChannelBroken,
     RecvTimeout,
     RPCError,
-    RPC_KEY_SHUTDOWN,
 )
 from netrun.rpc.remote import (
-    WebSocketChannel,
     connect,
     serve_background,
 )
@@ -480,7 +478,7 @@ async def example_connection_error_handling():
                 )
                 print(f"  Connected on attempt {attempt + 1}")
                 return channel
-            except (ConnectionError, asyncio.TimeoutError) as e:
+            except (TimeoutError, ConnectionError) as e:
                 print(f"  Attempt {attempt + 1} failed: {type(e).__name__}")
         return None
 

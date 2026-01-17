@@ -14,7 +14,6 @@ from netrun.rpc.base import (
     RPC_KEY_SHUTDOWN,
 )
 from netrun.rpc.thread import (
-    ThreadChannel,
     SyncThreadChannel,
     create_thread_channel_pair,
 )
@@ -366,7 +365,7 @@ async def test_async_recv_no_timeout_blocks():
 # %% nbs/tests/02_rpc/test_exceptions_thread.ipynb 58
 def test_channel_broken_exception_structure():
     """ChannelBroken has the expected structure."""
-    from netrun.rpc.base import ChannelBroken, RPCError
+    from netrun.rpc.base import RPCError
 
     # ChannelBroken is an RPCError
     assert issubclass(ChannelBroken, RPCError)
@@ -379,7 +378,7 @@ def test_channel_broken_exception_structure():
 # %% nbs/tests/02_rpc/test_exceptions_thread.ipynb 60
 def test_channel_broken_vs_closed_distinction():
     """ChannelBroken and ChannelClosed are distinct exceptions."""
-    from netrun.rpc.base import ChannelBroken, ChannelClosed
+    from netrun.rpc.base import ChannelClosed
 
     # They are different exception types
     assert ChannelBroken is not ChannelClosed
@@ -403,7 +402,6 @@ def test_channel_broken_vs_closed_distinction():
 @pytest.mark.asyncio
 async def test_worker_exception_handling_pattern():
     """Demonstrate proper exception handling pattern for workers."""
-    from netrun.rpc.base import ChannelBroken
 
     parent_channel, child_queues = create_thread_channel_pair()
     send_q, recv_q = child_queues
@@ -441,7 +439,7 @@ async def test_worker_exception_handling_pattern():
 # %% nbs/tests/02_rpc/test_exceptions_thread.ipynb 66
 def test_exception_hierarchy():
     """Verify exception hierarchy is correct."""
-    from netrun.rpc.base import RPCError, ChannelClosed, ChannelBroken, RecvTimeout
+    from netrun.rpc.base import RPCError, ChannelClosed, RecvTimeout
 
     # All are RPCErrors
     assert issubclass(ChannelClosed, RPCError)

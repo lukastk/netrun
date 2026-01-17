@@ -4,9 +4,8 @@ __all__ = ['test_broadcast_before_start', 'test_close_allows_restart', 'test_exc
 
 # %% nbs/tests/03_pool/test_exceptions_multiprocess.ipynb 2
 import pytest
-import asyncio
 import time
-from netrun.rpc.base import ChannelClosed, RecvTimeout
+from netrun.rpc.base import RecvTimeout
 from netrun.pool.base import (
     PoolError,
     PoolNotStarted,
@@ -17,7 +16,7 @@ from netrun.pool.base import (
 from netrun.pool.multiprocess import MultiprocessPool
 
 # %% nbs/tests/03_pool/test_exceptions_multiprocess.ipynb 4
-from ..pool.workers import echo_worker, compute_worker, raising_worker, slow_worker
+from ..pool.workers import echo_worker, compute_worker
 
 # %% nbs/tests/03_pool/test_exceptions_multiprocess.ipynb 7
 @pytest.mark.asyncio

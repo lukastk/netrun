@@ -579,16 +579,16 @@ _worker_code = '''
 from netrun.rpc.base import ChannelClosed
 
 def remote_echo_worker(channel, worker_id):
-"""Echo worker for remote pool."""
-import os
-print(f"[Remote Worker {worker_id}] Started in process {os.getpid()}")
-try:
-    while True:
-        key, data = channel.recv()
-        print(f"[Remote Worker {worker_id}] Received: {key}={data}")
-        channel.send(f"echo:{key}", {"worker_id": worker_id, "data": data})
-except ChannelClosed:
-    print(f"[Remote Worker {worker_id}] Stopping")
+    """Echo worker for remote pool."""
+    import os
+    print(f"[Remote Worker {worker_id}] Started in process {os.getpid()}")
+    try:
+        while True:
+            key, data = channel.recv()
+            print(f"[Remote Worker {worker_id}] Received: {key}={data}")
+            channel.send(f"echo:{key}", {"worker_id": worker_id, "data": data})
+    except ChannelClosed:
+        print(f"[Remote Worker {worker_id}] Stopping")
 '''
 
 _worker_path = Path(_temp_dir) / "remote_workers.py"
