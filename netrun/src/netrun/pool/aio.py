@@ -82,9 +82,9 @@ class SingleWorkerPool:
         except ChannelClosed:
             pass
         except Exception as e:
-            # Try to send error back
+            # Try to send exception object back (no serialization needed for async pool)
             try:
-                await self._worker_channel.send("__error__", str(e))
+                await self._worker_channel.send("__error__", e)
             except Exception:
                 pass
 

@@ -177,11 +177,19 @@ def _thread_worker(
     except ChannelClosed:
         pass
     except Exception as e:
-        # Send error back
+        # Send error back - try exception object first, fallback to dict if unpickleable
+        import pickle
+        import traceback
         try:
-            response_queue.put((worker_id, "__error__", str(e)))
+            pickle.dumps(e)  # Test if pickleable
+            response_queue.put((worker_id, "__error__", e))
         except Exception:
-            pass
+            # Fallback to dict with error info
+            response_queue.put((worker_id, "__error__", {
+                "type": type(e).__name__,
+                "message": str(e),
+                "traceback": traceback.format_exc(),
+            }))
 
 # %% nbs/netrun/03_pool/02_multiprocess.ipynb 8
 class MultiprocessPool:
