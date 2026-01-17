@@ -4,13 +4,11 @@ __all__ = ['test_channel_closed_exception', 'test_channel_closed_is_exception', 
 
 # %% nbs/tests/02_rpc/test_base.ipynb 2
 import pytest
-
 from netrun.rpc.base import (
-    SHUTDOWN_KEY,
     ChannelClosed,
     RecvTimeout,
+    SHUTDOWN_KEY,
 )
-
 
 # %% nbs/tests/02_rpc/test_base.ipynb 4
 def test_channel_closed_exception():

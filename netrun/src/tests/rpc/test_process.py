@@ -3,17 +3,14 @@
 __all__ = ['test_close', 'test_create_queue_pair', 'test_cross_process_compute', 'test_cross_process_echo', 'test_cross_process_multiple_messages', 'test_recv_timeout', 'test_same_process_send_recv', 'test_send_on_closed_raises', 'test_sync_channel_creation', 'test_try_recv_empty']
 
 # %% nbs/tests/02_rpc/test_process.ipynb 2
-import multiprocessing as mp
-
 import pytest
-
+import multiprocessing as mp
 from netrun.rpc.base import ChannelClosed, RecvTimeout
-from netrun.rpc.process import (
+from netrun.rpc.multiprocess import (
     ProcessChannel,
     SyncProcessChannel,
     create_queue_pair,
 )
-
 
 # %% nbs/tests/02_rpc/test_process.ipynb 4
 @pytest.mark.asyncio
@@ -65,8 +62,7 @@ async def test_same_process_send_recv():
     assert data == 42
 
 # %% nbs/tests/02_rpc/test_process.ipynb 12
-from ..rpc.workers import compute_worker, echo_worker
-
+from ..rpc.workers import echo_worker, compute_worker
 
 # %% nbs/tests/02_rpc/test_process.ipynb 13
 @pytest.mark.asyncio

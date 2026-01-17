@@ -4,10 +4,8 @@ __all__ = ['test_bidirectional', 'test_close', 'test_create_channel_pair', 'test
 
 # %% nbs/tests/02_rpc/test_aio.ipynb 2
 import pytest
-
-from netrun.rpc.aio import AsyncChannel, create_async_channel_pair
 from netrun.rpc.base import ChannelClosed, RecvTimeout
-
+from netrun.rpc.aio import AsyncChannel, create_async_channel_pair
 
 # %% nbs/tests/02_rpc/test_aio.ipynb 4
 @pytest.mark.asyncio

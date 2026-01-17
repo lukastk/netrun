@@ -3,12 +3,11 @@
 __all__ = ['generate_stub_for_class', 'generate_stub_for_module', 'generate_stubs_for_package']
 
 # %% nbs/dev/utils.ipynb 2
-import importlib
 import inspect
-from pathlib import Path
+import importlib
 from types import ModuleType
+from pathlib import Path
 from typing import get_type_hints
-
 
 # %% nbs/dev/utils.ipynb 4
 def generate_stub_for_class(cls, indent: int = 0) -> str:

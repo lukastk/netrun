@@ -12,7 +12,7 @@ from netrun.rpc.base import (
     RPCError,
     SyncRPCChannel,
 )
-from netrun.rpc.process import (
+from netrun.rpc.multiprocess import (
     ProcessChannel,
     SyncProcessChannel,
     create_queue_pair,

@@ -7,11 +7,10 @@ import asyncio
 from typing import Any
 
 from ..rpc.base import (
-    SHUTDOWN_KEY,
     ChannelClosed,
     RecvTimeout,
+    SHUTDOWN_KEY,
 )
-
 
 # %% nbs/netrun/02_rpc/01_aio.ipynb 5
 class AsyncChannel:

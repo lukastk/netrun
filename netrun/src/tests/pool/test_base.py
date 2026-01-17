@@ -4,17 +4,15 @@ __all__ = ['test_pool_already_started', 'test_pool_error', 'test_pool_is_protoco
 
 # %% nbs/tests/03_pool/test_base.ipynb 2
 import pytest
-
 from netrun.pool.base import (
-    Pool,
-    PoolAlreadyStarted,
-    PoolError,
-    PoolNotStarted,
-    WorkerError,
     WorkerId,
     WorkerMessage,
+    Pool,
+    PoolError,
+    PoolNotStarted,
+    PoolAlreadyStarted,
+    WorkerError,
 )
-
 
 # %% nbs/tests/03_pool/test_base.ipynb 4
 def test_worker_id_is_int():

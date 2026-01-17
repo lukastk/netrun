@@ -5,7 +5,6 @@ __all__ = ['ChannelBroken', 'ChannelClosed', 'RPCChannel', 'RPCError', 'RPC_KEYS
 # %% nbs/netrun/02_rpc/00_base.ipynb 3
 from typing import Any, Protocol, runtime_checkable
 
-
 # %% nbs/netrun/02_rpc/00_base.ipynb 5
 class RPCError(Exception):
     """Base exception for RPC errors."""

@@ -3,17 +3,14 @@
 __all__ = ['compute_worker', 'echo_worker', 'slow_worker', 'test_broadcast', 'test_compute_workers', 'test_concurrent_responses', 'test_context_manager', 'test_double_start_raises', 'test_invalid_worker_id', 'test_pool_creation', 'test_pool_invalid_num_workers', 'test_recv_before_start_raises', 'test_recv_timeout', 'test_send_before_start_raises', 'test_send_recv_multiple_messages_same_worker', 'test_send_recv_multiple_workers', 'test_send_recv_single', 'test_start_and_close', 'test_try_recv_empty', 'test_try_recv_with_message']
 
 # %% nbs/tests/03_pool/test_thread.ipynb 2
-import asyncio
-
 import pytest
-
+import asyncio
+from netrun.rpc.base import ChannelClosed, RecvTimeout
 from netrun.pool.base import (
-    PoolAlreadyStarted,
     PoolNotStarted,
+    PoolAlreadyStarted,
 )
 from netrun.pool.thread import ThreadPool
-from netrun.rpc.base import ChannelClosed, RecvTimeout
-
 
 # %% nbs/tests/03_pool/test_thread.ipynb 4
 def echo_worker(channel, worker_id):
