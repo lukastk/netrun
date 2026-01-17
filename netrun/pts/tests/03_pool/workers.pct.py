@@ -55,3 +55,35 @@ def pid_worker(channel, worker_id):
             channel.send("pid", {"worker_id": worker_id, "pid": os.getpid()})
     except ChannelClosed:
         pass
+
+# %%
+#|export
+def raising_worker(channel, worker_id):
+    """Worker that raises an exception on 'raise' message."""
+    try:
+        while True:
+            key, data = channel.recv()
+            if key == "raise":
+                raise ValueError(f"Intentional error: {data}")
+            channel.send("ok", data)
+    except ChannelClosed:
+        pass
+
+# %%
+#|export
+def immediate_exit_worker(channel, worker_id):
+    """Worker that exits immediately without processing."""
+    return  # Exit immediately
+
+# %%
+#|export
+def slow_worker(channel, worker_id):
+    """Worker that takes time to respond."""
+    import time
+    try:
+        while True:
+            key, data = channel.recv()
+            time.sleep(0.1)
+            channel.send("done", data)
+    except ChannelClosed:
+        pass
