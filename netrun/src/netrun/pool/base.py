@@ -3,9 +3,9 @@
 __all__ = ['Pool', 'PoolAlreadyStarted', 'PoolError', 'PoolNotStarted', 'WorkerError', 'WorkerFn', 'WorkerId', 'WorkerMessage']
 
 # %% nbs/netrun/03_pool/00_base.ipynb 3
+from typing import Any, Protocol, runtime_checkable
 from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Protocol, runtime_checkable
 
 from ..rpc.base import SyncRPCChannel
 

@@ -374,8 +374,6 @@ class RemotePoolClient:
                         await self._recv_queue.put(data)
                     elif key == MSG_ERROR:
                         print(f"Server error: {data}")
-                except RecvTimeout:
-                    continue
                 except ChannelClosed:
                     break
         except Exception:

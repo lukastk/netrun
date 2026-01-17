@@ -7,20 +7,19 @@ import asyncio
 import threading
 from typing import Any
 
-from ..pool.base import (
-    PoolAlreadyStarted,
-    PoolNotStarted,
-    WorkerFn,
-    WorkerId,
-    WorkerMessage,
-)
 from ..rpc.base import ChannelClosed, RecvTimeout
 from ..rpc.thread import (
-    SyncThreadChannel,
     ThreadChannel,
+    SyncThreadChannel,
     create_thread_channel_pair,
 )
-
+from ..pool.base import (
+    WorkerId,
+    WorkerFn,
+    WorkerMessage,
+    PoolNotStarted,
+    PoolAlreadyStarted,
+)
 
 # %% nbs/netrun/03_pool/01_thread.ipynb 5
 class ThreadPool:
@@ -192,6 +191,14 @@ class ThreadPool:
         if not self._running:
             raise PoolNotStarted("Pool has not been started")
 
+        # If recv tasks are running, check the queue first
+        if self._recv_tasks:
+            try:
+                return self._recv_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                return None
+
+        # Otherwise, read directly from channels
         for worker_id, channel in enumerate(self._channels):
             result = await channel.try_recv()
             if result is not None:
