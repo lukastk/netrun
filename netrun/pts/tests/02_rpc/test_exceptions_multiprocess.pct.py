@@ -31,10 +31,8 @@
 # %%
 #|export
 import pytest
-import asyncio
 import multiprocessing as mp
 import time
-import queue
 from netrun.rpc.base import (
     ChannelClosed,
     ChannelBroken,
@@ -43,22 +41,9 @@ from netrun.rpc.base import (
     RPC_KEY_SHUTDOWN,
 )
 from netrun.rpc.multiprocess import (
-    ProcessChannel,
     SyncProcessChannel,
     create_queue_pair,
 )
-
-# %%
-#|export
-def _echo_worker(send_q, recv_q):
-    """Worker function for subprocess tests (module-level for pickling)."""
-    channel = SyncProcessChannel(send_q, recv_q)
-    try:
-        while True:
-            key, data = channel.recv()
-            channel.send(f"echo:{key}", data)
-    except ChannelClosed:
-        pass
 
 # %% [markdown]
 # ---
@@ -464,11 +449,12 @@ print("ChannelBroken vs ChannelClosed: distinct exception types")
 @pytest.mark.asyncio
 async def test_subprocess_communication():
     """Test basic subprocess communication works correctly."""
+    import tests.rpc.workers
     # Note: We test the happy path here since forcing ChannelBroken
     # requires actually killing a subprocess which is flaky in tests.
     parent_channel, child_queues = create_queue_pair()
 
-    proc = mp.Process(target=_echo_worker, args=child_queues)
+    proc = mp.Process(target=tests.rpc.workers.echo_worker, args=child_queues)
     proc.start()
 
     # Normal communication
@@ -522,26 +508,14 @@ print("Exception hierarchy: all RPC exceptions inherit from RPCError")
 @pytest.mark.asyncio
 async def example_robust_worker():
     """Example: Proper exception handling in worker processes."""
+    import tests.rpc.workers
     print("=" * 50)
     print("Example: Robust Worker Process")
     print("=" * 50)
 
     parent_channel, child_queues = create_queue_pair()
 
-    def worker(send_q, recv_q):
-        channel = SyncProcessChannel(send_q, recv_q)
-        print("  [Worker] Started")
-        try:
-            while True:
-                key, data = channel.recv()
-                print(f"  [Worker] Processing: {key}={data}")
-                channel.send("result", data * 2)
-        except ChannelClosed:
-            print("  [Worker] Graceful shutdown")
-        except ChannelBroken as e:
-            print(f"  [Worker] Channel broken: {e}")
-
-    proc = mp.Process(target=worker, args=child_queues)
+    proc = mp.Process(target=tests.rpc.workers.robust_worker, args=child_queues)
     proc.start()
 
     # Send some work
@@ -568,23 +542,14 @@ await example_robust_worker()
 @pytest.mark.asyncio
 async def example_timeout_retry():
     """Example: Handling timeouts with retry."""
+    import tests.rpc.workers
     print("=" * 50)
     print("Example: Timeout with Retry")
     print("=" * 50)
 
     parent_channel, child_queues = create_queue_pair()
 
-    def slow_worker(send_q, recv_q):
-        channel = SyncProcessChannel(send_q, recv_q)
-        try:
-            while True:
-                key, data = channel.recv()
-                time.sleep(0.05)  # Simulate slow processing
-                channel.send("result", data)
-        except ChannelClosed:
-            pass
-
-    proc = mp.Process(target=slow_worker, args=child_queues)
+    proc = mp.Process(target=tests.rpc.workers.slow_worker, args=child_queues)
     proc.start()
 
     await parent_channel.send("task", 42)
@@ -593,7 +558,7 @@ async def example_timeout_retry():
     result = None
     for attempt in range(3):
         try:
-            key, result = await parent_channel.recv(timeout=0.2)
+            key, result = await parent_channel.recv(timeout=0.4*(attempt+1))
             print(f"  Attempt {attempt + 1}: Success, got {result}")
             break
         except RecvTimeout:

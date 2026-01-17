@@ -4,10 +4,8 @@ __all__ = ['test_async_multiple_close_is_safe', 'test_async_recv_after_close', '
 
 # %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 2
 import pytest
-import asyncio
 import multiprocessing as mp
 import time
-import queue
 from netrun.rpc.base import (
     ChannelClosed,
     ChannelBroken,
@@ -16,23 +14,11 @@ from netrun.rpc.base import (
     RPC_KEY_SHUTDOWN,
 )
 from netrun.rpc.multiprocess import (
-    ProcessChannel,
     SyncProcessChannel,
     create_queue_pair,
 )
 
-# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 3
-def _echo_worker(send_q, recv_q):
-    """Worker function for subprocess tests (module-level for pickling)."""
-    channel = SyncProcessChannel(send_q, recv_q)
-    try:
-        while True:
-            key, data = channel.recv()
-            channel.send(f"echo:{key}", data)
-    except ChannelClosed:
-        pass
-
-# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 6
+# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 5
 def test_sync_send_after_close():
     """SyncProcessChannel.send() raises ChannelClosed after close()."""
     parent_channel, child_queues = create_queue_pair()
@@ -47,7 +33,7 @@ def test_sync_send_after_close():
 
     assert "closed" in str(exc_info.value).lower()
 
-# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 8
+# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 7
 def test_sync_recv_after_close():
     """SyncProcessChannel.recv() raises ChannelClosed after close()."""
     parent_channel, child_queues = create_queue_pair()
@@ -59,7 +45,7 @@ def test_sync_recv_after_close():
     with pytest.raises(ChannelClosed):
         child_channel.recv()
 
-# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 10
+# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 9
 def test_sync_try_recv_after_close():
     """SyncProcessChannel.try_recv() raises ChannelClosed after close()."""
     parent_channel, child_queues = create_queue_pair()
@@ -71,7 +57,7 @@ def test_sync_try_recv_after_close():
     with pytest.raises(ChannelClosed):
         child_channel.try_recv()
 
-# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 13
+# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 12
 @pytest.mark.asyncio
 async def test_async_send_after_close():
     """ProcessChannel.send() raises ChannelClosed after close()."""
@@ -85,7 +71,7 @@ async def test_async_send_after_close():
 
     assert "closed" in str(exc_info.value).lower()
 
-# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 15
+# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 14
 @pytest.mark.asyncio
 async def test_async_recv_after_close():
     """ProcessChannel.recv() raises ChannelClosed after close()."""
@@ -96,7 +82,7 @@ async def test_async_recv_after_close():
     with pytest.raises(ChannelClosed):
         await parent_channel.recv()
 
-# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 17
+# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 16
 @pytest.mark.asyncio
 async def test_async_try_recv_after_close():
     """ProcessChannel.try_recv() raises ChannelClosed after close()."""
@@ -107,7 +93,7 @@ async def test_async_try_recv_after_close():
     with pytest.raises(ChannelClosed):
         await parent_channel.try_recv()
 
-# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 20
+# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 19
 def test_sync_recv_shutdown_signal():
     """SyncProcessChannel.recv() raises ChannelClosed when receiving shutdown signal."""
     parent_channel, child_queues = create_queue_pair()
@@ -123,7 +109,7 @@ def test_sync_recv_shutdown_signal():
     assert "shut down" in str(exc_info.value).lower()
     assert child_channel.is_closed
 
-# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 22
+# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 21
 @pytest.mark.asyncio
 async def test_async_recv_shutdown_signal():
     """ProcessChannel.recv() raises ChannelClosed when receiving shutdown signal."""
@@ -139,7 +125,7 @@ async def test_async_recv_shutdown_signal():
     assert "shut down" in str(exc_info.value).lower()
     assert parent_channel.is_closed
 
-# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 25
+# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 24
 def test_sync_multiple_close_is_safe():
     """Multiple close() calls on SyncProcessChannel are safe."""
     parent_channel, child_queues = create_queue_pair()
@@ -152,7 +138,7 @@ def test_sync_multiple_close_is_safe():
 
     assert child_channel.is_closed
 
-# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 27
+# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 26
 @pytest.mark.asyncio
 async def test_async_multiple_close_is_safe():
     """Multiple close() calls on ProcessChannel are safe."""
@@ -164,7 +150,7 @@ async def test_async_multiple_close_is_safe():
 
     assert parent_channel.is_closed
 
-# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 31
+# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 30
 def test_sync_recv_timeout():
     """SyncProcessChannel.recv() raises RecvTimeout when timeout expires."""
     parent_channel, child_queues = create_queue_pair()
@@ -180,7 +166,7 @@ def test_sync_recv_timeout():
     assert elapsed < 0.5
     assert "timed out" in str(exc_info.value).lower()
 
-# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 33
+# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 32
 def test_sync_recv_timeout_preserves_channel():
     """After RecvTimeout, the channel is still usable."""
     parent_channel, child_queues = create_queue_pair()
@@ -200,7 +186,7 @@ def test_sync_recv_timeout_preserves_channel():
     key, data = child_channel.recv(timeout=1.0)
     assert key == "test"
 
-# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 36
+# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 35
 @pytest.mark.asyncio
 async def test_async_recv_timeout():
     """ProcessChannel.recv() raises RecvTimeout when timeout expires."""
@@ -215,7 +201,7 @@ async def test_async_recv_timeout():
     assert elapsed < 0.5
     assert "timed out" in str(exc_info.value).lower()
 
-# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 38
+# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 37
 @pytest.mark.asyncio
 async def test_async_recv_timeout_preserves_channel():
     """After RecvTimeout, the async channel is still usable."""
@@ -232,7 +218,7 @@ async def test_async_recv_timeout_preserves_channel():
     key, data = recv_q.get(timeout=1.0)
     assert key == "hello"
 
-# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 41
+# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 40
 def test_sync_try_recv_returns_none():
     """SyncProcessChannel.try_recv() returns None, never raises RecvTimeout."""
     parent_channel, child_queues = create_queue_pair()
@@ -242,7 +228,7 @@ def test_sync_try_recv_returns_none():
     result = child_channel.try_recv()
     assert result is None
 
-# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 43
+# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 42
 @pytest.mark.asyncio
 async def test_async_try_recv_returns_none():
     """ProcessChannel.try_recv() returns None, never raises RecvTimeout."""
@@ -251,7 +237,7 @@ async def test_async_try_recv_returns_none():
     result = await parent_channel.try_recv()
     assert result is None
 
-# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 47
+# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 46
 def test_channel_broken_exception_structure():
     """ChannelBroken has the expected structure."""
     assert issubclass(ChannelBroken, RPCError)
@@ -260,7 +246,7 @@ def test_channel_broken_exception_structure():
     exc = ChannelBroken("Pipe broken")
     assert "Pipe broken" in str(exc)
 
-# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 49
+# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 48
 def test_channel_broken_vs_closed_distinction():
     """ChannelBroken and ChannelClosed are distinct exceptions."""
     assert ChannelBroken is not ChannelClosed
@@ -280,15 +266,16 @@ def test_channel_broken_vs_closed_distinction():
     except ChannelClosed:
         pass
 
-# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 52
+# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 51
 @pytest.mark.asyncio
 async def test_subprocess_communication():
     """Test basic subprocess communication works correctly."""
+    import tests.rpc.workers
     # Note: We test the happy path here since forcing ChannelBroken
     # requires actually killing a subprocess which is flaky in tests.
     parent_channel, child_queues = create_queue_pair()
 
-    proc = mp.Process(target=_echo_worker, args=child_queues)
+    proc = mp.Process(target=tests.rpc.workers.echo_worker, args=child_queues)
     proc.start()
 
     # Normal communication
@@ -304,7 +291,7 @@ async def test_subprocess_communication():
         proc.terminate()
         proc.join(timeout=1.0)
 
-# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 55
+# %% nbs/tests/02_rpc/test_exceptions_multiprocess.ipynb 54
 def test_exception_hierarchy():
     """Verify exception hierarchy is correct."""
     assert issubclass(ChannelClosed, RPCError)
