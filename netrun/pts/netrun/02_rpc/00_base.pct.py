@@ -119,9 +119,33 @@ class SyncRPCChannel(Protocol):
         ...
 
 # %% [markdown]
-# ## Sentinel Keys
+# ## RPC Layer Keys
+#
+# Standard keys used by the RPC layer for control messages.
+# Format: `"__rpc:name"`
 
 # %%
 #|export
-SHUTDOWN_KEY = "__rpc_shutdown__"
-"""Sent to signal graceful shutdown."""
+RPC_KEY_SHUTDOWN = "__rpc:shutdown"
+"""Signal graceful channel shutdown. Either side can send."""
+
+# %%
+#|export
+RPC_KEY_ERROR = "__rpc:error"
+"""Channel-level error (e.g., parse error, deserialization failure)."""
+
+# %%
+#|export
+RPC_KEY_BROKEN = "__rpc:broken"
+"""Connection broken unexpectedly."""
+
+# %%
+#|export
+RPC_KEYS = [RPC_KEY_SHUTDOWN, RPC_KEY_ERROR, RPC_KEY_BROKEN]
+"""All RPC layer keys."""
+
+# %%
+#|export
+# Backwards compatibility alias
+SHUTDOWN_KEY = RPC_KEY_SHUTDOWN
+"""Deprecated: Use RPC_KEY_SHUTDOWN instead."""
