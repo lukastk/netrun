@@ -4,8 +4,7 @@ __all__ = ['compute_worker', 'echo_worker']
 
 # %% nbs/tests/02_rpc/workers.ipynb 2
 from netrun.rpc.base import ChannelClosed
-from netrun.rpc.process import SyncProcessChannel
-
+from netrun.rpc.multiprocess import SyncProcessChannel
 
 # %% nbs/tests/02_rpc/workers.ipynb 3
 def echo_worker(send_q, recv_q):

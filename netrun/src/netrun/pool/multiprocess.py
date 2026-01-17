@@ -4,26 +4,26 @@ __all__ = ['MP_DOWN_BROADCAST', 'MP_DOWN_DISPATCH', 'MP_UP_RESPONSE', 'Multiproc
 
 # %% nbs/netrun/03_pool/02_multiprocess.ipynb 3
 import asyncio
-import multiprocessing as mp
 import queue
 import threading
+import multiprocessing as mp
 from typing import Any
 
-from ..pool.base import (
-    POOL_UP_ERROR_CRASHED,
-    POOL_UP_ERROR_EXCEPTION,
-    PoolAlreadyStarted,
-    PoolNotStarted,
-    WorkerFn,
-    WorkerId,
-    WorkerMessage,
-    _check_error_and_raise,
-)
-from ..rpc.base import RPC_KEY_SHUTDOWN, ChannelClosed, RecvTimeout
-from ..rpc.process import (
+from ..rpc.base import ChannelClosed, RecvTimeout, RPC_KEY_SHUTDOWN
+from ..rpc.multiprocess import (
     ProcessChannel,
     SyncProcessChannel,
     create_queue_pair,
+)
+from ..pool.base import (
+    WorkerId,
+    WorkerFn,
+    WorkerMessage,
+    PoolNotStarted,
+    PoolAlreadyStarted,
+    POOL_UP_ERROR_EXCEPTION,
+    POOL_UP_ERROR_CRASHED,
+    _check_error_and_raise,
 )
 
 # %% nbs/netrun/03_pool/02_multiprocess.ipynb 5

@@ -5,7 +5,6 @@ __all__ = ['compute_worker', 'echo_worker', 'pid_worker']
 # %% nbs/tests/03_pool/workers.ipynb 2
 from netrun.rpc.base import ChannelClosed
 
-
 # %% nbs/tests/03_pool/workers.ipynb 3
 def echo_worker(channel, worker_id):
     """Echo worker for pool testing."""

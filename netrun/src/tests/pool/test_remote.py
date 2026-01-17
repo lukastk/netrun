@@ -3,9 +3,8 @@
 __all__ = ['pytestmark', 'test_broadcast', 'test_client_creation', 'test_compute_workers', 'test_connect_and_create_pool', 'test_invalid_worker_id', 'test_multiple_workers', 'test_recv_timeout', 'test_register_worker', 'test_send_before_create_raises', 'test_send_recv', 'test_server_creation', 'test_try_recv_empty', 'test_try_recv_with_message', 'test_unknown_worker_raises']
 
 # %% nbs/tests/03_pool/test_remote.ipynb 2
-import asyncio
-
 import pytest
+import asyncio
 
 # Check if websockets is available
 try:
@@ -17,16 +16,15 @@ except ImportError:
 pytestmark = pytest.mark.skipif(not HAS_WEBSOCKETS, reason="websockets not installed")
 
 # %% nbs/tests/03_pool/test_remote.ipynb 3
-from netrun.pool.base import (
-    PoolError,
-    PoolNotStarted,
-)
-from netrun.pool.remote import RemotePoolClient, RemotePoolServer
 from netrun.rpc.base import RecvTimeout
+from netrun.pool.base import (
+    PoolNotStarted,
+    PoolError,
+)
+from netrun.pool.remote import RemotePoolServer, RemotePoolClient
 
 # %% nbs/tests/03_pool/test_remote.ipynb 5
-from ..pool.workers import compute_worker, echo_worker
-
+from ..pool.workers import echo_worker, compute_worker
 
 # %% nbs/tests/03_pool/test_remote.ipynb 7
 def test_server_creation():

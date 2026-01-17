@@ -3,9 +3,8 @@
 __all__ = ['pytestmark', 'test_bidirectional', 'test_client_close', 'test_connect_and_send_recv', 'test_multiple_clients', 'test_multiple_messages', 'test_recv_timeout', 'test_send_on_closed_raises', 'test_send_various_types', 'test_try_recv_empty', 'test_try_recv_with_message']
 
 # %% nbs/tests/02_rpc/test_remote.ipynb 2
-import asyncio
-
 import pytest
+import asyncio
 
 # Check if websockets is available
 try:
@@ -23,7 +22,6 @@ from netrun.rpc.remote import (
     connect_channel,
     serve_background,
 )
-
 
 # %% nbs/tests/02_rpc/test_remote.ipynb 5
 @pytest.mark.asyncio

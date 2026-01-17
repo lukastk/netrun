@@ -7,23 +7,22 @@ import asyncio
 import threading
 from typing import Any
 
-from ..pool.base import (
-    POOL_UP_ERROR_CRASHED,
-    POOL_UP_ERROR_EXCEPTION,
-    PoolAlreadyStarted,
-    PoolNotStarted,
-    WorkerFn,
-    WorkerId,
-    WorkerMessage,
-    _check_error_and_raise,
-)
 from ..rpc.base import ChannelClosed, RecvTimeout
 from ..rpc.thread import (
-    SyncThreadChannel,
     ThreadChannel,
+    SyncThreadChannel,
     create_thread_channel_pair,
 )
-
+from ..pool.base import (
+    WorkerId,
+    WorkerFn,
+    WorkerMessage,
+    PoolNotStarted,
+    PoolAlreadyStarted,
+    POOL_UP_ERROR_EXCEPTION,
+    POOL_UP_ERROR_CRASHED,
+    _check_error_and_raise,
+)
 
 # %% nbs/netrun/03_pool/01_thread.ipynb 5
 class ThreadPool:

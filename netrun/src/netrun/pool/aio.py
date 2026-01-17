@@ -4,23 +4,23 @@ __all__ = ['AsyncWorkerFn', 'SingleWorkerPool']
 
 # %% nbs/netrun/03_pool/04_aio.ipynb 3
 import asyncio
-from collections.abc import Awaitable, Callable
 from typing import Any
+from collections.abc import Callable, Awaitable
 
-from ..pool.base import (
-    POOL_UP_ERROR_CRASHED,
-    POOL_UP_ERROR_EXCEPTION,
-    PoolAlreadyStarted,
-    PoolNotStarted,
-    WorkerId,
-    WorkerMessage,
-    _check_error_and_raise,
-)
+from ..rpc.base import ChannelClosed, RecvTimeout
 from ..rpc.aio import (
     AsyncChannel,
     create_async_channel_pair,
 )
-from ..rpc.base import ChannelClosed, RecvTimeout
+from ..pool.base import (
+    WorkerId,
+    WorkerMessage,
+    PoolNotStarted,
+    PoolAlreadyStarted,
+    POOL_UP_ERROR_EXCEPTION,
+    POOL_UP_ERROR_CRASHED,
+    _check_error_and_raise,
+)
 
 # %% nbs/netrun/03_pool/04_aio.ipynb 5
 AsyncWorkerFn = Callable[[AsyncChannel, WorkerId], Awaitable[None]]

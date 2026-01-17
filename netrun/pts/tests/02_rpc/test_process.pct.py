@@ -17,7 +17,7 @@
 import pytest
 import multiprocessing as mp
 from netrun.rpc.base import ChannelClosed, RecvTimeout
-from netrun.rpc.process import (
+from netrun.rpc.multiprocess import (
     ProcessChannel,
     SyncProcessChannel,
     create_queue_pair,

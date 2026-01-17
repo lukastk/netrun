@@ -3,18 +3,15 @@
 __all__ = ['test_async_close', 'test_async_recv_timeout', 'test_async_send_on_closed_raises', 'test_async_to_sync_communication', 'test_async_try_recv_empty', 'test_async_try_recv_with_message', 'test_bidirectional_thread_communication', 'test_create_channel_pair', 'test_multiple_messages', 'test_shutdown_signal_closes_sync_channel', 'test_sync_channel_creation', 'test_sync_close', 'test_sync_recv_timeout', 'test_sync_send_on_closed_raises', 'test_sync_to_async_communication', 'test_sync_try_recv_empty']
 
 # %% nbs/tests/02_rpc/test_thread.ipynb 2
+import pytest
 import asyncio
 import threading
-
-import pytest
-
 from netrun.rpc.base import ChannelClosed, RecvTimeout
 from netrun.rpc.thread import (
-    SyncThreadChannel,
     ThreadChannel,
+    SyncThreadChannel,
     create_thread_channel_pair,
 )
-
 
 # %% nbs/tests/02_rpc/test_thread.ipynb 4
 @pytest.mark.asyncio

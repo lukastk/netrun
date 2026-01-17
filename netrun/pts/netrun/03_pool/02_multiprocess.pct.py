@@ -69,7 +69,7 @@ import multiprocessing as mp
 from typing import Any
 
 from netrun.rpc.base import ChannelClosed, RecvTimeout, RPC_KEY_SHUTDOWN
-from netrun.rpc.process import (
+from netrun.rpc.multiprocess import (
     ProcessChannel,
     SyncProcessChannel,
     create_queue_pair,
