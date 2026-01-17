@@ -4,25 +4,24 @@ __all__ = ['MultiprocessPool']
 
 # %% nbs/netrun/03_pool/02_multiprocess.ipynb 3
 import asyncio
-import multiprocessing as mp
 import queue
 import threading
+import multiprocessing as mp
 from typing import Any
 
-from ..pool.base import (
-    PoolAlreadyStarted,
-    PoolNotStarted,
-    WorkerFn,
-    WorkerId,
-    WorkerMessage,
-)
-from ..rpc.base import SHUTDOWN_KEY, ChannelClosed, RecvTimeout
+from ..rpc.base import ChannelClosed, RecvTimeout, SHUTDOWN_KEY
 from ..rpc.process import (
     ProcessChannel,
     SyncProcessChannel,
     create_queue_pair,
 )
-
+from ..pool.base import (
+    WorkerId,
+    WorkerFn,
+    WorkerMessage,
+    PoolNotStarted,
+    PoolAlreadyStarted,
+)
 
 # %% nbs/netrun/03_pool/02_multiprocess.ipynb 5
 def _subprocess_main(
@@ -346,10 +345,6 @@ class MultiprocessPool:
                     if key == "response":
                         worker_id, msg_key, msg_data = data
                         msg = WorkerMessage(worker_id=worker_id, key=msg_key, data=msg_data)
-                        await self._recv_queue.put(msg)
-                    elif key == "__error__":
-                        # Put error as a special message
-                        msg = WorkerMessage(worker_id=-1, key="__error__", data=data)
                         await self._recv_queue.put(msg)
             except (ChannelClosed, asyncio.CancelledError):
                 pass
