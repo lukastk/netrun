@@ -147,9 +147,9 @@ class ThreadPool:
         except ChannelClosed:
             pass
         except Exception as e:
-            # Try to send error back
+            # Try to send exception object back (no serialization needed for threads)
             try:
-                channel.send("__error__", str(e))
+                channel.send("__error__", e)
             except Exception:
                 pass
 
