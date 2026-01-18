@@ -541,6 +541,10 @@ class ExecutionManager:
         """Get the number of workers in a pool."""
         return self._pools[pool_id].num_workers
 
+    def get_worker_ids(self, pool_id: str) -> list[str]:
+        """Get the list of worker IDs for a pool."""
+        return [f"{pool_id}_{i}" for i in range(self._pools[pool_id].num_workers)]
+
     def get_worker_jobs(self, pool_id: str, worker_id: int) -> list[SubmittedJobInfo]:
         """Get the list of currently submitted jobs for a worker."""
         return list(self._worker_jobs.get((pool_id, worker_id), []))
