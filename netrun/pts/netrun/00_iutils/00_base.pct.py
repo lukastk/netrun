@@ -42,4 +42,4 @@ import datetime
 #|export
 def get_timestamp_utc():
     """Get the current timestamp in UTC."""
-    return datetime.datetime.now(datetime.timezone.utc)
+    return datetime.datetime.now(datetime.UTC)
