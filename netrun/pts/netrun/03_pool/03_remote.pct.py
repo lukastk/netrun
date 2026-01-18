@@ -89,7 +89,7 @@ from netrun.pool.base import (
     WorkerException,
     WorkerCrashed,
 )
-from netrun.pool.multiprocess import MultiprocessPool
+from netrun.pool.multiprocess import MultiprocessPool, OutputBuffer
 
 # %% [markdown]
 # ## RemotePool Keys
@@ -120,6 +120,16 @@ RP_DOWN_CLOSE = "__pool-rp-down:close"
 
 # %%
 #|export
+RP_DOWN_FLUSH_STDOUT = "__pool-rp-down:flush_stdout"
+"""Client requests stdout buffer from a process. Data: {process_idx}"""
+
+# %%
+#|export
+RP_DOWN_FLUSH_ALL_STDOUT = "__pool-rp-down:flush_all_stdout"
+"""Client requests stdout buffers from all processes."""
+
+# %%
+#|export
 # Upstream: server → client
 RP_UP_POOL_CREATED = "__pool-rp-up:pool_created"
 """Server confirms pool created. Data: {num_workers}"""
@@ -138,6 +148,11 @@ RP_UP_ERROR_EXCEPTION = "__pool-rp-up:error-exception"
 #|export
 RP_UP_ERROR_POOL_FAILED = "__pool-rp-up:error-pool_failed"
 """Server failed to create/manage pool. Data: error message."""
+
+# %%
+#|export
+RP_UP_STDOUT_BUFFER = "__pool-rp-up:stdout_buffer"
+"""Server sends stdout buffer. Data: {process_idx, buffer} or {buffers}"""
 
 # %% [markdown]
 # ## RemotePoolServer
@@ -217,6 +232,8 @@ class RemotePoolServer:
                     worker_name = data["worker_name"]
                     num_processes = data["num_processes"]
                     threads_per_process = data.get("threads_per_process", 1)
+                    redirect_output = data.get("redirect_output", True)
+                    buffer_output = data.get("buffer_output", True)
 
                     if worker_name not in self._workers:
                         await channel.send(RP_UP_ERROR_POOL_FAILED, f"Unknown worker: {worker_name}")
@@ -238,6 +255,8 @@ class RemotePoolServer:
                         worker_fn=self._workers[worker_name],
                         num_processes=num_processes,
                         threads_per_process=threads_per_process,
+                        redirect_output=redirect_output,
+                        buffer_output=buffer_output,
                     )
                     await pool.start()
 
@@ -245,6 +264,8 @@ class RemotePoolServer:
                         "num_workers": pool.num_workers,
                         "num_processes": pool.num_processes,
                         "threads_per_process": pool.threads_per_process,
+                        "redirect_output": redirect_output,
+                        "buffer_output": buffer_output,
                     })
 
                     # Start forwarding responses from pool to client
@@ -268,6 +289,41 @@ class RemotePoolServer:
                     msg_key = data["key"]
                     msg_data = data["data"]
                     await pool.broadcast(msg_key, msg_data)
+
+                elif key == RP_DOWN_FLUSH_STDOUT:
+                    if pool is None:
+                        await channel.send(RP_UP_ERROR_POOL_FAILED, "No pool created")
+                        continue
+
+                    process_idx = data["process_idx"]
+                    buffer = await pool.flush_stdout(process_idx)
+                    # Convert datetime to ISO format for JSON serialization
+                    serializable_buffer = [
+                        (ts.isoformat(), is_stdout, text)
+                        for ts, is_stdout, text in buffer
+                    ]
+                    await channel.send(RP_UP_STDOUT_BUFFER, {
+                        "process_idx": process_idx,
+                        "buffer": serializable_buffer,
+                    })
+
+                elif key == RP_DOWN_FLUSH_ALL_STDOUT:
+                    if pool is None:
+                        await channel.send(RP_UP_ERROR_POOL_FAILED, "No pool created")
+                        continue
+
+                    buffers = await pool.flush_all_stdout()
+                    # Convert datetime to ISO format for JSON serialization
+                    serializable_buffers = {
+                        str(idx): [
+                            (ts.isoformat(), is_stdout, text)
+                            for ts, is_stdout, text in buffer
+                        ]
+                        for idx, buffer in buffers.items()
+                    }
+                    await channel.send(RP_UP_STDOUT_BUFFER, {
+                        "buffers": serializable_buffers,
+                    })
 
                 elif key == RP_DOWN_CLOSE:
                     break
@@ -346,8 +402,11 @@ class RemotePoolClient:
         self._num_workers = 0
         self._num_processes = 0
         self._threads_per_process = 0
+        self._redirect_output = True
+        self._buffer_output = True
         self._running = False
         self._recv_queue: asyncio.Queue = asyncio.Queue()
+        self._stdout_queue: asyncio.Queue = asyncio.Queue()
         self._recv_task: asyncio.Task | None = None
 
     @property
@@ -380,6 +439,8 @@ class RemotePoolClient:
         worker_name: str,
         num_processes: int,
         threads_per_process: int = 1,
+        redirect_output: bool = True,
+        buffer_output: bool = True,
     ) -> None:
         """Create a pool on the server.
 
@@ -387,6 +448,8 @@ class RemotePoolClient:
             worker_name: Name of registered worker function on server
             num_processes: Number of processes
             threads_per_process: Threads per process
+            redirect_output: If True, redirect subprocess stdout/stderr
+            buffer_output: If True, buffer redirected output (if redirect_output is True)
         """
         if self._channel is None:
             raise PoolNotStarted("Not connected to server")
@@ -395,6 +458,8 @@ class RemotePoolClient:
             "worker_name": worker_name,
             "num_processes": num_processes,
             "threads_per_process": threads_per_process,
+            "redirect_output": redirect_output,
+            "buffer_output": buffer_output,
         })
 
         # Wait for response
@@ -409,6 +474,8 @@ class RemotePoolClient:
         self._num_workers = data["num_workers"]
         self._num_processes = data["num_processes"]
         self._threads_per_process = data["threads_per_process"]
+        self._redirect_output = data.get("redirect_output", True)
+        self._buffer_output = data.get("buffer_output", True)
         self._running = True
 
         # Start receiving messages from server
@@ -428,6 +495,9 @@ class RemotePoolClient:
                     elif key == RP_UP_ERROR_POOL_FAILED:
                         # Queue pool failure error
                         await self._recv_queue.put(("pool_error", data))
+                    elif key == RP_UP_STDOUT_BUFFER:
+                        # Queue stdout buffer for flush methods
+                        await self._stdout_queue.put(data)
                 except ChannelClosed:
                     break
         except Exception:
@@ -552,6 +622,76 @@ class RemotePoolClient:
             "key": key,
             "data": data,
         })
+
+    async def flush_stdout(self, process_idx: int, timeout: float = 5.0) -> OutputBuffer:
+        """Flush and return the stdout buffer from a specific subprocess.
+
+        Args:
+            process_idx: Index of the subprocess (0 to num_processes-1)
+            timeout: Timeout in seconds for waiting for the response
+
+        Returns:
+            List of (timestamp, is_stdout, text) tuples. is_stdout is True for
+            stdout, False for stderr.
+
+        Raises:
+            PoolNotStarted: If the pool is not running
+            ValueError: If process_idx is out of range
+        """
+        if not self._running or self._channel is None:
+            raise PoolNotStarted("Pool not created")
+
+        if process_idx < 0 or process_idx >= self._num_processes:
+            raise ValueError(f"process_idx {process_idx} out of range [0, {self._num_processes})")
+
+        await self._channel.send(RP_DOWN_FLUSH_STDOUT, {"process_idx": process_idx})
+
+        # Wait for response
+        import datetime
+        try:
+            data = await asyncio.wait_for(self._stdout_queue.get(), timeout=timeout)
+        except TimeoutError:
+            raise RecvTimeout(f"Flush stdout timed out after {timeout}s")
+
+        # Convert ISO format back to datetime
+        buffer: OutputBuffer = [
+            (datetime.datetime.fromisoformat(ts), is_stdout, text)
+            for ts, is_stdout, text in data["buffer"]
+        ]
+        return buffer
+
+    async def flush_all_stdout(self, timeout: float = 5.0) -> dict[int, OutputBuffer]:
+        """Flush and return stdout buffers from all subprocesses.
+
+        Args:
+            timeout: Timeout in seconds for waiting for the response
+
+        Returns:
+            Dict mapping process index to list of (timestamp, is_stdout, text) tuples.
+
+        Raises:
+            PoolNotStarted: If the pool is not running
+        """
+        if not self._running or self._channel is None:
+            raise PoolNotStarted("Pool not created")
+
+        await self._channel.send(RP_DOWN_FLUSH_ALL_STDOUT, {})
+
+        # Wait for response
+        import datetime
+        try:
+            data = await asyncio.wait_for(self._stdout_queue.get(), timeout=timeout)
+        except TimeoutError:
+            raise RecvTimeout(f"Flush all stdout timed out after {timeout}s")
+
+        # Convert ISO format back to datetime
+        result: dict[int, OutputBuffer] = {}
+        for idx_str, buffer in data["buffers"].items():
+            result[int(idx_str)] = [
+                (datetime.datetime.fromisoformat(ts), is_stdout, text)
+                for ts, is_stdout, text in buffer
+            ]
+        return result
 
     async def __aenter__(self) -> "RemotePoolClient":
         """Context manager entry - connects to server."""

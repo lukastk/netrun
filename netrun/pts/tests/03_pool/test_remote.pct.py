@@ -42,7 +42,7 @@ from netrun.pool.remote import RemotePoolServer, RemotePoolClient
 
 # %%
 #|export
-from tests.pool.workers import echo_worker, compute_worker
+from tests.pool.workers import echo_worker, compute_worker, printing_worker
 
 # %% [markdown]
 # ## Test Server Creation
@@ -339,3 +339,209 @@ async def test_compute_workers():
 
 # %%
 await test_compute_workers();
+
+# %% [markdown]
+# ## Test Stdout Redirection
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_stdout_redirect_default():
+    """Test that stdout redirection is enabled by default."""
+    server = RemotePoolServer()
+    server.register_worker("printing", printing_worker)
+
+    async with server.serve_background("127.0.0.1", 19020):
+        async with RemotePoolClient("ws://127.0.0.1:19020") as client:
+            await client.create_pool("printing", num_processes=1, threads_per_process=1)
+
+            # Give time for startup prints
+            await asyncio.sleep(0.3)
+
+            # Flush stdout
+            buffer = await client.flush_stdout(0)
+
+            # Should have captured startup output
+            assert len(buffer) > 0
+            texts = [text for _, _, text in buffer]
+            combined = "".join(texts)
+            assert "Worker 0 starting" in combined
+
+# %%
+await test_stdout_redirect_default();
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_flush_stdout_single_process():
+    """Test flush_stdout for a single process."""
+    server = RemotePoolServer()
+    server.register_worker("printing", printing_worker)
+
+    async with server.serve_background("127.0.0.1", 19021):
+        async with RemotePoolClient("ws://127.0.0.1:19021") as client:
+            await client.create_pool("printing", num_processes=2, threads_per_process=1)
+            await asyncio.sleep(0.3)
+
+            # Flush process 0
+            buffer0 = await client.flush_stdout(0)
+            assert len(buffer0) > 0
+
+            # Each entry should have (timestamp, is_stdout, text)
+            for ts, is_stdout, text in buffer0:
+                assert hasattr(ts, 'isoformat')  # Is datetime
+                assert isinstance(is_stdout, bool)
+                assert isinstance(text, str)
+
+# %%
+await test_flush_stdout_single_process();
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_flush_stdout_clears_buffer():
+    """Test that flush_stdout clears the buffer."""
+    server = RemotePoolServer()
+    server.register_worker("printing", printing_worker)
+
+    async with server.serve_background("127.0.0.1", 19022):
+        async with RemotePoolClient("ws://127.0.0.1:19022") as client:
+            await client.create_pool("printing", num_processes=1)
+            await asyncio.sleep(0.3)
+
+            # Flush once
+            buffer1 = await client.flush_stdout(0)
+            assert len(buffer1) > 0
+
+            # Flush again - should be empty
+            buffer2 = await client.flush_stdout(0)
+            assert len(buffer2) == 0
+
+# %%
+await test_flush_stdout_clears_buffer();
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_flush_all_stdout():
+    """Test flush_all_stdout for all processes."""
+    server = RemotePoolServer()
+    server.register_worker("printing", printing_worker)
+
+    async with server.serve_background("127.0.0.1", 19023):
+        async with RemotePoolClient("ws://127.0.0.1:19023") as client:
+            await client.create_pool("printing", num_processes=2, threads_per_process=1)
+            await asyncio.sleep(0.3)
+
+            # Flush all
+            buffers = await client.flush_all_stdout()
+
+            assert len(buffers) == 2
+            assert 0 in buffers
+            assert 1 in buffers
+
+            # Each process should have captured something
+            for idx, buffer in buffers.items():
+                texts = [text for _, _, text in buffer]
+                combined = "".join(texts)
+                assert f"Worker {idx} starting" in combined
+
+# %%
+await test_flush_all_stdout();
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_stdout_content():
+    """Test that stdout content is correctly captured."""
+    server = RemotePoolServer()
+    server.register_worker("printing", printing_worker)
+
+    async with server.serve_background("127.0.0.1", 19024):
+        async with RemotePoolClient("ws://127.0.0.1:19024") as client:
+            await client.create_pool("printing", num_processes=1)
+            await asyncio.sleep(0.2)
+
+            # Send a message to trigger more printing
+            await client.send(0, "test", "hello")
+            await client.recv(timeout=5.0)
+            await asyncio.sleep(0.2)
+
+            # Flush and check content
+            buffer = await client.flush_stdout(0)
+            texts = [text for _, _, text in buffer]
+            combined = "".join(texts)
+
+            assert "Worker 0 starting" in combined
+            assert "Worker 0 got: test=hello" in combined
+
+# %%
+await test_stdout_content();
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_stdout_invalid_process_idx():
+    """Test that invalid process_idx raises ValueError."""
+    server = RemotePoolServer()
+    server.register_worker("printing", printing_worker)
+
+    async with server.serve_background("127.0.0.1", 19025):
+        async with RemotePoolClient("ws://127.0.0.1:19025") as client:
+            await client.create_pool("printing", num_processes=2)
+
+            with pytest.raises(ValueError):
+                await client.flush_stdout(-1)
+
+            with pytest.raises(ValueError):
+                await client.flush_stdout(2)  # Only 0 and 1 valid
+
+# %%
+await test_stdout_invalid_process_idx();
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_stdout_before_create():
+    """Test that flush_stdout before create_pool raises PoolNotStarted."""
+    server = RemotePoolServer()
+    server.register_worker("printing", printing_worker)
+
+    async with server.serve_background("127.0.0.1", 19026):
+        async with RemotePoolClient("ws://127.0.0.1:19026") as client:
+            with pytest.raises(PoolNotStarted):
+                await client.flush_stdout(0)
+
+            with pytest.raises(PoolNotStarted):
+                await client.flush_all_stdout()
+
+# %%
+await test_stdout_before_create();
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_stdout_stderr_distinction():
+    """Test that stdout and stderr are distinguished."""
+    server = RemotePoolServer()
+    server.register_worker("printing", printing_worker)
+
+    async with server.serve_background("127.0.0.1", 19027):
+        async with RemotePoolClient("ws://127.0.0.1:19027") as client:
+            await client.create_pool("printing", num_processes=1)
+            await asyncio.sleep(0.3)
+
+            buffer = await client.flush_stdout(0)
+
+            stdout_entries = [(ts, text) for ts, is_stdout, text in buffer if is_stdout]
+            stderr_entries = [(ts, text) for ts, is_stdout, text in buffer if not is_stdout]
+
+            # Both stdout and stderr should have content
+            stdout_text = "".join(text for _, text in stdout_entries)
+            stderr_text = "".join(text for _, text in stderr_entries)
+
+            assert "Worker 0 starting" in stdout_text
+            assert "Worker 0 stderr" in stderr_text
+
+# %%
+await test_stdout_stderr_distinction();
