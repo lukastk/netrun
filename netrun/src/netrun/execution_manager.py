@@ -517,20 +517,29 @@ class ExecutionManager:
         await asyncio.gather(*tasks)
 
     async def close(self):
-        """
-
-        Close the execution manager and all its pools.
-        """
-        for pool in self._pools.values():
-            await pool.close()
+        """Close the execution manager and all its pools."""
+        # Cancel message receiver tasks FIRST to prevent them from trying to
+        # recv from closed pools (which would raise PoolNotStarted)
+        errors = []
         for task in self._msg_recv_tasks.values():
             task.cancel()
+        for task in self._msg_recv_tasks.values():
             try:
                 await task
             except asyncio.CancelledError:
                 pass
             except Exception as e:
-                print(f"Error in msg recv task: {e}")
+                errors.append(e)
+
+        # Now close the pools
+        for pool in self._pools.values():
+            await pool.close()
+
+        self._started = False
+
+        # Propagate any errors from the recv tasks
+        if errors:
+            raise errors[0]
 
     @property
     def pools(self) -> list[tuple[str, Type[PoolType]]]:

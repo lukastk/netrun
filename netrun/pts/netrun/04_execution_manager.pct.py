@@ -566,20 +566,29 @@ class ExecutionManager:
         await asyncio.gather(*tasks)
 
     async def close(self):
-        """
-
-        Close the execution manager and all its pools.
-        """
-        for pool in self._pools.values():
-            await pool.close()
+        """Close the execution manager and all its pools."""
+        # Cancel message receiver tasks FIRST to prevent them from trying to
+        # recv from closed pools (which would raise PoolNotStarted)
+        errors = []
         for task in self._msg_recv_tasks.values():
             task.cancel()
+        for task in self._msg_recv_tasks.values():
             try:
                 await task
             except asyncio.CancelledError:
                 pass
             except Exception as e:
-                print(f"Error in msg recv task: {e}")
+                errors.append(e)
+
+        # Now close the pools
+        for pool in self._pools.values():
+            await pool.close()
+
+        self._started = False
+
+        # Propagate any errors from the recv tasks
+        if errors:
+            raise errors[0]
 
     @property
     def pools(self) -> list[tuple[str, Type[PoolType]]]:
@@ -618,15 +627,14 @@ class ExecutionManager:
 # This example shows the basic workflow of running a function on a worker.
 
 # %%
+print("=" * 50)
+print("Example: Basic ExecutionManager Usage")
+print("=" * 50)
+
 def example_add(a: int, b: int) -> int:
     """A simple function that adds two numbers."""
     print(f"Adding {a} + {b}")
     return a + b
-
-# %%
-print("=" * 50)
-print("Example: Basic ExecutionManager Usage")
-print("=" * 50)
 
 # Create an ExecutionManager with a thread pool
 manager = ExecutionManager({
@@ -655,8 +663,6 @@ async with manager:
     print(f"Started at: {result.timestamp_utc_started}")
     print(f"Completed at: {result.timestamp_utc_completed}")
     print(f"Was converted to str: {result.converted_to_str}")
-
-print("\nDone!")
 
 # %% [markdown]
 # ### Example 2: Running multiple jobs with allocation
@@ -702,5 +708,3 @@ async with manager:
     results = await asyncio.gather(*tasks)
     for i, result in enumerate(results):
         print(f"  Job {i}: {result.result} (worker {result.worker_id})")
-
-print("\nDone!")

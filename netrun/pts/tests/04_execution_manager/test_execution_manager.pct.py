@@ -155,6 +155,26 @@ await test_context_manager();
 # %%
 #|export
 @pytest.mark.asyncio
+async def test_immediate_close():
+    """Test that immediate close after start doesn't raise errors.
+
+    This verifies the fix for the race condition where recv tasks
+    might try to recv from a closed pool.
+    """
+    # Run multiple times to catch race conditions
+    for _ in range(10):
+        manager = ExecutionManager({
+            "pool": (ThreadPool, {"num_workers": 2}),
+        })
+        async with manager:
+            pass  # Immediately close without doing anything
+
+# %%
+await test_immediate_close();
+
+# %%
+#|export
+@pytest.mark.asyncio
 async def test_double_start_raises():
     """Test that starting twice raises an error."""
     manager = ExecutionManager({
