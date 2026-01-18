@@ -764,7 +764,6 @@ class MultiprocessPool:
 
 # %%
 import tempfile
-import sys
 from pathlib import Path
 
 # Create temp module with worker function
