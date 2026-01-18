@@ -590,6 +590,10 @@ class ExecutionManager:
         """Get the number of workers in a pool."""
         return self._pools[pool_id].num_workers
 
+    def get_worker_ids(self, pool_id: str) -> list[str]:
+        """Get the list of worker IDs for a pool."""
+        return [f"{pool_id}_{i}" for i in range(self._pools[pool_id].num_workers)]
+
     def get_worker_jobs(self, pool_id: str, worker_id: int) -> list[SubmittedJobInfo]:
         """Get the list of currently submitted jobs for a worker."""
         return list(self._worker_jobs.get((pool_id, worker_id), []))
@@ -620,43 +624,39 @@ def example_add(a: int, b: int) -> int:
     return a + b
 
 # %%
-async def example_basic_usage():
-    """Example: Basic ExecutionManager usage with a thread pool."""
-    print("=" * 50)
-    print("Example: Basic ExecutionManager Usage")
-    print("=" * 50)
+print("=" * 50)
+print("Example: Basic ExecutionManager Usage")
+print("=" * 50)
 
-    # Create an ExecutionManager with a thread pool
-    manager = ExecutionManager({
-        "workers": ("thread", {"num_workers": 2}),
-    })
+# Create an ExecutionManager with a thread pool
+manager = ExecutionManager({
+    "workers": ("thread", {"num_workers": 2}),
+})
 
-    async with manager:
-        print(f"Pool IDs: {manager.pool_ids}")
-        print(f"Workers in 'workers' pool: {manager.get_num_workers('workers')}")
+async with manager:
+    print(f"Pool IDs: {manager.pool_ids}")
+    print(f"Workers in 'workers' pool: {manager.get_num_workers('workers')}")
 
-        # Send a function to all workers in the pool
-        await manager.send_function_to_pool("workers", "add", example_add)
+    # Send a function to all workers in the pool
+    await manager.send_function_to_pool("workers", "add", example_add)
 
-        # Run the function on worker 0
-        result = await manager.run(
-            pool_id="workers",
-            worker_id=0,
-            func_import_path_or_key="add",
-            send_channel=False,
-            func_args=(3, 4),
-            func_kwargs={},
-        )
+    # Run the function on worker 0
+    result = await manager.run(
+        pool_id="workers",
+        worker_id=0,
+        func_import_path_or_key="add",
+        send_channel=False,
+        func_args=(3, 4),
+        func_kwargs={},
+    )
 
-        print(f"\nResult: {result.result}")
-        print(f"Submitted at: {result.timestamp_utc_submitted}")
-        print(f"Started at: {result.timestamp_utc_started}")
-        print(f"Completed at: {result.timestamp_utc_completed}")
-        print(f"Was converted to str: {result.converted_to_str}")
+    print(f"\nResult: {result.result}")
+    print(f"Submitted at: {result.timestamp_utc_submitted}")
+    print(f"Started at: {result.timestamp_utc_started}")
+    print(f"Completed at: {result.timestamp_utc_completed}")
+    print(f"Was converted to str: {result.converted_to_str}")
 
-    print("\nDone!")
-
-await example_basic_usage()
+print("\nDone!")
 
 # %% [markdown]
 # ### Example 2: Running multiple jobs with allocation
@@ -671,43 +671,39 @@ def example_multiply(x: int, y: int) -> int:
     print(f"Multiplying {x} * {y}")
     return x * y
 
-async def example_allocation():
-    """Example: Using allocation methods to distribute work."""
-    print("=" * 50)
-    print("Example: Job Allocation")
-    print("=" * 50)
+print("=" * 50)
+print("Example: Job Allocation")
+print("=" * 50)
 
-    manager = ExecutionManager({
-        "compute": ("thread", {"num_workers": 3}),
-    })
+manager = ExecutionManager({
+    "compute": ("thread", {"num_workers": 3}),
+})
 
-    async with manager:
-        # Send the multiply function to all workers
-        await manager.send_function_to_pool("compute", "multiply", example_multiply)
+async with manager:
+    # Send the multiply function to all workers
+    await manager.send_function_to_pool("compute", "multiply", example_multiply)
 
-        # Run multiple jobs using round-robin allocation
-        print("\nRunning 6 jobs with ROUND_ROBIN allocation:")
-        tasks = []
-        for i in range(6):
-            task = asyncio.create_task(
-                manager.run_allocate(
-                    pool_worker_ids=["compute"],  # Use all workers in "compute" pool
-                    allocation_method=RunAllocationMethod.ROUND_ROBIN,
-                    func_import_path_or_key="multiply",
-                    send_channel=False,
-                    func_args=(i, i + 1),
-                    func_kwargs={},
-                )
+    # Run multiple jobs using round-robin allocation
+    print("\nRunning 6 jobs with ROUND_ROBIN allocation:")
+    tasks = []
+    for i in range(6):
+        task = asyncio.create_task(
+            manager.run_allocate(
+                pool_worker_ids=["compute"],  # Use all workers in "compute" pool
+                allocation_method=RunAllocationMethod.ROUND_ROBIN,
+                func_import_path_or_key="multiply",
+                send_channel=False,
+                func_args=(i, i + 1),
+                func_kwargs={},
             )
-            tasks.append(task)
+        )
+        tasks.append(task)
 
-        results = await asyncio.gather(*tasks)
-        for i, result in enumerate(results):
-            print(f"  Job {i}: {result.result} (worker {result.worker_id})")
+    results = await asyncio.gather(*tasks)
+    for i, result in enumerate(results):
+        print(f"  Job {i}: {result.result} (worker {result.worker_id})")
 
-    print("\nDone!")
-
-await example_allocation()
+print("\nDone!")
 
 # %% [markdown]
 # ### Example 3: Functions with print capture
@@ -722,32 +718,26 @@ def example_verbose_function(name: str) -> str:
     print("Done processing.")
     return f"Greeted {name}"
 
-async def example_print_capture():
-    """Example: Print capture during function execution."""
-    print("=" * 50)
-    print("Example: Print Capture")
-    print("=" * 50)
+print("=" * 50)
+print("Example: Print Capture")
+print("=" * 50)
 
-    manager = ExecutionManager({
-        "pool": ("thread", {"num_workers": 1}),
-    })
+manager = ExecutionManager({
+    "pool": ("thread", {"num_workers": 1}),
+})
 
-    async with manager:
-        await manager.send_function_to_pool("pool", "greet", example_verbose_function)
+async with manager:
+    await manager.send_function_to_pool("pool", "greet", example_verbose_function)
 
-        result = await manager.run(
-            pool_id="pool",
-            worker_id=0,
-            func_import_path_or_key="greet",
-            send_channel=False,
-            func_args=("World",),
-            func_kwargs={},
-        )
+    result = await manager.run(
+        pool_id="pool",
+        worker_id=0,
+        func_import_path_or_key="greet",
+        send_channel=False,
+        func_args=("World",),
+        func_kwargs={},
+    )
 
-        print(f"\nFunction result: {result.result}")
-        # Note: Print output is captured per-run and can be flushed
-        # using flush_print_buffer if the function is still running
-
-    print("\nDone!")
-
-await example_print_capture()
+    print(f"\nFunction result: {result.result}")
+    # Note: Print output is captured per-run and can be flushed
+    # using flush_print_buffer if the function is still running
