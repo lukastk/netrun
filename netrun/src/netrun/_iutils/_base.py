@@ -2,7 +2,10 @@
 
 __all__ = ['get_timestamp_utc', 'patch_to']
 
-# %% nbs/netrun/00_iutils/00_base.ipynb 3
+# %% nbs/netrun/00_iutils/00_base.ipynb 2
+import datetime
+
+# %% nbs/netrun/00_iutils/00_base.ipynb 4
 def patch_to(cls):
     """Patch a class to add a method."""
 
@@ -11,9 +14,6 @@ def patch_to(cls):
         return func
 
     return decorator
-
-# %% nbs/netrun/00_iutils/00_base.ipynb 5
-import datetime
 
 # %% nbs/netrun/00_iutils/00_base.ipynb 6
 def get_timestamp_utc():

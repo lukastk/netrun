@@ -13,6 +13,9 @@
 #|hide
 from nblite import nbl_export, show_doc; nbl_export();
 import netrun._iutils._base as this_module
+
+# %%
+#|export
 import datetime
 
 # %%
@@ -33,10 +36,6 @@ def patch_to(cls):
 # %%
 #|hide
 show_doc(this_module.get_timestamp_utc)
-
-# %%
-#|export
-import datetime
 
 # %%
 #|export
