@@ -7,6 +7,11 @@ import pytest
 import asyncio
 from datetime import datetime
 
+from netrun.pool.thread import ThreadPool
+from netrun.pool.multiprocess import MultiprocessPool
+from netrun.pool.aio import SingleWorkerPool
+from netrun.pool.remote import RemotePoolClient
+
 from netrun.execution_manager import (
     ExecutionManager,
     RunAllocationMethod,
@@ -69,26 +74,26 @@ def test_create_multiple_pools():
     assert "main_pool" in manager._pool_configs
 
 # %% nbs/tests/04_execution_manager/test_execution_manager.ipynb 10
-def test_invalid_pool_type():
+@pytest.mark.asyncio
+async def test_invalid_pool_type():
     """Test that invalid pool type raises error."""
     manager = ExecutionManager({
         "pool": ("invalid_type", {}),
     })
     with pytest.raises(ValueError, match="Unknown pool type"):
-        asyncio.run(manager.start())
+        await manager.start()
 
 # %% nbs/tests/04_execution_manager/test_execution_manager.ipynb 13
 @pytest.mark.asyncio
 async def test_start_and_close():
     """Test starting and closing the manager."""
     manager = ExecutionManager({
-        "pool": ("thread", {"num_workers": 1}),
+        "pool": (ThreadPool, {"num_workers": 1}),
     })
 
     await manager.start()
     assert manager._started is True
     assert "pool" in manager._pools
-
     await manager.close()
 
 # %% nbs/tests/04_execution_manager/test_execution_manager.ipynb 15
@@ -96,7 +101,7 @@ async def test_start_and_close():
 async def test_context_manager():
     """Test using ExecutionManager as async context manager."""
     manager = ExecutionManager({
-        "pool": ("thread", {"num_workers": 1}),
+        "pool": (ThreadPool, {"num_workers": 1}),
     })
 
     async with manager:
@@ -109,7 +114,7 @@ async def test_context_manager():
 async def test_double_start_raises():
     """Test that starting twice raises an error."""
     manager = ExecutionManager({
-        "pool": ("thread", {"num_workers": 1}),
+        "pool": (ThreadPool, {"num_workers": 1}),
     })
 
     await manager.start()
@@ -124,12 +129,12 @@ async def test_double_start_raises():
 async def test_pool_ids():
     """Test getting pool IDs."""
     manager = ExecutionManager({
-        "pool_a": ("thread", {"num_workers": 1}),
-        "pool_b": ("thread", {"num_workers": 2}),
+        "pool_a": (ThreadPool, {"num_workers": 1}),
+        "pool_b": (ThreadPool, {"num_workers": 2}),
     })
 
     async with manager:
-        pool_ids = manager.pool_ids
+        pool_ids = [pool_id for pool_id, _ in manager.pools]
         assert "pool_a" in pool_ids
         assert "pool_b" in pool_ids
         assert len(pool_ids) == 2
@@ -139,8 +144,8 @@ async def test_pool_ids():
 async def test_get_num_workers():
     """Test getting number of workers in a pool."""
     manager = ExecutionManager({
-        "pool_a": ("thread", {"num_workers": 3}),
-        "pool_b": ("thread", {"num_workers": 1}),
+        "pool_a": (ThreadPool, {"num_workers": 3}),
+        "pool_b": (ThreadPool, {"num_workers": 1}),
     })
 
     async with manager:
@@ -152,7 +157,7 @@ async def test_get_num_workers():
 async def test_send_function_and_run():
     """Test sending a function and running it."""
     manager = ExecutionManager({
-        "pool": ("thread", {"num_workers": 1}),
+        "pool": (ThreadPool, {"num_workers": 1}),
     })
 
     async with manager:
@@ -179,7 +184,7 @@ async def test_send_function_and_run():
 async def test_send_function_to_pool():
     """Test sending a function to all workers in a pool."""
     manager = ExecutionManager({
-        "pool": ("thread", {"num_workers": 3}),
+        "pool": (ThreadPool, {"num_workers": 3}),
     })
 
     async with manager:
@@ -206,7 +211,7 @@ async def test_send_function_to_pool():
 async def test_job_result_timestamps():
     """Test that JobResult has correct timestamps."""
     manager = ExecutionManager({
-        "pool": ("thread", {"num_workers": 1}),
+        "pool": (ThreadPool, {"num_workers": 1}),
     })
 
     async with manager:
@@ -235,7 +240,7 @@ async def test_job_result_timestamps():
 async def test_non_serializable_result():
     """Test that non-serializable results are converted to string."""
     manager = ExecutionManager({
-        "pool": ("thread", {"num_workers": 1}),
+        "pool": (ThreadPool, {"num_workers": 1}),
     })
 
     async with manager:
@@ -258,7 +263,7 @@ async def test_non_serializable_result():
 async def test_function_with_kwargs():
     """Test running a function with keyword arguments."""
     manager = ExecutionManager({
-        "pool": ("thread", {"num_workers": 1}),
+        "pool": (ThreadPool, {"num_workers": 1}),
     })
 
     async with manager:
@@ -291,7 +296,7 @@ async def test_function_with_kwargs():
 async def test_round_robin_allocation():
     """Test round-robin job allocation."""
     manager = ExecutionManager({
-        "pool": ("thread", {"num_workers": 3}),
+        "pool": (ThreadPool, {"num_workers": 3}),
     })
 
     async with manager:
@@ -318,7 +323,7 @@ async def test_round_robin_allocation():
 async def test_random_allocation():
     """Test random job allocation."""
     manager = ExecutionManager({
-        "pool": ("thread", {"num_workers": 3}),
+        "pool": (ThreadPool, {"num_workers": 3}),
     })
 
     async with manager:
@@ -345,7 +350,7 @@ async def test_random_allocation():
 async def test_allocation_with_specific_workers():
     """Test allocation with specific pool/worker pairs."""
     manager = ExecutionManager({
-        "pool": ("thread", {"num_workers": 3}),
+        "pool": (ThreadPool, {"num_workers": 3}),
     })
 
     async with manager:
@@ -372,7 +377,7 @@ async def test_allocation_with_specific_workers():
 async def test_empty_workers_raises():
     """Test that empty worker list raises error."""
     manager = ExecutionManager({
-        "pool": ("thread", {"num_workers": 1}),
+        "pool": (ThreadPool, {"num_workers": 1}),
     })
 
     async with manager:
@@ -393,7 +398,7 @@ async def test_empty_workers_raises():
 async def test_get_worker_jobs_empty():
     """Test get_worker_jobs when no jobs are running."""
     manager = ExecutionManager({
-        "pool": ("thread", {"num_workers": 1}),
+        "pool": (ThreadPool, {"num_workers": 1}),
     })
 
     async with manager:
@@ -405,8 +410,8 @@ async def test_get_worker_jobs_empty():
 async def test_multiple_pools():
     """Test running jobs on multiple pools."""
     manager = ExecutionManager({
-        "fast": ("thread", {"num_workers": 2}),
-        "slow": ("thread", {"num_workers": 1}),
+        "fast": (ThreadPool, {"num_workers": 2}),
+        "slow": (ThreadPool, {"num_workers": 1}),
     })
 
     async with manager:
@@ -443,7 +448,7 @@ async def test_multiple_pools():
 async def test_concurrent_jobs():
     """Test running multiple jobs concurrently."""
     manager = ExecutionManager({
-        "pool": ("thread", {"num_workers": 3}),
+        "pool": (ThreadPool, {"num_workers": 3}),
     })
 
     async with manager:
@@ -475,7 +480,7 @@ async def test_concurrent_jobs():
 async def test_async_function():
     """Test running an async function."""
     manager = ExecutionManager({
-        "pool": ("thread", {"num_workers": 1}),
+        "pool": (ThreadPool, {"num_workers": 1}),
     })
 
     async with manager:
@@ -497,7 +502,7 @@ async def test_async_function():
 async def test_main_pool():
     """Test using the 'main' pool type (SingleWorkerPool)."""
     manager = ExecutionManager({
-        "main": ("main", {}),
+        "main": (SingleWorkerPool, {}),
     })
 
     async with manager:

@@ -4,7 +4,7 @@ __all__ = ['ExecutionManager', 'JobResult', 'PoolType', 'RunAllocationMethod', '
 
 # %% nbs/netrun/04_execution_manager.ipynb 3
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, Type
 from collections.abc import Callable, Awaitable
 import datetime
 import builtins
@@ -17,7 +17,7 @@ import importlib
 import uuid
 import pickle
 import random
-2
+
 from .rpc.base import RPCChannel
 from .pool.thread import ThreadPool
 from .pool.multiprocess import MultiprocessPool
@@ -266,7 +266,7 @@ class RunAllocationMethod(Enum):
 PoolType = ThreadPool | MultiprocessPool | SingleWorkerPool | RemotePoolClient
 
 class ExecutionManager:
-    def __init__(self, pool_configs: dict[str, tuple[str, dict[str, Any]]]):
+    def __init__(self, pool_configs: dict[Type[PoolType], tuple[str, dict[str, Any]]]):
         """
         Create an ExecutionManager with the given pool configurations.
 
@@ -293,13 +293,13 @@ class ExecutionManager:
             if 'worker_fn' in pool_init_kwargs:
                 raise ValueError("The 'worker_fn' argument should not be specified in the pool config.")
 
-            if pool_type == "thread":
+            if pool_type == ThreadPool:
                 self._pools[pool_id] = ThreadPool(**pool_init_kwargs, worker_fn=_thread_worker_func)
-            elif pool_type == "multiprocess":
+            elif pool_type == MultiprocessPool:
                 self._pools[pool_id] = MultiprocessPool(**pool_init_kwargs, worker_fn=_thread_worker_func)
-            elif pool_type == "remote":
+            elif pool_type == RemotePoolClient:
                 self._pools[pool_id] = RemotePoolClient(**pool_init_kwargs)
-            elif pool_type == "main":
+            elif pool_type == SingleWorkerPool:
                 self._pools[pool_id] = SingleWorkerPool(**pool_init_kwargs, worker_fn=_async_worker_func)
             else:
                 raise ValueError(f"Unknown pool type: '{pool_type}'.")
@@ -373,7 +373,7 @@ class ExecutionManager:
         Args:
             pool_id: The ID of the pool to run the function in.
             worker_id: The ID of the worker to run the function on.
-            func_import_path_or_key: T  he import path or key of the function to run (for the latter, use send_function to register the function first)
+            func_import_path_or_key: The import path or key of the function to run (for the latter, use send_function to register the function first)
             send_channel: Whether to send the worker RPC channel to the function.
             func_args: The arguments to pass to the function.
             func_kwargs: The keyword arguments to pass to the function.
@@ -533,9 +533,9 @@ class ExecutionManager:
                 print(f"Error in msg recv task: {e}")
 
     @property
-    def pool_ids(self) -> list[str]:
+    def pools(self) -> list[tuple[str, Type[PoolType]]]:
         """Get list of pool IDs."""
-        return list(self._pools.keys())
+        return [(k, type(v)) for k, v in self._pools.items()]
 
     def get_num_workers(self, pool_id: str) -> int:
         """Get the number of workers in a pool."""

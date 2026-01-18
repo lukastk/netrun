@@ -23,7 +23,7 @@ from nblite import nbl_export; nbl_export();
 # %%
 #|export
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, Type
 from collections.abc import Callable, Awaitable
 import datetime
 import builtins
@@ -36,7 +36,7 @@ import importlib
 import uuid
 import pickle
 import random
-2
+
 from netrun.rpc.base import RPCChannel
 from netrun.pool.thread import ThreadPool
 from netrun.pool.multiprocess import MultiprocessPool
@@ -315,7 +315,7 @@ class RunAllocationMethod(Enum):
 PoolType = ThreadPool | MultiprocessPool | SingleWorkerPool | RemotePoolClient
 
 class ExecutionManager:
-    def __init__(self, pool_configs: dict[str, tuple[str, dict[str, Any]]]):
+    def __init__(self, pool_configs: dict[Type[PoolType], tuple[str, dict[str, Any]]]):
         """
         Create an ExecutionManager with the given pool configurations.
 
@@ -342,13 +342,13 @@ class ExecutionManager:
             if 'worker_fn' in pool_init_kwargs:
                 raise ValueError("The 'worker_fn' argument should not be specified in the pool config.")
 
-            if pool_type == "thread":
+            if pool_type == ThreadPool:
                 self._pools[pool_id] = ThreadPool(**pool_init_kwargs, worker_fn=_thread_worker_func)
-            elif pool_type == "multiprocess":
+            elif pool_type == MultiprocessPool:
                 self._pools[pool_id] = MultiprocessPool(**pool_init_kwargs, worker_fn=_thread_worker_func)
-            elif pool_type == "remote":
+            elif pool_type == RemotePoolClient:
                 self._pools[pool_id] = RemotePoolClient(**pool_init_kwargs)
-            elif pool_type == "main":
+            elif pool_type == SingleWorkerPool:
                 self._pools[pool_id] = SingleWorkerPool(**pool_init_kwargs, worker_fn=_async_worker_func)
             else:
                 raise ValueError(f"Unknown pool type: '{pool_type}'.")
@@ -422,7 +422,7 @@ class ExecutionManager:
         Args:
             pool_id: The ID of the pool to run the function in.
             worker_id: The ID of the worker to run the function on.
-            func_import_path_or_key: T  he import path or key of the function to run (for the latter, use send_function to register the function first)
+            func_import_path_or_key: The import path or key of the function to run (for the latter, use send_function to register the function first)
             send_channel: Whether to send the worker RPC channel to the function.
             func_args: The arguments to pass to the function.
             func_kwargs: The keyword arguments to pass to the function.
@@ -582,9 +582,9 @@ class ExecutionManager:
                 print(f"Error in msg recv task: {e}")
 
     @property
-    def pool_ids(self) -> list[str]:
+    def pools(self) -> list[tuple[str, Type[PoolType]]]:
         """Get list of pool IDs."""
-        return list(self._pools.keys())
+        return [(k, type(v)) for k, v in self._pools.items()]
 
     def get_num_workers(self, pool_id: str) -> int:
         """Get the number of workers in a pool."""
@@ -630,11 +630,11 @@ print("=" * 50)
 
 # Create an ExecutionManager with a thread pool
 manager = ExecutionManager({
-    "workers": ("thread", {"num_workers": 2}),
+    "workers": (ThreadPool, {"num_workers": 2}),
 })
 
 async with manager:
-    print(f"Pool IDs: {manager.pool_ids}")
+    print(f"Pool IDs: {[pool_id for pool_id, _ in manager.pools]}")
     print(f"Workers in 'workers' pool: {manager.get_num_workers('workers')}")
 
     # Send a function to all workers in the pool
@@ -676,7 +676,7 @@ print("Example: Job Allocation")
 print("=" * 50)
 
 manager = ExecutionManager({
-    "compute": ("thread", {"num_workers": 3}),
+    "compute": (ThreadPool, {"num_workers": 3}),
 })
 
 async with manager:
@@ -704,40 +704,3 @@ async with manager:
         print(f"  Job {i}: {result.result} (worker {result.worker_id})")
 
 print("\nDone!")
-
-# %% [markdown]
-# ### Example 3: Functions with print capture
-#
-# The ExecutionManager captures print statements from executed functions.
-
-# %%
-def example_verbose_function(name: str) -> str:
-    """A function that prints during execution."""
-    print(f"Hello, {name}!")
-    print("Processing...")
-    print("Done processing.")
-    return f"Greeted {name}"
-
-print("=" * 50)
-print("Example: Print Capture")
-print("=" * 50)
-
-manager = ExecutionManager({
-    "pool": ("thread", {"num_workers": 1}),
-})
-
-async with manager:
-    await manager.send_function_to_pool("pool", "greet", example_verbose_function)
-
-    result = await manager.run(
-        pool_id="pool",
-        worker_id=0,
-        func_import_path_or_key="greet",
-        send_channel=False,
-        func_args=("World",),
-        func_kwargs={},
-    )
-
-    print(f"\nFunction result: {result.result}")
-    # Note: Print output is captured per-run and can be flushed
-    # using flush_print_buffer if the function is still running
