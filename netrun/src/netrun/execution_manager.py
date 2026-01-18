@@ -141,7 +141,7 @@ class ExecutionManagerProtocolKeys(Enum):
     """
 
 # %% nbs/netrun/04_execution_manager.ipynb 13
-def _thread_worker_func(channel, worker_id):
+def _worker_func(is_in_main_process: bool, channel, worker_id):
     func_print_buffer: dict[str, list[tuple[datetime, str]]] = {}
     event_loop = asyncio.new_event_loop()
     registered_functions: dict[str, Callable[..., Awaitable] | Callable[..., None]] = {}
@@ -170,7 +170,10 @@ def _thread_worker_func(channel, worker_id):
                 event_loop=event_loop,
             )
             timestamp_utc_completed = get_timestamp_utc()
-            converted_to_str, _res = _convert_to_str_if_not_serializable(res)
+            if is_in_main_process:
+                converted_to_str, _res = False, res
+            else:
+                converted_to_str, _res = _convert_to_str_if_not_serializable(res)
             _buffer = func_print_buffer.pop(run_id)
             channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res))
         # SEND_FUNCTION
@@ -187,6 +190,13 @@ def _thread_worker_func(channel, worker_id):
             channel.send(ExecutionManagerProtocolKeys.UP_FLUSH_PRINT_BUFFER_RESPONSE.value, (msg_id, run_id, _buffer))
         else:
             raise ValueError(f"Unknown execution manager protocol key: '{key}'.")
+
+def _thread_worker_func(channel, worker_id):
+    return _worker_func(is_in_main_process=True, channel=channel, worker_id=worker_id)
+
+# If the worker is in a multiprocess pool, then the result needs to be pickleable for it to be sent back without being converted as `str(result)`.
+def _multiprocess_worker_func(channel, worker_id):
+    return _worker_func(is_in_main_process=False, channel=channel, worker_id=worker_id)
 
 # %% nbs/netrun/04_execution_manager.ipynb 14
 async def _async_worker_func(channel, worker_id):
@@ -216,7 +226,7 @@ async def _async_worker_func(channel, worker_id):
                 kwargs=kwargs,
             )
             timestamp_utc_completed = get_timestamp_utc()
-            converted_to_str, _res = _convert_to_str_if_not_serializable(res)
+            converted_to_str, _res = False, res
             _buffer = func_print_buffer.pop(run_id)
             await channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res))
         # SEND_FUNCTION
@@ -296,7 +306,7 @@ class ExecutionManager:
             if pool_type == ThreadPool:
                 self._pools[pool_id] = ThreadPool(**pool_init_kwargs, worker_fn=_thread_worker_func)
             elif pool_type == MultiprocessPool:
-                self._pools[pool_id] = MultiprocessPool(**pool_init_kwargs, worker_fn=_thread_worker_func)
+                self._pools[pool_id] = MultiprocessPool(**pool_init_kwargs, worker_fn=_multiprocess_worker_func)
             elif pool_type == RemotePoolClient:
                 self._pools[pool_id] = RemotePoolClient(**pool_init_kwargs)
             elif pool_type == SingleWorkerPool:

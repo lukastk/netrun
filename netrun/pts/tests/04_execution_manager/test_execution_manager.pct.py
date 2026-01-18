@@ -334,8 +334,8 @@ await test_job_result_timestamps();
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_non_serializable_result():
-    """Test that non-serializable results are converted to string."""
+async def test_non_serializable_result_for_main_process():
+    """Test that non-serializable results are not converted to string if the worker is in the main process."""
     manager = ExecutionManager({
         "pool": (ThreadPool, {"num_workers": 1}),
     })
@@ -352,11 +352,11 @@ async def test_non_serializable_result():
             func_kwargs={},
         )
 
-        assert result.converted_to_str is True
-        assert isinstance(result.result, str)
+        assert result.converted_to_str is False
+        assert not isinstance(result.result, str)
 
 # %%
-await test_non_serializable_result();
+await test_non_serializable_result_for_main_process();
 
 # %% [markdown]
 # ## Test Function with kwargs
