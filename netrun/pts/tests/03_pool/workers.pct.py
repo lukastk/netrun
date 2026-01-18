@@ -87,3 +87,18 @@ def slow_worker(channel, worker_id):
             channel.send("done", data)
     except ChannelClosed:
         pass
+
+# %%
+#|export
+def printing_worker(channel, worker_id):
+    """Worker that prints to stdout and stderr for testing output capture."""
+    import sys
+    print(f"Worker {worker_id} starting")
+    sys.stderr.write(f"Worker {worker_id} stderr\n")
+    try:
+        while True:
+            key, data = channel.recv()
+            print(f"Worker {worker_id} got: {key}={data}")
+            channel.send(f"echo:{key}", {"worker_id": worker_id, "data": data})
+    except ChannelClosed:
+        print(f"Worker {worker_id} stopping")

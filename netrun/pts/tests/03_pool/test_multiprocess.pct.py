@@ -30,7 +30,7 @@ from netrun.pool.multiprocess import MultiprocessPool
 
 # %%
 #|export
-from tests.pool.workers import echo_worker, compute_worker, pid_worker
+from tests.pool.workers import echo_worker, compute_worker, pid_worker, printing_worker
 
 # %% [markdown]
 # ## Test Pool Creation
@@ -437,3 +437,225 @@ async def test_consistency_rapid_cycles():
 
 # %%
 await test_consistency_rapid_cycles();
+
+# %% [markdown]
+# ## Test Stdout/Stderr Redirection
+#
+# These tests verify the stdout/stderr capture and buffering feature.
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_stdout_redirect_default():
+    """Test that stdout/stderr redirection is enabled by default."""
+    pool = MultiprocessPool(echo_worker, num_processes=1)
+    # Default should be redirect_output=True, buffer_output=True
+    assert pool._redirect_output is True
+    assert pool._buffer_output is True
+
+# %%
+await test_stdout_redirect_default();
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_stdout_redirect_disabled():
+    """Test creating pool with stdout redirection disabled."""
+    pool = MultiprocessPool(echo_worker, num_processes=1, redirect_output=False)
+    assert pool._redirect_output is False
+
+# %%
+await test_stdout_redirect_disabled();
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_flush_stdout_single_process():
+    """Test flushing stdout from a single process."""
+    async with MultiprocessPool(
+        printing_worker,
+        num_processes=1,
+        threads_per_process=1,
+        redirect_output=True,
+        buffer_output=True,
+    ) as pool:
+        # Wait for startup messages
+        await asyncio.sleep(0.5)
+
+        # Send a message to trigger more prints
+        await pool.send(0, "test", "hello")
+        await pool.recv(timeout=5.0)
+
+        # Flush stdout
+        buffer = await pool.flush_stdout(0)
+
+        # Should have captured output
+        assert len(buffer) > 0
+
+        # Check buffer format: list of (datetime, bool, str)
+        for entry in buffer:
+            assert len(entry) == 3
+            timestamp, is_stdout, text = entry
+            assert isinstance(is_stdout, bool)
+            assert isinstance(text, str)
+
+        # Should have captured both stdout (True) and stderr (False)
+        has_stdout = any(entry[1] is True for entry in buffer)
+        has_stderr = any(entry[1] is False for entry in buffer)
+        assert has_stdout, "Should have captured stdout"
+        assert has_stderr, "Should have captured stderr"
+
+# %%
+await test_flush_stdout_single_process();
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_flush_stdout_clears_buffer():
+    """Test that flushing clears the buffer."""
+    async with MultiprocessPool(
+        printing_worker,
+        num_processes=1,
+        redirect_output=True,
+        buffer_output=True,
+    ) as pool:
+        await asyncio.sleep(0.5)
+
+        # First flush gets startup messages
+        buffer1 = await pool.flush_stdout(0)
+        assert len(buffer1) > 0
+
+        # Second flush should be empty (no new output)
+        buffer2 = await pool.flush_stdout(0)
+        assert len(buffer2) == 0
+
+# %%
+await test_flush_stdout_clears_buffer();
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_flush_all_stdout():
+    """Test flushing stdout from all processes."""
+    async with MultiprocessPool(
+        printing_worker,
+        num_processes=2,
+        threads_per_process=1,
+        redirect_output=True,
+        buffer_output=True,
+    ) as pool:
+        await asyncio.sleep(0.5)
+
+        # Send to both workers
+        await pool.send(0, "test", "hello")
+        await pool.send(1, "test", "world")
+
+        # Receive responses
+        await pool.recv(timeout=5.0)
+        await pool.recv(timeout=5.0)
+
+        # Flush all
+        all_buffers = await pool.flush_all_stdout()
+
+        assert len(all_buffers) == 2
+        assert 0 in all_buffers
+        assert 1 in all_buffers
+
+        # Both processes should have output
+        assert len(all_buffers[0]) > 0
+        assert len(all_buffers[1]) > 0
+
+# %%
+await test_flush_all_stdout();
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_stdout_silent_mode():
+    """Test that buffer_output=False discards output."""
+    async with MultiprocessPool(
+        printing_worker,
+        num_processes=1,
+        redirect_output=True,
+        buffer_output=False,  # Silent mode
+    ) as pool:
+        await asyncio.sleep(0.5)
+
+        # Flush should return empty buffer (output discarded)
+        buffer = await pool.flush_stdout(0)
+        assert len(buffer) == 0
+
+# %%
+await test_stdout_silent_mode();
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_flush_stdout_invalid_process_idx():
+    """Test that flush_stdout raises ValueError for invalid process_idx."""
+    async with MultiprocessPool(
+        printing_worker,
+        num_processes=2,
+        redirect_output=True,
+        buffer_output=True,
+    ) as pool:
+        with pytest.raises(ValueError):
+            await pool.flush_stdout(-1)
+
+        with pytest.raises(ValueError):
+            await pool.flush_stdout(2)  # Only 0 and 1 are valid
+
+# %%
+await test_flush_stdout_invalid_process_idx();
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_flush_stdout_before_start():
+    """Test that flush_stdout raises PoolNotStarted before start()."""
+    pool = MultiprocessPool(
+        printing_worker,
+        num_processes=1,
+        redirect_output=True,
+        buffer_output=True,
+    )
+
+    with pytest.raises(PoolNotStarted):
+        await pool.flush_stdout(0)
+
+# %%
+await test_flush_stdout_before_start();
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_stdout_content():
+    """Test that captured stdout contains expected content."""
+    async with MultiprocessPool(
+        printing_worker,
+        num_processes=1,
+        redirect_output=True,
+        buffer_output=True,
+    ) as pool:
+        await asyncio.sleep(0.5)
+
+        await pool.send(0, "mykey", "myvalue")
+        await pool.recv(timeout=5.0)
+
+        buffer = await pool.flush_stdout(0)
+
+        # Combine all stdout text
+        stdout_text = "".join(
+            text for timestamp, is_stdout, text in buffer if is_stdout
+        )
+        stderr_text = "".join(
+            text for timestamp, is_stdout, text in buffer if not is_stdout
+        )
+
+        # Check expected content
+        assert "Worker 0 starting" in stdout_text
+        assert "Worker 0 got: mykey=myvalue" in stdout_text
+        assert "Worker 0 stderr" in stderr_text
+
+# %%
+await test_stdout_content();
