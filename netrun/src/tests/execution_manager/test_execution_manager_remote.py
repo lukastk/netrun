@@ -4,8 +4,6 @@ __all__ = ['create_remote_client', 'create_remote_execution_manager', 'pytestmar
 
 # %% nbs/tests/04_execution_manager/test_execution_manager_remote.ipynb 2
 import pytest
-import asyncio
-from datetime import datetime
 
 # Check if websockets is available
 try:
@@ -17,13 +15,11 @@ except ImportError:
 pytestmark = pytest.mark.skipif(not HAS_WEBSOCKETS, reason="websockets not installed")
 
 # %% nbs/tests/04_execution_manager/test_execution_manager_remote.ipynb 3
-from netrun.pool.remote import RemotePoolServer, RemotePoolClient
+from netrun.pool.remote import RemotePoolClient
 
 from netrun.execution_manager import (
     ExecutionManager,
-    RunAllocationMethod,
     ExecutionManagerProtocolKeys,
-    remote_execution_manager_worker,
     create_execution_manager_server,
 )
 
@@ -31,11 +27,8 @@ from netrun.execution_manager import (
 from ..execution_manager.workers import (
     add_numbers,
     multiply_numbers,
-    function_with_print,
     slow_function,
     function_with_kwargs,
-    async_add,
-    function_with_multiple_prints,
 )
 
 # %% nbs/tests/04_execution_manager/test_execution_manager_remote.ipynb 5
