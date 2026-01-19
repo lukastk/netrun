@@ -195,7 +195,7 @@ def _convert_to_str_if_not_serializable(obj: Any) -> tuple[bool, Any]:
 # Worker functions for the execution manager's pools
 
 # %%
-#|exporti
+#|export
 class ExecutionManagerProtocolKeys(Enum):
     RUN = "exec-manager:run"
     """

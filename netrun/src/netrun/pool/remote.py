@@ -298,13 +298,33 @@ class RemotePoolClient:
     but workers run on the remote server.
     """
 
-    def __init__(self, url: str):
+    def __init__(
+        self,
+        url: str,
+        worker_name: str | None = None,
+        num_processes: int = 1,
+        threads_per_process: int = 1,
+        redirect_output: bool = True,
+        buffer_output: bool = True,
+    ):
         """Create a client.
 
         Args:
             url: WebSocket URL of the server (e.g., "ws://server:8080")
+            worker_name: Name of registered worker function on server.
+                Required when using start() method.
+            num_processes: Number of processes to create on the server.
+            threads_per_process: Number of threads per process.
+            redirect_output: If True, redirect subprocess stdout/stderr.
+            buffer_output: If True, buffer redirected output.
         """
         self._url = url
+        self._worker_name = worker_name
+        self._init_num_processes = num_processes
+        self._init_threads_per_process = threads_per_process
+        self._init_redirect_output = redirect_output
+        self._init_buffer_output = buffer_output
+
         self._channel: WebSocketChannel | None = None
         self._num_workers = 0
         self._num_processes = 0
@@ -340,6 +360,31 @@ class RemotePoolClient:
         """Connect to the server."""
         from ..rpc.remote import connect_channel
         self._channel = await connect_channel(self._url)
+
+    async def start(self) -> None:
+        """Connect to the server and create the pool.
+
+        This method combines connect() and create_pool() for compatibility
+        with the standard pool interface used by ExecutionManager.
+
+        Raises:
+            ValueError: If worker_name was not provided in constructor.
+            PoolError: If connection or pool creation fails.
+        """
+        if self._worker_name is None:
+            raise ValueError(
+                "worker_name must be provided in constructor to use start(). "
+                "Either pass worker_name to __init__, or use connect() + create_pool() manually."
+            )
+
+        await self.connect()
+        await self.create_pool(
+            worker_name=self._worker_name,
+            num_processes=self._init_num_processes,
+            threads_per_process=self._init_threads_per_process,
+            redirect_output=self._init_redirect_output,
+            buffer_output=self._init_buffer_output,
+        )
 
     async def create_pool(
         self,
@@ -601,8 +646,16 @@ class RemotePoolClient:
         return result
 
     async def __aenter__(self) -> "RemotePoolClient":
-        """Context manager entry - connects to server."""
-        await self.connect()
+        """Context manager entry - connects to server and optionally creates pool.
+
+        If worker_name was provided in constructor, calls start() to both
+        connect and create the pool. Otherwise, only connects (for backward
+        compatibility with code that calls create_pool() manually).
+        """
+        if self._worker_name is not None:
+            await self.start()
+        else:
+            await self.connect()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
