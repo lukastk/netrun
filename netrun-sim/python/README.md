@@ -81,7 +81,7 @@ edge_loc = PacketLocation.edge(
 net.do_action(NetAction.transport_packet_to_location(packet_id, edge_loc))
 
 # Run the network
-net.do_action(NetAction.run_net_until_blocked())
+net.do_action(NetAction.run_step())
 
 # Check for startable epochs
 startable = net.get_startable_epochs()
