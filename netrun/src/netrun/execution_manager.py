@@ -730,6 +730,67 @@ class ExecutionManager:
         """Get the list of currently submitted jobs for a worker."""
         return list(self._worker_jobs.get((pool_id, worker_id), []))
 
+    def get_process_ids(self, pool_id: str) -> list[int]:
+        """Get all process IDs for a MultiprocessPool.
+
+        Args:
+            pool_id: The ID of the pool.
+
+        Returns:
+            List of process indices (0 to num_processes-1).
+
+        Raises:
+            ValueError: If the pool is not a MultiprocessPool.
+        """
+        pool = self._pools[pool_id]
+        if not isinstance(pool, MultiprocessPool):
+            raise ValueError(f"Pool '{pool_id}' is not a MultiprocessPool (got {type(pool).__name__})")
+        return list(range(pool.num_processes))
+
+    async def flush_pool_stdout(
+        self, pool_id: str, process_idx: int, timeout: float | None = None
+    ) -> list[tuple[datetime, bool, str]]:
+        """Flush and retrieve stdout/stderr buffer from a specific process in a MultiprocessPool.
+
+        Args:
+            pool_id: The ID of the pool.
+            process_idx: Index of the process (0 to num_processes-1).
+            timeout: Maximum time to wait for response in seconds.
+
+        Returns:
+            List of (timestamp, is_stdout, text) tuples.
+            is_stdout is True for stdout, False for stderr.
+
+        Raises:
+            ValueError: If the pool is not a MultiprocessPool.
+            PoolNotStarted: If the pool is not running.
+        """
+        pool = self._pools[pool_id]
+        if not isinstance(pool, MultiprocessPool):
+            raise ValueError(f"Pool '{pool_id}' is not a MultiprocessPool (got {type(pool).__name__})")
+        return await pool.flush_stdout(process_idx, timeout=timeout)
+
+    async def flush_all_pool_stdout(
+        self, pool_id: str, timeout: float | None = None
+    ) -> dict[int, list[tuple[datetime, bool, str]]]:
+        """Flush and retrieve stdout/stderr buffers from all processes in a MultiprocessPool.
+
+        Args:
+            pool_id: The ID of the pool.
+            timeout: Maximum time to wait for each process response.
+
+        Returns:
+            Dict mapping process_idx to list of (timestamp, is_stdout, text) tuples.
+
+        Raises:
+            ValueError: If the pool is not a MultiprocessPool.
+            PoolNotStarted: If the pool is not running.
+        """
+        pool = self._pools[pool_id]
+        if not isinstance(pool, MultiprocessPool):
+            raise ValueError(f"Pool '{pool_id}' is not a MultiprocessPool (got {type(pool).__name__})")
+        return await pool.flush_all_stdout(timeout=timeout)
+
     async def __aenter__(self) -> "ExecutionManager":
         """Context manager entry - starts the manager."""
         await self.start()
