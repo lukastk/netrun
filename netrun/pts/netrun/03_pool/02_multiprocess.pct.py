@@ -673,7 +673,7 @@ class MultiprocessPool:
         for channel in self._channels:
             await channel.send(MP_DOWN_BROADCAST, (key, data))
 
-    async def flush_stdout(self, process_idx: int, timeout: float = 5.0) -> OutputBuffer:
+    async def flush_stdout(self, process_idx: int, timeout: float|None = None) -> OutputBuffer:
         """Flush and retrieve stdout/stderr buffer from a specific process.
 
         Sends a flush request to the subprocess, waits for the response,
@@ -722,7 +722,7 @@ class MultiprocessPool:
         self._stdout_buffers[process_idx] = []
         return result
 
-    async def flush_all_stdout(self, timeout: float = 5.0) -> dict[int, OutputBuffer]:
+    async def flush_all_stdout(self, timeout: float|None = None) -> dict[int, OutputBuffer]:
         """Flush and retrieve stdout/stderr buffers from all processes.
 
         Args:
