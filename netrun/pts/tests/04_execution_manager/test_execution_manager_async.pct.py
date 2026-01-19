@@ -7,10 +7,13 @@
 # ---
 
 # %% [markdown]
-# # Tests for ExecutionManager with MultiprocessPools
+# # Tests for ExecutionManager with SingleWorkerPool (Async/Main Pool)
+#
+# SingleWorkerPool runs tasks in the main process using asyncio, which is useful for
+# I/O-bound tasks and when you don't need process isolation.
 
 # %%
-#|default_exp execution_manager.test_execution_manager_multiprocess
+#|default_exp execution_manager.test_execution_manager_async
 
 # %%
 #|export
@@ -18,23 +21,22 @@ import pytest
 import asyncio
 from datetime import datetime
 
-from netrun.pool.thread import ThreadPool
-from netrun.pool.multiprocess import MultiprocessPool
+from netrun.pool.aio import SingleWorkerPool
 
 from netrun.execution_manager import (
     ExecutionManager,
     RunAllocationMethod,
 )
 
-# Import worker functions from the workers module so they can be pickled
+# Import worker functions from the workers module
 from tests.execution_manager.workers import (
     add_numbers,
     multiply_numbers,
     function_with_print,
     slow_function,
+    function_returns_non_serializable,
     function_with_kwargs,
     async_add,
-    mp_stdout_function,
     function_with_multiple_prints,
     slow_printing_function,
 )
@@ -46,9 +48,9 @@ from tests.execution_manager.workers import (
 #|export
 @pytest.mark.asyncio
 async def test_start_and_close():
-    """Test starting and closing the manager with MultiprocessPool."""
+    """Test starting and closing the manager with SingleWorkerPool."""
     manager = ExecutionManager({
-        "pool": (MultiprocessPool, {"num_processes": 1, "threads_per_process": 1}),
+        "pool": (SingleWorkerPool, {}),
     })
 
     await manager.start()
@@ -65,7 +67,7 @@ await test_start_and_close();
 async def test_context_manager():
     """Test using ExecutionManager as async context manager."""
     manager = ExecutionManager({
-        "pool": (MultiprocessPool, {"num_processes": 1, "threads_per_process": 1}),
+        "pool": (SingleWorkerPool, {}),
     })
 
     async with manager:
@@ -82,9 +84,9 @@ await test_context_manager();
 async def test_immediate_close():
     """Test that immediate close after start doesn't raise errors."""
     # Run multiple times to catch race conditions
-    for _ in range(5):
+    for _ in range(10):
         manager = ExecutionManager({
-            "pool": (MultiprocessPool, {"num_processes": 2, "threads_per_process": 1}),
+            "pool": (SingleWorkerPool, {}),
         })
         async with manager:
             pass  # Immediately close without doing anything
@@ -98,7 +100,7 @@ await test_immediate_close();
 async def test_double_start_raises():
     """Test that starting twice raises an error."""
     manager = ExecutionManager({
-        "pool": (MultiprocessPool, {"num_processes": 1, "threads_per_process": 1}),
+        "pool": (SingleWorkerPool, {}),
     })
 
     await manager.start()
@@ -120,8 +122,8 @@ await test_double_start_raises();
 async def test_pool_ids():
     """Test getting pool IDs."""
     manager = ExecutionManager({
-        "pool_a": (MultiprocessPool, {"num_processes": 1, "threads_per_process": 1}),
-        "pool_b": (MultiprocessPool, {"num_processes": 2, "threads_per_process": 1}),
+        "pool_a": (SingleWorkerPool, {}),
+        "pool_b": (SingleWorkerPool, {}),
     })
 
     async with manager:
@@ -139,13 +141,12 @@ await test_pool_ids();
 async def test_get_num_workers():
     """Test getting number of workers in a pool."""
     manager = ExecutionManager({
-        "pool_a": (MultiprocessPool, {"num_processes": 2, "threads_per_process": 2}),
-        "pool_b": (MultiprocessPool, {"num_processes": 1, "threads_per_process": 3}),
+        "pool": (SingleWorkerPool, {}),
     })
 
     async with manager:
-        assert manager.get_num_workers("pool_a") == 4  # 2 processes * 2 threads
-        assert manager.get_num_workers("pool_b") == 3  # 1 process * 3 threads
+        # SingleWorkerPool always has 1 worker
+        assert manager.get_num_workers("pool") == 1
 
 # %%
 await test_get_num_workers();
@@ -159,7 +160,7 @@ await test_get_num_workers();
 async def test_send_function_and_run():
     """Test sending a function and running it."""
     manager = ExecutionManager({
-        "pool": (MultiprocessPool, {"num_processes": 1, "threads_per_process": 1}),
+        "pool": (SingleWorkerPool, {}),
     })
 
     async with manager:
@@ -179,6 +180,7 @@ async def test_send_function_and_run():
         assert result.result == 7
         assert result.pool_id == "pool"
         assert result.worker_id == 0
+        assert result.converted_to_str is False
 
 # %%
 await test_send_function_and_run();
@@ -189,27 +191,24 @@ await test_send_function_and_run();
 async def test_send_function_to_pool():
     """Test sending a function to all workers in a pool."""
     manager = ExecutionManager({
-        "pool": (MultiprocessPool, {"num_processes": 2, "threads_per_process": 1}),
+        "pool": (SingleWorkerPool, {}),
     })
 
     async with manager:
-        # Send the function to all workers
+        # Send the function to all workers (just 1 for SingleWorkerPool)
         await manager.send_function_to_pool("pool", "multiply", multiply_numbers)
 
-        # Run on each worker
-        results = []
-        for worker_id in range(2):
-            result = await manager.run(
-                pool_id="pool",
-                worker_id=worker_id,
-                func_import_path_or_key="multiply",
-                send_channel=False,
-                func_args=(worker_id + 1, 10),
-                func_kwargs={},
-            )
-            results.append(result.result)
+        # Run on the single worker
+        result = await manager.run(
+            pool_id="pool",
+            worker_id=0,
+            func_import_path_or_key="multiply",
+            send_channel=False,
+            func_args=(5, 10),
+            func_kwargs={},
+        )
 
-        assert results == [10, 20]
+        assert result.result == 50
 
 # %%
 await test_send_function_to_pool();
@@ -223,7 +222,7 @@ await test_send_function_to_pool();
 async def test_job_result_timestamps():
     """Test that JobResult has correct timestamps."""
     manager = ExecutionManager({
-        "pool": (MultiprocessPool, {"num_processes": 1, "threads_per_process": 1}),
+        "pool": (SingleWorkerPool, {}),
     })
 
     async with manager:
@@ -248,6 +247,36 @@ async def test_job_result_timestamps():
 # %%
 await test_job_result_timestamps();
 
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_non_serializable_result():
+    """Test that non-serializable results work in SingleWorkerPool (same process)."""
+    manager = ExecutionManager({
+        "pool": (SingleWorkerPool, {}),
+    })
+
+    async with manager:
+        await manager.send_function("pool", 0, "nonserialized", function_returns_non_serializable)
+
+        result = await manager.run(
+            pool_id="pool",
+            worker_id=0,
+            func_import_path_or_key="nonserialized",
+            send_channel=False,
+            func_args=(),
+            func_kwargs={},
+        )
+
+        # SingleWorkerPool runs in the same process, so non-serializable results work
+        assert result.converted_to_str is False
+        # The result should be a lambda function
+        assert callable(result.result)
+        assert result.result(5) == 5
+
+# %%
+await test_non_serializable_result();
+
 # %% [markdown]
 # ## Test Function with kwargs
 
@@ -257,7 +286,7 @@ await test_job_result_timestamps();
 async def test_function_with_kwargs():
     """Test running a function with keyword arguments."""
     manager = ExecutionManager({
-        "pool": (MultiprocessPool, {"num_processes": 1, "threads_per_process": 1}),
+        "pool": (SingleWorkerPool, {}),
     })
 
     async with manager:
@@ -295,17 +324,17 @@ await test_function_with_kwargs();
 #|export
 @pytest.mark.asyncio
 async def test_round_robin_allocation():
-    """Test round-robin job allocation."""
+    """Test round-robin job allocation with single worker."""
     manager = ExecutionManager({
-        "pool": (MultiprocessPool, {"num_processes": 3, "threads_per_process": 1}),
+        "pool": (SingleWorkerPool, {}),
     })
 
     async with manager:
         await manager.send_function_to_pool("pool", "add", add_numbers)
 
-        # Run 6 jobs sequentially with round-robin
+        # Run 3 jobs sequentially with round-robin
         worker_ids = []
-        for i in range(6):
+        for i in range(3):
             result = await manager.run_allocate(
                 pool_worker_ids=["pool"],
                 allocation_method=RunAllocationMethod.ROUND_ROBIN,
@@ -316,8 +345,8 @@ async def test_round_robin_allocation():
             )
             worker_ids.append(result.worker_id)
 
-        # With round-robin, we should see workers 0, 1, 2, 0, 1, 2
-        assert worker_ids == [0, 1, 2, 0, 1, 2]
+        # With only 1 worker, we should always see worker 0
+        assert worker_ids == [0, 0, 0]
 
 # %%
 await test_round_robin_allocation();
@@ -325,72 +354,10 @@ await test_round_robin_allocation();
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_random_allocation():
-    """Test random job allocation."""
-    manager = ExecutionManager({
-        "pool": (MultiprocessPool, {"num_processes": 3, "threads_per_process": 1}),
-    })
-
-    async with manager:
-        await manager.send_function_to_pool("pool", "add", add_numbers)
-
-        # Run many jobs with random allocation
-        worker_ids = set()
-        for i in range(20):
-            result = await manager.run_allocate(
-                pool_worker_ids=["pool"],
-                allocation_method=RunAllocationMethod.RANDOM,
-                func_import_path_or_key="add",
-                send_channel=False,
-                func_args=(i, 1),
-                func_kwargs={},
-            )
-            worker_ids.add(result.worker_id)
-
-        # With 20 jobs and 3 workers, we should see all workers
-        assert len(worker_ids) == 3
-
-# %%
-await test_random_allocation();
-
-# %%
-#|export
-@pytest.mark.asyncio
-async def test_allocation_with_specific_workers():
-    """Test allocation with specific pool/worker pairs."""
-    manager = ExecutionManager({
-        "pool": (MultiprocessPool, {"num_processes": 3, "threads_per_process": 1}),
-    })
-
-    async with manager:
-        await manager.send_function_to_pool("pool", "add", add_numbers)
-
-        # Only allow workers 0 and 2
-        worker_ids = set()
-        for i in range(10):
-            result = await manager.run_allocate(
-                pool_worker_ids=[("pool", 0), ("pool", 2)],
-                allocation_method=RunAllocationMethod.ROUND_ROBIN,
-                func_import_path_or_key="add",
-                send_channel=False,
-                func_args=(i, 1),
-                func_kwargs={},
-            )
-            worker_ids.add(result.worker_id)
-
-        # Should only see workers 0 and 2
-        assert worker_ids == {0, 2}
-
-# %%
-await test_allocation_with_specific_workers();
-
-# %%
-#|export
-@pytest.mark.asyncio
 async def test_empty_workers_raises():
     """Test that empty worker list raises error."""
     manager = ExecutionManager({
-        "pool": (MultiprocessPool, {"num_processes": 1, "threads_per_process": 1}),
+        "pool": (SingleWorkerPool, {}),
     })
 
     async with manager:
@@ -418,7 +385,7 @@ await test_empty_workers_raises();
 async def test_get_worker_jobs_empty():
     """Test get_worker_jobs when no jobs are running."""
     manager = ExecutionManager({
-        "pool": (MultiprocessPool, {"num_processes": 1, "threads_per_process": 1}),
+        "pool": (SingleWorkerPool, {}),
     })
 
     async with manager:
@@ -435,19 +402,19 @@ await test_get_worker_jobs_empty();
 #|export
 @pytest.mark.asyncio
 async def test_multiple_pools():
-    """Test running jobs on multiple pools."""
+    """Test running jobs on multiple SingleWorkerPools."""
     manager = ExecutionManager({
-        "fast": (MultiprocessPool, {"num_processes": 2, "threads_per_process": 1}),
-        "slow": (MultiprocessPool, {"num_processes": 1, "threads_per_process": 1}),
+        "pool_a": (SingleWorkerPool, {}),
+        "pool_b": (SingleWorkerPool, {}),
     })
 
     async with manager:
-        await manager.send_function_to_pool("fast", "add", add_numbers)
-        await manager.send_function_to_pool("slow", "multiply", multiply_numbers)
+        await manager.send_function_to_pool("pool_a", "add", add_numbers)
+        await manager.send_function_to_pool("pool_b", "multiply", multiply_numbers)
 
-        # Run on fast pool
+        # Run on pool_a
         result1 = await manager.run(
-            pool_id="fast",
+            pool_id="pool_a",
             worker_id=0,
             func_import_path_or_key="add",
             send_channel=False,
@@ -455,9 +422,9 @@ async def test_multiple_pools():
             func_kwargs={},
         )
 
-        # Run on slow pool
+        # Run on pool_b
         result2 = await manager.run(
-            pool_id="slow",
+            pool_id="pool_b",
             worker_id=0,
             func_import_path_or_key="multiply",
             send_channel=False,
@@ -466,51 +433,12 @@ async def test_multiple_pools():
         )
 
         assert result1.result == 8
-        assert result1.pool_id == "fast"
+        assert result1.pool_id == "pool_a"
         assert result2.result == 28
-        assert result2.pool_id == "slow"
+        assert result2.pool_id == "pool_b"
 
 # %%
 await test_multiple_pools();
-
-# %% [markdown]
-# ## Test Concurrent Jobs
-
-# %%
-#|export
-@pytest.mark.asyncio
-async def test_concurrent_jobs():
-    """Test running multiple jobs concurrently."""
-    manager = ExecutionManager({
-        "pool": (MultiprocessPool, {"num_processes": 2, "threads_per_process": 2}),
-    })
-
-    async with manager:
-        await manager.send_function_to_pool("pool", "add", add_numbers)
-
-        # Run multiple jobs concurrently
-        tasks = []
-        for i in range(8):
-            task = asyncio.create_task(
-                manager.run_allocate(
-                    pool_worker_ids=["pool"],
-                    allocation_method=RunAllocationMethod.ROUND_ROBIN,
-                    func_import_path_or_key="add",
-                    send_channel=False,
-                    func_args=(i, i),
-                    func_kwargs={},
-                )
-            )
-            tasks.append(task)
-
-        results = await asyncio.gather(*tasks)
-
-        # Check all results are correct
-        for i, result in enumerate(results):
-            assert result.result == i + i
-
-# %%
-await test_concurrent_jobs();
 
 # %% [markdown]
 # ## Test Async Functions
@@ -521,7 +449,7 @@ await test_concurrent_jobs();
 async def test_async_function():
     """Test running an async function."""
     manager = ExecutionManager({
-        "pool": (MultiprocessPool, {"num_processes": 1, "threads_per_process": 1}),
+        "pool": (SingleWorkerPool, {}),
     })
 
     async with manager:
@@ -550,7 +478,7 @@ await test_async_function();
 async def test_print_buffer_in_result():
     """Test that JobResult contains the print buffer."""
     manager = ExecutionManager({
-        "pool": (MultiprocessPool, {"num_processes": 1, "threads_per_process": 1}),
+        "pool": (SingleWorkerPool, {}),
     })
 
     async with manager:
@@ -581,7 +509,7 @@ await test_print_buffer_in_result();
 async def test_print_buffer_multiple_prints():
     """Test that JobResult captures multiple print statements."""
     manager = ExecutionManager({
-        "pool": (MultiprocessPool, {"num_processes": 1, "threads_per_process": 1}),
+        "pool": (SingleWorkerPool, {}),
     })
 
     async with manager:
@@ -609,13 +537,8 @@ await test_print_buffer_multiple_prints();
 @pytest.mark.asyncio
 async def test_on_print_callback():
     """Test the on_print callback receives print buffers during execution."""
-    # Use a short flush interval to get multiple callbacks
     manager = ExecutionManager({
-        "pool": (MultiprocessPool, {
-            "num_processes": 1,
-            "threads_per_process": 1,
-            "print_flush_interval": 0.05,
-        }),
+        "pool": (SingleWorkerPool, {"print_flush_interval": 0.05}),
     })
 
     received_buffers: list[list[tuple[datetime, str]]] = []
@@ -655,162 +578,31 @@ async def test_on_print_callback():
 await test_on_print_callback();
 
 # %% [markdown]
-# ## Test Multiprocess Pool Stdout Helper Methods
+# ## Test using SingleWorkerPool class directly
 
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_get_process_ids():
-    """Test get_process_ids returns correct process indices."""
+async def test_pool_class_directly():
+    """Test using SingleWorkerPool class directly (not a string alias)."""
     manager = ExecutionManager({
-        "mp_pool": (MultiprocessPool, {"num_processes": 3, "threads_per_process": 2}),
+        "pool": (SingleWorkerPool, {}),
     })
 
     async with manager:
-        process_ids = manager.get_process_ids("mp_pool")
-        assert process_ids == [0, 1, 2]
+        await manager.send_function("pool", 0, "add", add_numbers)
 
-# %%
-await test_get_process_ids();
-
-# %%
-#|export
-@pytest.mark.asyncio
-async def test_get_process_ids_raises_for_non_multiprocess():
-    """Test that get_process_ids raises ValueError for non-MultiprocessPool."""
-    manager = ExecutionManager({
-        "thread_pool": (ThreadPool, {"num_workers": 2}),
-    })
-
-    async with manager:
-        with pytest.raises(ValueError, match="not a MultiprocessPool"):
-            manager.get_process_ids("thread_pool")
-
-# %%
-await test_get_process_ids_raises_for_non_multiprocess();
-
-# %%
-#|export
-@pytest.mark.asyncio
-async def test_flush_pool_stdout():
-    """Test flush_pool_stdout for a specific process."""
-    manager = ExecutionManager({
-        "mp_pool": (MultiprocessPool, {
-            "num_processes": 2,
-            "threads_per_process": 1,
-            "redirect_output": True,
-            "buffer_output": True,
-        }),
-    })
-
-    async with manager:
-        await manager.send_function_to_pool("mp_pool", "mp_print", mp_stdout_function)
-
-        # Run on process 0
         result = await manager.run(
-            pool_id="mp_pool",
+            pool_id="pool",
             worker_id=0,
-            func_import_path_or_key="mp_print",
+            func_import_path_or_key="add",
             send_channel=False,
-            func_args=("hello",),
+            func_args=(100, 200),
             func_kwargs={},
         )
 
-        assert result.result == "printed hello"
-
-        # Flush stdout from process 0
-        buffer = await manager.flush_pool_stdout("mp_pool", 0)
-
-        # Buffer should contain the print output
-        stdout_texts = [text for _, is_stdout, text in buffer if is_stdout]
-        combined = "".join(stdout_texts)
-        assert "MP Output: hello" in combined
+        assert result.result == 300
+        assert manager.get_num_workers("pool") == 1
 
 # %%
-await test_flush_pool_stdout();
-
-# %%
-#|export
-@pytest.mark.asyncio
-async def test_flush_pool_stdout_raises_for_non_multiprocess():
-    """Test that flush_pool_stdout raises ValueError for non-MultiprocessPool."""
-    manager = ExecutionManager({
-        "thread_pool": (ThreadPool, {"num_workers": 2}),
-    })
-
-    async with manager:
-        with pytest.raises(ValueError, match="not a MultiprocessPool"):
-            await manager.flush_pool_stdout("thread_pool", 0)
-
-# %%
-await test_flush_pool_stdout_raises_for_non_multiprocess();
-
-# %%
-#|export
-@pytest.mark.asyncio
-async def test_flush_all_pool_stdout():
-    """Test flush_all_pool_stdout for all processes."""
-    manager = ExecutionManager({
-        "mp_pool": (MultiprocessPool, {
-            "num_processes": 2,
-            "threads_per_process": 1,
-            "redirect_output": True,
-            "buffer_output": True,
-        }),
-    })
-
-    async with manager:
-        await manager.send_function_to_pool("mp_pool", "mp_print", mp_stdout_function)
-
-        # Run on both workers (process 0 and process 1)
-        result0 = await manager.run(
-            pool_id="mp_pool",
-            worker_id=0,
-            func_import_path_or_key="mp_print",
-            send_channel=False,
-            func_args=("proc0",),
-            func_kwargs={},
-        )
-        result1 = await manager.run(
-            pool_id="mp_pool",
-            worker_id=1,
-            func_import_path_or_key="mp_print",
-            send_channel=False,
-            func_args=("proc1",),
-            func_kwargs={},
-        )
-
-        assert result0.result == "printed proc0"
-        assert result1.result == "printed proc1"
-
-        # Flush stdout from all processes
-        buffers = await manager.flush_all_pool_stdout("mp_pool")
-
-        assert len(buffers) == 2
-        assert 0 in buffers
-        assert 1 in buffers
-
-        # Check each process has captured its output
-        for process_idx, expected_msg in [(0, "proc0"), (1, "proc1")]:
-            stdout_texts = [text for _, is_stdout, text in buffers[process_idx] if is_stdout]
-            combined = "".join(stdout_texts)
-            assert f"MP Output: {expected_msg}" in combined
-
-# %%
-await test_flush_all_pool_stdout();
-
-# %%
-#|export
-@pytest.mark.asyncio
-async def test_flush_all_pool_stdout_raises_for_non_multiprocess():
-    """Test that flush_all_pool_stdout raises ValueError for non-MultiprocessPool."""
-    manager = ExecutionManager({
-        "thread_pool": (ThreadPool, {"num_workers": 2}),
-    })
-
-    async with manager:
-        with pytest.raises(ValueError, match="not a MultiprocessPool"):
-            await manager.flush_all_pool_stdout("thread_pool")
-
-# %%
-await test_flush_all_pool_stdout_raises_for_non_multiprocess();
+await test_pool_class_directly();
