@@ -30,13 +30,10 @@ from netrun.execution_manager import (
 from tests.execution_manager.workers import (
     add_numbers,
     multiply_numbers,
-    function_with_print,
     slow_function,
     function_returns_non_serializable,
     async_add,
     function_with_kwargs,
-    function_with_multiple_prints,
-    slow_printing_function,
 )
 
 # %% [markdown]

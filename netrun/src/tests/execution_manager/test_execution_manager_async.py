@@ -4,7 +4,6 @@ __all__ = ['test_async_function', 'test_context_manager', 'test_double_start_rai
 
 # %% nbs/tests/04_execution_manager/test_execution_manager_async.ipynb 2
 import pytest
-from datetime import datetime
 
 from netrun.pool.aio import SingleWorkerPool
 
@@ -17,13 +16,10 @@ from netrun.execution_manager import (
 from ..execution_manager.workers import (
     add_numbers,
     multiply_numbers,
-    function_with_print,
     slow_function,
     function_returns_non_serializable,
     function_with_kwargs,
     async_add,
-    function_with_multiple_prints,
-    slow_printing_function,
 )
 
 # %% nbs/tests/04_execution_manager/test_execution_manager_async.ipynb 4
