@@ -679,3 +679,79 @@ async def test_main_pool():
 
 # %%
 await test_main_pool();
+
+# %% [markdown]
+# ## Test Print Buffer
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_print_buffer_in_result():
+    """Test that JobResult contains the print buffer."""
+    manager = ExecutionManager({
+        "pool": (ThreadPool, {"num_workers": 1}),
+    })
+
+    async with manager:
+        await manager.send_function("pool", 0, "print_fn", function_with_print)
+
+        result = await manager.run(
+            pool_id="pool",
+            worker_id=0,
+            func_import_path_or_key="print_fn",
+            send_channel=False,
+            func_args=("World",),
+            func_kwargs={},
+        )
+
+        assert result.result == "greeted World"
+        # Check print buffer contains the captured print
+        assert len(result.print_buffer) == 1
+        timestamp, text = result.print_buffer[0]
+        assert "Hello, World!" in text
+        assert isinstance(timestamp, datetime)
+
+# %%
+await test_print_buffer_in_result();
+
+# %%
+#|export
+def function_with_multiple_prints(count: int) -> str:
+    """A function that prints multiple times."""
+    for i in range(count):
+        print(f"Line {i}")
+    return f"printed {count} lines"
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_print_buffer_multiple_prints():
+    """Test that JobResult captures multiple print statements."""
+    manager = ExecutionManager({
+        "pool": (ThreadPool, {"num_workers": 1}),
+    })
+
+    async with manager:
+        await manager.send_function("pool", 0, "multi_print", function_with_multiple_prints)
+
+        result = await manager.run(
+            pool_id="pool",
+            worker_id=0,
+            func_import_path_or_key="multi_print",
+            send_channel=False,
+            func_args=(5,),
+            func_kwargs={},
+        )
+
+        assert result.result == "printed 5 lines"
+        assert len(result.print_buffer) == 5
+        for i, (timestamp, text) in enumerate(result.print_buffer):
+            assert f"Line {i}" in text
+
+# %%
+await test_print_buffer_multiple_prints();
+
+# Note: flush_print_buffer cannot be used while a job is running because
+# the worker is single-threaded and blocked by the executing function.
+# The flush_print_buffer method is available for use cases where the worker
+# is not currently executing a function (e.g., between jobs or in async scenarios).
