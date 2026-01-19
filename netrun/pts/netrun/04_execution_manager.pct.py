@@ -380,6 +380,77 @@ def remote_execution_manager_worker(channel, worker_id: int, print_flush_interva
     )
 
 # %%
+#|export
+def create_execution_manager_server(
+    worker_name: str = "execution_manager",
+    print_flush_interval: float = 0.1,
+    capture_prints: bool = True,
+):
+    """Create a RemotePoolServer configured for ExecutionManager.
+
+    This is a convenience function that creates a RemotePoolServer with
+    the `remote_execution_manager_worker` already registered.
+
+    Example - Blocking server:
+        ```python
+        from netrun.execution_manager import create_execution_manager_server
+
+        server = create_execution_manager_server()
+        await server.serve("0.0.0.0", 8080)
+        ```
+
+    Example - Background server:
+        ```python
+        server = create_execution_manager_server()
+        async with server.serve_background("0.0.0.0", 8080):
+            # Server is running, do other work...
+            await asyncio.sleep(3600)
+        ```
+
+    Example - Client connection:
+        ```python
+        from netrun.execution_manager import ExecutionManager, create_execution_manager_server
+        from netrun.pool.remote import RemotePoolClient
+
+        # On server:
+        server = create_execution_manager_server(worker_name="my_worker")
+        await server.serve("0.0.0.0", 8080)
+
+        # On client:
+        manager = ExecutionManager({
+            "remote": (RemotePoolClient, {
+                "url": "ws://server:8080",
+                "worker_name": "my_worker",
+                "num_processes": 4,
+            }),
+        })
+        async with manager:
+            await manager.send_function_to_pool("remote", "fn", my_function)
+            result = await manager.run(...)
+        ```
+
+    Args:
+        worker_name: Name to register the worker under. Clients must use this
+            name when connecting (via `worker_name` parameter in RemotePoolClient).
+        print_flush_interval: Interval in seconds between automatic print buffer flushes.
+        capture_prints: If True, capture print statements and send them back to the client.
+
+    Returns:
+        A configured RemotePoolServer ready to serve.
+    """
+    from netrun.pool.remote import RemotePoolServer
+    import functools
+
+    server = RemotePoolServer()
+    worker_fn = functools.partial(
+        remote_execution_manager_worker,
+        print_flush_interval=print_flush_interval,
+        capture_prints=capture_prints,
+    )
+    server.register_worker(worker_name, worker_fn)
+    return server
+
+# %%
 #|exporti
 async def _async_worker_func(channel, worker_id, print_flush_interval: float = 0.1, capture_prints: bool = True):
     """Async worker function that handles execution manager protocol messages.
