@@ -23,7 +23,6 @@
 import pytest
 import asyncio
 from datetime import datetime
-import importlib
 
 # Check if websockets is available
 try:
@@ -42,10 +41,8 @@ from netrun.execution_manager import (
     ExecutionManager,
     RunAllocationMethod,
     ExecutionManagerProtocolKeys,
+    remote_execution_manager_worker,
 )
-
-from netrun.rpc.base import ChannelClosed
-from netrun._iutils import get_timestamp_utc
 
 # Import worker functions from the workers module
 from tests.execution_manager.workers import (
@@ -57,78 +54,6 @@ from tests.execution_manager.workers import (
     async_add,
     function_with_multiple_prints,
 )
-
-# %% [markdown]
-# ## Define Remote Worker Function
-#
-# The remote worker function needs to be registered on the server.
-# It uses the same ExecutionManagerProtocolKeys protocol as other pool workers.
-
-# %%
-#|export
-def execution_manager_worker(channel, worker_id: int) -> None:
-    """Worker function for ExecutionManager remote tests.
-
-    This worker handles the ExecutionManager protocol using ExecutionManagerProtocolKeys:
-    - SEND_FUNCTION: Store a function by key
-    - RUN: Execute a stored function
-    """
-    registered_functions = {}
-
-    try:
-        while True:
-            key, data = channel.recv()
-
-            if key == ExecutionManagerProtocolKeys.SEND_FUNCTION.value:
-                # Data format: (msg_id, func_key, func)
-                msg_id, func_key, func = data
-                registered_functions[func_key] = func
-                channel.send(ExecutionManagerProtocolKeys.UP_SEND_FUNCTION_RESPONSE.value, (msg_id,))
-
-            elif key == ExecutionManagerProtocolKeys.RUN.value:
-                # Data format: (msg_id, func_import_path_or_key, run_id, send_channel, args, kwargs)
-                msg_id, func_import_path_or_key, run_id, send_channel, args, kwargs = data
-
-                timestamp_utc_started = get_timestamp_utc()
-                # Send RUN_STARTED notification
-                channel.send(ExecutionManagerProtocolKeys.UP_RUN_STARTED.value, (msg_id, timestamp_utc_started))
-
-                try:
-                    if func_import_path_or_key in registered_functions:
-                        func = registered_functions[func_import_path_or_key]
-                    else:
-                        # Try to import the function
-                        module_path, func_name = func_import_path_or_key.rsplit(".", 1)
-                        module = importlib.import_module(module_path)
-                        func = getattr(module, func_name)
-
-                    # Execute the function
-                    if asyncio.iscoroutinefunction(func):
-                        loop = asyncio.new_event_loop()
-                        if send_channel:
-                            result = loop.run_until_complete(func(channel, *args, **kwargs))
-                        else:
-                            result = loop.run_until_complete(func(*args, **kwargs))
-                    else:
-                        if send_channel:
-                            result = func(channel, *args, **kwargs)
-                        else:
-                            result = func(*args, **kwargs)
-
-                    timestamp_utc_completed = get_timestamp_utc()
-
-                    # Send RUN_RESPONSE with result
-                    # Data format: (msg_id, timestamp_utc_started, timestamp_utc_completed, converted_to_str, result)
-                    channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value,
-                                (msg_id, timestamp_utc_started, timestamp_utc_completed, False, result))
-
-                except Exception as e:
-                    timestamp_utc_completed = get_timestamp_utc()
-                    # For now, re-raise - in a production scenario you'd want error handling
-                    raise
-
-    except ChannelClosed:
-        pass
 
 # %% [markdown]
 # ## Test Helpers
@@ -151,12 +76,12 @@ def _get_next_port() -> int:
 async def create_remote_client(num_processes: int = 1, threads_per_process: int = 1):
     """Create a remote server and client for testing (low-level tests).
 
-    This sets up a RemotePoolServer with the execution_manager_worker,
+    This sets up a RemotePoolServer with the remote_execution_manager_worker,
     and creates a RemotePoolClient that connects to it.
     """
     port = _get_next_port()
     server = RemotePoolServer()
-    server.register_worker("em_worker", execution_manager_worker)
+    server.register_worker("em_worker", remote_execution_manager_worker)
 
     async with server.serve_background("127.0.0.1", port):
         # Create client and connect
@@ -173,12 +98,12 @@ async def create_remote_client(num_processes: int = 1, threads_per_process: int 
 async def create_remote_execution_manager(num_processes: int = 1, threads_per_process: int = 1):
     """Create a remote server and ExecutionManager for testing.
 
-    This sets up a RemotePoolServer with the execution_manager_worker,
+    This sets up a RemotePoolServer with the remote_execution_manager_worker,
     and creates an ExecutionManager with a RemotePoolClient that connects to it.
     """
     port = _get_next_port()
     server = RemotePoolServer()
-    server.register_worker("em_worker", execution_manager_worker)
+    server.register_worker("em_worker", remote_execution_manager_worker)
 
     async with server.serve_background("127.0.0.1", port):
         manager = ExecutionManager({
