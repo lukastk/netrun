@@ -28,65 +28,21 @@ from netrun.execution_manager import (
     RunAllocationMethod,
 )
 
-# %% [markdown]
-# ## Test Helper Functions
-#
-# Simple functions for testing.
-
-# %%
-#|export
-def add_numbers(a: int, b: int) -> int:
-    """Add two numbers."""
-    return a + b
-
-def multiply_numbers(x: int, y: int) -> int:
-    """Multiply two numbers."""
-    return x * y
-
-def function_with_print(name: str) -> str:
-    """A function that prints."""
-    print(f"Hello, {name}!")
-    return f"greeted {name}"
-
-def slow_function(delay: float) -> str:
-    """A function that takes some time."""
-    import time
-    time.sleep(delay)
-    return "done"
-
-def function_with_error() -> None:
-    """A function that raises an error."""
-    raise ValueError("Intentional error")
-
-def function_returns_non_serializable():
-    """A function that returns something non-serializable."""
-    return lambda x: x  # Lambdas can't be pickled
-
-async def async_add(a: int, b: int) -> int:
-    """Async function that adds two numbers."""
-    await asyncio.sleep(0.01)
-    return a + b
-
-def function_with_kwargs(a: int, b: int = 10, c: int = 100) -> int:
-    """Function with keyword arguments."""
-    return a + b + c
+# Import worker functions from the workers module so they can be pickled
+from tests.execution_manager.workers import (
+    add_numbers,
+    multiply_numbers,
+    function_with_print,
+    slow_function,
+    function_with_error,
+    function_returns_non_serializable,
+    async_add,
+    function_with_kwargs,
+    mp_stdout_function,
+)
 
 # %% [markdown]
 # ## Test Multiprocess Pool Stdout Helper Methods
-
-# %%
-#|export
-import sys
-
-def mp_stdout_function(message: str) -> str:
-    """A function that writes directly to stdout to test subprocess output capture.
-
-    This uses sys.stdout.write which bypasses the ExecutionManager's print capture
-    and goes directly to the subprocess stdout, which is captured by the MultiprocessPool.
-    """
-    sys.stdout.write(f"MP Output: {message}\n")
-    sys.stdout.flush()
-    return f"printed {message}"
 
 # %%
 #|export
