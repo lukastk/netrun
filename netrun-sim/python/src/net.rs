@@ -1011,6 +1011,31 @@ impl NetSim {
         Ok(events_list.unbind())
     }
 
+    /// Run one step of automatic packet flow.
+    ///
+    /// Convenience method equivalent to `do_action(NetAction.run_step())`.
+    ///
+    /// Returns:
+    ///     A tuple of (made_progress, events) where made_progress indicates
+    ///     whether any packets were moved.
+    fn run_step(&mut self, py: Python<'_>) -> PyResult<(bool, Py<PyList>)> {
+        let response = self.inner.do_action(&CoreNetSimAction::RunStep);
+        match response {
+            CoreNetSimActionResponse::Success(data, events) => {
+                let made_progress = match data {
+                    CoreNetSimActionResponseData::StepResult { made_progress } => made_progress,
+                    _ => false,
+                };
+                let events_list = PyList::empty(py);
+                for event in events {
+                    events_list.append(NetEvent::from_core(&event))?;
+                }
+                Ok((made_progress, events_list.unbind()))
+            }
+            CoreNetSimActionResponse::Error(err) => Err(net_action_error_to_py_err(err)),
+        }
+    }
+
     /// Undo a previously executed action.
     ///
     /// Args:

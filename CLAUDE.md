@@ -14,22 +14,18 @@ This separation of concerns allows the actual execution and data storage to be i
 
 ### netrun (Runtime)
 
-`netrun` is a pure Python package built on top of `netrun-sim`. It provides:
-- Actual node execution logic via configurable execution functions
-- Packet value storage and retrieval
-- Thread and process pool management for parallel execution
-- Error handling with retries and dead letter queues
-- Comprehensive logging and history
-- A human-readable DSL (TOML) for net serialization
-- Checkpointing and state restoration
-- Node factories for reusable node templates
+`netrun` is a pure Python package that will be built on top of `netrun-sim`. It provides:
+- RPC (Remote Procedure Call) communication primitives
+- Worker pool management (threads, processes, remote)
+- High-level execution orchestration via ExecutionManager
+- (Planned) Integration with netrun-sim for flow-based execution
 
 **See `netrun/PROJECT_SPEC.md` for the full specification.**
 
 **Important:** The `netrun` package uses **nblite** for literate programming. Before writing any code for `netrun`, you **must** read `netrun/NBLITE_INSTRUCTIONS.md` carefully. Key points:
 - Source code lives in `.pct.py` files (percent notebooks), not in the exported Python modules
 - Never edit files in `src/netrun/` directly - they are auto-generated
-- After editing `.pct.py` files, run `nbl export --export-pipeline "pts->nbs"` then `nbl export`
+- After editing `.pct.py` files, run `nbl export --pipeline "pts->nbs"` then `nbl export`
 
 ## Repository Structure
 
@@ -62,11 +58,197 @@ repo/
     ├── NBLITE_INSTRUCTIONS.md  # How to write code (READ THIS FIRST)
     ├── nblite.toml         # nblite configuration
     ├── nbs/                # Jupyter notebooks (.ipynb)
-    │   └── netrun/
-    ├── pts/                # Percent notebooks (.pct.py) - EDIT THESE AND THEN REVERSE EXPORT
-    │   └── netrun/
+    │   ├── netrun/         # Source notebooks
+    │   └── tests/          # Test notebooks
+    ├── pts/                # Percent notebooks (.pct.py) - EDIT THESE
+    │   ├── netrun/         # Source percent notebooks
+    │   └── tests/          # Test percent notebooks
     └── src/                # Auto-generated code (DO NOT EDIT)
-        └── netrun/
+        ├── netrun/         # Generated Python package
+        └── tests/          # Generated test files
+```
+
+---
+
+# netrun Package Documentation
+
+## Current Implementation Status
+
+### Fully Implemented
+
+1. **RPC Layer** (`netrun.rpc`) - Bidirectional message-passing channels
+2. **Pool Layer** (`netrun.pool`) - Worker pool management
+3. **ExecutionManager** (`netrun.execution_manager`) - High-level execution orchestration
+4. **Storage** (`netrun.storage`) - Packet value storage
+
+### Not Yet Implemented
+
+1. **Net Module** (`netrun.net`) - Integration with netrun-sim (stub only)
+
+---
+
+## Module Structure
+
+### Internal Utilities (`netrun._iutils`)
+
+- `_base` - Timestamp generation, patching decorators
+- `hashing` - Hash computation utilities
+
+### Storage (`netrun.storage`)
+
+- `PacketStore` - Thread-safe storage for packet values
+- `LazyPacketValueSpec` - Lazy value specification for deferred evaluation
+- `PacketStoreConfig` - Configuration for hashing and evaluation
+
+### RPC Layer (`netrun.rpc`)
+
+The RPC layer provides bidirectional (key, data) message passing between components.
+
+**Base Classes** (`netrun.rpc.base`):
+- `RPCChannel` - Protocol for async bidirectional message passing
+- `SyncRPCChannel` - Protocol for sync bidirectional message passing
+- Exceptions: `RPCError`, `ChannelClosed`, `ChannelBroken`, `RecvTimeout`
+
+**Implementations**:
+
+| Module | Classes | Use Case |
+|--------|---------|----------|
+| `rpc.aio` | `AsyncChannel` | Async task communication via `asyncio.Queue` |
+| `rpc.thread` | `ThreadChannel`, `SyncThreadChannel` | Thread communication via `queue.Queue` |
+| `rpc.multiprocess` | `ProcessChannel`, `SyncProcessChannel` | Process communication via `multiprocessing.Queue` |
+| `rpc.remote` | `WebSocketChannel` | Network communication via WebSockets |
+
+### Pool Layer (`netrun.pool`)
+
+The Pool layer manages collections of workers that process messages.
+
+**Base Classes** (`netrun.pool.base`):
+- `Pool` - Protocol for worker pools
+- `WorkerMessage` - Message from a worker (worker_id, key, data)
+- `WorkerFn` - Type for worker function: `Callable[[SyncRPCChannel, int], None]`
+- Exceptions: `PoolError`, `PoolNotStarted`, `PoolAlreadyStarted`, `WorkerException`, `WorkerCrashed`, `WorkerTimeout`
+
+**Implementations**:
+
+| Module | Class | Description |
+|--------|-------|-------------|
+| `pool.thread` | `ThreadPool` | Multiple worker threads in same process |
+| `pool.multiprocess` | `MultiprocessPool` | Multiple subprocesses, each with worker threads |
+| `pool.remote` | `RemotePoolServer`, `RemotePoolClient` | Network-based pool hosting via WebSockets |
+| `pool.aio` | `SingleWorkerPool` | Single async coroutine in main event loop |
+
+**Common Pool API**:
+```python
+pool = ThreadPool(worker_fn, num_workers=4)
+await pool.start()
+
+await pool.send(worker_id=0, key="task", data={"x": 1})
+msg = await pool.recv(timeout=5.0)  # Returns WorkerMessage
+await pool.broadcast(key="config", data={...})  # Send to all workers
+
+result = await pool.try_recv()  # Returns None if no message
+
+await pool.close()
+
+# Or use as context manager:
+async with ThreadPool(worker_fn, num_workers=4) as pool:
+    ...
+```
+
+**MultiprocessPool Features**:
+- stdout/stderr capture with timestamps
+- Output buffering with configurable flush intervals
+- `flush_stdout(process_idx)` / `flush_all_stdout()` methods
+
+**RemotePool Usage**:
+```python
+# Server side
+server = RemotePoolServer()
+server.register_worker("my_worker", worker_fn)
+async with server.serve_background("0.0.0.0", 8765):
+    ...
+
+# Client side
+async with RemotePoolClient("ws://localhost:8765") as client:
+    await client.create_pool("my_worker", num_processes=2)
+    await client.send(0, "task", data)
+    msg = await client.recv()
+```
+
+### ExecutionManager (`netrun.execution_manager`)
+
+High-level orchestration for executing functions across different pool types.
+
+**Key Classes**:
+- `ExecutionManager` - Main orchestrator
+- `JobResult` - Result from job execution (timestamps, result, print buffer)
+- `RunAllocationMethod` - Worker selection strategy (ROUND_ROBIN, RANDOM, LEAST_BUSY)
+
+**Usage**:
+```python
+manager = ExecutionManager({
+    "thread_pool": (ThreadPool, {"num_workers": 4}),
+    "process_pool": (MultiprocessPool, {"num_processes": 2, "threads_per_process": 2}),
+})
+
+async with manager:
+    # Send a function to workers
+    await manager.send_function_to_pool("thread_pool", "my_func", my_function)
+
+    # Run the function
+    result = await manager.run(
+        pool_id="thread_pool",
+        worker_id=0,
+        func_import_path_or_key="my_func",
+        send_channel=False,
+        func_args=(1, 2),
+        func_kwargs={"x": 3},
+    )
+
+    print(result.result)  # Function return value
+    print(result.print_buffer)  # Captured print statements
+```
+
+**ExecutionManager Protocol Keys**:
+- `RUN` - Execute a function
+- `SEND_FUNCTION` - Register a function by key
+- `UP_RUN_STARTED` - Confirmation function started
+- `UP_RUN_RESPONSE` - Return result
+- `UP_PRINT_BUFFER` - Captured print statements
+
+---
+
+## Development Workflow
+
+### Editing Code
+
+1. Edit `.pct.py` files in `pts/netrun/` or `pts/tests/`
+2. Export to notebooks: `nbl export --pipeline "pts->nbs"`
+3. Export to Python modules: `nbl export`
+
+**Never edit files in `src/` directly** - they are auto-generated.
+
+### Running Tests
+
+```bash
+cd netrun
+
+# Run all tests
+uv run pytest src/tests/
+
+# Run specific test modules
+uv run pytest src/tests/pool/test_thread.py -v
+uv run pytest src/tests/execution_manager/ -v
+
+# Run with output
+uv run pytest src/tests/pool/test_multiprocess.py -v -s
+```
+
+### Building
+
+```bash
+cd netrun
+uv sync  # Install dependencies
 ```
 
 ---
@@ -134,9 +316,9 @@ Each condition has:
 
 ## Flow Mechanics
 
-### Automatic Flow (`run_until_blocked`)
+### Automatic Flow (`run_step` / `run_until_blocked`)
 
-When `RunNetUntilBlocked` is called, the network automatically:
+When `RunStep` is called (via `do_action(NetAction::RunStep)` or the convenience method `net.run_step()`), the network automatically:
 
 1. **Moves packets from edges to input ports**
    - Checks if the destination port has available slots
@@ -150,6 +332,8 @@ When `RunNetUntilBlocked` is called, the network automatically:
 3. **Repeats until blocked**
    - Blocked = no packets can move (either no packets on edges, or all destinations are full)
 
+The convenience method `net.run_until_blocked()` repeatedly calls `RunStep` until no more progress can be made.
+
 ### Manual Actions (`NetAction`)
 
 **Important**: All mutations to the `NetSim` state must go through `do_action(NetAction)`. This ensures:
@@ -161,13 +345,14 @@ External code controls the network through actions:
 
 | Action | Description |
 |--------|-------------|
-| `RunNetUntilBlocked` | Run automatic packet flow until no progress can be made |
+| `RunStep` | Run automatic packet flow until no progress can be made |
 | `CreatePacket(Option<EpochID>)` | Create a new packet (inside an epoch or outside the net) |
 | `ConsumePacket(PacketID)` | Remove a packet from the network |
+| `DestroyPacket(PacketID)` | Destroy a packet (abnormal removal, e.g., due to error) |
 | `StartEpoch(EpochID)` | Transition a `Startable` epoch to `Running` |
 | `FinishEpoch(EpochID)` | Complete a `Running` epoch (must be empty of packets) |
 | `CancelEpoch(EpochID)` | Cancel an epoch and destroy its packets |
-| `CreateAndStartEpoch(NodeName, Salvo)` | Manually create and start an epoch with specified packets |
+| `CreateEpoch(NodeName, Salvo)` | Manually create an epoch with specified packets |
 | `LoadPacketIntoOutputPort(PacketID, PortName)` | Move a packet from inside an epoch to its output port |
 | `SendOutputSalvo(EpochID, SalvoConditionName)` | Send packets from output ports onto edges |
 | `TransportPacketToLocation(PacketID, PacketLocation)` | Move a packet to any location (with restrictions on running epochs) |
@@ -186,7 +371,7 @@ Actions produce events that track what happened:
 1. **Define the graph**: Create nodes with ports and salvo conditions, connect with edges
 2. **Create a NetSim**: Initialize runtime state from the graph
 3. **Inject packets**: Create packets and place them on edges or in input ports
-4. **Run the network**: Call `RunNetUntilBlocked` to move packets and trigger epochs
+4. **Run the network**: Call `run_step()` or `run_until_blocked()` to move packets and trigger epochs
 5. **Handle startable epochs**: External code decides when to start each epoch
 6. **Simulate node execution**: External code "runs" the node logic
 7. **Output results**: Load packets into output ports and send output salvos

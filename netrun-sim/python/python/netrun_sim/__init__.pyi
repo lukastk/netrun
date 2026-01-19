@@ -496,11 +496,11 @@ class NetAction:
     """
 
     @staticmethod
-    def run_net_until_blocked() -> NetAction:
-        """Run automatic packet flow until no progress can be made.
+    def run_step() -> NetAction:
+        """Run one step of automatic packet flow.
 
         Moves packets from edges to input ports, then checks input salvo
-        conditions to create new epochs. Repeats until blocked.
+        conditions to create new epochs. Repeats until no more progress can be made.
         """
         ...
 
@@ -716,7 +716,7 @@ class NetSim:
         ))
 
         # Run the network - packet will flow to input ports and trigger epochs
-        net.do_action(NetAction.run_net_until_blocked())
+        net.do_action(NetAction.run_step())
 
         # Check for startable epochs
         startable = net.get_startable_epochs()
@@ -766,6 +766,44 @@ class NetSim:
     @property
     def graph(self) -> Graph:
         """The graph topology this simulation is running on."""
+        ...
+
+    def is_blocked(self) -> bool:
+        """Check if the network is blocked (no progress can be made by run_step).
+
+        Returns True if no packets can move from edges to input ports.
+        """
+        ...
+
+    def run_until_blocked(self) -> List[NetEvent]:
+        """Run the network until blocked, returning all events.
+
+        Convenience method that repeatedly calls run_step until no more
+        progress can be made. Returns all events that occurred.
+        """
+        ...
+
+    def run_step(self) -> Tuple[bool, List[NetEvent]]:
+        """Run one step of automatic packet flow.
+
+        Convenience method equivalent to `do_action(NetAction.run_step())`.
+
+        Returns:
+            A tuple of (made_progress, events) where made_progress indicates
+            whether any packets were moved.
+        """
+        ...
+
+    def undo_action(self, action: NetAction, events: List[NetEvent]) -> None:
+        """Undo a previously executed action.
+
+        Args:
+            action: The original action that was executed.
+            events: The events that were produced by the action.
+
+        Raises:
+            UndoError: If the undo operation fails.
+        """
         ...
 
 # === Re-exports ===
