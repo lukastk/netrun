@@ -1,0 +1,719 @@
+# ---
+# jupyter:
+#   kernelspec:
+#     display_name: .venv
+#     language: python
+#     name: python3
+# ---
+
+# %%
+#|default_exp net.config
+
+# %%
+#|hide
+from nblite import nbl_export; nbl_export();
+
+# %%
+#|export
+from pydantic import BaseModel, Field
+from typing import Annotated, Literal, NewType, Callable, Union, TYPE_CHECKING
+from ulid import ULID
+
+import netrun_sim
+
+# %% [markdown]
+# # Graph configs
+#
+# These Pydantic models mirror the `netrun_sim` graph types, providing a serializable
+# DSL for defining flow-based networks.
+
+# %% [markdown]
+# ## Port slot specification
+#
+# Defines the capacity of a port (how many packets it can hold).
+
+# %%
+#|export
+class PortSlotSpecInfiniteConfig(BaseModel):
+    """Port can hold unlimited packets."""
+    type: Literal["infinite"] = "infinite"
+
+    def to_netrun_sim(self) -> netrun_sim.PortSlotSpec:
+        return netrun_sim.PortSlotSpec.infinite()
+
+
+class PortSlotSpecFiniteConfig(BaseModel):
+    """Port can hold at most `capacity` packets."""
+    type: Literal["finite"] = "finite"
+    capacity: int
+
+    def to_netrun_sim(self) -> netrun_sim.PortSlotSpecFinite:
+        return netrun_sim.PortSlotSpec.finite(self.capacity)
+
+
+PortSlotSpecConfig = Annotated[
+    Union[PortSlotSpecInfiniteConfig, PortSlotSpecFiniteConfig],
+    Field(discriminator="type")
+]
+
+# %% [markdown]
+# ## Port configuration
+
+# %%
+#|export
+class PortConfig(BaseModel):
+    """Configuration for a port on a node."""
+    slots_spec: PortSlotSpecConfig = Field(default_factory=PortSlotSpecInfiniteConfig)
+
+    def to_netrun_sim(self) -> netrun_sim.Port:
+        return netrun_sim.Port(self.slots_spec.to_netrun_sim())
+
+# %% [markdown]
+# ## Port state predicates
+#
+# Used in salvo condition terms to check the state of a port.
+
+# %%
+#|export
+class PortStateEmptyConfig(BaseModel):
+    """Port has zero packets."""
+    type: Literal["empty"] = "empty"
+
+    def to_netrun_sim(self) -> netrun_sim.PortState:
+        return netrun_sim.PortState.empty()
+
+
+class PortStateFullConfig(BaseModel):
+    """Port is at capacity (always false for infinite ports)."""
+    type: Literal["full"] = "full"
+
+    def to_netrun_sim(self) -> netrun_sim.PortState:
+        return netrun_sim.PortState.full()
+
+
+class PortStateNonEmptyConfig(BaseModel):
+    """Port has at least one packet."""
+    type: Literal["non_empty"] = "non_empty"
+
+    def to_netrun_sim(self) -> netrun_sim.PortState:
+        return netrun_sim.PortState.non_empty()
+
+
+class PortStateNonFullConfig(BaseModel):
+    """Port is below capacity (always true for infinite ports)."""
+    type: Literal["non_full"] = "non_full"
+
+    def to_netrun_sim(self) -> netrun_sim.PortState:
+        return netrun_sim.PortState.non_full()
+
+
+class PortStateEqualsConfig(BaseModel):
+    """Port has exactly `value` packets."""
+    type: Literal["equals"] = "equals"
+    value: int
+
+    def to_netrun_sim(self) -> netrun_sim.PortStateNumeric:
+        return netrun_sim.PortState.equals(self.value)
+
+
+class PortStateLessThanConfig(BaseModel):
+    """Port has fewer than `value` packets."""
+    type: Literal["less_than"] = "less_than"
+    value: int
+
+    def to_netrun_sim(self) -> netrun_sim.PortStateNumeric:
+        return netrun_sim.PortState.less_than(self.value)
+
+
+class PortStateGreaterThanConfig(BaseModel):
+    """Port has more than `value` packets."""
+    type: Literal["greater_than"] = "greater_than"
+    value: int
+
+    def to_netrun_sim(self) -> netrun_sim.PortStateNumeric:
+        return netrun_sim.PortState.greater_than(self.value)
+
+
+class PortStateEqualsOrLessThanConfig(BaseModel):
+    """Port has at most `value` packets."""
+    type: Literal["equals_or_less_than"] = "equals_or_less_than"
+    value: int
+
+    def to_netrun_sim(self) -> netrun_sim.PortStateNumeric:
+        return netrun_sim.PortState.equals_or_less_than(self.value)
+
+
+class PortStateEqualsOrGreaterThanConfig(BaseModel):
+    """Port has at least `value` packets."""
+    type: Literal["equals_or_greater_than"] = "equals_or_greater_than"
+    value: int
+
+    def to_netrun_sim(self) -> netrun_sim.PortStateNumeric:
+        return netrun_sim.PortState.equals_or_greater_than(self.value)
+
+
+PortStateConfig = Annotated[
+    Union[
+        PortStateEmptyConfig,
+        PortStateFullConfig,
+        PortStateNonEmptyConfig,
+        PortStateNonFullConfig,
+        PortStateEqualsConfig,
+        PortStateLessThanConfig,
+        PortStateGreaterThanConfig,
+        PortStateEqualsOrLessThanConfig,
+        PortStateEqualsOrGreaterThanConfig,
+    ],
+    Field(discriminator="type")
+]
+
+# %% [markdown]
+# ## Packet count specification
+#
+# Specifies how many packets to take from a port in a salvo.
+
+# %%
+#|export
+class PacketCountAllConfig(BaseModel):
+    """Take all packets from the port."""
+    type: Literal["all"] = "all"
+
+    def to_netrun_sim(self) -> netrun_sim.PacketCount:
+        return netrun_sim.PacketCount.all()
+
+
+class PacketCountNConfig(BaseModel):
+    """Take at most `count` packets (takes fewer if port has fewer)."""
+    type: Literal["count"] = "count"
+    count: int
+
+    def to_netrun_sim(self) -> netrun_sim.PacketCountN:
+        return netrun_sim.PacketCount.count(self.count)
+
+
+PacketCountConfig = Annotated[
+    Union[PacketCountAllConfig, PacketCountNConfig],
+    Field(discriminator="type")
+]
+
+# %% [markdown]
+# ## Max salvos specification
+#
+# Specifies the maximum number of times a salvo condition can trigger.
+
+# %%
+#|export
+class MaxSalvosInfiniteConfig(BaseModel):
+    """No limit on how many times the condition can trigger."""
+    type: Literal["infinite"] = "infinite"
+
+    def to_netrun_sim(self) -> netrun_sim.MaxSalvos:
+        return netrun_sim.MaxSalvos.infinite()
+
+
+class MaxSalvosFiniteConfig(BaseModel):
+    """Can trigger at most `max` times."""
+    type: Literal["finite"] = "finite"
+    max: int
+
+    def to_netrun_sim(self) -> netrun_sim.MaxSalvosFinite:
+        return netrun_sim.MaxSalvos.finite(self.max)
+
+
+MaxSalvosConfig = Annotated[
+    Union[MaxSalvosInfiniteConfig, MaxSalvosFiniteConfig],
+    Field(discriminator="type")
+]
+
+# %% [markdown]
+# ## Salvo condition term
+#
+# Boolean expressions over port states, used to define when salvos can trigger.
+
+# %%
+#|export
+class SalvoConditionTermTrueConfig(BaseModel):
+    """Always true. Useful for source nodes with no input ports."""
+    type: Literal["true"] = "true"
+
+    def to_netrun_sim(self) -> netrun_sim.SalvoConditionTerm:
+        return netrun_sim.SalvoConditionTerm.true_()
+
+
+class SalvoConditionTermFalseConfig(BaseModel):
+    """Always false. Useful as a placeholder or with Not."""
+    type: Literal["false"] = "false"
+
+    def to_netrun_sim(self) -> netrun_sim.SalvoConditionTerm:
+        return netrun_sim.SalvoConditionTerm.false_()
+
+
+class SalvoConditionTermPortConfig(BaseModel):
+    """Check if a specific port matches a state predicate."""
+    type: Literal["port"] = "port"
+    port_name: str
+    state: PortStateConfig
+
+    def to_netrun_sim(self) -> netrun_sim.SalvoConditionTerm:
+        return netrun_sim.SalvoConditionTerm.port(self.port_name, self.state.to_netrun_sim())
+
+
+class SalvoConditionTermAndConfig(BaseModel):
+    """All sub-terms must be true."""
+    type: Literal["and"] = "and"
+    terms: list["SalvoConditionTermConfig"]
+
+    def to_netrun_sim(self) -> netrun_sim.SalvoConditionTerm:
+        return netrun_sim.SalvoConditionTerm.and_([t.to_netrun_sim() for t in self.terms])
+
+
+class SalvoConditionTermOrConfig(BaseModel):
+    """At least one sub-term must be true."""
+    type: Literal["or"] = "or"
+    terms: list["SalvoConditionTermConfig"]
+
+    def to_netrun_sim(self) -> netrun_sim.SalvoConditionTerm:
+        return netrun_sim.SalvoConditionTerm.or_([t.to_netrun_sim() for t in self.terms])
+
+
+class SalvoConditionTermNotConfig(BaseModel):
+    """The sub-term must be false."""
+    type: Literal["not"] = "not"
+    term: "SalvoConditionTermConfig"
+
+    def to_netrun_sim(self) -> netrun_sim.SalvoConditionTerm:
+        return netrun_sim.SalvoConditionTerm.not_(self.term.to_netrun_sim())
+
+
+SalvoConditionTermConfig = Annotated[
+    Union[
+        SalvoConditionTermTrueConfig,
+        SalvoConditionTermFalseConfig,
+        SalvoConditionTermPortConfig,
+        SalvoConditionTermAndConfig,
+        SalvoConditionTermOrConfig,
+        SalvoConditionTermNotConfig,
+    ],
+    Field(discriminator="type")
+]
+
+# Rebuild models to resolve forward references
+SalvoConditionTermAndConfig.model_rebuild()
+SalvoConditionTermOrConfig.model_rebuild()
+SalvoConditionTermNotConfig.model_rebuild()
+
+# %% [markdown]
+# ## Salvo condition
+#
+# Defines when packets can trigger an epoch or be sent.
+
+# %%
+#|export
+class SalvoConditionConfig(BaseModel):
+    """A condition that defines when packets can trigger an epoch or be sent.
+
+    Input salvo conditions must have max_salvos set to finite(1).
+    """
+    max_salvos: MaxSalvosConfig
+    ports: dict[str, PacketCountConfig]
+    term: SalvoConditionTermConfig
+
+    def to_netrun_sim(self) -> netrun_sim.SalvoCondition:
+        ports_dict = {name: pc.to_netrun_sim() for name, pc in self.ports.items()}
+        return netrun_sim.SalvoCondition(
+            max_salvos=self.max_salvos.to_netrun_sim(),
+            ports=ports_dict,
+            term=self.term.to_netrun_sim(),
+        )
+
+# %% [markdown]
+# ## Edge configuration
+
+# %%
+#|export
+class PortRefConfig(BaseModel):
+    """Reference to a specific port on a node."""
+    node_name: str
+    port_type: Literal["input", "output"]
+    port_name: str
+
+    def to_netrun_sim(self) -> netrun_sim.PortRef:
+        port_type = netrun_sim.PortType.Input if self.port_type == "input" else netrun_sim.PortType.Output
+        return netrun_sim.PortRef(self.node_name, port_type, self.port_name)
+
+
+class EdgeConfig(BaseModel):
+    """A connection between an output port and an input port.
+
+    Can be specified as:
+    - Full form: source and target PortRefConfig objects
+    - Shorthand: source_str and target_str as "node.port" strings
+    """
+    source: PortRefConfig | None = None
+    target: PortRefConfig | None = None
+    # Shorthand notation: "NodeA.out" -> "NodeB.in"
+    source_str: str | None = None
+    target_str: str | None = None
+
+    def model_post_init(self, __context):
+        # Validate that either full form or shorthand is provided
+        has_full = self.source is not None and self.target is not None
+        has_short = self.source_str is not None and self.target_str is not None
+        if not (has_full or has_short):
+            raise ValueError("Must provide either (source, target) or (source_str, target_str)")
+        if has_full and has_short:
+            raise ValueError("Cannot provide both (source, target) and (source_str, target_str)")
+
+    def _parse_port_str(self, s: str, port_type: Literal["input", "output"]) -> PortRefConfig:
+        parts = s.split(".")
+        if len(parts) != 2:
+            raise ValueError(f"Invalid port string '{s}', expected 'NodeName.port_name'")
+        return PortRefConfig(node_name=parts[0], port_type=port_type, port_name=parts[1])
+
+    def get_source(self) -> PortRefConfig:
+        if self.source is not None:
+            return self.source
+        return self._parse_port_str(self.source_str, "output")
+
+    def get_target(self) -> PortRefConfig:
+        if self.target is not None:
+            return self.target
+        return self._parse_port_str(self.target_str, "input")
+
+    def to_netrun_sim(self) -> netrun_sim.Edge:
+        return netrun_sim.Edge(
+            self.get_source().to_netrun_sim(),
+            self.get_target().to_netrun_sim(),
+        )
+
+# %% [markdown]
+# ## Node configuration
+#
+# This is the node configuration, defining ports and salvo conditions, and how it is executed.
+#
+# The execution config can be left out when defining a node, in which case it will still be in the Net but will not executed or crash when packets are incoming.
+
+# %% [markdown]
+# ## Node execution config
+#
+# Runtime configuration for node execution (separate from graph structure).
+
+# %%
+#|export
+PacketID = NewType("PacketID", ULID)
+
+NodeExecutionFunc = Callable
+"""
+Function that executes a node.
+
+Args:
+    ctx: NodeExecutionContext
+    packets: dict[str, PacketID]
+"""
+
+NodeStartFunc = Callable
+"""
+Function that starts a node.
+
+Args:
+    net: Net
+"""
+
+NodeStopFunc = Callable
+"""
+Function that stops a node.
+
+Args:
+    net: Net
+"""
+
+OnNodeFailureFunc = Callable
+"""
+Function that is called when a node execution fails.
+
+Args:
+    ctx: NodeFailureContext
+""";
+
+# %%
+#|export
+class NodeExecutionConfig(BaseModel):
+    """Runtime configuration for a node's execution behavior."""
+    model_config = {"arbitrary_types_allowed": True}
+
+    node_name: str
+    pools: list[str] = Field(default_factory=list)
+    exec_node_func: NodeExecutionFunc | None = None
+    start_node_func: NodeStartFunc | None = None
+    stop_node_func: NodeStopFunc | None = None
+    on_node_failure: OnNodeFailureFunc | None = None
+
+    # Additional execution options (from PROJECT_SPEC.md)
+    max_parallel_epochs: int | None = None
+    rate_limit_per_second: float | None = None
+    defer_net_actions: bool = False
+    retries: int = 0
+    retry_wait: float = 0.0
+    timeout: float | None = None
+    dead_letter_queue: bool = True
+    capture_stdout: bool = True
+
+# %%
+#|export
+class NodeGraphConfig(BaseModel):
+    """Configuration for a node's graph structure (ports and salvo conditions)."""
+    name: str
+    in_ports: dict[str, PortConfig] = Field(default_factory=dict)
+    out_ports: dict[str, PortConfig] = Field(default_factory=dict)
+    in_salvo_conditions: dict[str, SalvoConditionConfig] = Field(default_factory=dict)
+    out_salvo_conditions: dict[str, SalvoConditionConfig] = Field(default_factory=dict)
+
+    execution_config: NodeExecutionConfig | None = None
+
+    def to_netrun_sim(self) -> netrun_sim.Node:
+        return netrun_sim.Node(
+            name=self.name,
+            in_ports={name: port.to_netrun_sim() for name, port in self.in_ports.items()},
+            out_ports={name: port.to_netrun_sim() for name, port in self.out_ports.items()},
+            in_salvo_conditions={name: sc.to_netrun_sim() for name, sc in self.in_salvo_conditions.items()},
+            out_salvo_conditions={name: sc.to_netrun_sim() for name, sc in self.out_salvo_conditions.items()},
+        )
+
+# %% [markdown]
+# ## Graph configuration
+#
+# The complete graph topology configuration.
+
+# %%
+#|export
+class GraphConfig(BaseModel):
+    """Configuration for a complete flow-based network graph.
+
+    Example:
+        config = GraphConfig(
+            nodes=[
+                NodeGraphConfig(
+                    name="A",
+                    out_ports={"out": PortConfig()},
+                ),
+                NodeGraphConfig(
+                    name="B",
+                    in_ports={"in": PortConfig()},
+                    in_salvo_conditions={
+                        "default": SalvoConditionConfig(
+                            max_salvos=MaxSalvosFiniteConfig(max=1),
+                            ports={"in": PacketCountAllConfig()},
+                            term=SalvoConditionTermPortConfig(
+                                port_name="in",
+                                state=PortStateNonEmptyConfig(),
+                            ),
+                        ),
+                    },
+                ),
+            ],
+            edges=[
+                EdgeConfig(source_str="A.out", target_str="B.in"),
+            ],
+        )
+        graph = config.get_graph()
+    """
+    nodes: list[NodeGraphConfig]
+    edges: list[EdgeConfig] = Field(default_factory=list)
+
+    def get_graph(self) -> netrun_sim.Graph:
+        """Convert this config to a netrun_sim.Graph object."""
+        nodes = [node.to_netrun_sim() for node in self.nodes]
+        edges = [edge.to_netrun_sim() for edge in self.edges]
+        return netrun_sim.Graph(nodes, edges)
+
+# %% [markdown]
+# # Net configuation
+
+# %% [markdown]
+# ## Pool configs
+
+# %%
+#|export
+class MainPoolConfig(BaseModel):
+    """Configuration for running in the main thread/event loop."""
+    type: Literal["main"] = "main"
+
+
+class ThreadPoolConfig(BaseModel):
+    """Configuration for a thread pool."""
+    type: Literal["thread"] = "thread"
+    num_workers: int = 1
+
+
+class MultiprocessPoolConfig(BaseModel):
+    """Configuration for a multiprocess pool."""
+    type: Literal["multiprocess"] = "multiprocess"
+    num_processes: int = 1
+    threads_per_process: int = 1
+
+
+class RemotePoolConfig(BaseModel):
+    """Configuration for a remote pool."""
+    type: Literal["remote"] = "remote"
+    url: str
+    worker_name: str
+    num_processes: int = 1
+    threads_per_process: int = 1
+
+
+PoolSpecConfig = Annotated[
+    Union[MainPoolConfig, ThreadPoolConfig, MultiprocessPoolConfig, RemotePoolConfig],
+    Field(discriminator="type")
+]
+
+
+class PoolConfig(BaseModel):
+    """Configuration for a pool of workers."""
+    id: str
+    print_flush_interval: float = 0.1
+    capture_prints: bool = True
+    spec: PoolSpecConfig
+
+# %% [markdown]
+# ## The Net configuration class
+
+# %%
+#|export
+class NetConfig(BaseModel):
+    """Configuration for a Net."""
+    pools: dict[str, PoolConfig]
+    graph: GraphConfig
+
+# %% [markdown]
+# # Examples
+
+# %% [markdown]
+# ## Simple A -> B graph
+
+# %%
+# Create a simple graph with two nodes: A (source) -> B (sink)
+config = GraphConfig(
+    nodes=[
+        NodeGraphConfig(
+            name="A",
+            out_ports={"out": PortConfig()},
+        ),
+        NodeGraphConfig(
+            name="B",
+            in_ports={"in": PortConfig()},
+            in_salvo_conditions={
+                "default": SalvoConditionConfig(
+                    max_salvos=MaxSalvosFiniteConfig(max=1),
+                    ports={"in": PacketCountAllConfig()},
+                    term=SalvoConditionTermPortConfig(
+                        port_name="in",
+                        state=PortStateNonEmptyConfig(),
+                    ),
+                ),
+            },
+        ),
+    ],
+    edges=[
+        EdgeConfig(source_str="A.out", target_str="B.in"),
+    ],
+)
+
+# Convert to netrun_sim.Graph
+graph = config.get_graph()
+print(f"Graph: {graph}")
+print(f"Nodes: {list(graph.nodes().keys())}")
+print(f"Edges: {graph.edges()}")
+
+# Validate the graph
+errors = graph.validate()
+print(f"Validation errors: {len(errors)}")
+
+# %% [markdown]
+# ## JSON serialization
+
+# %%
+# GraphConfig is fully serializable
+json_str = config.model_dump_json(indent=2)
+print(json_str[:500] + "...")
+
+# %%
+# Deserialize from JSON
+config_loaded = GraphConfig.model_validate_json(json_str)
+graph_loaded = config_loaded.get_graph()
+print(f"Loaded graph: {graph_loaded}")
+
+# %% [markdown]
+# ## Complex salvo conditions
+
+# %%
+# Example with AND/OR logic in salvo conditions
+complex_config = GraphConfig(
+    nodes=[
+        NodeGraphConfig(
+            name="Source",
+            out_ports={"out": PortConfig()},
+        ),
+        NodeGraphConfig(
+            name="Processor",
+            in_ports={
+                "in1": PortConfig(slots_spec=PortSlotSpecFiniteConfig(capacity=5)),
+                "in2": PortConfig(),
+            },
+            out_ports={"out": PortConfig()},
+            in_salvo_conditions={
+                # Trigger when both input ports have packets
+                "both_ready": SalvoConditionConfig(
+                    max_salvos=MaxSalvosFiniteConfig(max=1),
+                    ports={
+                        "in1": PacketCountAllConfig(),
+                        "in2": PacketCountAllConfig(),
+                    },
+                    term=SalvoConditionTermAndConfig(
+                        terms=[
+                            SalvoConditionTermPortConfig(
+                                port_name="in1",
+                                state=PortStateNonEmptyConfig(),
+                            ),
+                            SalvoConditionTermPortConfig(
+                                port_name="in2",
+                                state=PortStateNonEmptyConfig(),
+                            ),
+                        ]
+                    ),
+                ),
+            },
+            out_salvo_conditions={
+                "send": SalvoConditionConfig(
+                    max_salvos=MaxSalvosInfiniteConfig(),
+                    ports={"out": PacketCountAllConfig()},
+                    term=SalvoConditionTermPortConfig(
+                        port_name="out",
+                        state=PortStateNonEmptyConfig(),
+                    ),
+                ),
+            },
+        ),
+        NodeGraphConfig(
+            name="Sink",
+            in_ports={"in": PortConfig()},
+            in_salvo_conditions={
+                "default": SalvoConditionConfig(
+                    max_salvos=MaxSalvosFiniteConfig(max=1),
+                    ports={"in": PacketCountAllConfig()},
+                    term=SalvoConditionTermPortConfig(
+                        port_name="in",
+                        state=PortStateNonEmptyConfig(),
+                    ),
+                ),
+            },
+        ),
+    ],
+    edges=[
+        EdgeConfig(source_str="Source.out", target_str="Processor.in1"),
+        EdgeConfig(source_str="Processor.out", target_str="Sink.in"),
+    ],
+)
+
+complex_graph = complex_config.get_graph()
+print(f"Complex graph nodes: {list(complex_graph.nodes().keys())}")
+print(f"Validation errors: {len(complex_graph.validate())}")
