@@ -320,6 +320,65 @@ def _thread_worker_func(channel, worker_id, print_flush_interval: float = 0.1, c
 def _multiprocess_worker_func(channel, worker_id, print_flush_interval: float = 0.1, capture_prints: bool = True):
     return _worker_func(is_in_main_process=False, channel=channel, worker_id=worker_id, print_flush_interval=print_flush_interval, capture_prints=capture_prints)
 
+# %% [markdown]
+# ## Remote Worker Function
+#
+# This worker function can be registered on a `RemotePoolServer` to handle
+# ExecutionManager protocol messages. It provides the same functionality as
+# the multiprocess worker (print capture, serialization handling, etc.).
+
+# %%
+#|export
+def remote_execution_manager_worker(channel, worker_id: int, print_flush_interval: float = 0.1, capture_prints: bool = True) -> None:
+    """Worker function for use with RemotePoolServer and ExecutionManager.
+
+    Register this function on a RemotePoolServer to enable ExecutionManager
+    to run functions on remote workers. It handles the full ExecutionManager
+    protocol including:
+    - SEND_FUNCTION: Store a function by key for later execution
+    - RUN: Execute a stored or importable function
+
+    Example:
+        ```python
+        from netrun.pool.remote import RemotePoolServer
+        from netrun.execution_manager import remote_execution_manager_worker
+
+        server = RemotePoolServer()
+        server.register_worker("exec_manager", remote_execution_manager_worker)
+        await server.serve("0.0.0.0", 8080)
+        ```
+
+    Then connect with ExecutionManager:
+        ```python
+        from netrun.pool.remote import RemotePoolClient
+        from netrun.execution_manager import ExecutionManager
+
+        manager = ExecutionManager({
+            "remote": (RemotePoolClient, {
+                "url": "ws://server:8080",
+                "worker_name": "exec_manager",
+                "num_processes": 4,
+            }),
+        })
+        async with manager:
+            await manager.send_function_to_pool("remote", "my_fn", my_function)
+            result = await manager.run(...)
+        ```
+
+    Args:
+        channel: RPC channel for communication with the pool.
+        worker_id: ID of this worker.
+        print_flush_interval: Interval in seconds between automatic print buffer flushes.
+        capture_prints: If True, capture print statements and send them back.
+    """
+    return _worker_func(
+        is_in_main_process=False,
+        channel=channel,
+        worker_id=worker_id,
+        print_flush_interval=print_flush_interval,
+        capture_prints=capture_prints,
+    )
+
 # %%
 #|exporti
 async def _async_worker_func(channel, worker_id, print_flush_interval: float = 0.1, capture_prints: bool = True):
