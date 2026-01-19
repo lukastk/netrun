@@ -98,6 +98,15 @@ from netrun._iutils import get_timestamp_utc
 
 # %%
 #|export
+MP_DOWN_SHUTDOWN = "__pool-mp-down:shutdown"
+"""Signal subprocess to shut down gracefully. Data: None.
+
+Note: This is different from RPC_KEY_SHUTDOWN which triggers immediate channel close.
+This key allows the subprocess to complete its shutdown sequence (including final
+flush and SHUTDOWN_COMPLETE signal) before the channel is closed."""
+
+# %%
+#|export
 MP_DOWN_DISPATCH = "__pool-mp-down:dispatch"
 """Route message to specific worker thread. Data: (thread_idx, key, data)"""
 
@@ -120,6 +129,11 @@ MP_DOWN_FLUSH_STDOUT = "__pool-mp-down:flush-stdout"
 #|export
 MP_UP_STDOUT_BUFFER = "__pool-mp-up:stdout-buffer"
 """Stdout buffer contents. Data: list[tuple[datetime, bool, str]]"""
+
+# %%
+#|export
+MP_UP_SHUTDOWN_COMPLETE = "__pool-mp-up:shutdown-complete"
+"""Signal from subprocess that shutdown is complete and final buffer has been sent. Data: None"""
 
 # %%
 #|export
@@ -237,6 +251,7 @@ def _subprocess_main(
 
     # Router loop: handle messages from parent and responses from workers
     shutdown = False
+    shutdown_event = threading.Event()
 
     def response_forwarder():
         """Forward responses from workers to parent."""
@@ -268,7 +283,8 @@ def _subprocess_main(
     def output_flusher():
         """Periodically flush output buffer to parent."""
         while not shutdown:
-            time.sleep(output_flush_interval)
+            # Wait for shutdown_event or timeout - allows fast wakeup on shutdown
+            shutdown_event.wait(timeout=output_flush_interval)
             if shutdown:
                 break
             with output_buffer_lock:
@@ -309,13 +325,15 @@ def _subprocess_main(
                     buffer_copy = list(output_buffer)
                     output_buffer.clear()
                 parent_channel.send(MP_UP_STDOUT_BUFFER, buffer_copy)
-            elif key == RPC_KEY_SHUTDOWN:
+            elif key == MP_DOWN_SHUTDOWN:
+                # Graceful shutdown - allows us to send SHUTDOWN_COMPLETE before channel closes
                 break
     except ChannelClosed:
         pass
     finally:
         # Signal shutdown to background threads
         shutdown = True
+        shutdown_event.set()  # Wake up flusher immediately
 
         # Signal workers to stop
         for q in worker_send_queues:
@@ -331,9 +349,9 @@ def _subprocess_main(
         # Wait for forwarder to finish draining
         forwarder.join()
 
-        # Flusher will exit on next iteration due to shutdown flag
+        # Flusher will exit quickly due to shutdown_event being set
         if flusher is not None:
-            flusher.join(timeout=output_flush_interval + 0.1)
+            flusher.join(timeout=1.0)  # Short timeout since we signaled shutdown_event
 
         # Final flush of any remaining output
         if redirect_output and buffer_output:
@@ -344,6 +362,12 @@ def _subprocess_main(
                         output_buffer.clear()
                     except Exception:
                         pass
+
+        # Signal that shutdown is complete
+        try:
+            parent_channel.send(MP_UP_SHUTDOWN_COMPLETE, None)
+        except Exception:
+            pass
 
 # %%
 #|export
@@ -480,6 +504,7 @@ class MultiprocessPool:
         self._dead_processes: set[int] = set()  # Track processes we've already reported as dead
         self._stdout_buffers: dict[int, OutputBuffer] = {}  # process_idx -> buffer
         self._flush_events: dict[int, asyncio.Event] = {}  # process_idx -> event for flush response
+        self._shutdown_complete_events: dict[int, asyncio.Event] = {}  # process_idx -> event for shutdown complete
 
     @property
     def num_workers(self) -> int:
@@ -572,6 +597,12 @@ class MultiprocessPool:
     async def close(self, timeout: float | None = None) -> None:
         """Shut down all processes and clean up resources.
 
+        This method ensures that all pending output from subprocesses is received
+        before shutting down. It works by:
+        1. Sending RPC_KEY_SHUTDOWN to each subprocess
+        2. Waiting for each subprocess to send SHUTDOWN_COMPLETE (with final flush)
+        3. Then closing channels and cleaning up
+
         Args:
             timeout: Max seconds to wait for each process to finish gracefully.
                      If None, wait indefinitely. If timeout expires, processes
@@ -579,6 +610,10 @@ class MultiprocessPool:
         """
         if not self._running:
             return
+
+        # Ensure recv tasks are running BEFORE we set _running = False
+        # This ensures we can receive SHUTDOWN_COMPLETE messages
+        self._start_recv_tasks()
 
         self._running = False
 
@@ -590,11 +625,38 @@ class MultiprocessPool:
             except asyncio.CancelledError:
                 pass
 
-        # Close channels first - this unblocks any recv() calls
+        # Create shutdown complete events for each process
+        for process_idx in range(self._num_processes):
+            self._shutdown_complete_events[process_idx] = asyncio.Event()
+
+        # Send shutdown signals to each subprocess using MP_DOWN_SHUTDOWN (NOT RPC_KEY_SHUTDOWN)
+        # MP_DOWN_SHUTDOWN allows the subprocess to complete its shutdown sequence
+        # (including final flush and SHUTDOWN_COMPLETE) before the channel is closed
+        for channel in self._channels:
+            try:
+                await channel.send(MP_DOWN_SHUTDOWN, None)
+            except Exception:
+                pass
+
+        # Wait for SHUTDOWN_COMPLETE from all processes
+        # The recv loop will set the events when it receives SHUTDOWN_COMPLETE
+        shutdown_timeout = timeout if timeout is not None else 30.0  # Default 30s
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(*[
+                    self._shutdown_complete_events[i].wait()
+                    for i in range(self._num_processes)
+                ]),
+                timeout=shutdown_timeout
+            )
+        except asyncio.TimeoutError:
+            pass  # Continue with cleanup even if some processes didn't respond
+
+        # Now close channels - this is safe since we've received all messages
         for channel in self._channels:
             await channel.close()
 
-        # Now cancel recv tasks (they should exit quickly since channels are closed)
+        # Cancel recv tasks (they should already be done since they break after SHUTDOWN_COMPLETE)
         for task in self._recv_tasks:
             if not task.done():
                 task.cancel()
@@ -617,6 +679,7 @@ class MultiprocessPool:
         self._dead_processes = set()
         self._stdout_buffers = {}
         self._flush_events = {}
+        self._shutdown_complete_events = {}
 
     async def send(self, worker_id: WorkerId, key: str, data: Any) -> None:
         """Send a message to a specific worker."""
@@ -636,7 +699,8 @@ class MultiprocessPool:
 
         async def recv_loop(process_idx: int, channel: ProcessChannel):
             try:
-                while self._running:
+                # Keep receiving until shutdown complete or channel closed
+                while True:
                     key, data = await channel.recv()
                     if key == MP_UP_RESPONSE:
                         worker_id, msg_key, msg_data = data
@@ -651,6 +715,12 @@ class MultiprocessPool:
                         # Signal that flush response was received
                         if process_idx in self._flush_events:
                             self._flush_events[process_idx].set()
+                    elif key == MP_UP_SHUTDOWN_COMPLETE:
+                        # Signal that this subprocess has finished shutdown
+                        if process_idx in self._shutdown_complete_events:
+                            self._shutdown_complete_events[process_idx].set()
+                        # Exit the loop after receiving shutdown complete
+                        break
             except (ChannelClosed, asyncio.CancelledError):
                 pass
             except Exception:

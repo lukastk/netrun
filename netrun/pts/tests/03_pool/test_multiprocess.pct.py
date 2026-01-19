@@ -809,3 +809,55 @@ async def test_no_callback_still_buffers():
 
 # %%
 await test_no_callback_still_buffers();
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_final_flush_on_close():
+    """Test that output printed just before shutdown is still delivered via on_output callback.
+
+    This verifies the fix for the race condition where the final flush from a subprocess
+    could be lost if the parent's recv loop was cancelled before processing it.
+    """
+    received_outputs: list[tuple[int, list]] = []
+
+    def on_output_callback(process_idx: int, buffer: list):
+        received_outputs.append((process_idx, list(buffer)))
+
+    # Use a medium flush interval - long enough that we might not auto-flush
+    # before close(), but short enough for reasonable test duration
+    pool = MultiprocessPool(
+        printing_worker,
+        num_processes=1,
+        threads_per_process=1,
+        redirect_output=True,
+        buffer_output=True,
+        output_flush_interval=1.0,  # 1 second interval
+        on_output=on_output_callback,
+    )
+
+    await pool.start()
+
+    # Send a message to trigger prints - this output should be captured
+    await pool.send(0, "test", "final-message")
+    await pool.recv(timeout=5.0)
+
+    # Close immediately - the final flush on close should deliver the output
+    # even if no auto-flush happened yet
+    await pool.close(timeout=5.0)
+
+    # Verify that we received output via the callback
+    assert len(received_outputs) > 0, "on_output callback should have been called with final flush"
+
+    # Combine all received output
+    all_text = ""
+    for process_idx, buffer in received_outputs:
+        for entry in buffer:
+            timestamp, is_stdout, text = entry
+            all_text += text
+
+    # Should contain our message
+    assert "final-message" in all_text, f"Final message not found in output: {all_text}"
+
+# %%
+await test_final_flush_on_close();
