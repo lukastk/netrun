@@ -9,7 +9,6 @@ import queue
 import sys
 import threading
 import multiprocessing as mp
-import time
 from typing import Any
 from collections.abc import Callable
 
@@ -601,7 +600,7 @@ class MultiprocessPool:
                 ]),
                 timeout=shutdown_timeout
             )
-        except asyncio.TimeoutError:
+        except TimeoutError:
             pass  # Continue with cleanup even if some processes didn't respond
 
         # Now close channels - this is safe since we've received all messages
