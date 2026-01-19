@@ -9,7 +9,9 @@ import queue
 import sys
 import threading
 import multiprocessing as mp
+import time
 from typing import Any
+from collections.abc import Callable
 
 from ..rpc.base import ChannelClosed, RecvTimeout, RPC_KEY_SHUTDOWN
 from ..rpc.multiprocess import (
@@ -103,6 +105,7 @@ def _subprocess_main(
     threads_per_process: int,
     redirect_output: bool = True,
     buffer_output: bool = True,
+    output_flush_interval: float = 0.1,
 ):
     """Entry point for subprocess. Routes messages to/from worker threads.
 
@@ -115,6 +118,7 @@ def _subprocess_main(
         threads_per_process: Total threads per process (for worker_id calculation)
         redirect_output: If True, capture stdout/stderr
         buffer_output: If True, buffer captured output; if False, discard it
+        output_flush_interval: Interval in seconds between automatic output buffer flushes
     """
     # Set up stdout/stderr capture if requested
     output_buffer: OutputBuffer = []
@@ -176,9 +180,31 @@ def _subprocess_main(
             except Exception:
                 break
 
+    def output_flusher():
+        """Periodically flush output buffer to parent."""
+        while not shutdown:
+            time.sleep(output_flush_interval)
+            if shutdown:
+                break
+            with output_buffer_lock:
+                if output_buffer:
+                    buffer_copy = list(output_buffer)
+                    output_buffer.clear()
+                    try:
+                        parent_channel.send(MP_UP_STDOUT_BUFFER, buffer_copy)
+                    except Exception:
+                        # Channel might be closed during shutdown
+                        break
+
     # Start response forwarder thread
     forwarder = threading.Thread(target=response_forwarder, daemon=True)
     forwarder.start()
+
+    # Start output flusher thread if output is being captured and buffered
+    flusher = None
+    if redirect_output and buffer_output:
+        flusher = threading.Thread(target=output_flusher, daemon=True)
+        flusher.start()
 
     # Main loop: receive from parent and dispatch to workers
     try:
@@ -203,6 +229,9 @@ def _subprocess_main(
     except ChannelClosed:
         pass
     finally:
+        # Signal shutdown to background threads
+        shutdown = True
+
         # Signal workers to stop
         for q in worker_send_queues:
             q.put((RPC_KEY_SHUTDOWN, None))
@@ -212,11 +241,24 @@ def _subprocess_main(
             t.join()
 
         # Now signal forwarder to stop (after workers are done)
-        shutdown = True
         response_queue.put(None)
 
         # Wait for forwarder to finish draining
         forwarder.join()
+
+        # Flusher will exit on next iteration due to shutdown flag
+        if flusher is not None:
+            flusher.join(timeout=output_flush_interval + 0.1)
+
+        # Final flush of any remaining output
+        if redirect_output and buffer_output:
+            with output_buffer_lock:
+                if output_buffer:
+                    try:
+                        parent_channel.send(MP_UP_STDOUT_BUFFER, list(output_buffer))
+                        output_buffer.clear()
+                    except Exception:
+                        pass
 
 # %% nbs/netrun/03_pool/02_multiprocess.ipynb 15
 def _thread_worker(
@@ -304,6 +346,8 @@ class MultiprocessPool:
         threads_per_process: int = 1,
         redirect_output: bool = True,
         buffer_output: bool = True,
+        output_flush_interval: float = 0.1,
+        on_output: Callable[[int, OutputBuffer], None] | None = None,
     ):
         """Create a multiprocess pool.
 
@@ -315,6 +359,12 @@ class MultiprocessPool:
             buffer_output: If True, buffer captured output for retrieval.
                           If False, discard captured output (silent mode).
                           Only applies when redirect_output=True.
+            output_flush_interval: Interval in seconds between automatic output buffer
+                          flushes from subprocesses (default 0.1 = 100ms).
+                          Only applies when redirect_output=True and buffer_output=True.
+            on_output: Optional callback called when output buffer is received from a
+                          subprocess. Called with (process_idx, buffer) where buffer is
+                          a list of (timestamp, is_stdout, text) tuples.
         """
         if num_processes < 1:
             raise ValueError("num_processes must be at least 1")
@@ -327,6 +377,8 @@ class MultiprocessPool:
         self._num_workers = num_processes * threads_per_process
         self._redirect_output = redirect_output
         self._buffer_output = buffer_output
+        self._output_flush_interval = output_flush_interval
+        self._on_output = on_output
         self._running = False
 
         # Will be populated on start()
@@ -396,6 +448,7 @@ class MultiprocessPool:
                     self._threads_per_process,
                     self._redirect_output,
                     self._buffer_output,
+                    self._output_flush_interval,
                 ),
             )
             proc.start()
@@ -502,6 +555,9 @@ class MultiprocessPool:
                     elif key == MP_UP_STDOUT_BUFFER:
                         # Append received buffer to our local buffer for this process
                         self._stdout_buffers[process_idx].extend(data)
+                        # Call on_output callback if provided
+                        if self._on_output is not None and data:
+                            self._on_output(process_idx, data)
                         # Signal that flush response was received
                         if process_idx in self._flush_events:
                             self._flush_events[process_idx].set()

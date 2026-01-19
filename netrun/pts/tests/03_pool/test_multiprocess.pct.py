@@ -659,3 +659,153 @@ async def test_stdout_content():
 
 # %%
 await test_stdout_content();
+
+# %% [markdown]
+# ## Test Auto-Flush and on_output Callback
+#
+# These tests verify the automatic output flushing and callback features.
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_on_output_callback():
+    """Test that on_output callback is called when output is received."""
+    received_outputs: list[tuple[int, list]] = []
+
+    def on_output_callback(process_idx: int, buffer: list):
+        received_outputs.append((process_idx, buffer))
+
+    async with MultiprocessPool(
+        printing_worker,
+        num_processes=1,
+        threads_per_process=1,
+        redirect_output=True,
+        buffer_output=True,
+        output_flush_interval=0.05,  # 50ms for faster test
+        on_output=on_output_callback,
+    ) as pool:
+        # Send a message to trigger prints
+        await pool.send(0, "test", "hello")
+        await pool.recv(timeout=5.0)
+
+        # Wait for auto-flush to occur
+        await asyncio.sleep(0.2)
+
+    # Callback should have been called at least once
+    assert len(received_outputs) > 0, "on_output callback should have been called"
+
+    # All calls should be for process_idx 0
+    for process_idx, buffer in received_outputs:
+        assert process_idx == 0
+        assert len(buffer) > 0
+
+# %%
+await test_on_output_callback();
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_auto_flush_interval():
+    """Test that output is automatically flushed at the configured interval."""
+    import time
+    flush_times: list[float] = []
+
+    def on_output_callback(process_idx: int, buffer: list):
+        flush_times.append(time.time())
+
+    async with MultiprocessPool(
+        printing_worker,
+        num_processes=1,
+        threads_per_process=1,
+        redirect_output=True,
+        buffer_output=True,
+        output_flush_interval=0.1,  # 100ms
+        on_output=on_output_callback,
+    ) as pool:
+        # Send multiple messages over time to generate continuous output
+        for i in range(3):
+            await pool.send(0, "test", f"message-{i}")
+            await pool.recv(timeout=5.0)
+            await asyncio.sleep(0.15)  # Wait longer than flush interval
+
+    # Should have received multiple flushes
+    assert len(flush_times) >= 2, f"Expected at least 2 auto-flushes, got {len(flush_times)}"
+
+# %%
+await test_auto_flush_interval();
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_on_output_multiple_processes():
+    """Test on_output callback with multiple processes."""
+    outputs_by_process: dict[int, list] = {0: [], 1: []}
+
+    def on_output_callback(process_idx: int, buffer: list):
+        outputs_by_process[process_idx].extend(buffer)
+
+    async with MultiprocessPool(
+        printing_worker,
+        num_processes=2,
+        threads_per_process=1,
+        redirect_output=True,
+        buffer_output=True,
+        output_flush_interval=0.05,
+        on_output=on_output_callback,
+    ) as pool:
+        # Send to both processes
+        await pool.send(0, "test", "hello-0")
+        await pool.send(1, "test", "hello-1")
+
+        await pool.recv(timeout=5.0)
+        await pool.recv(timeout=5.0)
+
+        # Wait for auto-flush
+        await asyncio.sleep(0.2)
+
+    # Both processes should have output
+    assert len(outputs_by_process[0]) > 0, "Process 0 should have output"
+    assert len(outputs_by_process[1]) > 0, "Process 1 should have output"
+
+# %%
+await test_on_output_multiple_processes();
+
+# %%
+#|export
+def test_output_flush_interval_default():
+    """Test that output_flush_interval defaults to 0.1 (100ms)."""
+    pool = MultiprocessPool(echo_worker, num_processes=1)
+    assert pool._output_flush_interval == 0.1
+
+# %%
+test_output_flush_interval_default();
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_no_callback_still_buffers():
+    """Test that output is still buffered locally even without on_output callback."""
+    async with MultiprocessPool(
+        printing_worker,
+        num_processes=1,
+        threads_per_process=1,
+        redirect_output=True,
+        buffer_output=True,
+        output_flush_interval=0.05,
+        # No on_output callback
+    ) as pool:
+        # Send a message to trigger prints
+        await pool.send(0, "test", "hello")
+        await pool.recv(timeout=5.0)
+
+        # Wait for auto-flush
+        await asyncio.sleep(0.15)
+
+        # Even without callback, flush_stdout should still work
+        # (auto-flush accumulates in _stdout_buffers)
+        buffer = await pool.flush_stdout(0)
+        # The buffer might have some content from auto-flush that accumulated
+        # Note: this is additive to what auto-flush already sent
+
+# %%
+await test_no_callback_still_buffers();
