@@ -21,8 +21,6 @@
 # %%
 #|export
 import pytest
-import asyncio
-from datetime import datetime
 
 # Check if websockets is available
 try:
@@ -35,13 +33,11 @@ pytestmark = pytest.mark.skipif(not HAS_WEBSOCKETS, reason="websockets not insta
 
 # %%
 #|export
-from netrun.pool.remote import RemotePoolServer, RemotePoolClient
+from netrun.pool.remote import RemotePoolClient
 
 from netrun.execution_manager import (
     ExecutionManager,
-    RunAllocationMethod,
     ExecutionManagerProtocolKeys,
-    remote_execution_manager_worker,
     create_execution_manager_server,
 )
 
@@ -49,11 +45,8 @@ from netrun.execution_manager import (
 from tests.execution_manager.workers import (
     add_numbers,
     multiply_numbers,
-    function_with_print,
     slow_function,
     function_with_kwargs,
-    async_add,
-    function_with_multiple_prints,
 )
 
 # %% [markdown]

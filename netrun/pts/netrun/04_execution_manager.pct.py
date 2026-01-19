@@ -47,58 +47,6 @@ from netrun.pool.aio import SingleWorkerPool
 from netrun.pool.remote import RemotePoolClient
 
 # %% [markdown]
-# ## Thread-safe print capture
-#
-# These helpers provide thread-safe print capture using thread-local storage.
-# The patch is applied to `builtins.print` and uses reference counting to support
-# multiple ExecutionManager instances.
-
-# %%
-#|exporti
-_print_capture_lock = threading.Lock()
-_print_capture_refcount = 0
-_original_builtins_print = None
-_print_capture_local = threading.local()
-
-def _capturing_print(*args, **kwargs):
-    """Replacement for builtins.print that captures output when callback is set."""
-    callback = getattr(_print_capture_local, 'callback', None)
-    if callback is not None:
-        # Capture mode active in this thread - capture to string and call callback
-        output = io.StringIO()
-        _original_builtins_print(*args, **kwargs, file=output)
-        callback(output.getvalue())
-    else:
-        # Normal print
-        _original_builtins_print(*args, **kwargs)
-
-def _enable_print_capture():
-    """Enable print capture. Idempotent - uses reference counting."""
-    global _print_capture_refcount, _original_builtins_print
-    with _print_capture_lock:
-        if _print_capture_refcount == 0:
-            _original_builtins_print = builtins.print
-            builtins.print = _capturing_print
-        _print_capture_refcount += 1
-
-def _disable_print_capture():
-    """Disable print capture. Only removes patch when refcount reaches 0."""
-    global _print_capture_refcount
-    with _print_capture_lock:
-        _print_capture_refcount -= 1
-        if _print_capture_refcount == 0:
-            builtins.print = _original_builtins_print
-
-@contextmanager
-def _capture_prints(callback):
-    """Context manager to set the print callback for the current thread."""
-    _print_capture_local.callback = callback
-    try:
-        yield
-    finally:
-        _print_capture_local.callback = None
-
-# %% [markdown]
 # ## Function runners
 #
 # Helpers for the execution manager to run functions.
@@ -109,33 +57,19 @@ async def _async_func_runner(
     channel: RPCChannel,
     func: Callable[..., Awaitable[Any]],
     send_channel: bool,
-    print_callback: Callable[[str], None] | None,
     args: tuple,
     kwargs: dict,
 ) -> Any:
-    if print_callback is not None:
-        with _capture_prints(print_callback):
-            if asyncio.iscoroutinefunction(func):
-                if send_channel:
-                    return await func(channel, *args, **kwargs)
-                else:
-                    return await func(*args, **kwargs)
-            else:
-                if send_channel:
-                    return func(channel, *args, **kwargs)
-                else:
-                    return func(*args, **kwargs)
-    else:
-        if asyncio.iscoroutinefunction(func):
-            if send_channel:
-                return await func(channel, *args, **kwargs)
-            else:
-                return await func(*args, **kwargs)
+    if asyncio.iscoroutinefunction(func):
+        if send_channel:
+            return await func(channel, *args, **kwargs)
         else:
-            if send_channel:
-                return func(channel, *args, **kwargs)
-            else:
-                return func(*args, **kwargs)
+            return await func(*args, **kwargs)
+    else:
+        if send_channel:
+            return func(channel, *args, **kwargs)
+        else:
+            return func(*args, **kwargs)
 
 # %%
 #|exporti
@@ -143,34 +77,20 @@ def _func_runner(
     channel: RPCChannel,
     func: Callable[..., Any],
     send_channel: bool,
-    print_callback: Callable[[str], None] | None,
     args: tuple,
     kwargs: dict,
     event_loop: asyncio.AbstractEventLoop,
 ) -> Any:
-    if print_callback is not None:
-        with _capture_prints(print_callback):
-            if asyncio.iscoroutinefunction(func):
-                if send_channel:
-                    return event_loop.run_until_complete(func(channel, *args, **kwargs))
-                else:
-                    return event_loop.run_until_complete(func(*args, **kwargs))
-            else:
-                if send_channel:
-                    return func(channel, *args, **kwargs)
-                else:
-                    return func(*args, **kwargs)
-    else:
-        if asyncio.iscoroutinefunction(func):
-            if send_channel:
-                return event_loop.run_until_complete(func(channel, *args, **kwargs))
-            else:
-                return event_loop.run_until_complete(func(*args, **kwargs))
+    if asyncio.iscoroutinefunction(func):
+        if send_channel:
+            return event_loop.run_until_complete(func(channel, *args, **kwargs))
         else:
-            if send_channel:
-                return func(channel, *args, **kwargs)
-            else:
-                return func(*args, **kwargs)
+            return event_loop.run_until_complete(func(*args, **kwargs))
+    else:
+        if send_channel:
+            return func(channel, *args, **kwargs)
+        else:
+            return func(*args, **kwargs)
 
 # %% [markdown]
 # ## Helpers
@@ -227,28 +147,17 @@ class ExecutionManagerProtocolKeys(Enum):
     Args: msg_id
     """
 
-    UP_PRINT_BUFFER = "exec-manager-up:print-buffer"
-    """
-    Auto-flushed print buffer from the worker during function execution.
-    Sent at regular intervals (print_flush_interval) and before UP_RUN_RESPONSE.
-    Args: msg_id, run_id, _buffer
-    """
-
 # %%
 #|exporti
-def _worker_func(is_in_main_process: bool, channel, worker_id, print_flush_interval: float = 0.1, capture_prints: bool = True):
+def _worker_func(is_in_main_process: bool, channel, worker_id, func_preprocessor: Callable | None = None):
     """Worker function that handles execution manager protocol messages.
 
     Args:
         is_in_main_process: If True, results don't need to be serializable.
         channel: RPC channel for communication.
         worker_id: ID of this worker.
-        print_flush_interval: Interval in seconds between automatic print buffer flushes.
-        capture_prints: If True, capture print statements and send them back. If False, prints go to stdout normally.
+        func_preprocessor: If provided, this is a function that preprocesses the function before it is executed.
     """
-    # Enable print capture if configured
-    if capture_prints:
-        _enable_print_capture()
 
     event_loop = asyncio.new_event_loop()
     registered_functions: dict[str, Callable[..., Awaitable] | Callable[..., None]] = {}
@@ -265,23 +174,8 @@ def _worker_func(is_in_main_process: bool, channel, worker_id, print_flush_inter
                 module = importlib.import_module(module_path)
                 func = getattr(module, func_name)
 
-            # Set up auto-flushing print buffer (only if capture_prints is enabled)
-            print_buffer: list[tuple[datetime, str]] = []
-            last_flush_time = get_timestamp_utc()
-
-            if capture_prints:
-                def print_callback(text: str):
-                    nonlocal last_flush_time
-                    print_buffer.append((get_timestamp_utc(), text))
-                    # Check if we should auto-flush
-                    now = get_timestamp_utc()
-                    elapsed = (now - last_flush_time).total_seconds()
-                    if elapsed >= print_flush_interval and print_buffer:
-                        channel.send(ExecutionManagerProtocolKeys.UP_PRINT_BUFFER.value, (msg_id, run_id, list(print_buffer)))
-                        print_buffer.clear()
-                        last_flush_time = now
-            else:
-                print_callback = None
+            if func_preprocessor is not None:
+                func = func_preprocessor(func)
 
             timestamp_utc_started = get_timestamp_utc()
             channel.send(ExecutionManagerProtocolKeys.UP_RUN_STARTED.value, (msg_id, timestamp_utc_started))
@@ -289,7 +183,6 @@ def _worker_func(is_in_main_process: bool, channel, worker_id, print_flush_inter
                 channel=channel,
                 func=func,
                 send_channel=send_channel,
-                print_callback=print_callback,
                 args=args,
                 kwargs=kwargs,
                 event_loop=event_loop,
@@ -300,10 +193,6 @@ def _worker_func(is_in_main_process: bool, channel, worker_id, print_flush_inter
             else:
                 converted_to_str, _res = _convert_to_str_if_not_serializable(res)
 
-            # Flush any remaining print buffer before sending response
-            if capture_prints and print_buffer:
-                channel.send(ExecutionManagerProtocolKeys.UP_PRINT_BUFFER.value, (msg_id, run_id, list(print_buffer)))
-
             channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res))
         # SEND_FUNCTION
         elif key == ExecutionManagerProtocolKeys.SEND_FUNCTION.value:
@@ -313,78 +202,83 @@ def _worker_func(is_in_main_process: bool, channel, worker_id, print_flush_inter
         else:
             raise ValueError(f"Unknown execution manager protocol key: '{key}'.")
 
-def _thread_worker_func(channel, worker_id, print_flush_interval: float = 0.1, capture_prints: bool = True):
-    return _worker_func(is_in_main_process=True, channel=channel, worker_id=worker_id, print_flush_interval=print_flush_interval, capture_prints=capture_prints)
+def _thread_worker_func(channel, worker_id, func_preprocessor: Callable | None = None):
+    return _worker_func(is_in_main_process=True, channel=channel, worker_id=worker_id, func_preprocessor=func_preprocessor)
 
 # If the worker is in a multiprocess pool, then the result needs to be pickleable for it to be sent back without being converted as `str(result)`.
-def _multiprocess_worker_func(channel, worker_id, print_flush_interval: float = 0.1, capture_prints: bool = True):
-    return _worker_func(is_in_main_process=False, channel=channel, worker_id=worker_id, print_flush_interval=print_flush_interval, capture_prints=capture_prints)
+def _multiprocess_worker_func(channel, worker_id, func_preprocessor: Callable | None = None):
+    return _worker_func(is_in_main_process=False, channel=channel, worker_id=worker_id, func_preprocessor=func_preprocessor)
+
+# %%
+#|exporti
+async def _async_worker_func(channel, worker_id, func_preprocessor: Callable | None = None):
+    """Async worker function that handles execution manager protocol messages.
+
+    Args:
+        channel: Async RPC channel for communication.
+        worker_id: ID of this worker.
+        func_preprocessor: If provided, this is a function that preprocesses the function before it is executed.
+        func
+    """
+    registered_functions: dict[str, Callable[..., Awaitable] | Callable[..., None]] = {}
+
+    while True:
+        key, data = await channel.recv()
+        # RUN
+        if key == ExecutionManagerProtocolKeys.RUN.value:
+            msg_id, func_import_path_or_key, run_id, send_channel, args, kwargs = data
+            if func_import_path_or_key in registered_functions:
+                func = registered_functions[func_import_path_or_key]
+            else:
+                module_path, func_name = func_import_path_or_key.rsplit(".", 1)
+                module = importlib.import_module(module_path)
+                func = getattr(module, func_name)
+
+            if func_preprocessor is not None:
+                func = func_preprocessor(func)
+
+            timestamp_utc_started = get_timestamp_utc()
+            await channel.send(ExecutionManagerProtocolKeys.UP_RUN_STARTED.value, (msg_id, timestamp_utc_started))
+            res = await _async_func_runner(
+                channel=channel,
+                func=func,
+                send_channel=send_channel,
+                args=args,
+                kwargs=kwargs,
+            )
+            timestamp_utc_completed = get_timestamp_utc()
+            converted_to_str, _res = False, res
+
+            await channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res))
+        # SEND_FUNCTION
+        elif key == ExecutionManagerProtocolKeys.SEND_FUNCTION.value:
+            msg_id, func_key, func = data
+            registered_functions[func_key] = func
+            await channel.send(ExecutionManagerProtocolKeys.UP_SEND_FUNCTION_RESPONSE.value, (msg_id,))
+        else:
+            raise ValueError(f"Unknown execution manager protocol key: '{key}'.")
 
 # %% [markdown]
-# ## Remote Worker Function
+# ### Remote Worker Function
 #
 # This worker function can be registered on a `RemotePoolServer` to handle
-# ExecutionManager protocol messages. It provides the same functionality as
-# the multiprocess worker (print capture, serialization handling, etc.).
+# ExecutionManager protocol messages. It provides the same functionality as the multiprocess worker.
 
 # %%
 #|export
-def remote_execution_manager_worker(channel, worker_id: int, print_flush_interval: float = 0.1, capture_prints: bool = True) -> None:
-    """Worker function for use with RemotePoolServer and ExecutionManager.
-
-    Register this function on a RemotePoolServer to enable ExecutionManager
-    to run functions on remote workers. It handles the full ExecutionManager
-    protocol including:
-    - SEND_FUNCTION: Store a function by key for later execution
-    - RUN: Execute a stored or importable function
-
-    Example:
-        ```python
-        from netrun.pool.remote import RemotePoolServer
-        from netrun.execution_manager import remote_execution_manager_worker
-
-        server = RemotePoolServer()
-        server.register_worker("exec_manager", remote_execution_manager_worker)
-        await server.serve("0.0.0.0", 8080)
-        ```
-
-    Then connect with ExecutionManager:
-        ```python
-        from netrun.pool.remote import RemotePoolClient
-        from netrun.execution_manager import ExecutionManager
-
-        manager = ExecutionManager({
-            "remote": (RemotePoolClient, {
-                "url": "ws://server:8080",
-                "worker_name": "exec_manager",
-                "num_processes": 4,
-            }),
-        })
-        async with manager:
-            await manager.send_function_to_pool("remote", "my_fn", my_function)
-            result = await manager.run(...)
-        ```
-
-    Args:
-        channel: RPC channel for communication with the pool.
-        worker_id: ID of this worker.
-        print_flush_interval: Interval in seconds between automatic print buffer flushes.
-        capture_prints: If True, capture print statements and send them back.
-    """
+def remote_execution_manager_worker(channel, worker_id: int, func_preprocessor: Callable | None = None) -> None:
     return _worker_func(
         is_in_main_process=False,
         channel=channel,
         worker_id=worker_id,
-        print_flush_interval=print_flush_interval,
-        capture_prints=capture_prints,
+        func_preprocessor=func_preprocessor,
     )
 
 # %%
 #|export
 def create_execution_manager_server(
     worker_name: str = "execution_manager",
-    print_flush_interval: float = 0.1,
-    capture_prints: bool = True,
+    func_preprocessor: Callable | None = None,
 ):
     """Create a RemotePoolServer configured for ExecutionManager.
 
@@ -432,8 +326,6 @@ def create_execution_manager_server(
     Args:
         worker_name: Name to register the worker under. Clients must use this
             name when connecting (via `worker_name` parameter in RemotePoolClient).
-        print_flush_interval: Interval in seconds between automatic print buffer flushes.
-        capture_prints: If True, capture print statements and send them back to the client.
 
     Returns:
         A configured RemotePoolServer ready to serve.
@@ -444,79 +336,10 @@ def create_execution_manager_server(
     server = RemotePoolServer()
     worker_fn = functools.partial(
         remote_execution_manager_worker,
-        print_flush_interval=print_flush_interval,
-        capture_prints=capture_prints,
+        func_preprocessor=func_preprocessor,
     )
     server.register_worker(worker_name, worker_fn)
     return server
-
-# %%
-#|exporti
-async def _async_worker_func(channel, worker_id, print_flush_interval: float = 0.1, capture_prints: bool = True):
-    """Async worker function that handles execution manager protocol messages.
-
-    Note: For async workers, print buffer is sent all at once at the end of execution
-    since the print callback cannot be async. Interval-based flushing is only
-    supported for sync workers (thread/multiprocess pools).
-
-    Args:
-        channel: Async RPC channel for communication.
-        worker_id: ID of this worker.
-        print_flush_interval: Not used for async workers (kept for API consistency).
-        capture_prints: If True, capture print statements and send them back. If False, prints go to stdout normally.
-    """
-    # Enable print capture if configured
-    if capture_prints:
-        _enable_print_capture()
-
-    registered_functions: dict[str, Callable[..., Awaitable] | Callable[..., None]] = {}
-
-    while True:
-        key, data = await channel.recv()
-        # RUN
-        if key == ExecutionManagerProtocolKeys.RUN.value:
-            msg_id, func_import_path_or_key, run_id, send_channel, args, kwargs = data
-            if func_import_path_or_key in registered_functions:
-                func = registered_functions[func_import_path_or_key]
-            else:
-                module_path, func_name = func_import_path_or_key.rsplit(".", 1)
-                module = importlib.import_module(module_path)
-                func = getattr(module, func_name)
-
-            # For async workers, we just collect prints and send at the end
-            # (interval-based flushing requires sync channel.send which isn't available)
-            print_buffer: list[tuple[datetime, str]] = []
-
-            if capture_prints:
-                print_callback = lambda s: print_buffer.append((get_timestamp_utc(), s))
-            else:
-                print_callback = None
-
-            timestamp_utc_started = get_timestamp_utc()
-            await channel.send(ExecutionManagerProtocolKeys.UP_RUN_STARTED.value, (msg_id, timestamp_utc_started))
-            res = await _async_func_runner(
-                channel=channel,
-                func=func,
-                send_channel=send_channel,
-                print_callback=print_callback,
-                args=args,
-                kwargs=kwargs,
-            )
-            timestamp_utc_completed = get_timestamp_utc()
-            converted_to_str, _res = False, res
-
-            # Send print buffer before response
-            if capture_prints and print_buffer:
-                await channel.send(ExecutionManagerProtocolKeys.UP_PRINT_BUFFER.value, (msg_id, run_id, list(print_buffer)))
-
-            await channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res))
-        # SEND_FUNCTION
-        elif key == ExecutionManagerProtocolKeys.SEND_FUNCTION.value:
-            msg_id, func_key, func = data
-            registered_functions[func_key] = func
-            await channel.send(ExecutionManagerProtocolKeys.UP_SEND_FUNCTION_RESPONSE.value, (msg_id,))
-        else:
-            raise ValueError(f"Unknown execution manager protocol key: '{key}'.")
 
 # %% [markdown]
 # ## ExecutionManager
@@ -534,8 +357,6 @@ class JobResult:
     worker_id: int
     converted_to_str: bool
     result: Any
-    print_buffer: list[tuple[datetime, str]]
-    """List of (timestamp, text) tuples for each print statement captured during execution."""
 
 @dataclass
 class SubmittedJobInfo:
@@ -558,7 +379,7 @@ class RunAllocationMethod(Enum):
 PoolType = ThreadPool | MultiprocessPool | SingleWorkerPool | RemotePoolClient
 
 class ExecutionManager:
-    def __init__(self, pool_configs: dict[type[PoolType], tuple[str, dict[str, Any]]]):
+    def __init__(self, pool_configs: dict[str, tuple[type[PoolType], dict[str, Any]]]):
         """
         Create an ExecutionManager with the given pool configurations.
 
@@ -581,28 +402,23 @@ class ExecutionManager:
         if self._started:
             raise RuntimeError("ExecutionManager is already started.")
 
-        # Enable print capture in the main process
-        _enable_print_capture()
-
         for pool_id, (pool_type, pool_init_kwargs) in self._pool_configs.items():
             if 'worker_fn' in pool_init_kwargs:
                 raise ValueError("The 'worker_fn' argument should not be specified in the pool config.")
 
-            # Extract print_flush_interval and capture_prints from kwargs
             pool_kwargs = dict(pool_init_kwargs)
-            print_flush_interval = pool_kwargs.pop('print_flush_interval', 0.1)
-            capture_prints = pool_kwargs.pop('capture_prints', True)
+            func_preprocessor = pool_kwargs.pop('func_preprocessor', None)
 
             if pool_type == ThreadPool:
-                worker_fn = functools.partial(_thread_worker_func, print_flush_interval=print_flush_interval, capture_prints=capture_prints)
+                worker_fn = functools.partial(_thread_worker_func, func_preprocessor=func_preprocessor)
                 self._pools[pool_id] = ThreadPool(**pool_kwargs, worker_fn=worker_fn)
             elif pool_type == MultiprocessPool:
-                worker_fn = functools.partial(_multiprocess_worker_func, print_flush_interval=print_flush_interval, capture_prints=capture_prints)
+                worker_fn = functools.partial(_multiprocess_worker_func, func_preprocessor=func_preprocessor)
                 self._pools[pool_id] = MultiprocessPool(**pool_kwargs, worker_fn=worker_fn)
             elif pool_type == RemotePoolClient:
                 self._pools[pool_id] = RemotePoolClient(**pool_kwargs)
             elif pool_type == SingleWorkerPool:
-                worker_fn = functools.partial(_async_worker_func, print_flush_interval=print_flush_interval, capture_prints=capture_prints)
+                worker_fn = functools.partial(_async_worker_func, func_preprocessor=func_preprocessor)
                 self._pools[pool_id] = SingleWorkerPool(**pool_kwargs, worker_fn=worker_fn)
             else:
                 raise ValueError(f"Unknown pool type: '{pool_type}'.")
@@ -706,7 +522,6 @@ class ExecutionManager:
         send_channel: bool,
         func_args,
         func_kwargs,
-        on_print: Callable[[list[tuple[datetime, str]]], None] | None = None,
     ) -> JobResult:
         """
         Run a function in a pool.
@@ -718,9 +533,6 @@ class ExecutionManager:
             send_channel: Whether to send the worker RPC channel to the function.
             func_args: The arguments to pass to the function.
             func_kwargs: The keyword arguments to pass to the function.
-            on_print: Optional callback called when print output is received from the worker.
-                Called with a list of (timestamp, text) tuples. Called multiple times during
-                execution as print buffers are flushed (at print_flush_interval).
 
         Returns:
             The result of the function.
@@ -752,53 +564,8 @@ class ExecutionManager:
         started_msg = await self._recv_msg(pool_id, msg_id, expect=ExecutionManagerProtocolKeys.UP_RUN_STARTED, close_msg_queue=False)
         job_info.timestamp_utc_started = started_msg.data[0]  # timestamp_utc_started
 
-        # Accumulate print buffers and wait for UP_RUN_RESPONSE
-        accumulated_print_buffer: list[tuple[datetime, str]] = []
-        msg_queue = self._msgs[pool_id][msg_id]
-
-        while True:
-            msg_recv_task = self._msg_recv_tasks.get(pool_id)
-
-            # Create a task to wait for the next message
-            get_task = asyncio.create_task(msg_queue.get())
-
-            # Wait for either the message or the recv task to complete (crash)
-            if msg_recv_task is not None:
-                done, pending = await asyncio.wait(
-                    [get_task, msg_recv_task],
-                    return_when=asyncio.FIRST_COMPLETED
-                )
-
-                # If the recv task completed (crashed), cancel the get and propagate exception
-                if msg_recv_task in done:
-                    get_task.cancel()
-                    try:
-                        await get_task
-                    except asyncio.CancelledError:
-                        pass
-                    del self._msgs[pool_id][msg_id]
-                    exc = msg_recv_task.exception()
-                    if exc is not None:
-                        raise exc
-                    raise RuntimeError("Message receiver task ended unexpectedly")
-
-                msg = get_task.result()
-            else:
-                msg = await get_task
-
-            if msg.key == ExecutionManagerProtocolKeys.UP_PRINT_BUFFER.value:
-                # Intermediate print buffer
-                _run_id, _buffer = msg.data
-                accumulated_print_buffer.extend(_buffer)
-                if on_print is not None:
-                    on_print(_buffer)
-            elif msg.key == ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value:
-                # Job completed - clean up and break
-                del self._msgs[pool_id][msg_id]
-                break
-            else:
-                raise ValueError(f"Unexpected message key: '{msg.key}'")
-
+        # Wait for UP_RUN_RESPONSE
+        msg = await self._recv_msg(pool_id, msg_id, expect=ExecutionManagerProtocolKeys.UP_RUN_RESPONSE, close_msg_queue=True)
         self._worker_jobs[(pool_id, worker_id)].remove(job_info)
 
         timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res = msg.data
@@ -811,7 +578,6 @@ class ExecutionManager:
             worker_id=job_info.worker_id,
             converted_to_str=converted_to_str,
             result=_res,
-            print_buffer=accumulated_print_buffer,
         )
 
     async def run_allocate(
@@ -822,7 +588,6 @@ class ExecutionManager:
         send_channel: bool,
         func_args,
         func_kwargs,
-        on_print: Callable[[list[tuple[datetime, str]]], None] | None = None,
     ) -> JobResult:
         worker_ids: list[tuple[str, int]] = []
         # Convert pool_worker_ids to a list of (pool_id, worker_id) tuples
@@ -872,7 +637,6 @@ class ExecutionManager:
             send_channel=send_channel,
             func_args=func_args,
             func_kwargs=func_kwargs,
-            on_print=on_print,
         )
 
     async def send_function(self, pool_id: str, worker_id: str, func_key: str, func: Callable[..., Any]|Callable[..., Awaitable[Any]]) -> None:
@@ -932,9 +696,6 @@ class ExecutionManager:
         for pool in self._pools.values():
             await pool.close()
 
-        # Disable print capture in the main process
-        _disable_print_capture()
-
         self._started = False
 
         # Propagate any errors from the recv tasks
@@ -957,6 +718,11 @@ class ExecutionManager:
     def get_worker_jobs(self, pool_id: str, worker_id: int) -> list[SubmittedJobInfo]:
         """Get the list of currently submitted jobs for a worker."""
         return list(self._worker_jobs.get((pool_id, worker_id), []))
+
+    @property
+    def started(self) -> bool:
+        """Check if the execution manager has been started."""
+        return self._started
 
     def get_process_ids(self, pool_id: str) -> list[int]:
         """Get all process IDs for a MultiprocessPool.
@@ -1075,7 +841,6 @@ async with manager:
     print(f"Started at: {result.timestamp_utc_started}")
     print(f"Completed at: {result.timestamp_utc_completed}")
     print(f"Was converted to str: {result.converted_to_str}")
-    print(f"Print buffer: {result.print_buffer}")
 
 # %% [markdown]
 # ### Example 2: Running multiple jobs with allocation
@@ -1121,58 +886,3 @@ async with manager:
     results = await asyncio.gather(*tasks)
     for i, result in enumerate(results):
         print(f"  Job {i}: {result.result} (worker {result.worker_id})")
-
-# %% [markdown]
-# ### Example 3: Streaming print output with on_print callback
-#
-# This example shows how to use the `on_print` callback to receive print statements
-# in real-time as they are flushed from the worker. The `print_flush_interval` controls
-# how often the worker sends accumulated print statements.
-
-# %%
-import time as _time
-
-def example_slow_print(iterations: int, delay: float) -> str:
-    """A function that prints multiple times with delays."""
-    for i in range(iterations):
-        print(f"Processing step {i + 1}/{iterations}...")
-        _time.sleep(delay)
-    return f"Completed {iterations} steps"
-
-print("=" * 50)
-print("Example: Streaming Print Output")
-print("=" * 50)
-
-# Use a short flush interval (50ms) to see prints arrive in chunks
-manager = ExecutionManager({
-    "workers": (ThreadPool, {"num_workers": 1, "print_flush_interval": 0.05}),
-})
-
-received_count = 0
-
-def print_callback(buffer):
-    global received_count
-    received_count += 1
-    print(f"  [Callback {received_count}] Received {len(buffer)} print(s)")
-    for timestamp, text in buffer:
-        print(f"    {text.strip()}")
-
-async with manager:
-    await manager.send_function_to_pool("workers", "slow_print", example_slow_print)
-
-    print("\nRunning function with on_print callback:")
-    result = await manager.run(
-        pool_id="workers",
-        worker_id=0,
-        func_import_path_or_key="slow_print",
-        send_channel=False,
-        func_args=(5, 0.1),  # 5 iterations, 100ms delay each
-        func_kwargs={},
-        on_print=print_callback,
-    )
-
-    print(f"\nResult: {result.result}")
-    print(f"Total prints captured: {len(result.print_buffer)}")
-
-# %%
-[r[1] for r in result.print_buffer]
