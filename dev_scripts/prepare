@@ -17,9 +17,8 @@ cd "$REPO_FOLDER/netrun"
 echo " nbl clear --all"
 uv run nbl clear --all 1>/dev/null
 
-# 'nbl prepare' the project in such a way that it is compatible with ruff
-echo " nbl prepare"
-uv run nbl prepare 1>/dev/null 2>/dev/null
+echo " nbl export"
+uv run nbl export 1>/dev/null
 
 # Run ruff on the project, ignoring ipynb files
 echo " ruff check --fix"
@@ -37,9 +36,13 @@ uv run ruff check --fix 1>/dev/null
 # echo " ruff format"
 # uv run ruff format 1>/dev/null
 
-# Fill the project again as all outputs will now have been cleared
-echo " nbl fill"
-uv run nbl fill 1>/dev/null 2>/dev/null
+# Prepare the project again as all outputs will now have been cleared
+echo " nbl prepare"
+uv run nbl prepare 1>/dev/null 2>/dev/null
+
+# Clean again
+echo " nbl clean"
+uv run nbl clean 1>/dev/null 2>/dev/null
 
 # this doesn't work as desired yet
 # echo " generate stubs for package"
