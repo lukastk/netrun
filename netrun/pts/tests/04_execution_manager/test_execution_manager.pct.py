@@ -751,7 +751,59 @@ async def test_print_buffer_multiple_prints():
 # %%
 await test_print_buffer_multiple_prints();
 
-# Note: flush_print_buffer cannot be used while a job is running because
-# the worker is single-threaded and blocked by the executing function.
-# The flush_print_buffer method is available for use cases where the worker
-# is not currently executing a function (e.g., between jobs or in async scenarios).
+# %%
+#|export
+import time as _time
+
+def slow_printing_function(iterations: int, delay: float) -> str:
+    """A function that prints with delays between prints."""
+    for i in range(iterations):
+        print(f"Step {i}")
+        _time.sleep(delay)
+    return "done"
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_on_print_callback():
+    """Test the on_print callback receives print buffers during execution."""
+    # Use a short flush interval to get multiple callbacks
+    manager = ExecutionManager({
+        "pool": (ThreadPool, {"num_workers": 1, "print_flush_interval": 0.05}),
+    })
+
+    received_buffers: list[list[tuple[datetime, str]]] = []
+
+    def on_print(buffer):
+        received_buffers.append(buffer)
+
+    async with manager:
+        await manager.send_function("pool", 0, "slow_print", slow_printing_function)
+
+        # Run function that prints 5 times with delays
+        result = await manager.run(
+            pool_id="pool",
+            worker_id=0,
+            func_import_path_or_key="slow_print",
+            send_channel=False,
+            func_args=(5, 0.08),  # 5 prints, 80ms delay each
+            func_kwargs={},
+            on_print=on_print,
+        )
+
+        assert result.result == "done"
+        # All prints should be in the final result
+        assert len(result.print_buffer) == 5
+
+        # The on_print callback should have been called at least once
+        # (since we have 5 prints with 80ms delay and 50ms flush interval)
+        assert len(received_buffers) >= 1
+
+        # All received buffers combined should equal the final print_buffer
+        all_received = []
+        for buf in received_buffers:
+            all_received.extend(buf)
+        assert len(all_received) == len(result.print_buffer)
+
+# %%
+await test_on_print_callback();

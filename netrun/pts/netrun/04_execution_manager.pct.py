@@ -36,6 +36,7 @@ import importlib
 import uuid
 import pickle
 import random
+import functools
 
 from netrun.rpc.base import RPCChannel
 from netrun.pool.thread import ThreadPool
@@ -170,22 +171,24 @@ class ExecutionManagerProtocolKeys(Enum):
     Args: msg_id
     """
 
-    FLUSH_PRINT_BUFFER = "exec-manager:flush-print-buffer"
+    UP_PRINT_BUFFER = "exec-manager-up:print-buffer"
     """
-    Flushes the print buffer of a given run_id.
-    Args: msg_id, run_id
-    """
-
-    UP_FLUSH_PRINT_BUFFER_RESPONSE = "exec-manager-up:flush-print-buffer-response"
-    """
-    Response to FLUSH_PRINT_BUFFER from the worker, with the flushed buffer.
+    Auto-flushed print buffer from the worker during function execution.
+    Sent at regular intervals (print_flush_interval) and before UP_RUN_RESPONSE.
     Args: msg_id, run_id, _buffer
     """
 
 # %%
 #|exporti
-def _worker_func(is_in_main_process: bool, channel, worker_id):
-    func_print_buffer: dict[str, list[tuple[datetime, str]]] = {}
+def _worker_func(is_in_main_process: bool, channel, worker_id, print_flush_interval: float = 0.1):
+    """Worker function that handles execution manager protocol messages.
+
+    Args:
+        is_in_main_process: If True, results don't need to be serializable.
+        channel: RPC channel for communication.
+        worker_id: ID of this worker.
+        print_flush_interval: Interval in seconds between automatic print buffer flushes.
+    """
     event_loop = asyncio.new_event_loop()
     registered_functions: dict[str, Callable[..., Awaitable] | Callable[..., None]] = {}
 
@@ -200,14 +203,29 @@ def _worker_func(is_in_main_process: bool, channel, worker_id):
                 module_path, func_name = func_import_path_or_key.rsplit(".", 1)
                 module = importlib.import_module(module_path)
                 func = getattr(module, func_name)
-            func_print_buffer[run_id] = []
+
+            # Set up auto-flushing print buffer
+            print_buffer: list[tuple[datetime, str]] = []
+            last_flush_time = get_timestamp_utc()
+
+            def print_callback(text: str):
+                nonlocal last_flush_time
+                print_buffer.append((get_timestamp_utc(), text))
+                # Check if we should auto-flush
+                now = get_timestamp_utc()
+                elapsed = (now - last_flush_time).total_seconds()
+                if elapsed >= print_flush_interval and print_buffer:
+                    channel.send(ExecutionManagerProtocolKeys.UP_PRINT_BUFFER.value, (msg_id, run_id, list(print_buffer)))
+                    print_buffer.clear()
+                    last_flush_time = now
+
             timestamp_utc_started = get_timestamp_utc()
             channel.send(ExecutionManagerProtocolKeys.UP_RUN_STARTED.value, (msg_id, timestamp_utc_started))
             res = _func_runner(
                 channel=channel,
                 func=func,
                 send_channel=send_channel,
-                print_callback=lambda s: func_print_buffer[run_id].append((get_timestamp_utc(), s)),
+                print_callback=print_callback,
                 args=args,
                 kwargs=kwargs,
                 event_loop=event_loop,
@@ -217,35 +235,41 @@ def _worker_func(is_in_main_process: bool, channel, worker_id):
                 converted_to_str, _res = False, res
             else:
                 converted_to_str, _res = _convert_to_str_if_not_serializable(res)
-            _buffer = func_print_buffer.pop(run_id)
-            channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res, _buffer))
+
+            # Flush any remaining print buffer before sending response
+            if print_buffer:
+                channel.send(ExecutionManagerProtocolKeys.UP_PRINT_BUFFER.value, (msg_id, run_id, list(print_buffer)))
+
+            channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res))
         # SEND_FUNCTION
         elif key == ExecutionManagerProtocolKeys.SEND_FUNCTION.value:
             msg_id, func_key, func = data
             registered_functions[func_key] = func
             channel.send(ExecutionManagerProtocolKeys.UP_SEND_FUNCTION_RESPONSE.value, (msg_id,))
-        # FLUSH_PRINT_BUFFER
-        elif key == ExecutionManagerProtocolKeys.FLUSH_PRINT_BUFFER.value:
-            msg_id, run_id = data
-            if run_id not in func_print_buffer:
-                raise ValueError(f"Run ID '{run_id}' not found in print buffer")
-            _buffer = list(func_print_buffer[run_id])  # Copy the buffer
-            func_print_buffer[run_id].clear()  # Clear but keep tracking
-            channel.send(ExecutionManagerProtocolKeys.UP_FLUSH_PRINT_BUFFER_RESPONSE.value, (msg_id, run_id, _buffer))
         else:
             raise ValueError(f"Unknown execution manager protocol key: '{key}'.")
 
-def _thread_worker_func(channel, worker_id):
-    return _worker_func(is_in_main_process=True, channel=channel, worker_id=worker_id)
+def _thread_worker_func(channel, worker_id, print_flush_interval: float = 0.1):
+    return _worker_func(is_in_main_process=True, channel=channel, worker_id=worker_id, print_flush_interval=print_flush_interval)
 
 # If the worker is in a multiprocess pool, then the result needs to be pickleable for it to be sent back without being converted as `str(result)`.
-def _multiprocess_worker_func(channel, worker_id):
-    return _worker_func(is_in_main_process=False, channel=channel, worker_id=worker_id)
+def _multiprocess_worker_func(channel, worker_id, print_flush_interval: float = 0.1):
+    return _worker_func(is_in_main_process=False, channel=channel, worker_id=worker_id, print_flush_interval=print_flush_interval)
 
 # %%
 #|exporti
-async def _async_worker_func(channel, worker_id):
-    func_print_buffer: dict[str, list[tuple[datetime, str]]] = {}
+async def _async_worker_func(channel, worker_id, print_flush_interval: float = 0.1):
+    """Async worker function that handles execution manager protocol messages.
+
+    Note: For async workers, print buffer is sent all at once at the end of execution
+    since the print callback cannot be async. Interval-based flushing is only
+    supported for sync workers (thread/multiprocess pools).
+
+    Args:
+        channel: Async RPC channel for communication.
+        worker_id: ID of this worker.
+        print_flush_interval: Not used for async workers (kept for API consistency).
+    """
     registered_functions: dict[str, Callable[..., Awaitable] | Callable[..., None]] = {}
 
     while True:
@@ -259,34 +283,34 @@ async def _async_worker_func(channel, worker_id):
                 module_path, func_name = func_import_path_or_key.rsplit(".", 1)
                 module = importlib.import_module(module_path)
                 func = getattr(module, func_name)
-            func_print_buffer[run_id] = []
+
+            # For async workers, we just collect prints and send at the end
+            # (interval-based flushing requires sync channel.send which isn't available)
+            print_buffer: list[tuple[datetime, str]] = []
+
             timestamp_utc_started = get_timestamp_utc()
             await channel.send(ExecutionManagerProtocolKeys.UP_RUN_STARTED.value, (msg_id, timestamp_utc_started))
             res = await _async_func_runner(
                 channel=channel,
                 func=func,
                 send_channel=send_channel,
-                print_callback=lambda s: func_print_buffer[run_id].append((get_timestamp_utc(), s)),
+                print_callback=lambda s: print_buffer.append((get_timestamp_utc(), s)),
                 args=args,
                 kwargs=kwargs,
             )
             timestamp_utc_completed = get_timestamp_utc()
             converted_to_str, _res = False, res
-            _buffer = func_print_buffer.pop(run_id)
-            await channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res, _buffer))
+
+            # Send print buffer before response
+            if print_buffer:
+                await channel.send(ExecutionManagerProtocolKeys.UP_PRINT_BUFFER.value, (msg_id, run_id, list(print_buffer)))
+
+            await channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res))
         # SEND_FUNCTION
         elif key == ExecutionManagerProtocolKeys.SEND_FUNCTION.value:
             msg_id, func_key, func = data
             registered_functions[func_key] = func
             await channel.send(ExecutionManagerProtocolKeys.UP_SEND_FUNCTION_RESPONSE.value, (msg_id,))
-        # FLUSH_PRINT_BUFFER
-        elif key == ExecutionManagerProtocolKeys.FLUSH_PRINT_BUFFER.value:
-            msg_id, run_id = data
-            if run_id not in func_print_buffer:
-                raise ValueError(f"Run ID '{run_id}' not found in print buffer")
-            _buffer = list(func_print_buffer[run_id])  # Copy the buffer
-            func_print_buffer[run_id].clear()  # Clear but keep tracking
-            await channel.send(ExecutionManagerProtocolKeys.UP_FLUSH_PRINT_BUFFER_RESPONSE.value, (msg_id, run_id, _buffer))
         else:
             raise ValueError(f"Unknown execution manager protocol key: '{key}'.")
 
@@ -357,14 +381,21 @@ class ExecutionManager:
             if 'worker_fn' in pool_init_kwargs:
                 raise ValueError("The 'worker_fn' argument should not be specified in the pool config.")
 
+            # Extract print_flush_interval from kwargs (default 0.1 = 100ms)
+            pool_kwargs = dict(pool_init_kwargs)
+            print_flush_interval = pool_kwargs.pop('print_flush_interval', 0.1)
+
             if pool_type == ThreadPool:
-                self._pools[pool_id] = ThreadPool(**pool_init_kwargs, worker_fn=_thread_worker_func)
+                worker_fn = functools.partial(_thread_worker_func, print_flush_interval=print_flush_interval)
+                self._pools[pool_id] = ThreadPool(**pool_kwargs, worker_fn=worker_fn)
             elif pool_type == MultiprocessPool:
-                self._pools[pool_id] = MultiprocessPool(**pool_init_kwargs, worker_fn=_multiprocess_worker_func)
+                worker_fn = functools.partial(_multiprocess_worker_func, print_flush_interval=print_flush_interval)
+                self._pools[pool_id] = MultiprocessPool(**pool_kwargs, worker_fn=worker_fn)
             elif pool_type == RemotePoolClient:
-                self._pools[pool_id] = RemotePoolClient(**pool_init_kwargs)
+                self._pools[pool_id] = RemotePoolClient(**pool_kwargs)
             elif pool_type == SingleWorkerPool:
-                self._pools[pool_id] = SingleWorkerPool(**pool_init_kwargs, worker_fn=_async_worker_func)
+                worker_fn = functools.partial(_async_worker_func, print_flush_interval=print_flush_interval)
+                self._pools[pool_id] = SingleWorkerPool(**pool_kwargs, worker_fn=worker_fn)
             else:
                 raise ValueError(f"Unknown pool type: '{pool_type}'.")
 
@@ -433,7 +464,16 @@ class ExecutionManager:
 
         return msg
 
-    async def run(self, pool_id: str, worker_id: str, func_import_path_or_key: str, send_channel: bool, func_args, func_kwargs) -> JobResult:
+    async def run(
+        self,
+        pool_id: str,
+        worker_id: str,
+        func_import_path_or_key: str,
+        send_channel: bool,
+        func_args,
+        func_kwargs,
+        on_print: Callable[[list[tuple[datetime, str]]], None] | None = None,
+    ) -> JobResult:
         """
         Run a function in a pool.
 
@@ -444,6 +484,9 @@ class ExecutionManager:
             send_channel: Whether to send the worker RPC channel to the function.
             func_args: The arguments to pass to the function.
             func_kwargs: The keyword arguments to pass to the function.
+            on_print: Optional callback called when print output is received from the worker.
+                Called with a list of (timestamp, text) tuples. Called multiple times during
+                execution as print buffers are flushed (at print_flush_interval).
 
         Returns:
             The result of the function.
@@ -470,12 +513,40 @@ class ExecutionManager:
         if (pool_id, worker_id) in self._worker_round_robin_lst:
             self._worker_round_robin_lst.remove((pool_id, worker_id))
         self._worker_round_robin_lst.append((pool_id, worker_id))
+
+        # Wait for UP_RUN_STARTED
         started_msg = await self._recv_msg(pool_id, msg_id, expect=ExecutionManagerProtocolKeys.UP_RUN_STARTED, close_msg_queue=False)
         job_info.timestamp_utc_started = started_msg.data[0]  # timestamp_utc_started
-        msg = await self._recv_msg(pool_id, msg_id, expect=ExecutionManagerProtocolKeys.UP_RUN_RESPONSE, close_msg_queue=True)
+
+        # Accumulate print buffers and wait for UP_RUN_RESPONSE
+        accumulated_print_buffer: list[tuple[datetime, str]] = []
+
+        while True:
+            # Check if the message receiver task is still running
+            msg_recv_task = self._msg_recv_tasks.get(pool_id)
+            if msg_recv_task is not None and msg_recv_task.done():
+                exc = msg_recv_task.exception()
+                if exc is not None:
+                    raise exc
+
+            msg = await self._msgs[pool_id][msg_id].get()
+
+            if msg.key == ExecutionManagerProtocolKeys.UP_PRINT_BUFFER.value:
+                # Intermediate print buffer
+                _run_id, _buffer = msg.data
+                accumulated_print_buffer.extend(_buffer)
+                if on_print is not None:
+                    on_print(_buffer)
+            elif msg.key == ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value:
+                # Job completed - clean up and break
+                del self._msgs[pool_id][msg_id]
+                break
+            else:
+                raise ValueError(f"Unexpected message key: '{msg.key}'")
+
         self._worker_jobs[(pool_id, worker_id)].remove(job_info)
 
-        timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res, _print_buffer = msg.data
+        timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res = msg.data
         return JobResult(
             timestamp_utc_submitted=job_info.timestamp_utc_submitted,
             timestamp_utc_started=job_info.timestamp_utc_started,
@@ -485,7 +556,7 @@ class ExecutionManager:
             worker_id=job_info.worker_id,
             converted_to_str=converted_to_str,
             result=_res,
-            print_buffer=_print_buffer,
+            print_buffer=accumulated_print_buffer,
         )
 
     async def run_allocate(
@@ -496,6 +567,7 @@ class ExecutionManager:
         send_channel: bool,
         func_args,
         func_kwargs,
+        on_print: Callable[[list[tuple[datetime, str]]], None] | None = None,
     ) -> JobResult:
         worker_ids: list[tuple[str, int]] = []
         # Convert pool_worker_ids to a list of (pool_id, worker_id) tuples
@@ -545,6 +617,7 @@ class ExecutionManager:
             send_channel=send_channel,
             func_args=func_args,
             func_kwargs=func_kwargs,
+            on_print=on_print,
         )
 
     async def send_function(self, pool_id: str, worker_id: str, func_key: str, func: Callable[..., Any]|Callable[..., Awaitable[Any]]) -> None:
@@ -584,39 +657,6 @@ class ExecutionManager:
         """
         tasks = [asyncio.create_task(self.send_function(pool_id, worker_id, func_key, func)) for worker_id in range(self._pools[pool_id].num_workers)]
         await asyncio.gather(*tasks)
-
-    async def flush_print_buffer(self, pool_id: str, worker_id: int, run_id: str) -> list[tuple[datetime, str]]:
-        """
-        Flush and retrieve the print buffer for a job.
-
-        After calling this, the print buffer for that run_id is cleared in the
-        worker but continues tracking new prints.
-
-        Note: This method can only be called when the worker is not blocked
-        executing a function. Since workers are single-threaded, they cannot
-        process this message while a synchronous function is running. This is
-        useful between jobs or for async functions that yield control.
-
-        Args:
-            pool_id: The ID of the pool where the job is running.
-            worker_id: The ID of the worker where the job is running.
-            run_id: The run ID of the job (from SubmittedJobInfo.run_id).
-
-        Returns:
-            List of (timestamp, text) tuples for each print statement captured.
-
-        Raises:
-            ValueError: If the run_id is not found in the worker's print buffer.
-        """
-        msg_id = await self._send_msg(
-            pool_id=pool_id,
-            worker_id=worker_id,
-            key=ExecutionManagerProtocolKeys.FLUSH_PRINT_BUFFER.value,
-            data=(run_id,),
-        )
-        msg = await self._recv_msg(pool_id, msg_id, expect=ExecutionManagerProtocolKeys.UP_FLUSH_PRINT_BUFFER_RESPONSE, close_msg_queue=True)
-        _run_id, _buffer = msg.data
-        return _buffer
 
     async def close(self):
         """Close the execution manager and all its pools."""
@@ -762,3 +802,55 @@ async with manager:
     results = await asyncio.gather(*tasks)
     for i, result in enumerate(results):
         print(f"  Job {i}: {result.result} (worker {result.worker_id})")
+
+# %% [markdown]
+# ### Example 3: Streaming print output with on_print callback
+#
+# This example shows how to use the `on_print` callback to receive print statements
+# in real-time as they are flushed from the worker. The `print_flush_interval` controls
+# how often the worker sends accumulated print statements.
+
+# %%
+import time as _time
+
+def example_slow_print(iterations: int, delay: float) -> str:
+    """A function that prints multiple times with delays."""
+    for i in range(iterations):
+        print(f"Processing step {i + 1}/{iterations}...")
+        _time.sleep(delay)
+    return f"Completed {iterations} steps"
+
+print("=" * 50)
+print("Example: Streaming Print Output")
+print("=" * 50)
+
+# Use a short flush interval (50ms) to see prints arrive in chunks
+manager = ExecutionManager({
+    "workers": (ThreadPool, {"num_workers": 1, "print_flush_interval": 0.05}),
+})
+
+received_count = 0
+
+def print_callback(buffer):
+    global received_count
+    received_count += 1
+    print(f"  [Callback {received_count}] Received {len(buffer)} print(s)")
+    for timestamp, text in buffer:
+        print(f"    {text.strip()}")
+
+async with manager:
+    await manager.send_function_to_pool("workers", "slow_print", example_slow_print)
+
+    print("\nRunning function with on_print callback:")
+    result = await manager.run(
+        pool_id="workers",
+        worker_id=0,
+        func_import_path_or_key="slow_print",
+        send_channel=False,
+        func_args=(5, 0.1),  # 5 iterations, 100ms delay each
+        func_kwargs={},
+        on_print=print_callback,
+    )
+
+    print(f"\nResult: {result.result}")
+    print(f"Total prints captured: {len(result.print_buffer)}")
