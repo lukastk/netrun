@@ -5,7 +5,6 @@ __all__ = ['test_allocation_with_specific_workers', 'test_async_function', 'test
 # %% nbs/tests/04_execution_manager/test_execution_manager_multiprocess.ipynb 2
 import pytest
 import asyncio
-from datetime import datetime
 
 from netrun.pool.thread import ThreadPool
 from netrun.pool.multiprocess import MultiprocessPool
@@ -19,13 +18,10 @@ from netrun.execution_manager import (
 from ..execution_manager.workers import (
     add_numbers,
     multiply_numbers,
-    function_with_print,
     slow_function,
     function_with_kwargs,
     async_add,
     mp_stdout_function,
-    function_with_multiple_prints,
-    slow_printing_function,
 )
 
 # %% nbs/tests/04_execution_manager/test_execution_manager_multiprocess.ipynb 4

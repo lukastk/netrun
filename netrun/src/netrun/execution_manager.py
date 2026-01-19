@@ -3,11 +3,9 @@
 __all__ = ['ExecutionManager', 'ExecutionManagerProtocolKeys', 'JobResult', 'PoolType', 'RunAllocationMethod', 'SubmittedJobInfo', 'create_execution_manager_server', 'remote_execution_manager_worker']
 
 # %% nbs/netrun/04_execution_manager.ipynb 3
-from contextlib import contextmanager
 from typing import Any
 from collections.abc import Callable, Awaitable
 import datetime
-import builtins
 from ._iutils import get_timestamp_utc
 from datetime import datetime
 import asyncio
@@ -18,8 +16,6 @@ import uuid
 import pickle
 import random
 import functools
-import threading
-import io
 
 from .rpc.base import RPCChannel
 from .pool.thread import ThreadPool
