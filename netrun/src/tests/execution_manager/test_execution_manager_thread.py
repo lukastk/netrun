@@ -8,9 +8,7 @@ import asyncio
 from datetime import datetime
 
 from netrun.pool.thread import ThreadPool
-from netrun.pool.multiprocess import MultiprocessPool
 from netrun.pool.aio import SingleWorkerPool
-from netrun.pool.remote import RemotePoolClient
 
 from netrun.execution_manager import (
     ExecutionManager,
@@ -23,7 +21,6 @@ from ..execution_manager.workers import (
     multiply_numbers,
     function_with_print,
     slow_function,
-    function_with_error,
     function_returns_non_serializable,
     async_add,
     function_with_kwargs,

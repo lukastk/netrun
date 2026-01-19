@@ -23,7 +23,7 @@ from nblite import nbl_export; nbl_export();
 # %%
 #|export
 from contextlib import contextmanager
-from typing import Any, Type
+from typing import Any
 from collections.abc import Callable, Awaitable
 import datetime
 import builtins
@@ -428,7 +428,7 @@ class RunAllocationMethod(Enum):
 PoolType = ThreadPool | MultiprocessPool | SingleWorkerPool | RemotePoolClient
 
 class ExecutionManager:
-    def __init__(self, pool_configs: dict[Type[PoolType], tuple[str, dict[str, Any]]]):
+    def __init__(self, pool_configs: dict[type[PoolType], tuple[str, dict[str, Any]]]):
         """
         Create an ExecutionManager with the given pool configurations.
 
@@ -812,7 +812,7 @@ class ExecutionManager:
             raise errors[0]
 
     @property
-    def pools(self) -> list[tuple[str, Type[PoolType]]]:
+    def pools(self) -> list[tuple[str, type[PoolType]]]:
         """Get list of pool IDs."""
         return [(k, type(v)) for k, v in self._pools.items()]
 

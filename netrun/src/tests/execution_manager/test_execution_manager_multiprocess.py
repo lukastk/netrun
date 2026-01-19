@@ -4,29 +4,16 @@ __all__ = ['test_flush_all_pool_stdout', 'test_flush_all_pool_stdout_raises_for_
 
 # %% nbs/tests/04_execution_manager/test_execution_manager_multiprocess.ipynb 2
 import pytest
-import asyncio
-from datetime import datetime
 
 from netrun.pool.thread import ThreadPool
 from netrun.pool.multiprocess import MultiprocessPool
-from netrun.pool.aio import SingleWorkerPool
-from netrun.pool.remote import RemotePoolClient
 
 from netrun.execution_manager import (
     ExecutionManager,
-    RunAllocationMethod,
 )
 
 # Import worker functions from the workers module so they can be pickled
 from ..execution_manager.workers import (
-    add_numbers,
-    multiply_numbers,
-    function_with_print,
-    slow_function,
-    function_with_error,
-    function_returns_non_serializable,
-    async_add,
-    function_with_kwargs,
     mp_stdout_function,
 )
 
