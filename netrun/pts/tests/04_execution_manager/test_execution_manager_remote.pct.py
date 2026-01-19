@@ -23,6 +23,7 @@
 import pytest
 import asyncio
 from datetime import datetime
+import importlib
 
 # Check if websockets is available
 try:
@@ -40,7 +41,11 @@ from netrun.pool.remote import RemotePoolServer, RemotePoolClient
 from netrun.execution_manager import (
     ExecutionManager,
     RunAllocationMethod,
+    ExecutionManagerProtocolKeys,
 )
+
+from netrun.rpc.base import ChannelClosed
+from netrun._iutils import get_timestamp_utc
 
 # Import worker functions from the workers module
 from tests.execution_manager.workers import (
@@ -57,91 +62,78 @@ from tests.execution_manager.workers import (
 # ## Define Remote Worker Function
 #
 # The remote worker function needs to be registered on the server.
-# It uses the same protocol as other pool workers.
+# It uses the same ExecutionManagerProtocolKeys protocol as other pool workers.
 
 # %%
 #|export
-from netrun.rpc.base import ChannelClosed
-
 def execution_manager_worker(channel, worker_id: int) -> None:
     """Worker function for ExecutionManager remote tests.
 
-    This worker handles the ExecutionManager protocol:
-    - SEND_FUNC: Store a function by key
+    This worker handles the ExecutionManager protocol using ExecutionManagerProtocolKeys:
+    - SEND_FUNCTION: Store a function by key
     - RUN: Execute a stored function
     """
-    import pickle
-    from datetime import datetime
-
-    funcs = {}
+    registered_functions = {}
 
     try:
         while True:
             key, data = channel.recv()
 
-            if key == "SEND_FUNC":
-                # Store function
-                func_key = data["func_key"]
-                func_bytes = data["func_bytes"]
-                func = pickle.loads(func_bytes)
-                funcs[func_key] = func
-                channel.send("SEND_FUNC_ACK", {"func_key": func_key})
+            if key == ExecutionManagerProtocolKeys.SEND_FUNCTION.value:
+                # Data format: (msg_id, func_key, func)
+                msg_id, func_key, func = data
+                registered_functions[func_key] = func
+                channel.send(ExecutionManagerProtocolKeys.UP_SEND_FUNCTION_RESPONSE.value, (msg_id,))
 
-            elif key == "RUN":
-                # Execute function
-                run_id = data["run_id"]
-                func_key = data["func_import_path_or_key"]
-                func_args = data["func_args"]
-                func_kwargs = data["func_kwargs"]
+            elif key == ExecutionManagerProtocolKeys.RUN.value:
+                # Data format: (msg_id, func_import_path_or_key, run_id, send_channel, args, kwargs)
+                msg_id, func_import_path_or_key, run_id, send_channel, args, kwargs = data
 
-                timestamp_started = datetime.utcnow()
+                timestamp_utc_started = get_timestamp_utc()
+                # Send RUN_STARTED notification
+                channel.send(ExecutionManagerProtocolKeys.UP_RUN_STARTED.value, (msg_id, timestamp_utc_started))
 
                 try:
-                    if func_key in funcs:
-                        func = funcs[func_key]
+                    if func_import_path_or_key in registered_functions:
+                        func = registered_functions[func_import_path_or_key]
                     else:
                         # Try to import the function
-                        import importlib
-                        module_path, func_name = func_key.rsplit(".", 1)
+                        module_path, func_name = func_import_path_or_key.rsplit(".", 1)
                         module = importlib.import_module(module_path)
                         func = getattr(module, func_name)
 
                     # Execute the function
                     if asyncio.iscoroutinefunction(func):
-                        result = asyncio.get_event_loop().run_until_complete(
-                            func(*func_args, **func_kwargs)
-                        )
+                        loop = asyncio.new_event_loop()
+                        if send_channel:
+                            result = loop.run_until_complete(func(channel, *args, **kwargs))
+                        else:
+                            result = loop.run_until_complete(func(*args, **kwargs))
                     else:
-                        result = func(*func_args, **func_kwargs)
+                        if send_channel:
+                            result = func(channel, *args, **kwargs)
+                        else:
+                            result = func(*args, **kwargs)
 
-                    timestamp_completed = datetime.utcnow()
+                    timestamp_utc_completed = get_timestamp_utc()
 
-                    channel.send("RUN_RESULT", {
-                        "run_id": run_id,
-                        "result": result,
-                        "timestamp_utc_started": timestamp_started.isoformat(),
-                        "timestamp_utc_completed": timestamp_completed.isoformat(),
-                        "print_buffer": [],
-                        "converted_to_str": False,
-                    })
+                    # Send RUN_RESPONSE with result
+                    # Data format: (msg_id, timestamp_utc_started, timestamp_utc_completed, converted_to_str, result)
+                    channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value,
+                                (msg_id, timestamp_utc_started, timestamp_utc_completed, False, result))
 
                 except Exception as e:
-                    timestamp_completed = datetime.utcnow()
-                    channel.send("RUN_ERROR", {
-                        "run_id": run_id,
-                        "error_type": type(e).__name__,
-                        "error_message": str(e),
-                        "timestamp_utc_started": timestamp_started.isoformat(),
-                        "timestamp_utc_completed": timestamp_completed.isoformat(),
-                    })
+                    timestamp_utc_completed = get_timestamp_utc()
+                    # For now, re-raise - in a production scenario you'd want error handling
+                    raise
 
     except ChannelClosed:
         pass
 
 # %% [markdown]
-# ## Test Helper: Create Server and Manager
+# ## Test Helpers
 #
-# Helper context manager to set up server and execution manager together.
+# Helper context managers to set up server and clients/managers for testing.
 
 # %%
 #|export
@@ -156,11 +148,11 @@ def _get_next_port() -> int:
     return _test_port
 
 @asynccontextmanager
-async def create_remote_manager(num_processes: int = 1, threads_per_process: int = 1):
-    """Create a remote server and execution manager for testing.
+async def create_remote_client(num_processes: int = 1, threads_per_process: int = 1):
+    """Create a remote server and client for testing (low-level tests).
 
     This sets up a RemotePoolServer with the execution_manager_worker,
-    and creates an ExecutionManager that connects to it.
+    and creates a RemotePoolClient that connects to it.
     """
     port = _get_next_port()
     server = RemotePoolServer()
@@ -177,19 +169,42 @@ async def create_remote_manager(num_processes: int = 1, threads_per_process: int
         finally:
             await client.close()
 
+@asynccontextmanager
+async def create_remote_execution_manager(num_processes: int = 1, threads_per_process: int = 1):
+    """Create a remote server and ExecutionManager for testing.
+
+    This sets up a RemotePoolServer with the execution_manager_worker,
+    and creates an ExecutionManager with a RemotePoolClient that connects to it.
+    """
+    port = _get_next_port()
+    server = RemotePoolServer()
+    server.register_worker("em_worker", execution_manager_worker)
+
+    async with server.serve_background("127.0.0.1", port):
+        manager = ExecutionManager({
+            "remote": (RemotePoolClient, {
+                "url": f"ws://127.0.0.1:{port}",
+                "worker_name": "em_worker",
+                "num_processes": num_processes,
+                "threads_per_process": threads_per_process,
+            }),
+        })
+
+        async with manager:
+            yield manager
+
 # %% [markdown]
 # ## Test Basic Remote Pool Operations
 #
-# These tests verify that RemotePoolClient works correctly outside of ExecutionManager.
-# Full ExecutionManager integration with RemotePoolClient would require additional work
-# to handle the different startup protocol (connect + create_pool vs start).
+# These tests verify that RemotePoolClient works correctly with the
+# ExecutionManager protocol at the low level.
 
 # %%
 #|export
 @pytest.mark.asyncio
 async def test_remote_pool_creation():
     """Test creating a remote pool."""
-    async with create_remote_manager(num_processes=2, threads_per_process=1) as client:
+    async with create_remote_client(num_processes=2, threads_per_process=1) as client:
         assert client.is_running
         assert client.num_workers == 2
         assert client.num_processes == 2
@@ -202,22 +217,19 @@ await test_remote_pool_creation();
 #|export
 @pytest.mark.asyncio
 async def test_remote_pool_send_function():
-    """Test sending a function to a remote pool."""
-    import pickle
-
-    async with create_remote_manager(num_processes=1, threads_per_process=1) as client:
-        # Send function
-        func_bytes = pickle.dumps(add_numbers)
+    """Test sending a function to a remote pool using ExecutionManager protocol."""
+    async with create_remote_client(num_processes=1, threads_per_process=1) as client:
+        # Send function using ExecutionManager protocol
         await client.send(
             worker_id=0,
-            key="SEND_FUNC",
-            data={"func_key": "add", "func_bytes": func_bytes}
+            key=ExecutionManagerProtocolKeys.SEND_FUNCTION.value,
+            data=("msg_1", "add", add_numbers)
         )
 
         # Wait for acknowledgment
         msg = await client.recv(timeout=10.0)
-        assert msg.key == "SEND_FUNC_ACK"
-        assert msg.data["func_key"] == "add"
+        assert msg.key == ExecutionManagerProtocolKeys.UP_SEND_FUNCTION_RESPONSE.value
+        assert msg.data[0] == "msg_1"
 
 # %%
 await test_remote_pool_send_function();
@@ -226,39 +238,37 @@ await test_remote_pool_send_function();
 #|export
 @pytest.mark.asyncio
 async def test_remote_pool_run_function():
-    """Test running a function on a remote pool."""
-    import pickle
-
-    async with create_remote_manager(num_processes=1, threads_per_process=1) as client:
-        # Send function
-        func_bytes = pickle.dumps(add_numbers)
+    """Test running a function on a remote pool using ExecutionManager protocol."""
+    async with create_remote_client(num_processes=1, threads_per_process=1) as client:
+        # Send function using ExecutionManager protocol
         await client.send(
             worker_id=0,
-            key="SEND_FUNC",
-            data={"func_key": "add", "func_bytes": func_bytes}
+            key=ExecutionManagerProtocolKeys.SEND_FUNCTION.value,
+            data=("msg_1", "add", add_numbers)
         )
 
         # Wait for acknowledgment
         msg = await client.recv(timeout=10.0)
-        assert msg.key == "SEND_FUNC_ACK"
+        assert msg.key == ExecutionManagerProtocolKeys.UP_SEND_FUNCTION_RESPONSE.value
 
-        # Run function
+        # Run function using ExecutionManager protocol
         await client.send(
             worker_id=0,
-            key="RUN",
-            data={
-                "run_id": "test_run_1",
-                "func_import_path_or_key": "add",
-                "func_args": (3, 4),
-                "func_kwargs": {},
-            }
+            key=ExecutionManagerProtocolKeys.RUN.value,
+            data=("msg_2", "add", "run_1", False, (3, 4), {})
         )
+
+        # Get RUN_STARTED
+        msg = await client.recv(timeout=10.0)
+        assert msg.key == ExecutionManagerProtocolKeys.UP_RUN_STARTED.value
 
         # Get result
         msg = await client.recv(timeout=10.0)
-        assert msg.key == "RUN_RESULT"
-        assert msg.data["run_id"] == "test_run_1"
-        assert msg.data["result"] == 7
+        assert msg.key == ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value
+        # Data format: (msg_id, timestamp_utc_started, timestamp_utc_completed, converted_to_str, result)
+        msg_id, ts_started, ts_completed, converted, result = msg.data
+        assert msg_id == "msg_2"
+        assert result == 7
 
 # %%
 await test_remote_pool_run_function();
@@ -268,45 +278,43 @@ await test_remote_pool_run_function();
 @pytest.mark.asyncio
 async def test_remote_pool_multiple_workers():
     """Test running functions on multiple remote workers."""
-    import pickle
-
-    async with create_remote_manager(num_processes=2, threads_per_process=1) as client:
+    async with create_remote_client(num_processes=2, threads_per_process=1) as client:
         # Send function to all workers
-        func_bytes = pickle.dumps(multiply_numbers)
         for worker_id in range(2):
             await client.send(
                 worker_id=worker_id,
-                key="SEND_FUNC",
-                data={"func_key": "multiply", "func_bytes": func_bytes}
+                key=ExecutionManagerProtocolKeys.SEND_FUNCTION.value,
+                data=(f"msg_send_{worker_id}", "multiply", multiply_numbers)
             )
 
         # Wait for acknowledgments
         for _ in range(2):
             msg = await client.recv(timeout=10.0)
-            assert msg.key == "SEND_FUNC_ACK"
+            assert msg.key == ExecutionManagerProtocolKeys.UP_SEND_FUNCTION_RESPONSE.value
 
         # Run on each worker
         for worker_id in range(2):
             await client.send(
                 worker_id=worker_id,
-                key="RUN",
-                data={
-                    "run_id": f"run_{worker_id}",
-                    "func_import_path_or_key": "multiply",
-                    "func_args": (worker_id + 1, 10),
-                    "func_kwargs": {},
-                }
+                key=ExecutionManagerProtocolKeys.RUN.value,
+                data=(f"msg_run_{worker_id}", "multiply", f"run_{worker_id}", False, (worker_id + 1, 10), {})
             )
 
-        # Collect results
+        # Collect results (2 RUN_STARTED + 2 RUN_RESPONSE)
+        started_count = 0
         results = {}
-        for _ in range(2):
+        for _ in range(4):
             msg = await client.recv(timeout=10.0)
-            assert msg.key == "RUN_RESULT"
-            results[msg.data["run_id"]] = msg.data["result"]
+            if msg.key == ExecutionManagerProtocolKeys.UP_RUN_STARTED.value:
+                started_count += 1
+            elif msg.key == ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value:
+                msg_id = msg.data[0]
+                result = msg.data[4]
+                results[msg_id] = result
 
-        assert results["run_0"] == 10  # 1 * 10
-        assert results["run_1"] == 20  # 2 * 10
+        assert started_count == 2
+        assert results["msg_run_0"] == 10  # 1 * 10
+        assert results["msg_run_1"] == 20  # 2 * 10
 
 # %%
 await test_remote_pool_multiple_workers();
@@ -316,37 +324,34 @@ await test_remote_pool_multiple_workers();
 @pytest.mark.asyncio
 async def test_remote_pool_function_with_kwargs():
     """Test running a function with keyword arguments on remote pool."""
-    import pickle
-
-    async with create_remote_manager(num_processes=1, threads_per_process=1) as client:
+    async with create_remote_client(num_processes=1, threads_per_process=1) as client:
         # Send function
-        func_bytes = pickle.dumps(function_with_kwargs)
         await client.send(
             worker_id=0,
-            key="SEND_FUNC",
-            data={"func_key": "kwargs_fn", "func_bytes": func_bytes}
+            key=ExecutionManagerProtocolKeys.SEND_FUNCTION.value,
+            data=("msg_1", "kwargs_fn", function_with_kwargs)
         )
 
         # Wait for acknowledgment
         msg = await client.recv(timeout=10.0)
-        assert msg.key == "SEND_FUNC_ACK"
+        assert msg.key == ExecutionManagerProtocolKeys.UP_SEND_FUNCTION_RESPONSE.value
 
         # Run with kwargs
         await client.send(
             worker_id=0,
-            key="RUN",
-            data={
-                "run_id": "test_kwargs",
-                "func_import_path_or_key": "kwargs_fn",
-                "func_args": (5,),
-                "func_kwargs": {"b": 20, "c": 200},
-            }
+            key=ExecutionManagerProtocolKeys.RUN.value,
+            data=("msg_2", "kwargs_fn", "run_1", False, (5,), {"b": 20, "c": 200})
         )
+
+        # Get RUN_STARTED
+        msg = await client.recv(timeout=10.0)
+        assert msg.key == ExecutionManagerProtocolKeys.UP_RUN_STARTED.value
 
         # Get result
         msg = await client.recv(timeout=10.0)
-        assert msg.key == "RUN_RESULT"
-        assert msg.data["result"] == 225  # 5 + 20 + 200
+        assert msg.key == ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value
+        result = msg.data[4]
+        assert result == 225  # 5 + 20 + 200
 
 # %%
 await test_remote_pool_function_with_kwargs();
@@ -356,129 +361,161 @@ await test_remote_pool_function_with_kwargs();
 @pytest.mark.asyncio
 async def test_remote_pool_concurrent_runs():
     """Test running multiple functions concurrently on remote pool."""
-    import pickle
-
-    async with create_remote_manager(num_processes=2, threads_per_process=2) as client:
+    async with create_remote_client(num_processes=2, threads_per_process=2) as client:
         # Send function to all workers
-        func_bytes = pickle.dumps(add_numbers)
         for worker_id in range(4):
             await client.send(
                 worker_id=worker_id,
-                key="SEND_FUNC",
-                data={"func_key": "add", "func_bytes": func_bytes}
+                key=ExecutionManagerProtocolKeys.SEND_FUNCTION.value,
+                data=(f"msg_send_{worker_id}", "add", add_numbers)
             )
 
         # Wait for acknowledgments
         for _ in range(4):
             msg = await client.recv(timeout=10.0)
-            assert msg.key == "SEND_FUNC_ACK"
+            assert msg.key == ExecutionManagerProtocolKeys.UP_SEND_FUNCTION_RESPONSE.value
 
         # Run on all workers concurrently
         for i in range(4):
             await client.send(
                 worker_id=i,
-                key="RUN",
-                data={
-                    "run_id": f"run_{i}",
-                    "func_import_path_or_key": "add",
-                    "func_args": (i, i),
-                    "func_kwargs": {},
-                }
+                key=ExecutionManagerProtocolKeys.RUN.value,
+                data=(f"msg_run_{i}", "add", f"run_{i}", False, (i, i), {})
             )
 
-        # Collect all results
+        # Collect all results (4 RUN_STARTED + 4 RUN_RESPONSE)
+        started_count = 0
         results = {}
-        for _ in range(4):
+        for _ in range(8):
             msg = await client.recv(timeout=10.0)
-            assert msg.key == "RUN_RESULT"
-            results[msg.data["run_id"]] = msg.data["result"]
+            if msg.key == ExecutionManagerProtocolKeys.UP_RUN_STARTED.value:
+                started_count += 1
+            elif msg.key == ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value:
+                msg_id = msg.data[0]
+                result = msg.data[4]
+                results[msg_id] = result
 
+        assert started_count == 4
         # Verify results
         for i in range(4):
-            assert results[f"run_{i}"] == i + i
+            assert results[f"msg_run_{i}"] == i + i
 
 # %%
 await test_remote_pool_concurrent_runs();
 
 # %% [markdown]
-# ## Tests for ExecutionManager Integration (Skipped)
+# ## Tests for ExecutionManager Integration
 #
-# The following tests are skipped because ExecutionManager.start() calls pool.start()
-# but RemotePoolClient uses connect() + create_pool() instead.
-# Full integration would require either:
-# 1. Adding a start() method to RemotePoolClient that handles connection and pool creation
-# 2. Modifying ExecutionManager to handle RemotePoolClient specially
-#
-# These tests demonstrate the intended usage once integration is complete.
+# These tests verify that ExecutionManager works correctly with RemotePoolClient.
+# The RemotePoolClient.start() method handles both connection and pool creation,
+# making it compatible with ExecutionManager's startup protocol.
 
 # %%
 #|export
-@pytest.mark.skip(reason="RemotePoolClient integration with ExecutionManager not yet complete")
 @pytest.mark.asyncio
 async def test_execution_manager_with_remote_pool():
-    """Test ExecutionManager with RemotePoolClient (pending integration)."""
-    port = _get_next_port()
-    server = RemotePoolServer()
-    server.register_worker("em_worker", execution_manager_worker)
+    """Test ExecutionManager with RemotePoolClient."""
+    async with create_remote_execution_manager(num_processes=1, threads_per_process=1) as manager:
+        await manager.send_function_to_pool("remote", "add", add_numbers)
 
-    async with server.serve_background("127.0.0.1", port):
-        manager = ExecutionManager({
-            "remote": (RemotePoolClient, {"url": f"ws://127.0.0.1:{port}"}),
-        })
+        result = await manager.run(
+            pool_id="remote",
+            worker_id=0,
+            func_import_path_or_key="add",
+            send_channel=False,
+            func_args=(3, 4),
+            func_kwargs={},
+        )
 
-        async with manager:
-            await manager.send_function_to_pool("remote", "add", add_numbers)
-
-            result = await manager.run(
-                pool_id="remote",
-                worker_id=0,
-                func_import_path_or_key="add",
-                send_channel=False,
-                func_args=(3, 4),
-                func_kwargs={},
-            )
-
-            assert result.result == 7
+        assert result.result == 7
+        assert result.pool_id == "remote"
+        assert result.worker_id == 0
 
 # %%
-# Skipped: await test_execution_manager_with_remote_pool();
+await test_execution_manager_with_remote_pool();
 
 # %%
 #|export
-@pytest.mark.skip(reason="RemotePoolClient integration with ExecutionManager not yet complete")
 @pytest.mark.asyncio
 async def test_execution_manager_remote_multiple_workers():
-    """Test ExecutionManager with multiple remote workers (pending integration)."""
-    port = _get_next_port()
-    server = RemotePoolServer()
-    server.register_worker("em_worker", execution_manager_worker)
+    """Test ExecutionManager with multiple remote workers."""
+    async with create_remote_execution_manager(num_processes=2, threads_per_process=2) as manager:
+        await manager.send_function_to_pool("remote", "multiply", multiply_numbers)
 
-    async with server.serve_background("127.0.0.1", port):
-        manager = ExecutionManager({
-            "remote": (RemotePoolClient, {
-                "url": f"ws://127.0.0.1:{port}",
-                "num_processes": 2,
-                "threads_per_process": 2,
-            }),
-        })
+        # Run on each worker
+        results = []
+        for worker_id in range(4):
+            result = await manager.run(
+                pool_id="remote",
+                worker_id=worker_id,
+                func_import_path_or_key="multiply",
+                send_channel=False,
+                func_args=(worker_id + 1, 10),
+                func_kwargs={},
+            )
+            results.append(result.result)
 
-        async with manager:
-            await manager.send_function_to_pool("remote", "multiply", multiply_numbers)
-
-            # Run on each worker
-            results = []
-            for worker_id in range(4):
-                result = await manager.run(
-                    pool_id="remote",
-                    worker_id=worker_id,
-                    func_import_path_or_key="multiply",
-                    send_channel=False,
-                    func_args=(worker_id + 1, 10),
-                    func_kwargs={},
-                )
-                results.append(result.result)
-
-            assert results == [10, 20, 30, 40]
+        assert results == [10, 20, 30, 40]
 
 # %%
-# Skipped: await test_execution_manager_remote_multiple_workers();
+await test_execution_manager_remote_multiple_workers();
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_execution_manager_remote_context_manager():
+    """Test using ExecutionManager as async context manager with RemotePoolClient."""
+    async with create_remote_execution_manager() as manager:
+        assert manager._started is True
+        pool_ids = [pool_id for pool_id, _ in manager.pools]
+        assert "remote" in pool_ids
+
+# %%
+await test_execution_manager_remote_context_manager();
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_execution_manager_remote_kwargs():
+    """Test running a function with keyword arguments on remote pool via ExecutionManager."""
+    async with create_remote_execution_manager() as manager:
+        await manager.send_function_to_pool("remote", "kwargs_fn", function_with_kwargs)
+
+        result = await manager.run(
+            pool_id="remote",
+            worker_id=0,
+            func_import_path_or_key="kwargs_fn",
+            send_channel=False,
+            func_args=(5,),
+            func_kwargs={"b": 20, "c": 200},
+        )
+
+        assert result.result == 225  # 5 + 20 + 200
+
+# %%
+await test_execution_manager_remote_kwargs();
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_execution_manager_remote_timestamps():
+    """Test that JobResult from remote pool has correct timestamps."""
+    async with create_remote_execution_manager() as manager:
+        await manager.send_function_to_pool("remote", "slow", slow_function)
+
+        result = await manager.run(
+            pool_id="remote",
+            worker_id=0,
+            func_import_path_or_key="slow",
+            send_channel=False,
+            func_args=(0.05,),
+            func_kwargs={},
+        )
+
+        # Check timestamps are in correct order
+        assert result.timestamp_utc_submitted <= result.timestamp_utc_started
+        assert result.timestamp_utc_started <= result.timestamp_utc_completed
+        assert result.result == "done"
+
+# %%
+await test_execution_manager_remote_timestamps();
