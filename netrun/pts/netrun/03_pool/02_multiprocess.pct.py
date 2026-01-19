@@ -137,6 +137,11 @@ MP_UP_SHUTDOWN_COMPLETE = "__pool-mp-up:shutdown-complete"
 
 # %%
 #|export
+MP_UP_SUBPROCESS_ERROR = "__pool-mp-up:subprocess-error"
+"""Signal from subprocess that a fatal error occurred. Data: dict with error info."""
+
+# %%
+#|export
 OutputBuffer = list[tuple[datetime.datetime, bool, str]]
 """Type alias for stdout/stderr buffer. Each entry is (timestamp, is_stdout, text)."""
 
@@ -219,6 +224,41 @@ def _subprocess_main(
         buffer_output: If True, buffer captured output; if False, discard it
         output_flush_interval: Interval in seconds between automatic output buffer flushes
     """
+    # Top-level error handling - catch any fatal errors and report back to parent
+    import traceback
+    parent_channel_for_errors = SyncProcessChannel(parent_send_q, parent_recv_q)
+    try:
+        _subprocess_main_inner(
+            parent_send_q, parent_recv_q, worker_fn, num_threads,
+            process_idx, threads_per_process, redirect_output,
+            buffer_output, output_flush_interval
+        )
+    except Exception as e:
+        # Send error back to parent
+        try:
+            parent_channel_for_errors.send(MP_UP_SUBPROCESS_ERROR, {
+                "type": type(e).__name__,
+                "message": str(e),
+                "traceback": traceback.format_exc(),
+            })
+        except Exception:
+            pass  # Channel might be closed
+        raise  # Re-raise to ensure non-zero exit code
+
+# %%
+#|export
+def _subprocess_main_inner(
+    parent_send_q: mp.Queue,
+    parent_recv_q: mp.Queue,
+    worker_fn: WorkerFn,
+    num_threads: int,
+    process_idx: int,
+    threads_per_process: int,
+    redirect_output: bool = True,
+    buffer_output: bool = True,
+    output_flush_interval: float = 0.1,
+):
+    """Inner implementation of subprocess main. Wrapped by _subprocess_main for error handling."""
     # Set up stdout/stderr capture if requested
     output_buffer: OutputBuffer = []
     output_buffer_lock = threading.Lock()
@@ -542,6 +582,7 @@ class MultiprocessPool:
         self._processes = []
         self._stdout_buffers = {}
         self._flush_events = {}
+        self._shutdown_complete_events = {i: asyncio.Event() for i in range(self._num_processes)}
 
         for process_idx in range(self._num_processes):
             # Create channel pair
@@ -592,6 +633,15 @@ class MultiprocessPool:
                             key=POOL_UP_ERROR_CRASHED,
                             data=exit_info
                         ))
+                    # Close the channel to unblock any recv_loop waiting on it
+                    # This ensures the recv task exits rather than hanging forever
+                    try:
+                        await self._channels[proc_idx].close()
+                    except Exception:
+                        pass
+                    # Set shutdown_complete_event so close() doesn't wait for dead processes
+                    if proc_idx in self._shutdown_complete_events:
+                        self._shutdown_complete_events[proc_idx].set()
             await asyncio.sleep(0.5)  # Check every 500ms
 
     async def close(self, timeout: float | None = None) -> None:
@@ -624,10 +674,6 @@ class MultiprocessPool:
                 await self._monitor_task
             except asyncio.CancelledError:
                 pass
-
-        # Create shutdown complete events for each process
-        for process_idx in range(self._num_processes):
-            self._shutdown_complete_events[process_idx] = asyncio.Event()
 
         # Send shutdown signals to each subprocess using MP_DOWN_SHUTDOWN (NOT RPC_KEY_SHUTDOWN)
         # MP_DOWN_SHUTDOWN allows the subprocess to complete its shutdown sequence
@@ -701,11 +747,33 @@ class MultiprocessPool:
             try:
                 # Keep receiving until shutdown complete or channel closed
                 while True:
-                    key, data = await channel.recv()
+                    # Use a timeout to periodically check if process is still alive
+                    # This handles cases where the subprocess hangs during startup
+                    try:
+                        key, data = await channel.recv(timeout=1.0)
+                    except RecvTimeout:
+                        # Check if monitor has already detected and handled this dead process
+                        # This prevents race conditions where recv_loop might exit before
+                        # the monitor has put a CRASHED message in the queue
+                        if process_idx in self._dead_processes:
+                            # Monitor already handled it - safe to exit
+                            break
+                        # Otherwise continue waiting (monitor will detect death if process crashed)
+                        continue
+
                     if key == MP_UP_RESPONSE:
                         worker_id, msg_key, msg_data = data
                         msg = WorkerMessage(worker_id=worker_id, key=msg_key, data=msg_data)
                         await self._recv_queue.put(msg)
+                    elif key == MP_UP_SUBPROCESS_ERROR:
+                        # Subprocess reported a fatal error - propagate to all workers in this process
+                        for thread_idx in range(self._threads_per_process):
+                            worker_id = process_idx * self._threads_per_process + thread_idx
+                            await self._recv_queue.put(WorkerMessage(
+                                worker_id=worker_id,
+                                key=POOL_UP_ERROR_EXCEPTION,
+                                data=data  # dict with type, message, traceback
+                            ))
                     elif key == MP_UP_STDOUT_BUFFER:
                         # Append received buffer to our local buffer for this process
                         self._stdout_buffers[process_idx].extend(data)

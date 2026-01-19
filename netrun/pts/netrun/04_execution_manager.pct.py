@@ -526,14 +526,40 @@ class ExecutionManager:
         return msg_id
 
     async def _recv_msg(self, pool_id: str, msg_id: str, expect: ExecutionManagerProtocolKeys, close_msg_queue: bool) -> tuple[str, Any]:
-        # Check if the message receiver task for the pool is running, else propagate its exception
+        # Get the queue for this message and the recv task
+        msg_queue = self._msgs[pool_id][msg_id]
         msg_recv_task = self._msg_recv_tasks.get(pool_id)
-        if msg_recv_task is not None and msg_recv_task.done():
-            exc = msg_recv_task.exception()
-            if exc is not None:
-                raise exc
 
-        msg = await self._msgs[pool_id][msg_id].get()
+        # Create a task to wait for the message
+        get_task = asyncio.create_task(msg_queue.get())
+
+        # Wait for either the message or the recv task to complete (crash)
+        if msg_recv_task is not None:
+            done, pending = await asyncio.wait(
+                [get_task, msg_recv_task],
+                return_when=asyncio.FIRST_COMPLETED
+            )
+
+            # If the recv task completed (crashed), cancel the get and propagate exception
+            if msg_recv_task in done:
+                get_task.cancel()
+                try:
+                    await get_task
+                except asyncio.CancelledError:
+                    pass
+                if close_msg_queue:
+                    del self._msgs[pool_id][msg_id]
+                exc = msg_recv_task.exception()
+                if exc is not None:
+                    raise exc
+                # Recv task ended without exception - shouldn't happen in normal operation
+                raise RuntimeError("Message receiver task ended unexpectedly")
+
+            # Otherwise, get the message result
+            msg = get_task.result()
+        else:
+            msg = await get_task
+
         if close_msg_queue:
             del self._msgs[pool_id][msg_id]
 
@@ -598,16 +624,37 @@ class ExecutionManager:
 
         # Accumulate print buffers and wait for UP_RUN_RESPONSE
         accumulated_print_buffer: list[tuple[datetime, str]] = []
+        msg_queue = self._msgs[pool_id][msg_id]
 
         while True:
-            # Check if the message receiver task is still running
             msg_recv_task = self._msg_recv_tasks.get(pool_id)
-            if msg_recv_task is not None and msg_recv_task.done():
-                exc = msg_recv_task.exception()
-                if exc is not None:
-                    raise exc
 
-            msg = await self._msgs[pool_id][msg_id].get()
+            # Create a task to wait for the next message
+            get_task = asyncio.create_task(msg_queue.get())
+
+            # Wait for either the message or the recv task to complete (crash)
+            if msg_recv_task is not None:
+                done, pending = await asyncio.wait(
+                    [get_task, msg_recv_task],
+                    return_when=asyncio.FIRST_COMPLETED
+                )
+
+                # If the recv task completed (crashed), cancel the get and propagate exception
+                if msg_recv_task in done:
+                    get_task.cancel()
+                    try:
+                        await get_task
+                    except asyncio.CancelledError:
+                        pass
+                    del self._msgs[pool_id][msg_id]
+                    exc = msg_recv_task.exception()
+                    if exc is not None:
+                        raise exc
+                    raise RuntimeError("Message receiver task ended unexpectedly")
+
+                msg = get_task.result()
+            else:
+                msg = await get_task
 
             if msg.key == ExecutionManagerProtocolKeys.UP_PRINT_BUFFER.value:
                 # Intermediate print buffer
