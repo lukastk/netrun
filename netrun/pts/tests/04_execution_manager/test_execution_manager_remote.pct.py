@@ -42,6 +42,7 @@ from netrun.execution_manager import (
     RunAllocationMethod,
     ExecutionManagerProtocolKeys,
     remote_execution_manager_worker,
+    create_execution_manager_server,
 )
 
 # Import worker functions from the workers module
@@ -80,8 +81,7 @@ async def create_remote_client(num_processes: int = 1, threads_per_process: int 
     and creates a RemotePoolClient that connects to it.
     """
     port = _get_next_port()
-    server = RemotePoolServer()
-    server.register_worker("em_worker", remote_execution_manager_worker)
+    server = create_execution_manager_server(worker_name="em_worker")
 
     async with server.serve_background("127.0.0.1", port):
         # Create client and connect
@@ -102,8 +102,7 @@ async def create_remote_execution_manager(num_processes: int = 1, threads_per_pr
     and creates an ExecutionManager with a RemotePoolClient that connects to it.
     """
     port = _get_next_port()
-    server = RemotePoolServer()
-    server.register_worker("em_worker", remote_execution_manager_worker)
+    server = create_execution_manager_server(worker_name="em_worker")
 
     async with server.serve_background("127.0.0.1", port):
         manager = ExecutionManager({
