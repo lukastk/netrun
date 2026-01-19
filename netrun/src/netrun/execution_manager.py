@@ -175,7 +175,7 @@ def _worker_func(is_in_main_process: bool, channel, worker_id):
             else:
                 converted_to_str, _res = _convert_to_str_if_not_serializable(res)
             _buffer = func_print_buffer.pop(run_id)
-            channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res))
+            channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res, _buffer))
         # SEND_FUNCTION
         elif key == ExecutionManagerProtocolKeys.SEND_FUNCTION.value:
             msg_id, func_key, func = data
@@ -186,7 +186,8 @@ def _worker_func(is_in_main_process: bool, channel, worker_id):
             msg_id, run_id = data
             if run_id not in func_print_buffer:
                 raise ValueError(f"Run ID '{run_id}' not found in print buffer")
-            _buffer = func_print_buffer.pop(run_id)
+            _buffer = list(func_print_buffer[run_id])  # Copy the buffer
+            func_print_buffer[run_id].clear()  # Clear but keep tracking
             channel.send(ExecutionManagerProtocolKeys.UP_FLUSH_PRINT_BUFFER_RESPONSE.value, (msg_id, run_id, _buffer))
         else:
             raise ValueError(f"Unknown execution manager protocol key: '{key}'.")
@@ -228,7 +229,7 @@ async def _async_worker_func(channel, worker_id):
             timestamp_utc_completed = get_timestamp_utc()
             converted_to_str, _res = False, res
             _buffer = func_print_buffer.pop(run_id)
-            await channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res))
+            await channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res, _buffer))
         # SEND_FUNCTION
         elif key == ExecutionManagerProtocolKeys.SEND_FUNCTION.value:
             msg_id, func_key, func = data
@@ -239,7 +240,8 @@ async def _async_worker_func(channel, worker_id):
             msg_id, run_id = data
             if run_id not in func_print_buffer:
                 raise ValueError(f"Run ID '{run_id}' not found in print buffer")
-            _buffer = func_print_buffer.pop(run_id)
+            _buffer = list(func_print_buffer[run_id])  # Copy the buffer
+            func_print_buffer[run_id].clear()  # Clear but keep tracking
             await channel.send(ExecutionManagerProtocolKeys.UP_FLUSH_PRINT_BUFFER_RESPONSE.value, (msg_id, run_id, _buffer))
         else:
             raise ValueError(f"Unknown execution manager protocol key: '{key}'.")
@@ -256,10 +258,13 @@ class JobResult:
     worker_id: int
     converted_to_str: bool
     result: Any
+    print_buffer: list[tuple[datetime, str]]
+    """List of (timestamp, text) tuples for each print statement captured during execution."""
 
 @dataclass
 class SubmittedJobInfo:
     """Information about a submitted job."""
+    run_id: str
     timestamp_utc_submitted: datetime
     timestamp_utc_started: datetime | None
     func_import_path_or_key: str
@@ -402,6 +407,7 @@ class ExecutionManager:
             data=(func_import_path_or_key, run_id, send_channel, func_args, func_kwargs),
         )
         job_info = SubmittedJobInfo(
+            run_id=run_id,
             timestamp_utc_submitted=timestamp_utc_submitted,
             timestamp_utc_started=None,
             func_import_path_or_key=func_import_path_or_key,
@@ -417,7 +423,7 @@ class ExecutionManager:
         msg = await self._recv_msg(pool_id, msg_id, expect=ExecutionManagerProtocolKeys.UP_RUN_RESPONSE, close_msg_queue=True)
         self._worker_jobs[(pool_id, worker_id)].remove(job_info)
 
-        timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res = msg.data
+        timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res, _print_buffer = msg.data
         return JobResult(
             timestamp_utc_submitted=job_info.timestamp_utc_submitted,
             timestamp_utc_started=job_info.timestamp_utc_started,
@@ -427,6 +433,7 @@ class ExecutionManager:
             worker_id=job_info.worker_id,
             converted_to_str=converted_to_str,
             result=_res,
+            print_buffer=_print_buffer,
         )
 
     async def run_allocate(
@@ -525,6 +532,39 @@ class ExecutionManager:
         """
         tasks = [asyncio.create_task(self.send_function(pool_id, worker_id, func_key, func)) for worker_id in range(self._pools[pool_id].num_workers)]
         await asyncio.gather(*tasks)
+
+    async def flush_print_buffer(self, pool_id: str, worker_id: int, run_id: str) -> list[tuple[datetime, str]]:
+        """
+        Flush and retrieve the print buffer for a job.
+
+        After calling this, the print buffer for that run_id is cleared in the
+        worker but continues tracking new prints.
+
+        Note: This method can only be called when the worker is not blocked
+        executing a function. Since workers are single-threaded, they cannot
+        process this message while a synchronous function is running. This is
+        useful between jobs or for async functions that yield control.
+
+        Args:
+            pool_id: The ID of the pool where the job is running.
+            worker_id: The ID of the worker where the job is running.
+            run_id: The run ID of the job (from SubmittedJobInfo.run_id).
+
+        Returns:
+            List of (timestamp, text) tuples for each print statement captured.
+
+        Raises:
+            ValueError: If the run_id is not found in the worker's print buffer.
+        """
+        msg_id = await self._send_msg(
+            pool_id=pool_id,
+            worker_id=worker_id,
+            key=ExecutionManagerProtocolKeys.FLUSH_PRINT_BUFFER.value,
+            data=(run_id,),
+        )
+        msg = await self._recv_msg(pool_id, msg_id, expect=ExecutionManagerProtocolKeys.UP_FLUSH_PRINT_BUFFER_RESPONSE, close_msg_queue=True)
+        _run_id, _buffer = msg.data
+        return _buffer
 
     async def close(self):
         """Close the execution manager and all its pools."""
