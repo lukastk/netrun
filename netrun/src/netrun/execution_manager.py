@@ -355,12 +355,15 @@ class ExecutionManager:
             if exc is not None:
                 raise exc
 
+        # Create the queue BEFORE sending to avoid race condition where response
+        # arrives before the queue is created
+        self._msgs[pool_id][msg_id] = asyncio.Queue()
+
         await pool.send(
             worker_id=worker_id,
             key=key,
             data=(msg_id, *data),
         )
-        self._msgs[pool_id][msg_id] = asyncio.Queue()
 
         return msg_id
 
