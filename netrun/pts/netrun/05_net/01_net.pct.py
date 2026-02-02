@@ -93,7 +93,13 @@ class Net:
     # execute_epoch
 
     async def async_run_step(self):
-        self.netsim
+        self._netsim.run_step()
+
+        for epoch_id in self._netsim.get_startable_epochs():
+            epoch = self._netsim.get_epoch(epoch_id)
+            node_name = epoch.node_name
+            for node in epoch.nodes:
+                node.execute()
 
     def run_step(self):
         asyncio.run(self.async_run_step())

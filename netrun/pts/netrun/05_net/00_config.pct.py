@@ -16,7 +16,8 @@ from nblite import nbl_export; nbl_export();
 # %%
 #|export
 from pydantic import BaseModel, Field
-from typing import Annotated, Literal, NewType, Callable, Union, TYPE_CHECKING
+from typing import Annotated, Literal, NewType
+from collections.abc import Callable
 from ulid import ULID
 
 import netrun_sim
@@ -52,7 +53,7 @@ class PortSlotSpecFiniteConfig(BaseModel):
 
 
 PortSlotSpecConfig = Annotated[
-    Union[PortSlotSpecInfiniteConfig, PortSlotSpecFiniteConfig],
+    PortSlotSpecInfiniteConfig | PortSlotSpecFiniteConfig,
     Field(discriminator="type")
 ]
 
@@ -153,17 +154,7 @@ class PortStateEqualsOrGreaterThanConfig(BaseModel):
 
 
 PortStateConfig = Annotated[
-    Union[
-        PortStateEmptyConfig,
-        PortStateFullConfig,
-        PortStateNonEmptyConfig,
-        PortStateNonFullConfig,
-        PortStateEqualsConfig,
-        PortStateLessThanConfig,
-        PortStateGreaterThanConfig,
-        PortStateEqualsOrLessThanConfig,
-        PortStateEqualsOrGreaterThanConfig,
-    ],
+    PortStateEmptyConfig | PortStateFullConfig | PortStateNonEmptyConfig | PortStateNonFullConfig | PortStateEqualsConfig | PortStateLessThanConfig | PortStateGreaterThanConfig | PortStateEqualsOrLessThanConfig | PortStateEqualsOrGreaterThanConfig,
     Field(discriminator="type")
 ]
 
@@ -192,7 +183,7 @@ class PacketCountNConfig(BaseModel):
 
 
 PacketCountConfig = Annotated[
-    Union[PacketCountAllConfig, PacketCountNConfig],
+    PacketCountAllConfig | PacketCountNConfig,
     Field(discriminator="type")
 ]
 
@@ -221,7 +212,7 @@ class MaxSalvosFiniteConfig(BaseModel):
 
 
 MaxSalvosConfig = Annotated[
-    Union[MaxSalvosInfiniteConfig, MaxSalvosFiniteConfig],
+    MaxSalvosInfiniteConfig | MaxSalvosFiniteConfig,
     Field(discriminator="type")
 ]
 
@@ -286,14 +277,7 @@ class SalvoConditionTermNotConfig(BaseModel):
 
 
 SalvoConditionTermConfig = Annotated[
-    Union[
-        SalvoConditionTermTrueConfig,
-        SalvoConditionTermFalseConfig,
-        SalvoConditionTermPortConfig,
-        SalvoConditionTermAndConfig,
-        SalvoConditionTermOrConfig,
-        SalvoConditionTermNotConfig,
-    ],
+    SalvoConditionTermTrueConfig | SalvoConditionTermFalseConfig | SalvoConditionTermPortConfig | SalvoConditionTermAndConfig | SalvoConditionTermOrConfig | SalvoConditionTermNotConfig,
     Field(discriminator="type")
 ]
 
@@ -443,20 +427,40 @@ class NodeExecutionConfig(BaseModel):
 
     node_name: str
     pools: list[str] = Field(default_factory=list)
-    exec_node_func: NodeExecutionFunc | None = None
-    start_node_func: NodeStartFunc | None = None
-    stop_node_func: NodeStopFunc | None = None
-    on_node_failure: OnNodeFailureFunc | None = None
+    exec_node_func: NodeExecutionFunc | str = None
+    """
+    The function to execute the node with.
+    If a string, it is interpreted as the import path of the function.
+    """
+
+    start_node_func: NodeStartFunc | str = None
+    stop_node_func: NodeStopFunc | str = None
+    on_node_failure: OnNodeFailureFunc | str = None
 
     # Additional execution options (from PROJECT_SPEC.md)
+    defer_startup: bool = False
+    """
+    If True, the node's `start_node_func` will not be called until before the first time `start_node_func` is called.
+    """
+
     max_parallel_epochs: int | None = None
     rate_limit_per_second: float | None = None
-    defer_net_actions: bool = False
+
+    defer_net_actions: bool|None = None
+    """
+    This must be True or None if retries are enabled. If None, then the node will defer if retires are enabled, or not if retries are not enabled.
+    Deferring entails that the net will only be notified of the NetActions transpiring during a node's epochs
+    (e.g. creating, consuming packets, etc) if the epoch successfully completes.
+    """
+
     retries: int = 0
     retry_wait: float = 0.0
     timeout: float | None = None
-    dead_letter_queue: bool = True
-    capture_stdout: bool = True
+
+    capture_prints: bool = True
+    """
+    If True, 'print' statements in the node will be captured.
+    """
 
 # %%
 #|export
@@ -562,7 +566,7 @@ class RemotePoolConfig(BaseModel):
 
 
 PoolSpecConfig = Annotated[
-    Union[MainPoolConfig, ThreadPoolConfig, MultiprocessPoolConfig, RemotePoolConfig],
+    MainPoolConfig | ThreadPoolConfig | MultiprocessPoolConfig | RemotePoolConfig,
     Field(discriminator="type")
 ]
 
@@ -583,6 +587,10 @@ class NetConfig(BaseModel):
     """Configuration for a Net."""
     pools: dict[str, PoolConfig]
     graph: GraphConfig
+
+    dead_letter_queue: bool = True
+    dead_letter_path: str | None = None
+    dead_letter_callback: Callable | str = None
 
 # %% [markdown]
 # # Examples
