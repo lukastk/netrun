@@ -108,7 +108,13 @@ class ExecutionManagerProtocolKeys(Enum):
     """
 
 # %% nbs/netrun/04_execution_manager.ipynb 11
-def _worker_func(is_in_main_process: bool, channel, worker_id, func_preprocessor: Callable | None = None):
+def _worker_func(
+    is_in_main_process: bool,
+    channel,
+    worker_id,
+    func_preprocessor: Callable | None = None,
+    func_done_callback: Callable | None = None,
+):
     """Worker function that handles execution manager protocol messages.
 
     Args:
@@ -116,6 +122,9 @@ def _worker_func(is_in_main_process: bool, channel, worker_id, func_preprocessor
         channel: RPC channel for communication.
         worker_id: ID of this worker.
         func_preprocessor: If provided, this is a function that preprocesses the function before it is executed.
+        func_done_callback: If provided, this is called after function execution with the same args/kwargs
+            that were passed to the function, plus the result. Signature: callback(channel, *args, **kwargs, result=result)
+            if send_channel was True, otherwise callback(*args, **kwargs, result=result).
     """
 
     event_loop = asyncio.new_event_loop()
@@ -146,6 +155,14 @@ def _worker_func(is_in_main_process: bool, channel, worker_id, func_preprocessor
                 kwargs=kwargs,
                 event_loop=event_loop,
             )
+
+            # Call done callback if provided
+            if func_done_callback is not None:
+                if send_channel:
+                    func_done_callback(channel, *args, **kwargs, result=res)
+                else:
+                    func_done_callback(*args, **kwargs, result=res)
+
             timestamp_utc_completed = get_timestamp_utc()
             if is_in_main_process:
                 converted_to_str, _res = False, res
@@ -161,22 +178,28 @@ def _worker_func(is_in_main_process: bool, channel, worker_id, func_preprocessor
         else:
             raise ValueError(f"Unknown execution manager protocol key: '{key}'.")
 
-def _thread_worker_func(channel, worker_id, func_preprocessor: Callable | None = None):
-    return _worker_func(is_in_main_process=True, channel=channel, worker_id=worker_id, func_preprocessor=func_preprocessor)
+def _thread_worker_func(channel, worker_id, func_preprocessor: Callable | None = None, func_done_callback: Callable | None = None):
+    return _worker_func(is_in_main_process=True, channel=channel, worker_id=worker_id, func_preprocessor=func_preprocessor, func_done_callback=func_done_callback)
 
 # If the worker is in a multiprocess pool, then the result needs to be pickleable for it to be sent back without being converted as `str(result)`.
-def _multiprocess_worker_func(channel, worker_id, func_preprocessor: Callable | None = None):
-    return _worker_func(is_in_main_process=False, channel=channel, worker_id=worker_id, func_preprocessor=func_preprocessor)
+def _multiprocess_worker_func(channel, worker_id, func_preprocessor: Callable | None = None, func_done_callback: Callable | None = None):
+    return _worker_func(is_in_main_process=False, channel=channel, worker_id=worker_id, func_preprocessor=func_preprocessor, func_done_callback=func_done_callback)
 
 # %% nbs/netrun/04_execution_manager.ipynb 12
-async def _async_worker_func(channel, worker_id, func_preprocessor: Callable | None = None):
+async def _async_worker_func(
+    channel,
+    worker_id,
+    func_preprocessor: Callable | None = None,
+    func_done_callback: Callable | None = None,
+):
     """Async worker function that handles execution manager protocol messages.
 
     Args:
         channel: Async RPC channel for communication.
         worker_id: ID of this worker.
         func_preprocessor: If provided, this is a function that preprocesses the function before it is executed.
-        func
+        func_done_callback: If provided, this is called after function execution with the same args/kwargs
+            that were passed to the function, plus the result. Can be sync or async.
     """
     registered_functions: dict[str, Callable[..., Awaitable] | Callable[..., None]] = {}
 
@@ -204,6 +227,17 @@ async def _async_worker_func(channel, worker_id, func_preprocessor: Callable | N
                 args=args,
                 kwargs=kwargs,
             )
+
+            # Call done callback if provided
+            if func_done_callback is not None:
+                if send_channel:
+                    callback_result = func_done_callback(channel, *args, **kwargs, result=res)
+                else:
+                    callback_result = func_done_callback(*args, **kwargs, result=res)
+                # Await if the callback is async
+                if asyncio.iscoroutine(callback_result):
+                    await callback_result
+
             timestamp_utc_completed = get_timestamp_utc()
             converted_to_str, _res = False, res
 
@@ -217,18 +251,25 @@ async def _async_worker_func(channel, worker_id, func_preprocessor: Callable | N
             raise ValueError(f"Unknown execution manager protocol key: '{key}'.")
 
 # %% nbs/netrun/04_execution_manager.ipynb 14
-def remote_execution_manager_worker(channel, worker_id: int, func_preprocessor: Callable | None = None) -> None:
+def remote_execution_manager_worker(
+    channel,
+    worker_id: int,
+    func_preprocessor: Callable | None = None,
+    func_done_callback: Callable | None = None,
+) -> None:
     return _worker_func(
         is_in_main_process=False,
         channel=channel,
         worker_id=worker_id,
         func_preprocessor=func_preprocessor,
+        func_done_callback=func_done_callback,
     )
 
 # %% nbs/netrun/04_execution_manager.ipynb 15
 def create_execution_manager_server(
     worker_name: str = "execution_manager",
     func_preprocessor: Callable | None = None,
+    func_done_callback: Callable | None = None,
 ):
     """Create a RemotePoolServer configured for ExecutionManager.
 
@@ -276,6 +317,8 @@ def create_execution_manager_server(
     Args:
         worker_name: Name to register the worker under. Clients must use this
             name when connecting (via `worker_name` parameter in RemotePoolClient).
+        func_preprocessor: If provided, preprocesses functions before execution.
+        func_done_callback: If provided, called after function execution completes.
 
     Returns:
         A configured RemotePoolServer ready to serve.
@@ -287,6 +330,7 @@ def create_execution_manager_server(
     worker_fn = functools.partial(
         remote_execution_manager_worker,
         func_preprocessor=func_preprocessor,
+        func_done_callback=func_done_callback,
     )
     server.register_worker(worker_name, worker_fn)
     return server
@@ -353,17 +397,18 @@ class ExecutionManager:
 
             pool_kwargs = dict(pool_init_kwargs)
             func_preprocessor = pool_kwargs.pop('func_preprocessor', None)
+            func_done_callback = pool_kwargs.pop('func_done_callback', None)
 
             if pool_type == ThreadPool:
-                worker_fn = functools.partial(_thread_worker_func, func_preprocessor=func_preprocessor)
+                worker_fn = functools.partial(_thread_worker_func, func_preprocessor=func_preprocessor, func_done_callback=func_done_callback)
                 self._pools[pool_id] = ThreadPool(**pool_kwargs, worker_fn=worker_fn)
             elif pool_type == MultiprocessPool:
-                worker_fn = functools.partial(_multiprocess_worker_func, func_preprocessor=func_preprocessor)
+                worker_fn = functools.partial(_multiprocess_worker_func, func_preprocessor=func_preprocessor, func_done_callback=func_done_callback)
                 self._pools[pool_id] = MultiprocessPool(**pool_kwargs, worker_fn=worker_fn)
             elif pool_type == RemotePoolClient:
                 self._pools[pool_id] = RemotePoolClient(**pool_kwargs)
             elif pool_type == SingleWorkerPool:
-                worker_fn = functools.partial(_async_worker_func, func_preprocessor=func_preprocessor)
+                worker_fn = functools.partial(_async_worker_func, func_preprocessor=func_preprocessor, func_done_callback=func_done_callback)
                 self._pools[pool_id] = SingleWorkerPool(**pool_kwargs, worker_fn=worker_fn)
             else:
                 raise ValueError(f"Unknown pool type: '{pool_type}'.")
