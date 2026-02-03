@@ -61,13 +61,73 @@ PortSlotSpecConfig = Annotated[
 ]
 
 # %% [markdown]
+# ## Port type configuration
+#
+# Optional type validation for packets flowing through ports.
+
+# %%
+#|export
+class PortTypeConfig(BaseModel):
+    """Detailed port type configuration.
+
+    Used when you need more control than a simple type name string.
+    """
+    name: str
+    """Type name to match (e.g., "DataFrame", "dict", "MyClass")."""
+
+    isinstance_check: bool = False
+    """If True and a type object is available, use isinstance().
+    If False, use type().__name__ match. Default is False (name match)."""
+
+
+# Type specification union - supports multiple formats
+PortTypeSpec = str | type | PortTypeConfig
+"""Port type specification.
+
+Can be:
+- str: Type name to match against type(value).__name__
+- type: Type object for isinstance() check
+- PortTypeConfig: Detailed configuration
+"""
+
+# %% [markdown]
 # ## Port configuration
 
 # %%
 #|export
 class PortConfig(BaseModel):
     """Configuration for a port on a node."""
+    model_config = {"arbitrary_types_allowed": True}
+
     slots_spec: PortSlotSpecConfig = Field(default_factory=PortSlotSpecInfiniteConfig)
+
+    port_type: str | type | PortTypeConfig | None = None
+    """Expected type for packets on this port.
+
+    - None: No validation (default)
+    - str: Match type(value).__name__ exactly
+    - type: Use isinstance(value, port_type)
+    - PortTypeConfig: Detailed configuration
+
+    Example:
+        PortConfig(port_type="DataFrame")  # Match by name
+        PortConfig(port_type=pd.DataFrame)  # Match with isinstance
+    """
+
+    @field_serializer("port_type")
+    def serialize_port_type(self, port_type: str | type | PortTypeConfig | None) -> str | dict | None:
+        """Serialize port_type for JSON roundtrip."""
+        if port_type is None:
+            return None
+        if isinstance(port_type, str):
+            return port_type
+        if isinstance(port_type, type):
+            # Convert type to name string
+            # Note: loses isinstance capability on reload, becomes name match
+            return port_type.__name__
+        if isinstance(port_type, PortTypeConfig):
+            return port_type.model_dump()
+        return None
 
     def to_netrun_sim(self) -> netrun_sim.Port:
         return netrun_sim.Port(self.slots_spec.to_netrun_sim())
