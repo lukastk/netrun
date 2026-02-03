@@ -9,6 +9,7 @@ from collections.abc import Callable
 from ulid import ULID
 
 import netrun_sim
+from ..execution_manager import RunAllocationMethod
 
 # %% nbs/netrun/05_net/00_config.ipynb 5
 class PortSlotSpecInfiniteConfig(BaseModel):
@@ -386,6 +387,26 @@ class NodeExecutionConfig(BaseModel):
     If True, 'print' statements in the node will be captured.
     """
 
+    print_flush_interval: float = 0.1
+    """
+    How often to flush the print buffer back to Net (in seconds). Default is 100ms.
+    """
+
+    print_buffer_max_size: int | None = None
+    """
+    Max buffer size before forced flush. None = unlimited (default).
+    """
+
+    print_echo_stdout: bool = False
+    """
+    If True, also print to actual stdout when ctx.print() is called.
+    """
+
+    pool_allocation_method: RunAllocationMethod | None = None
+    """
+    How to select a worker when node has multiple pools. None = use Net default.
+    """
+
 # %% nbs/netrun/05_net/00_config.ipynb 24
 class NodeGraphConfig(BaseModel):
     """Configuration for a node's graph structure (ports and salvo conditions)."""
@@ -493,6 +514,11 @@ class NetConfig(BaseModel):
     """Configuration for a Net."""
     pools: dict[str, PoolConfig]
     graph: GraphConfig
+
+    default_pool_allocation_method: RunAllocationMethod = RunAllocationMethod.ROUND_ROBIN
+    """
+    Default allocation method for nodes with multiple pools.
+    """
 
     dead_letter_queue: bool = True
     dead_letter_path: str | None = None
