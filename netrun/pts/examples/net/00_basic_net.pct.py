@@ -21,7 +21,6 @@
 # First, let's import all the types we need.
 
 # %%
-from datetime import datetime
 from netrun.net.config import (
     # Net configuration
     NetConfig,
@@ -323,98 +322,69 @@ async with Net(config) as net:
 print(f"Net stopped: {not net.started}")
 
 # %% [markdown]
-# ## Print Capture with Timestamps
+# ## Full Network Execution with Print Capture
 #
-# Node functions can use `ctx.print()` to capture output. Each print call is
-# automatically timestamped when it is called, not when the buffer is flushed.
-# This ensures accurate timing information for debugging and analysis.
-#
-# The captured output is:
-# - Stored as `(timestamp, message)` tuples
-# - Stored per-epoch and per-node for later retrieval
-# - Optionally echoed to stdout for debugging
+# Now let's run the complete network and see the print capture in action.
+# All `ctx.print()` calls are captured with timestamps automatically.
 
 # %%
-# Create a Net and simulate print capture from multiple epochs
-# In real usage, ctx.print() captures timestamps automatically
-config = create_net_config()
+import asyncio
 
-async with Net(config) as net:
-    # Simulate prints arriving from different epochs
-    # Each print is a (timestamp, message) tuple - timestamps are captured
-    # when ctx.print() is called in the worker, not when buffer is flushed
+async def run_full_network():
+    """Run the complete Source → Process → Sink network."""
+    config = create_net_config()
 
-    # First epoch - Source node processing
-    net._handle_print_buffer("epoch_001", [
-        (datetime(2024, 1, 15, 10, 30, 0, 100000), "[Source] Starting source node\n"),
-        (datetime(2024, 1, 15, 10, 30, 0, 150000), "[Source] Created packet 0: {'id': 0, 'data': 'item_0'}\n"),
-        (datetime(2024, 1, 15, 10, 30, 0, 200000), "[Source] Created packet 1: {'id': 1, 'data': 'item_1'}\n"),
-        (datetime(2024, 1, 15, 10, 30, 0, 250000), "[Source] Sent output salvo\n"),
-    ])
+    async with Net(config) as net:
+        print("Starting network execution...")
+        print(f"Nodes: {list(net.graph.nodes().keys())}")
+        print()
 
-    # Second epoch - Process node (started slightly after Source finished)
-    net._handle_print_buffer("epoch_002", [
-        (datetime(2024, 1, 15, 10, 30, 0, 300000), "[Process] Processing started (retry #0)\n"),
-        (datetime(2024, 1, 15, 10, 30, 0, 350000), "[Process] Received 2 packets\n"),
-        (datetime(2024, 1, 15, 10, 30, 0, 400000), "[Process] Processing: {'id': 0, 'data': 'item_0'}\n"),
-        (datetime(2024, 1, 15, 10, 30, 0, 450000), "[Process] Processing: {'id': 1, 'data': 'item_1'}\n"),
-        (datetime(2024, 1, 15, 10, 30, 0, 500000), "[Process] Processing complete\n"),
-    ])
+        # Trigger the Source node by creating a manual epoch
+        source_epoch_id = net._netsim.create_epoch("Source", {})
+        print(f"Created Source epoch: {source_epoch_id[:12]}...")
 
-    # Third epoch - Sink node
-    net._handle_print_buffer("epoch_003", [
-        (datetime(2024, 1, 15, 10, 30, 0, 550000), "[Sink] Collecting results\n"),
-        (datetime(2024, 1, 15, 10, 30, 0, 600000), "[Sink] Collected: {'id': 0, 'data': 'ITEM_0', 'processed': True}\n"),
-        (datetime(2024, 1, 15, 10, 30, 0, 650000), "[Sink] Collected: {'id': 1, 'data': 'ITEM_1', 'processed': True}\n"),
-        (datetime(2024, 1, 15, 10, 30, 0, 700000), "[Sink] Total collected: 2 items\n"),
-    ])
+        # Execute the Source epoch
+        await net._execute_epoch(source_epoch_id)
+        print("Source epoch executed")
 
-    # Store net for displaying logs
-    demo_net = net
+        # Run simulation to move packets through the network
+        await net.run_until_blocked()
+        print("Packets moved to Process node")
 
-# %% [markdown]
-# ## Viewing Print Logs by Epoch
-#
-# The Net stores all captured prints with their original timestamps.
-# You can retrieve logs by epoch ID to see what happened during each execution.
+        # Get and execute the Process epoch
+        startable = net.get_startable_epochs()
+        if startable:
+            process_epoch_id = startable[0]
+            print(f"Executing Process epoch: {process_epoch_id[:12]}...")
+            await net._execute_epoch(process_epoch_id)
 
-# %%
-print("=" * 70)
-print("PRINT LOGS BY EPOCH")
-print("=" * 70)
+        # Run simulation again
+        await net.run_until_blocked()
+        print("Packets moved to Sink node")
 
-for epoch_id in ["epoch_001", "epoch_002", "epoch_003"]:
-    epoch_log = demo_net.get_epoch_log(epoch_id)
-    print(f"\n--- {epoch_id} ({len(epoch_log)} lines) ---")
-    for timestamp, line in epoch_log:
-        print(f"  [{timestamp.strftime('%H:%M:%S.%f')[:-3]}] {line.strip()}")
+        # Get and execute the Sink epoch
+        startable = net.get_startable_epochs()
+        if startable:
+            sink_epoch_id = startable[0]
+            print(f"Executing Sink epoch: {sink_epoch_id[:12]}...")
+            await net._execute_epoch(sink_epoch_id)
 
-# %% [markdown]
-# ## Viewing All Logs Chronologically
-#
-# You can combine logs from all epochs to see the chronological order
-# of all print statements across the entire network execution.
+        print()
+        print("=" * 70)
+        print("CAPTURED PRINT LOGS")
+        print("=" * 70)
 
-# %%
-print("=" * 70)
-print("ALL LOGS (CHRONOLOGICAL)")
-print("=" * 70)
+        # Display logs for each epoch
+        for epoch_id in net._epoch_logs.keys():
+            epoch_log = net.get_epoch_log(epoch_id)
+            print(f"\n--- Epoch {epoch_id[:12]}... ({len(epoch_log)} lines) ---")
+            for timestamp, line in epoch_log:
+                print(f"  [{timestamp.strftime('%H:%M:%S.%f')[:-3]}] {line.strip()}")
 
-# Collect all logs with epoch info
-all_logs = []
-for epoch_id in ["epoch_001", "epoch_002", "epoch_003"]:
-    for timestamp, line in demo_net.get_epoch_log(epoch_id):
-        all_logs.append((timestamp, epoch_id, line))
+        return net
 
-# Sort by timestamp
-all_logs.sort(key=lambda x: x[0])
-
-# Display
-print(f"\nTotal log entries: {len(all_logs)}")
-print("-" * 70)
-for timestamp, epoch_id, line in all_logs:
-    time_str = timestamp.strftime('%H:%M:%S.%f')[:-3]
-    print(f"[{time_str}] ({epoch_id}) {line.strip()}")
+# Run the network
+demo_net = asyncio.run(run_full_network())
 
 # %% [markdown]
 # ## Rate Limiting
