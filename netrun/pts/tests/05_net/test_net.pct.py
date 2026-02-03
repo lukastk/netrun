@@ -27,6 +27,7 @@ from netrun.net._net import (
     Net,
     NetProtocolKeys,
     NodeExecutionContext,
+    NodeExecutionResult,
     NodeFailureContext,
     DeferredActionQueue,
     EpochCancelled,
@@ -208,108 +209,82 @@ test_context_print_non_string()
 
 # %%
 #|export
-def test_context_print_flush_interval():
-    """Test print buffer flush based on time interval."""
-    mock_channel = Mock()
-
+def test_context_print_accumulates():
+    """Test print accumulates messages in buffer with timestamps."""
     config = NodeExecutionConfig(
-        node_name="FlushNode",
-        print_flush_interval=0.05,  # 50ms
+        node_name="AccumNode",
     )
 
+    ctx = NodeExecutionContext(
+        epoch_id="epoch_accum",
+        node_name="AccumNode",
+        _config=config,
+    )
+
+    # Print multiple messages
+    ctx.print("First message")
+    ctx.print("Second message")
+    ctx.print("Third message")
+
+    # All messages should be accumulated in the buffer
+    assert len(ctx._print_buffer) == 3
+
+    messages = [msg for _, msg in ctx._print_buffer]
+    assert "First message\n" in messages
+    assert "Second message\n" in messages
+    assert "Third message\n" in messages
+
+    # Each entry should have a timestamp
+    for timestamp, _ in ctx._print_buffer:
+        assert isinstance(timestamp, datetime)
+
+# %%
+test_context_print_accumulates()
+
+# %%
+#|export
+def test_context_print_multiple_timestamps():
+    """Test that each print call captures its own timestamp."""
+    ctx = NodeExecutionContext(
+        epoch_id="epoch_timestamps",
+        node_name="TimestampsNode",
+    )
+
+    # Print multiple messages
+    ctx.print("Message 1")
+    time.sleep(0.01)  # Small delay
+    ctx.print("Message 2")
+    time.sleep(0.01)
+    ctx.print("Message 3")
+
+    assert len(ctx._print_buffer) == 3
+
+    # Each timestamp should be distinct and in order
+    timestamps = [ts for ts, _ in ctx._print_buffer]
+    assert timestamps[0] <= timestamps[1] <= timestamps[2]
+
+# %%
+test_context_print_multiple_timestamps()
+
+# %%
+#|export
+def test_context_print_flush_ignored():
+    """Test flush parameter is accepted but has no effect (deferred mode)."""
     ctx = NodeExecutionContext(
         epoch_id="epoch_flush",
         node_name="FlushNode",
-        _channel=mock_channel,
-        _config=config,
     )
 
-    # First print shouldn't flush (time threshold not exceeded)
-    ctx.print("First message")
+    # Print with flush=True - in deferred mode, this just adds to buffer
+    ctx.print("Message with flush", flush=True)
+
+    # Message should be in buffer
     assert len(ctx._print_buffer) == 1
-    mock_channel.send.assert_not_called()
-
-    # Wait for flush interval
-    time.sleep(0.06)
-
-    # Second print should trigger flush
-    ctx.print("Second message")
-
-    # Buffer should be empty after flush, and send should have been called
-    # Note: The second message is added after flush, so buffer has 1 item
-    mock_channel.send.assert_called_once()
-    call_args = mock_channel.send.call_args
-    assert call_args[0][0] == NetProtocolKeys.UP_PRINT_BUFFER.value
-    assert call_args[0][1][0] == "epoch_flush"
-    # Buffer is list of (timestamp, message) tuples
-    buffer = call_args[0][1][1]
-    messages = [msg for _, msg in buffer]
-    assert "First message\n" in messages
+    _, message = ctx._print_buffer[0]
+    assert message == "Message with flush\n"
 
 # %%
-test_context_print_flush_interval()
-
-# %%
-#|export
-def test_context_print_buffer_max_size():
-    """Test print buffer flush based on max size."""
-    mock_channel = Mock()
-
-    config = NodeExecutionConfig(
-        node_name="MaxSizeNode",
-        print_flush_interval=10.0,  # Long interval (won't trigger)
-        print_buffer_max_size=3,
-    )
-
-    ctx = NodeExecutionContext(
-        epoch_id="epoch_maxsize",
-        node_name="MaxSizeNode",
-        _channel=mock_channel,
-        _config=config,
-    )
-
-    # Add messages up to max size
-    ctx.print("Message 1")
-    ctx.print("Message 2")
-    mock_channel.send.assert_not_called()
-
-    # This should trigger flush (buffer size = 3)
-    ctx.print("Message 3")
-    mock_channel.send.assert_called_once()
-
-# %%
-test_context_print_buffer_max_size()
-
-# %%
-#|export
-def test_context_print_explicit_flush():
-    """Test explicit flush=True parameter."""
-    mock_channel = Mock()
-
-    config = NodeExecutionConfig(
-        node_name="ExplicitFlush",
-        print_flush_interval=10.0,  # Won't trigger automatically
-    )
-
-    ctx = NodeExecutionContext(
-        epoch_id="epoch_explicit",
-        node_name="ExplicitFlush",
-        _channel=mock_channel,
-        _config=config,
-    )
-
-    # Print with flush=True
-    ctx.print("Immediate flush", flush=True)
-
-    mock_channel.send.assert_called_once()
-    call_args = mock_channel.send.call_args
-    # Buffer is list of (timestamp, message) tuples
-    buffer = call_args[0][1][1]
-    messages = [msg for _, msg in buffer]
-    assert "Immediate flush\n" in messages
-
-# %%
-test_context_print_explicit_flush()
+test_context_print_flush_ignored()
 
 # %%
 #|export
@@ -342,22 +317,32 @@ test_context_print_echo_stdout()
 
 # %%
 #|export
-def test_context_flush_print_buffer_empty():
-    """Test flushing an empty buffer does nothing."""
-    mock_channel = Mock()
-
+def test_context_get_execution_result():
+    """Test _get_execution_result returns correct data."""
     ctx = NodeExecutionContext(
-        epoch_id="epoch_empty_flush",
-        node_name="EmptyFlush",
-        _channel=mock_channel,
+        epoch_id="epoch_result",
+        node_name="ResultNode",
     )
 
-    ctx._flush_print_buffer()
+    # Add some prints
+    ctx.print("Test print")
 
-    mock_channel.send.assert_not_called()
+    # Create and consume some packets
+    deferred_id = ctx.create_packet({"data": "test"})
+    ctx._input_packet_values["input_packet"] = {"input": "value"}
+    ctx.consume_packet("input_packet")
+
+    # Get execution result
+    result = ctx._get_execution_result()
+
+    assert result.cancelled is False
+    assert len(result.print_buffer) == 1
+    assert result.print_buffer[0][1] == "Test print\n"
+    assert deferred_id in result.created_packets
+    assert "input_packet" in result.consumed_packets
 
 # %%
-test_context_flush_print_buffer_empty()
+test_context_get_execution_result()
 
 # %% [markdown]
 # ### Packet Operation Tests
@@ -365,29 +350,27 @@ test_context_flush_print_buffer_empty()
 # %%
 #|export
 def test_context_create_packet():
-    """Test create_packet sends correct message and handles response."""
-    mock_channel = Mock()
-    mock_channel.recv.return_value = (
-        NetProtocolKeys.UP_CREATE_PACKET_RESPONSE.value,
-        "packet_abc123"
-    )
-
+    """Test create_packet returns deferred ID and queues action."""
     ctx = NodeExecutionContext(
         epoch_id="epoch_create",
         node_name="CreateNode",
-        _channel=mock_channel,
     )
 
     packet_id = ctx.create_packet({"data": "test"})
 
-    assert packet_id == "packet_abc123"
-    assert "packet_abc123" in ctx._created_packets
+    # Should return a deferred ID
+    assert packet_id.startswith("deferred_")
+    assert packet_id in ctx._created_packets
 
-    # Verify send was called with correct args
-    mock_channel.send.assert_called_once()
-    call_args = mock_channel.send.call_args
-    assert call_args[0][0] == NetProtocolKeys.UP_CREATE_PACKET.value
-    assert call_args[0][1] == ("epoch_create", {"data": "test"})
+    # Should queue the action
+    assert len(ctx._deferred_actions.actions) == 1
+    action_type, args = ctx._deferred_actions.actions[0]
+    assert action_type == "create_packet"
+    assert args[0] == packet_id
+    assert args[1] == {"data": "test"}
+
+    # Value should be in packet_values
+    assert ctx._deferred_actions.packet_values[packet_id] == {"data": "test"}
 
 # %%
 test_context_create_packet()
@@ -395,17 +378,10 @@ test_context_create_packet()
 # %%
 #|export
 def test_context_create_packet_from_value_func():
-    """Test create_packet_from_value_func sends LazyPacketValueSpec."""
-    mock_channel = Mock()
-    mock_channel.recv.return_value = (
-        NetProtocolKeys.UP_CREATE_PACKET_RESPONSE.value,
-        "lazy_packet_123"
-    )
-
+    """Test create_packet_from_value_func queues LazyPacketValueSpec."""
     ctx = NodeExecutionContext(
         epoch_id="epoch_lazy",
         node_name="LazyNode",
-        _channel=mock_channel,
     )
 
     packet_id = ctx.create_packet_from_value_func(
@@ -414,11 +390,16 @@ def test_context_create_packet_from_value_func():
         kwargs={"key": "value"},
     )
 
-    assert packet_id == "lazy_packet_123"
+    # Should return a deferred ID
+    assert packet_id.startswith("deferred_")
+    assert packet_id in ctx._created_packets
 
-    # Verify the LazyPacketValueSpec was sent
-    call_args = mock_channel.send.call_args
-    sent_value = call_args[0][1][1]
+    # Should queue the action with LazyPacketValueSpec
+    assert len(ctx._deferred_actions.actions) == 1
+    action_type, args = ctx._deferred_actions.actions[0]
+    assert action_type == "create_packet"
+
+    sent_value = ctx._deferred_actions.packet_values[packet_id]
     assert isinstance(sent_value, LazyPacketValueSpec)
     assert sent_value.func_import_path == "mymodule.fetch_data"
     assert sent_value.args == ("arg1",)
@@ -430,52 +411,62 @@ test_context_create_packet_from_value_func()
 # %%
 #|export
 def test_context_consume_packet():
-    """Test consume_packet sends correct message and returns value."""
-    mock_channel = Mock()
-    mock_channel.recv.return_value = (
-        NetProtocolKeys.UP_CONSUME_PACKET_RESPONSE.value,
-        {"consumed": "data"}
-    )
-
+    """Test consume_packet returns value from input packets and queues action."""
     ctx = NodeExecutionContext(
         epoch_id="epoch_consume",
         node_name="ConsumeNode",
-        _channel=mock_channel,
     )
+
+    # Set up input packet value (normally passed from Net)
+    ctx._input_packet_values["packet_xyz"] = {"consumed": "data"}
 
     value = ctx.consume_packet("packet_xyz")
 
     assert value == {"consumed": "data"}
     assert "packet_xyz" in ctx._consumed_packets
 
-    call_args = mock_channel.send.call_args
-    assert call_args[0][0] == NetProtocolKeys.UP_CONSUME_PACKET.value
-    assert call_args[0][1] == ("epoch_consume", "packet_xyz")
+    # Should queue the consume action
+    assert len(ctx._deferred_actions.actions) == 1
+    action_type, args = ctx._deferred_actions.actions[0]
+    assert action_type == "consume_packet"
+    assert args == ("packet_xyz",)
 
 # %%
 test_context_consume_packet()
 
 # %%
 #|export
-def test_context_load_output_port():
-    """Test load_output_port sends correct message."""
-    mock_channel = Mock()
-    mock_channel.recv.return_value = (
-        NetProtocolKeys.UP_LOAD_OUTPUT_PORT_RESPONSE.value,
-        None
+def test_context_consume_packet_not_found():
+    """Test consume_packet raises KeyError for unknown packet."""
+    ctx = NodeExecutionContext(
+        epoch_id="epoch_missing",
+        node_name="MissingNode",
     )
 
+    with pytest.raises(KeyError) as exc_info:
+        ctx.consume_packet("nonexistent_packet")
+
+    assert "nonexistent_packet" in str(exc_info.value)
+
+# %%
+test_context_consume_packet_not_found()
+
+# %%
+#|export
+def test_context_load_output_port():
+    """Test load_output_port queues action."""
     ctx = NodeExecutionContext(
         epoch_id="epoch_load",
         node_name="LoadNode",
-        _channel=mock_channel,
     )
 
     ctx.load_output_port("out", "packet_123")
 
-    call_args = mock_channel.send.call_args
-    assert call_args[0][0] == NetProtocolKeys.UP_LOAD_OUTPUT_PORT.value
-    assert call_args[0][1] == ("epoch_load", "out", "packet_123")
+    # Should queue the action
+    assert len(ctx._deferred_actions.actions) == 1
+    action_type, args = ctx._deferred_actions.actions[0]
+    assert action_type == "load_output_port"
+    assert args == ("out", "packet_123")
 
 # %%
 test_context_load_output_port()
@@ -483,24 +474,19 @@ test_context_load_output_port()
 # %%
 #|export
 def test_context_send_output_salvo():
-    """Test send_output_salvo sends correct message."""
-    mock_channel = Mock()
-    mock_channel.recv.return_value = (
-        NetProtocolKeys.UP_SEND_OUTPUT_SALVO_RESPONSE.value,
-        None
-    )
-
+    """Test send_output_salvo queues action."""
     ctx = NodeExecutionContext(
         epoch_id="epoch_salvo",
         node_name="SalvoNode",
-        _channel=mock_channel,
     )
 
     ctx.send_output_salvo("send_condition")
 
-    call_args = mock_channel.send.call_args
-    assert call_args[0][0] == NetProtocolKeys.UP_SEND_OUTPUT_SALVO.value
-    assert call_args[0][1] == ("epoch_salvo", "send_condition")
+    # Should queue the action
+    assert len(ctx._deferred_actions.actions) == 1
+    action_type, args = ctx._deferred_actions.actions[0]
+    assert action_type == "send_output_salvo"
+    assert args == ("send_condition",)
 
 # %%
 test_context_send_output_salvo()
@@ -508,48 +494,67 @@ test_context_send_output_salvo()
 # %%
 #|export
 def test_context_cancel_epoch():
-    """Test cancel_epoch sends message and raises EpochCancelled."""
-    mock_channel = Mock()
-
+    """Test cancel_epoch raises EpochCancelled and discards actions."""
     ctx = NodeExecutionContext(
         epoch_id="epoch_cancel",
         node_name="CancelNode",
-        _channel=mock_channel,
     )
+
+    # Add some actions first
+    ctx.create_packet({"data": "test"})
+    assert len(ctx._deferred_actions.actions) == 1
 
     with pytest.raises(EpochCancelled) as exc_info:
         ctx.cancel_epoch()
 
     assert "epoch_cancel" in str(exc_info.value)
 
-    call_args = mock_channel.send.call_args
-    assert call_args[0][0] == NetProtocolKeys.UP_CANCEL_EPOCH.value
-    assert call_args[0][1] == ("epoch_cancel",)
+    # Deferred actions should be discarded
+    assert len(ctx._deferred_actions.actions) == 0
+    assert ctx._cancelled is True
 
 # %%
 test_context_cancel_epoch()
 
 # %%
 #|export
-def test_context_unexpected_response_raises():
-    """Test that unexpected response key raises RuntimeError."""
-    mock_channel = Mock()
-    mock_channel.recv.return_value = ("wrong:key", "data")
-
+def test_context_full_workflow():
+    """Test a complete workflow with create, consume, load, and send."""
     ctx = NodeExecutionContext(
-        epoch_id="epoch_wrong",
-        node_name="WrongNode",
-        _channel=mock_channel,
+        epoch_id="epoch_workflow",
+        node_name="WorkflowNode",
     )
 
-    with pytest.raises(RuntimeError) as exc_info:
-        ctx.create_packet("value")
+    # Set up input packet
+    ctx._input_packet_values["input_pkt"] = {"input": "data"}
 
-    assert "Expected" in str(exc_info.value)
-    assert "wrong:key" in str(exc_info.value)
+    # Consume input
+    input_value = ctx.consume_packet("input_pkt")
+    assert input_value == {"input": "data"}
+
+    # Create output packet
+    output_id = ctx.create_packet({"output": "result"})
+    assert output_id.startswith("deferred_")
+
+    # Load into output port
+    ctx.load_output_port("out", output_id)
+
+    # Send salvo
+    ctx.send_output_salvo("send")
+
+    # Check all actions queued correctly
+    assert len(ctx._deferred_actions.actions) == 4
+    action_types = [a[0] for a in ctx._deferred_actions.actions]
+    assert action_types == ["consume_packet", "create_packet", "load_output_port", "send_output_salvo"]
+
+    # Get execution result
+    result = ctx._get_execution_result()
+    assert not result.cancelled
+    assert "input_pkt" in result.consumed_packets
+    assert output_id in result.created_packets
 
 # %%
-test_context_unexpected_response_raises()
+test_context_full_workflow()
 
 # %% [markdown]
 # ## NodeFailureContext Tests
@@ -689,7 +694,6 @@ def test_create_net_func_preprocessor_basic():
     node_configs = {
         "TestNode": NodeExecutionConfig(
             node_name="TestNode",
-            print_flush_interval=0.1,
         )
     }
 
@@ -703,17 +707,20 @@ def test_create_net_func_preprocessor_basic():
 
     wrapped = preprocessor(test_func)
 
-    # Create a mock channel
-    mock_channel = Mock()
-
+    # Call wrapped function with packet values
     result = wrapped(
-        channel=mock_channel,
         epoch_id="epoch_test",
         node_name="TestNode",
         packets={"in": ["p1", "p2"]},
+        packet_values={"p1": {"data": 1}, "p2": {"data": 2}},
     )
 
-    assert result == "result"
+    # Result should be NodeExecutionResult
+    assert isinstance(result, NodeExecutionResult)
+    assert result.func_result == "result"
+    assert result.exception is None
+    assert not result.cancelled
+
     assert len(call_log) == 1
     assert call_log[0][0] == "epoch_test"
     assert call_log[0][1] == "TestNode"
@@ -737,16 +744,15 @@ def test_create_net_func_preprocessor_with_retry_info():
         return "ok"
 
     wrapped = preprocessor(test_func)
-    mock_channel = Mock()
 
     retry_ts = [datetime.now()]
     retry_exc = [ValueError("retry error")]
 
-    wrapped(
-        channel=mock_channel,
+    result = wrapped(
         epoch_id="epoch_retry",
         node_name="RetryNode",
         packets={},
+        packet_values={},
         retry_count=2,
         retry_timestamps=retry_ts,
         retry_exceptions=retry_exc,
@@ -755,18 +761,18 @@ def test_create_net_func_preprocessor_with_retry_info():
     assert captured_ctx.retry_count == 2
     assert captured_ctx.retry_timestamps == retry_ts
     assert captured_ctx.retry_exceptions == retry_exc
+    assert result.func_result == "ok"
 
 # %%
 test_create_net_func_preprocessor_with_retry_info()
 
 # %%
 #|export
-def test_create_net_func_preprocessor_flushes_on_success():
-    """Test func_preprocessor flushes print buffer on success."""
+def test_create_net_func_preprocessor_captures_prints():
+    """Test func_preprocessor captures print buffer in result."""
     node_configs = {
-        "FlushNode": NodeExecutionConfig(
-            node_name="FlushNode",
-            print_flush_interval=100.0,  # Won't auto-flush
+        "PrintNode": NodeExecutionConfig(
+            node_name="PrintNode",
         )
     }
     preprocessor = create_net_func_preprocessor(node_configs)
@@ -777,32 +783,32 @@ def test_create_net_func_preprocessor_flushes_on_success():
         return "done"
 
     wrapped = preprocessor(test_func)
-    mock_channel = Mock()
 
-    wrapped(
-        channel=mock_channel,
-        epoch_id="epoch_flush",
-        node_name="FlushNode",
+    result = wrapped(
+        epoch_id="epoch_print",
+        node_name="PrintNode",
         packets={},
+        packet_values={},
     )
 
-    # Final flush should have been called
-    mock_channel.send.assert_called()
-    # The call should contain both messages
-    call_args = mock_channel.send.call_args
-    assert call_args[0][0] == NetProtocolKeys.UP_PRINT_BUFFER.value
+    # Print buffer should be in the result
+    assert isinstance(result, NodeExecutionResult)
+    assert len(result.print_buffer) == 2
+    messages = [msg for _, msg in result.print_buffer]
+    assert "Message 1\n" in messages
+    assert "Message 2\n" in messages
+    assert result.func_result == "done"
 
 # %%
-test_create_net_func_preprocessor_flushes_on_success()
+test_create_net_func_preprocessor_captures_prints()
 
 # %%
 #|export
-def test_create_net_func_preprocessor_flushes_on_exception():
-    """Test func_preprocessor flushes print buffer even on exception."""
+def test_create_net_func_preprocessor_captures_exception():
+    """Test func_preprocessor captures exception in result."""
     node_configs = {
         "ExcNode": NodeExecutionConfig(
             node_name="ExcNode",
-            print_flush_interval=100.0,
         )
     }
     preprocessor = create_net_func_preprocessor(node_configs)
@@ -812,21 +818,28 @@ def test_create_net_func_preprocessor_flushes_on_exception():
         raise ValueError("test error")
 
     wrapped = preprocessor(test_func)
-    mock_channel = Mock()
 
-    with pytest.raises(ValueError):
-        wrapped(
-            channel=mock_channel,
-            epoch_id="epoch_exc",
-            node_name="ExcNode",
-            packets={},
-        )
+    # Should NOT raise - exception is captured in result
+    result = wrapped(
+        epoch_id="epoch_exc",
+        node_name="ExcNode",
+        packets={},
+        packet_values={},
+    )
 
-    # Final flush should still have been called (in finally block)
-    mock_channel.send.assert_called()
+    # Exception should be captured in result
+    assert isinstance(result, NodeExecutionResult)
+    assert result.exception is not None
+    assert isinstance(result.exception, ValueError)
+    assert "test error" in str(result.exception)
+
+    # Print buffer should still be captured
+    assert len(result.print_buffer) == 1
+    _, message = result.print_buffer[0]
+    assert message == "Before error\n"
 
 # %%
-test_create_net_func_preprocessor_flushes_on_exception()
+test_create_net_func_preprocessor_captures_exception()
 
 # %% [markdown]
 # ## func_done_callback Tests
@@ -840,15 +853,9 @@ def test_create_net_func_done_callback():
     # Should be callable
     assert callable(callback)
 
-    # Should accept expected arguments without error
-    mock_channel = Mock()
-    callback(
-        channel=mock_channel,
-        epoch_id="epoch_done",
-        node_name="DoneNode",
-        packets={},
-        result="some_result",
-    )
+    # Should accept any arguments without error (it's a no-op)
+    callback()
+    callback("arg1", "arg2", kwarg="value")
     # No error = success
 
 # %%
