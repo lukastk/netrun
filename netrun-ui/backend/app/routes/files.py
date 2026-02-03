@@ -267,6 +267,7 @@ async def list_directory(request: DirectoryListRequest) -> DirectoryListResponse
 class SubgraphLoadRequest(BaseModel):
     """Request to load subgraph content."""
     path: str | None = None  # Path to external file
+    base_path: str | None = None  # Base path for resolving relative paths
     inline_config: dict[str, Any] | None = None  # Inline subgraph config
 
 
@@ -303,6 +304,12 @@ async def load_subgraph(request: SubgraphLoadRequest) -> SubgraphLoadResponse:
         if request.path:
             # Load from file
             path = Path(request.path)
+
+            # If path is relative and we have a base_path, resolve it
+            if not path.is_absolute() and request.base_path:
+                base_dir = Path(request.base_path).parent
+                path = (base_dir / path).resolve()
+
             if not path.exists():
                 raise HTTPException(status_code=404, detail=f"File not found: {path}")
 

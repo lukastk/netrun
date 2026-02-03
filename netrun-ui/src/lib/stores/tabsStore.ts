@@ -273,9 +273,30 @@ export async function openSubgraphTab(nodeId: string, data: SubgraphNodeData): P
 		let nodes: FlowNode[] = [];
 		let edges: NetrunEdge[] = [];
 
-		if (subgraphConfig) {
-			// Load from inline config
-			const response = await api.loadSubgraph(undefined, subgraphConfig);
+		// Get the root file path for resolving relative subgraph paths
+		// We need to find the root parent tab (the one with the actual file)
+		let rootTab = parentTab;
+		while (rootTab.subgraphContext) {
+			const parent = get(tabs).find(t => t.id === rootTab.subgraphContext!.parentTabId);
+			if (parent) {
+				rootTab = parent;
+			} else {
+				break;
+			}
+		}
+		const basePath = rootTab.filePath || undefined;
+
+		// Determine if this is an inline or file-referenced subgraph
+		// subgraphConfig may have 'path' (file ref) or 'nodes' (inline)
+		const configPath = subgraphConfig?.path as string | undefined;
+		const configNodes = subgraphConfig?.nodes as unknown[] | undefined;
+		const isFileReference = configPath || (data.source && data.source !== 'Inline');
+		const isInline = configNodes && configNodes.length > 0;
+
+		if (isFileReference) {
+			// Load from file - use path from config or source
+			const filePath = configPath || data.source;
+			const response = await api.loadSubgraph(filePath, undefined, basePath);
 			nodes = response.nodes.map(node => ({
 				id: node.id,
 				type: node.type as 'netrunNode' | 'subgraphNode',
@@ -283,9 +304,9 @@ export async function openSubgraphTab(nodeId: string, data: SubgraphNodeData): P
 				data: node.data
 			})) as FlowNode[];
 			edges = response.edges;
-		} else if (data.source && data.source !== 'Inline') {
-			// Load from file
-			const response = await api.loadSubgraph(data.source);
+		} else if (isInline && subgraphConfig) {
+			// Load from inline config
+			const response = await api.loadSubgraph(undefined, subgraphConfig, basePath);
 			nodes = response.nodes.map(node => ({
 				id: node.id,
 				type: node.type as 'netrunNode' | 'subgraphNode',
