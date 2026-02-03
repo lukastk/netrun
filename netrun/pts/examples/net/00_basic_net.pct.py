@@ -153,19 +153,20 @@ def create_graph_config() -> GraphConfig:
     return GraphConfig(
         nodes=[
             # Source node - input and output
-            # Uses a "manual" salvo condition so we can trigger it externally
-            # by creating an epoch with packets from outside the network
+            # Triggered when packets arrive at its input port
             NodeGraphConfig(
                 name="Source",
                 in_ports={"in": PortConfig()},
                 out_ports={"out": PortConfig()},
                 in_salvo_conditions={
-                    # Manual trigger - no port requirements, always ready
-                    # We create epochs explicitly with packets from outside
-                    "manual": SalvoConditionConfig(
+                    # Trigger when input port has packets
+                    "trigger": SalvoConditionConfig(
                         max_salvos=MaxSalvosFiniteConfig(max=1),
-                        ports={},  # No ports - packets provided externally
-                        term=SalvoConditionTermTrueConfig(),  # Always true
+                        ports={"in": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
                     ),
                 },
                 out_salvo_conditions={
@@ -353,8 +354,9 @@ print(f"Net stopped: {not net.started}")
 # **Key steps:**
 # 1. Create packets outside the network using `NetAction.create_packet(None)`
 # 2. Store packet values in the Net's PacketStore
-# 3. Create a Source epoch with those packets using `NetAction.create_epoch`
-# 4. Execute epochs and watch print capture in action
+# 3. Transport packets to Source's input port using `transport_packet_to_location`
+# 4. Run simulation - this triggers the Source epoch automatically
+# 5. Execute epochs and watch print capture in action
 
 # %%
 import asyncio
@@ -387,26 +389,35 @@ async def run_full_network():
             packet_ids.append(packet_id)
 
             # Store the packet value in the Net's packet store
-            net._packet_store.set(packet_id, data)
+            net._packet_store.register(packet_id, data)
             print(f"  Created packet {packet_id[:12]}... with value: {data}")
 
         print()
 
-        # Step 2: Create the Source epoch with a manual salvo containing our packets
-        # The Salvo specifies which salvo condition triggered and the packet IDs
-        print("Creating Source epoch with external packets...")
-        response, _ = net._netsim.do_action(
-            netrun_sim.NetAction.create_epoch(
-                "Source",
-                netrun_sim.Salvo("manual", packet_ids),
+        # Step 2: Transport packets to Source's input port
+        # This simulates external data arriving at the network entry point
+        print("Transporting packets to Source input port...")
+        for packet_id in packet_ids:
+            net._netsim.do_action(
+                netrun_sim.NetAction.transport_packet_to_location(
+                    packet_id,
+                    netrun_sim.PacketLocation.input_port("Source", "in"),
+                )
             )
-        )
-        source_epoch_id = response.epoch.id
-        print(f"Created Source epoch: {source_epoch_id[:12]}...")
+        print(f"  Transported {len(packet_ids)} packets to Source.in")
 
-        # Step 3: Execute the Source epoch
-        await net._execute_epoch(source_epoch_id)
-        print("Source epoch executed")
+        # Step 3: Run simulation - this triggers the Source epoch automatically
+        # because Source's input salvo condition is satisfied (in port non-empty)
+        print("Running simulation to trigger Source epoch...")
+        await net.run_until_blocked()
+
+        # Get and execute the Source epoch
+        startable = net.get_startable_epochs()
+        if startable:
+            source_epoch_id = startable[0]
+            print(f"Executing Source epoch: {str(source_epoch_id)[:12]}...")
+            await net._execute_epoch(source_epoch_id)
+            print("Source epoch executed")
 
         # Run simulation to move packets through the network
         await net.run_until_blocked()
@@ -416,7 +427,7 @@ async def run_full_network():
         startable = net.get_startable_epochs()
         if startable:
             process_epoch_id = startable[0]
-            print(f"Executing Process epoch: {process_epoch_id[:12]}...")
+            print(f"Executing Process epoch: {str(process_epoch_id)[:12]}...")
             await net._execute_epoch(process_epoch_id)
 
         # Run simulation again
@@ -427,7 +438,7 @@ async def run_full_network():
         startable = net.get_startable_epochs()
         if startable:
             sink_epoch_id = startable[0]
-            print(f"Executing Sink epoch: {sink_epoch_id[:12]}...")
+            print(f"Executing Sink epoch: {str(sink_epoch_id)[:12]}...")
             await net._execute_epoch(sink_epoch_id)
 
         print()
@@ -436,9 +447,9 @@ async def run_full_network():
         print("=" * 70)
 
         # Display logs for each epoch
-        for epoch_id in net._epoch_logs.keys():
+        for epoch_id in net._epoch_print_logs.keys():
             epoch_log = net.get_epoch_log(epoch_id)
-            print(f"\n--- Epoch {epoch_id[:12]}... ({len(epoch_log)} lines) ---")
+            print(f"\n--- Epoch {str(epoch_id)[:12]}... ({len(epoch_log)} lines) ---")
             for timestamp, line in epoch_log:
                 print(f"  [{timestamp.strftime('%H:%M:%S.%f')[:-3]}] {line.strip()}")
 

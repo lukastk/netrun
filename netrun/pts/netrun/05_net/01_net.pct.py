@@ -907,15 +907,17 @@ class Net:
         packets: dict[str, list[str]] = {}
         packet_values: dict[str, Any] = {}
 
-        # The epoch's input_salvo contains packet IDs organized by port
-        input_salvo = epoch.input_salvo
-        if input_salvo:
-            for port_name, packet_ids in input_salvo.items():
-                packets[port_name] = list(packet_ids)
-                for packet_id in packet_ids:
-                    # Get the value from PacketStore
-                    value = self._packet_store.get(packet_id)
-                    packet_values[packet_id] = value
+        # The epoch's in_salvo is a Salvo object with .packets as list of (port_name, packet_id) tuples
+        in_salvo = epoch.in_salvo
+        if in_salvo:
+            # Convert list of (port_name, packet_id) tuples to dict[port_name, list[packet_id]]
+            for port_name, packet_id in in_salvo.packets:
+                if port_name not in packets:
+                    packets[port_name] = []
+                packets[port_name].append(str(packet_id))
+                # Peek at the value from PacketStore (don't consume yet - that happens in _commit_epoch_result)
+                value = self._packet_store._get(packet_id)
+                packet_values[str(packet_id)] = value
 
         return packets, packet_values
 
@@ -937,15 +939,14 @@ class Net:
         for action_type, args in result.deferred_actions.actions:
             if action_type == "create_packet":
                 deferred_id, value = args
-                # Generate real packet ID
-                real_id = str(ULID())
+
+                # Create packet in netsim (inside the epoch) - netsim assigns the real ID
+                response, _ = self._netsim.do_action(netrun_sim.NetAction.create_packet(epoch_id))
+                real_id = str(response.packet_id)
                 deferred_to_real[deferred_id] = real_id
 
-                # Store value in PacketStore
+                # Store value in PacketStore using the netsim-assigned ID
                 self._packet_store.register(real_id, value)
-
-                # Create packet in netsim (inside the epoch)
-                self._netsim.do_action(netrun_sim.NetAction.create_packet(epoch_id))
 
             elif action_type == "consume_packet":
                 packet_id, = args
