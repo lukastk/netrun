@@ -27,6 +27,29 @@ This separation of concerns allows the actual execution and data storage to be i
 - Never edit files in `src/netrun/` directly - they are auto-generated
 - After editing `.pct.py` files, run `nbl export --reverse` then `nbl export`
 
+### netrun-ui (Visual Editor)
+
+`netrun-ui` is a SvelteKit-based visual editor for creating and editing netrun flow configurations.
+
+## Development Notes (_dev_notes)
+
+Each subproject may have a `_dev_notes/` directory containing implementation plans and development documentation. **These are critical for maintaining context across sessions.**
+
+### Working with _dev_notes
+
+- **Always check for existing plans**: Before starting work on a subproject, check its `_dev_notes/` directory for the latest plan (files are numbered with prefix like `00_`, `01_`, etc.)
+- **Follow the current plan**: If there's an active plan for your task, follow it step by step
+- **Create new plans for major features**: When starting a major new feature, create a new plan file in `_dev_notes/` with the next number prefix (e.g., `01_feature_name.md`)
+- **Plans should include**: Overview, approach/strategy, implementation steps, files to modify, verification steps
+
+Example structure:
+```
+netrun-ui/
+├── _dev_notes/
+│   ├── 00_multi_tab_support_plan.md
+│   └── 01_next_feature_plan.md
+```
+
 ## Repository Structure
 
 ```

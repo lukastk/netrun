@@ -12,7 +12,12 @@
 		loadFromFile,
 		saveToFile,
 		clearFlow,
-		updateFactoryNodePreview
+		updateFactoryNodePreview,
+		createTab,
+		closeActiveTab,
+		switchToTabIndex,
+		switchToNextTab,
+		switchToPreviousTab,
 	} from '$lib/stores/flowStore';
 	import { api } from '$lib/api';
 
@@ -138,10 +143,36 @@
 			event.preventDefault();
 			handleOpen();
 		}
-		// Cmd/Ctrl + N for new
-		if ((event.metaKey || event.ctrlKey) && event.key === 'n') {
+		// Cmd/Ctrl + N for new file (clears current tab)
+		if ((event.metaKey || event.ctrlKey) && event.key === 'n' && !event.shiftKey) {
 			event.preventDefault();
 			handleNew();
+		}
+		// Cmd/Ctrl + T for new tab
+		if ((event.metaKey || event.ctrlKey) && event.key === 't') {
+			event.preventDefault();
+			createTab();
+		}
+		// Cmd/Ctrl + W for close tab
+		if ((event.metaKey || event.ctrlKey) && event.key === 'w') {
+			event.preventDefault();
+			closeActiveTab();
+		}
+		// Cmd/Ctrl + 1-9 for switching to tabs by index
+		if ((event.metaKey || event.ctrlKey) && event.key >= '1' && event.key <= '9') {
+			event.preventDefault();
+			const tabIndex = parseInt(event.key) - 1;
+			switchToTabIndex(tabIndex);
+		}
+		// Ctrl + Tab for next tab
+		if (event.ctrlKey && event.key === 'Tab' && !event.shiftKey) {
+			event.preventDefault();
+			switchToNextTab();
+		}
+		// Ctrl + Shift + Tab for previous tab
+		if (event.ctrlKey && event.key === 'Tab' && event.shiftKey) {
+			event.preventDefault();
+			switchToPreviousTab();
 		}
 	}
 </script>
