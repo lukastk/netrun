@@ -11,6 +11,7 @@
 		isDirty,
 		loadFromFile,
 		saveToFile,
+		clearFlow,
 		updateFactoryNodePreview
 	} from '$lib/stores/flowStore';
 	import { api } from '$lib/api';
@@ -97,6 +98,16 @@
 		}
 	}
 
+	function handleNew() {
+		// If there are unsaved changes, confirm
+		if ($isDirty) {
+			if (!confirm('You have unsaved changes. Create new file anyway?')) {
+				return;
+			}
+		}
+		clearFlow();
+	}
+
 	function handleUndo() {
 		undo();
 	}
@@ -127,6 +138,11 @@
 			event.preventDefault();
 			handleOpen();
 		}
+		// Cmd/Ctrl + N for new
+		if ((event.metaKey || event.ctrlKey) && event.key === 'n') {
+			event.preventDefault();
+			handleNew();
+		}
 	}
 </script>
 
@@ -134,6 +150,10 @@
 
 <header class="toolbar">
 	<div class="toolbar-section left">
+		<button onclick={handleNew} title="New file (Cmd+N)">
+			<span class="icon">📄</span>
+			<span class="label">New</span>
+		</button>
 		<button onclick={handleOpen} title="Open file (Cmd+O)">
 			<span class="icon">📂</span>
 			<span class="label">Open</span>

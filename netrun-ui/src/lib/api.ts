@@ -80,6 +80,19 @@ export interface ApiError {
 	detail: string;
 }
 
+export interface FileEntry {
+	name: string;
+	path: string;
+	is_dir: boolean;
+	is_netrun_file: boolean;
+}
+
+export interface DirectoryListResponse {
+	path: string;
+	parent: string | null;
+	entries: FileEntry[];
+}
+
 class ApiClient {
 	private baseUrl: string;
 
@@ -204,6 +217,19 @@ class ApiClient {
 		} catch {
 			return false;
 		}
+	}
+
+	/**
+	 * List directory contents
+	 */
+	async listDirectory(
+		path: string,
+		includeHidden: boolean = false
+	): Promise<DirectoryListResponse> {
+		return this.request<DirectoryListResponse>('/files/list', {
+			method: 'POST',
+			body: JSON.stringify({ path, include_hidden: includeHidden }),
+		});
 	}
 }
 

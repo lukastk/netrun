@@ -298,7 +298,7 @@
 		width: var(--sidebar-width, 300px);
 		height: 100%;
 		background: var(--bg-secondary, #242424);
-		border-right: 1px solid var(--border-color, #404040);
+		border-left: 1px solid var(--border-color, #404040);
 		display: flex;
 		flex-direction: column;
 		overflow: hidden;
