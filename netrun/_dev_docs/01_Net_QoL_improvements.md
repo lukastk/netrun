@@ -944,14 +944,12 @@ Make `_execute_epoch` public.
 
 1. ✅ `execute_epoch(epoch_id)` - public wrapper around `_execute_epoch`
 
-### Phase 7: Graph Queries (Priority: Low)
+### Phase 7: Graph Queries (Priority: Low) ✅ COMPLETED
 
 Nice-to-have for advanced use cases.
 
-1. `get_edges_from_port(node_name, port_name) -> list[Edge]`
-2. `has_downstream_connection(node_name, port_name) -> bool`
-
-**Estimated effort**: Small.
+1. ✅ `get_edges_from_port(node_name, port_name) -> list[Edge]`
+2. ✅ `has_downstream_connection(node_name, port_name) -> bool`
 
 ---
 
