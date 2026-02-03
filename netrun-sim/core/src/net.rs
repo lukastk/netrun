@@ -105,6 +105,22 @@ pub struct Epoch {
     pub out_salvos: Vec<Salvo>,
     /// Current lifecycle state.
     pub state: EpochState,
+    /// Packets that were sent to unconnected output ports (moved to OutsideNet).
+    pub orphaned_packets: Vec<OrphanedPacketInfo>,
+}
+
+/// Information about a packet that was sent to an unconnected output port.
+///
+/// When `send_output_salvo` is called and a port has no connected edge,
+/// the packet is moved to `OutsideNet` and tracked here.
+#[derive(Debug, Clone)]
+pub struct OrphanedPacketInfo {
+    /// The packet that was orphaned.
+    pub packet_id: PacketID,
+    /// The output port name the packet was sent from.
+    pub from_port: PortName,
+    /// The salvo condition that triggered the send.
+    pub salvo_condition: SalvoConditionName,
 }
 
 impl Epoch {
@@ -337,6 +353,9 @@ pub enum NetEvent {
     InputSalvoTriggered(EventUTC, EpochID, SalvoConditionName),
     /// An output salvo condition was triggered, sending packets.
     OutputSalvoTriggered(EventUTC, EpochID, SalvoConditionName),
+    /// A packet was sent to an unconnected output port and moved to OutsideNet.
+    /// (timestamp, packet_id, epoch_id, node_name, port_name, salvo_condition)
+    PacketOrphaned(EventUTC, PacketID, EpochID, NodeName, PortName, SalvoConditionName),
 }
 
 /// Data returned by a successful network action.
@@ -549,6 +568,7 @@ impl NetSim {
                     in_salvo,
                     out_salvos: Vec::new(),
                     state: EpochState::Startable,
+                    orphaned_packets: Vec::new(),
                 };
 
                 // Register the epoch
@@ -1042,6 +1062,7 @@ impl NetSim {
             in_salvo: salvo.clone(),
             out_salvos: Vec::new(),
             state: EpochState::Startable,
+            orphaned_packets: Vec::new(),
         };
 
         // Register the epoch
@@ -1183,12 +1204,13 @@ impl NetSim {
             });
         };
 
-        // Get node
+        // Get node and capture node_name early to avoid borrow issues
         let node = self
             .graph
             .nodes()
             .get(&epoch.node_name)
             .expect("Node associated with epoch could not be found.");
+        let node_name = node.name.clone();
 
         // Get salvo condition
         let salvo_condition =
@@ -1237,8 +1259,8 @@ impl NetSim {
         }
 
         // Get the locations to send packets to
-        // Tuple: (packet_id, port_name, from_location, to_location, from_index)
-        let mut packets_to_move: Vec<(PacketID, PortName, PacketLocation, PacketLocation, usize)> =
+        // Tuple: (packet_id, port_name, from_location, to_location, from_index, is_orphaned)
+        let mut packets_to_move: Vec<(PacketID, PortName, PacketLocation, PacketLocation, usize, bool)> =
             Vec::new();
         for (port_name, packet_count) in &salvo_condition.ports {
             let from_location = PacketLocation::OutputPort(*epoch_id, port_name.clone());
@@ -1249,25 +1271,24 @@ impl NetSim {
                     panic!(
                         "Output port '{}' of node '{}' does not have an entry in self._packets_by_location",
                         port_name,
-                        node.name.clone()
+                        node_name
                     )
                 })
                 .clone();
-            let edge_ref = if let Some(edge_ref) = self.graph.get_edge_by_tail(&PortRef {
-                node_name: node.name.clone(),
+
+            // Check if there's an edge connected to this output port
+            let (to_location, is_orphaned) = if let Some(edge_ref) = self.graph.get_edge_by_tail(&PortRef {
+                node_name: node_name.clone(),
                 port_type: PortType::Output,
                 port_name: port_name.clone(),
             }) {
-                edge_ref.clone()
+                // Connected: send to edge
+                (PacketLocation::Edge(edge_ref.clone()), false)
             } else {
-                return NetActionResponse::Error(
-                    NetActionError::CannotPutPacketIntoUnconnectedOutputPort {
-                        port_name: port_name.clone(),
-                        node_name: node.name.clone(),
-                    },
-                );
+                // Unconnected: send to OutsideNet (orphaned)
+                (PacketLocation::OutsideNet, true)
             };
-            let to_location = PacketLocation::Edge(edge_ref.clone());
+
             let take_count = match packet_count {
                 PacketCount::All => packets.len(),
                 PacketCount::Count(n) => std::cmp::min(*n as usize, packets.len()),
@@ -1280,6 +1301,7 @@ impl NetSim {
                     from_location.clone(),
                     to_location.clone(),
                     idx,
+                    is_orphaned,
                 ));
             }
         }
@@ -1289,7 +1311,7 @@ impl NetSim {
             salvo_condition: salvo_condition_name.clone(),
             packets: packets_to_move
                 .iter()
-                .map(|(packet_id, port_name, _, _, _)| (port_name.clone(), *packet_id))
+                .map(|(packet_id, port_name, _, _, _, _)| (port_name.clone(), *packet_id))
                 .collect(),
         };
         self._epochs
@@ -1298,17 +1320,46 @@ impl NetSim {
             .out_salvos
             .push(salvo);
 
-        // Move packets
+        // Move packets and track orphaned ones
         let mut net_events = Vec::new();
-        for (packet_id, _port_name, from_location, to_location, from_index) in packets_to_move {
-            net_events.push(NetEvent::PacketMoved(
-                get_utc_now(),
-                packet_id,
-                from_location,
-                to_location.clone(),
-                from_index,
-            ));
+        let mut orphaned_infos: Vec<OrphanedPacketInfo> = Vec::new();
+
+        for (packet_id, port_name, from_location, to_location, from_index, is_orphaned) in packets_to_move {
+            if is_orphaned {
+                // Emit PacketOrphaned event for unconnected port
+                net_events.push(NetEvent::PacketOrphaned(
+                    get_utc_now(),
+                    packet_id,
+                    *epoch_id,
+                    node_name.clone(),
+                    port_name.clone(),
+                    salvo_condition_name.clone(),
+                ));
+                orphaned_infos.push(OrphanedPacketInfo {
+                    packet_id,
+                    from_port: port_name,
+                    salvo_condition: salvo_condition_name.clone(),
+                });
+            } else {
+                // Emit PacketMoved event for connected port
+                net_events.push(NetEvent::PacketMoved(
+                    get_utc_now(),
+                    packet_id,
+                    from_location,
+                    to_location.clone(),
+                    from_index,
+                ));
+            }
             self.move_packet(&packet_id, to_location);
+        }
+
+        // Add orphaned packets to the epoch
+        if !orphaned_infos.is_empty() {
+            self._epochs
+                .get_mut(epoch_id)
+                .unwrap()
+                .orphaned_packets
+                .extend(orphaned_infos);
         }
 
         // Emit OutputSalvoTriggered event
@@ -1739,6 +1790,10 @@ impl NetSim {
                 // Pop the last out_salvo from the epoch
                 self.undo_output_salvo_triggered(epoch_id, action)
             }
+            NetEvent::PacketOrphaned(_, packet_id, epoch_id, _, port_name, _) => {
+                // Move packet back from OutsideNet to output port
+                self.undo_packet_orphaned(packet_id, epoch_id, port_name)
+            }
         }
     }
 
@@ -2004,7 +2059,7 @@ impl NetSim {
         Ok(())
     }
 
-    /// Undo OutputSalvoTriggered: Pop the last out_salvo from the epoch.
+    /// Undo OutputSalvoTriggered: Pop the last out_salvo from the epoch and clear orphaned packets.
     fn undo_output_salvo_triggered(
         &mut self,
         epoch_id: &EpochID,
@@ -2029,6 +2084,56 @@ impl NetSim {
                 "epoch {} has no out_salvos to pop",
                 epoch_id
             )));
+        }
+
+        // Note: orphaned_packets are removed via undo_packet_orphaned (called for each PacketOrphaned event)
+
+        Ok(())
+    }
+
+    /// Undo PacketOrphaned: Move packet back from OutsideNet to output port.
+    fn undo_packet_orphaned(
+        &mut self,
+        packet_id: &PacketID,
+        epoch_id: &EpochID,
+        port_name: &PortName,
+    ) -> Result<(), UndoError> {
+        // Verify packet exists and is at OutsideNet
+        let packet = match self._packets.get(packet_id) {
+            Some(p) => p,
+            None => {
+                return Err(UndoError::NotFound(format!(
+                    "packet {} not found",
+                    packet_id
+                )));
+            }
+        };
+
+        if packet.location != PacketLocation::OutsideNet {
+            return Err(UndoError::StateMismatch(format!(
+                "packet {} is not at OutsideNet, found at {:?}",
+                packet_id, packet.location
+            )));
+        }
+
+        // Remove from OutsideNet
+        if let Some(packets) = self._packets_by_location.get_mut(&PacketLocation::OutsideNet) {
+            packets.shift_remove(packet_id);
+        }
+
+        // Move back to output port
+        let output_port_location = PacketLocation::OutputPort(*epoch_id, port_name.clone());
+        self._packets_by_location
+            .entry(output_port_location.clone())
+            .or_default()
+            .insert(*packet_id);
+
+        // Update packet's location
+        self._packets.get_mut(packet_id).unwrap().location = output_port_location;
+
+        // Remove from epoch's orphaned_packets list
+        if let Some(epoch) = self._epochs.get_mut(epoch_id) {
+            epoch.orphaned_packets.retain(|info| info.packet_id != *packet_id);
         }
 
         Ok(())
