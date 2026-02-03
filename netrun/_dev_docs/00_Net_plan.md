@@ -722,12 +722,14 @@ async def _run_loop(self):
 - [x] SIGINT handling (`_install_sigint_handler()`, `_restore_sigint_handler()`)
 - [x] `is_blocked()` method to check if network can make progress
 
-### Phase 6: Testing & Polish
+### Phase 6: Testing & Polish ✅
 - [x] Unit tests for NodeExecutionContext
-- [ ] Integration tests for full epoch flow
-- [ ] Tests for retry behavior
+- [x] Integration tests for full epoch flow
+- [x] Tests for retry behavior
 - [x] Tests for print capture timing
-- [ ] Documentation and examples
+- [x] Tests for EpochCancelled handling
+- [x] Tests for deferred actions preservation
+- [ ] Documentation and examples (deferred - examples exist in notebook)
 
 ---
 
