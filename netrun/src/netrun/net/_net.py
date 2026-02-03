@@ -805,6 +805,41 @@ class Net:
             raise KeyError(f"No output queue configured for port '{port}' on node '{node}'")
         return resolved
 
+    # --- Graph Query API ---
+
+    def get_edges_from_port(self, node_name: str, port_name: str) -> list:
+        """Get all edges connected to an output port.
+
+        Useful for checking if an output port has downstream connections.
+
+        Args:
+            node_name: The node name.
+            port_name: The output port name.
+
+        Returns:
+            List of Edge objects connected to this port.
+            Empty list if port is unconnected (dangling).
+        """
+        edges = []
+        for edge in self._graph.edges():
+            if edge.source.node_name == node_name and edge.source.port_name == port_name:
+                edges.append(edge)
+        return edges
+
+    def has_downstream_connection(self, node_name: str, port_name: str) -> bool:
+        """Check if an output port has any downstream connections.
+
+        Returns False if the port is "dangling" (no edges connected).
+
+        Args:
+            node_name: The node name.
+            port_name: The output port name.
+
+        Returns:
+            True if the port has at least one downstream edge, False otherwise.
+        """
+        return len(self.get_edges_from_port(node_name, port_name)) > 0
+
     # --- Packet Creation & Injection API ---
 
     def create_external_packet(self, value: Any) -> str:
