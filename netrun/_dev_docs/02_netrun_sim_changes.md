@@ -219,12 +219,21 @@ async with Net(config) as net:
 8. ✅ Add undo support - Added `undo_packet_orphaned` function
 9. ✅ Add tests - Added `test_send_output_salvo_unconnected_port`, `test_undo_send_output_salvo_with_orphaned_packets`, and `sink_graph` fixture
 
-### Phase 2: netrun changes
+### Phase 2: netrun changes ✅ COMPLETED
 
-1. Handle orphaned packets in `Net._execute_epoch`
-2. Add orphaned packet tracking and retrieval methods
-3. Update example notebook
-4. Add tests
+1. ✅ Handle orphaned packets in `Net._commit_epoch_result` - Routes orphaned packets to output queues
+2. ✅ Add orphaned packet tracking and retrieval methods - Output Queues System:
+   - `OutputQueueConfig` - Configuration for output queues
+   - `OutputPacket` - Dataclass for packets retrieved from queues
+   - `get_output()` - Async retrieval with timeout
+   - `try_get_output()` - Non-blocking retrieval
+   - `get_all_outputs()` - Batch retrieval
+   - `has_output()` - Check if queue has packets
+   - `output_count()` - Get queue depth
+   - `list_output_queues()` - List configured queues
+   - `_route_orphaned_packet()` - Internal routing logic
+3. ⬜ Update example notebook - TODO
+4. ✅ Add tests - 19 tests in `test_output_queues.py`
 
 ---
 

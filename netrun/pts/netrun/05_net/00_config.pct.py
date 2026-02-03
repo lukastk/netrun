@@ -555,6 +555,26 @@ class GraphConfig(BaseModel):
 # # Net configuation
 
 # %% [markdown]
+# ## Output Queue Configuration
+#
+# For DAG-style workflows, packets flow from source nodes through processing nodes to sink nodes.
+# The sink nodes' output ports are typically unconnected (no downstream edges).
+# Output queues provide a clean way to collect these outputs.
+
+# %%
+#|export
+class OutputQueueConfig(BaseModel):
+    """Configuration for an output queue.
+
+    Output queues collect packets that are sent from unconnected output ports
+    (ports with no downstream edges). This enables DAG-style workflows where
+    final results are collected from sink nodes.
+    """
+
+    ports: list[tuple[str, str]]
+    """List of (node_name, port_name) tuples that feed this queue."""
+
+# %% [markdown]
 # ## Pool configs
 
 # %%
@@ -617,6 +637,33 @@ class NetConfig(BaseModel):
     dead_letter_queue: bool = True
     dead_letter_path: str | None = None
     dead_letter_callback: Callable | str = None
+
+    # Output queue configuration
+    output_queues: dict[str, OutputQueueConfig] = {}
+    """
+    Map of queue_name -> OutputQueueConfig.
+
+    Example:
+        output_queues={
+            "results": OutputQueueConfig(ports=[("Sink", "out")]),
+            "logs": OutputQueueConfig(ports=[("Logger", "out"), ("ErrorLogger", "out")]),
+        }
+    """
+
+    catch_all_output_queue: str | None = None
+    """
+    If set, packets from unconnected output ports that aren't in any
+    configured queue go to this queue. If None, they are silently discarded.
+
+    Example: catch_all_output_queue="_uncategorized"
+    """
+
+    undeclared_output_behavior: Literal["discard", "error"] = "discard"
+    """
+    What to do with packets from unconnected ports not in any queue:
+    - "discard": Silently discard (default)
+    - "error": Raise an error (original behavior)
+    """
 
 # %% [markdown]
 # # Examples
