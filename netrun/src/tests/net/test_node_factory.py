@@ -63,21 +63,42 @@ class TestFromFactoryWithModule:
 
 
 class TestFactoryFieldExpansion:
-    """Tests for automatic factory expansion via factory field."""
+    """Tests for factory expansion via resolve() method.
 
-    def test_factory_field_expands(self):
-        """Test that setting factory field auto-expands the config."""
+    With deferred config resolution, factory fields are NOT expanded at creation
+    time. The factory and factory_args are preserved until resolve() is called.
+    """
+
+    def test_factory_field_deferred(self):
+        """Test that factory fields are NOT expanded at creation time."""
         config = NodeConfig(
             factory=FACTORY_MODULE_PATH,
             factory_args={"name": "FieldNode", "threshold": 0.8},
         )
 
-        assert config.name == "FieldNode"
-        assert "task" in config.in_ports
-        assert config.execution_config is not None
+        # Before resolve(): config stays raw
+        assert config.name == ""  # Not expanded yet
+        assert config.in_ports == {}  # Not expanded yet
+        assert config.execution_config is None  # Not expanded yet
         # Factory and factory_args are preserved
         assert config.factory == FACTORY_MODULE_PATH
         assert config.factory_args == {"name": "FieldNode", "threshold": 0.8}
+
+    def test_factory_field_expands_on_resolve(self):
+        """Test that resolve() expands the factory field."""
+        config = NodeConfig(
+            factory=FACTORY_MODULE_PATH,
+            factory_args={"name": "FieldNode", "threshold": 0.8},
+        )
+
+        # Call resolve() to expand
+        resolved = config.resolve()
+
+        assert resolved.name == "FieldNode"
+        assert "task" in resolved.in_ports
+        assert resolved.execution_config is not None
+        # Factory is cleared in resolved config
+        assert resolved.factory is None
 
     def test_factory_field_with_overrides(self):
         """Test that explicit fields override factory-generated values."""
@@ -90,12 +111,15 @@ class TestFactoryFieldExpansion:
             out_ports={"extra_out": PortConfig()},
         )
 
+        # Call resolve() to expand
+        resolved = config.resolve()
+
         # Name is overridden
-        assert config.name == "CustomName"
+        assert resolved.name == "CustomName"
         # Factory-generated ports are merged
-        assert "task" in config.in_ports  # from factory
-        assert "result" in config.out_ports  # from factory
-        assert "extra_out" in config.out_ports  # from override
+        assert "task" in resolved.in_ports  # from factory
+        assert "result" in resolved.out_ports  # from factory
+        assert "extra_out" in resolved.out_ports  # from override
 
     def test_factory_field_merge_salvo_conditions(self):
         """Test that salvo conditions from factory and overrides are merged."""
@@ -111,21 +135,23 @@ class TestFactoryFieldExpansion:
             in_salvo_conditions={"extra_trigger": extra_condition},
         )
 
+        # Call resolve() to expand
+        resolved = config.resolve()
+
         # Both factory and override conditions present
-        assert "trigger" in config.in_salvo_conditions  # from factory
-        assert "extra_trigger" in config.in_salvo_conditions  # from override
+        assert "trigger" in resolved.in_salvo_conditions  # from factory
+        assert "extra_trigger" in resolved.in_salvo_conditions  # from override
 
 
 class TestFactorySerialization:
-    """Tests for JSON serialization of factory configs."""
+    """Tests for JSON serialization of factory configs.
+
+    With deferred resolution, configs with factory fields can be serialized
+    directly because execution_config is not populated until resolve() is called.
+    """
 
     def test_factory_serializes_to_string(self):
-        """Test that module objects serialize to import path strings.
-
-        Note: To serialize successfully, we remove execution_config which
-        contains closures from the sample factory. Closures can't be serialized
-        to JSON - use string import paths for serializable configs.
-        """
+        """Test that module objects serialize to import path strings."""
         import tests.net.sample_factory as factory_module
 
         config = NodeConfig(
@@ -133,8 +159,8 @@ class TestFactorySerialization:
             factory_args={"name": "SerializeNode"},
         )
 
-        # Remove execution_config (contains closures) to allow serialization
-        config = config.model_copy(update={"execution_config": None})
+        # With deferred resolution, execution_config is None so no need to remove it
+        assert config.execution_config is None
 
         # Serialize to JSON
         json_str = config.model_dump_json()
@@ -147,17 +173,16 @@ class TestFactorySerialization:
     def test_factory_config_roundtrip(self):
         """Test that factory configs roundtrip through JSON.
 
-        Note: execution_config is removed for serialization because the sample
-        factory returns closures. For production use, factories should return
-        string import paths for functions to enable JSON serialization.
+        With deferred resolution, the factory config stays raw and serializable
+        until resolve() is called.
         """
         config = NodeConfig(
             factory=FACTORY_MODULE_PATH,
             factory_args={"name": "RoundtripNode", "threshold": 0.6},
         )
 
-        # Remove execution_config (contains closures) to allow serialization
-        config = config.model_copy(update={"execution_config": None})
+        # With deferred resolution, no need to remove execution_config
+        assert config.execution_config is None
 
         json_str = config.model_dump_json()
         loaded = NodeConfig.model_validate_json(json_str)
@@ -165,13 +190,19 @@ class TestFactorySerialization:
         assert loaded.name == config.name
         assert loaded.factory == config.factory
         assert loaded.factory_args == config.factory_args
-        assert "task" in loaded.in_ports
+        # Before resolve(), ports are not populated
+        assert loaded.in_ports == {}
 
-    def test_closure_functions_fail_to_serialize(self):
-        """Test that configs with closure functions fail to serialize to JSON.
+        # After resolve(), ports are populated
+        resolved = loaded.resolve()
+        assert "task" in resolved.in_ports
 
-        This is expected behavior - closures can't be converted to import paths.
-        Use string import paths for functions that need to be serialized.
+    def test_resolved_closure_functions_fail_to_serialize(self):
+        """Test that resolved configs with closure functions fail to serialize.
+
+        When factories return closures (like the sample factory does),
+        the resolved config cannot be serialized to JSON. For serializable
+        configs, factories should return string import paths for functions.
         """
         from pydantic import ValidationError
 
@@ -180,13 +211,17 @@ class TestFactorySerialization:
             factory_args={"name": "ClosureNode"},
         )
 
-        # Verify execution_config has a closure
-        assert config.execution_config is not None
-        assert config.execution_config.exec_node_func is not None
+        # Before resolve: can serialize because execution_config is None
+        json_str = config.model_dump_json()  # Should succeed
 
-        # Attempting to serialize to JSON should fail
+        # After resolve: has closure functions
+        resolved = config.resolve()
+        assert resolved.execution_config is not None
+        assert resolved.execution_config.exec_node_func is not None
+
+        # Attempting to serialize resolved config should fail
         with pytest.raises(Exception) as exc_info:
-            config.model_dump_json()
+            resolved.model_dump_json()
 
         assert "closure" in str(exc_info.value).lower() or "local function" in str(exc_info.value).lower()
 

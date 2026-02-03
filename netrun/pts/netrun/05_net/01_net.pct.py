@@ -668,7 +668,8 @@ class Net:
             config: The NetConfig defining pools, graph, and execution settings.
         """
         self._config: NetConfig = config
-        self._graph: netrun_sim.Graph = self.config.graph.get_graph()
+        self._config_resolved: NetConfig = config.resolve()
+        self._graph: netrun_sim.Graph = self._config_resolved.graph.get_graph()
         self._netsim = netrun_sim.NetSim(self._graph)
         self._started: bool = False
         self._paused: bool = False
@@ -690,15 +691,15 @@ class Net:
         # Dead letter queue for failed epochs
         self._dead_letter_queue: list[dict[str, Any]] = []
 
-        # Build node execution configs lookup
+        # Build node execution configs lookup (using resolved config for runtime)
         self._node_execution_configs: dict[str, NodeExecutionConfig] = {}
-        for node_config in self.config.graph.nodes:
+        for node_config in self._config_resolved.graph.nodes:
             if node_config.execution_config is not None:
                 self._node_execution_configs[node_config.name] = node_config.execution_config
 
         # Build node output ports lookup (for type validation)
         self._node_out_ports: dict[str, dict[str, PortConfig]] = {}
-        for node_config in self.config.graph.nodes:
+        for node_config in self._config_resolved.graph.nodes:
             if node_config.out_ports:
                 self._node_out_ports[node_config.name] = node_config.out_ports
 
@@ -711,7 +712,7 @@ class Net:
 
         # Build ExecutionManager config
         _exec_manager_config = {}
-        for pool_name, pool_config in self.config.pools.items():
+        for pool_name, pool_config in self._config_resolved.pools.items():
             match pool_config.spec.type:
                 case "main":
                     pool_type = SingleWorkerPool
@@ -756,8 +757,22 @@ class Net:
 
     @property
     def config(self) -> NetConfig:
-        """Get the Net configuration."""
+        """Get the original (unresolved) Net configuration.
+
+        This returns the config as it was passed to the constructor, before
+        any factory expansion or import path resolution. Use this for
+        serialization or introspection of the original config.
+        """
         return self._config
+
+    @property
+    def config_resolved(self) -> NetConfig:
+        """Get the resolved Net configuration.
+
+        This returns the config with all factories expanded and import paths
+        resolved to actual callables. This is used internally for execution.
+        """
+        return self._config_resolved
 
     @property
     def graph(self) -> netrun_sim.Graph:
@@ -1925,7 +1940,7 @@ class Net:
 
         String import paths are resolved to actual functions before registration.
         """
-        for node_config in self.config.graph.nodes:
+        for node_config in self._config_resolved.graph.nodes:
             if node_config.execution_config is None:
                 continue
 
