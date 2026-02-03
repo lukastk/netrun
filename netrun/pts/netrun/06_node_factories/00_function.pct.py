@@ -1,0 +1,612 @@
+# ---
+# jupyter:
+#   kernelspec:
+#     display_name: .venv
+#     language: python
+#     name: python3
+# ---
+
+# %%
+#|default_exp node_factories.function
+
+# %%
+#|hide
+from nblite import nbl_export, show_doc; nbl_export();
+
+# %% [markdown]
+# # Function Node Factory
+#
+# A node factory that automatically generates a `NodeConfig` from a regular Python function.
+# The function's signature is parsed to determine input and output ports.
+
+# %%
+#|export
+from typing import Callable, Any, get_type_hints, get_origin, get_args
+from dataclasses import dataclass, field
+import inspect
+import asyncio
+import tomllib
+
+from netrun.net.config import (
+    NodeConfig,
+    NodeExecutionConfig,
+    PortConfig,
+    PortTypeConfig,
+    SalvoConditionConfig,
+    SalvoConditionTermConfig,
+    SalvoConditionTermPortConfig,
+    SalvoConditionTermAndConfig,
+    SalvoConditionTermTrueConfig,
+    MaxSalvosFiniteConfig,
+    PacketCountAllConfig,
+    PortStateNonEmptyConfig,
+)
+
+# %% [markdown]
+# ## Signature Parser
+#
+# Parse a function's signature to extract input/output port configurations.
+
+# %%
+#|export
+# Sentinel to detect unannotated parameters
+_MISSING = object()
+
+# Special parameter names that are not treated as input ports
+SPECIAL_PARAMS = {"ctx", "print"}
+
+
+@dataclass
+class ParsedSignature:
+    """Result of parsing a function signature."""
+
+    in_ports: dict[str, PortConfig]
+    """Input port configurations derived from function parameters."""
+
+    out_ports: dict[str, PortConfig]
+    """Output port configurations derived from return annotation."""
+
+    special_params: set[str]
+    """Special parameters (ctx, print) that need special handling."""
+
+    regular_params: list[str]
+    """Ordered list of regular parameter names (input ports)."""
+
+
+def _annotation_to_port_config(annotation: Any) -> PortConfig:
+    """Convert a type annotation to a PortConfig.
+
+    Args:
+        annotation: The type annotation from the function signature.
+
+    Returns:
+        A PortConfig derived from the annotation.
+    """
+    if annotation is _MISSING or annotation is inspect.Parameter.empty:
+        # No annotation - default port with no type constraint
+        return PortConfig()
+
+    if isinstance(annotation, PortConfig):
+        # Already a PortConfig - use directly
+        return annotation
+
+    if isinstance(annotation, type):
+        # Type object - use for isinstance checking
+        return PortConfig(port_type=annotation)
+
+    if isinstance(annotation, str):
+        # String type name
+        return PortConfig(port_type=annotation)
+
+    if isinstance(annotation, PortTypeConfig):
+        # PortTypeConfig - wrap in PortConfig
+        return PortConfig(port_type=annotation)
+
+    # For other annotations (e.g., typing generics), use the string representation
+    return PortConfig(port_type=str(annotation))
+
+
+def _parse_return_annotation(annotation: Any) -> dict[str, PortConfig]:
+    """Parse the return annotation to determine output ports.
+
+    Args:
+        annotation: The return annotation from the function signature.
+
+    Returns:
+        Dict of output port name -> PortConfig.
+    """
+    if annotation is inspect.Signature.empty or annotation is None:
+        # No return annotation - no output ports
+        return {}
+
+    # Check if it's a dict with string keys and PortConfig values
+    # This handles the case: -> {"out1": PortConfig(...), "out2": PortConfig(...)}
+    if isinstance(annotation, dict):
+        out_ports = {}
+        for name, value in annotation.items():
+            if isinstance(value, PortConfig):
+                out_ports[name] = value
+            else:
+                out_ports[name] = _annotation_to_port_config(value)
+        return out_ports
+
+    # Single return type - create single "out" port
+    return {"out": _annotation_to_port_config(annotation)}
+
+
+def parse_function_signature(func: Callable) -> ParsedSignature:
+    """Parse a function's signature to extract port configurations.
+
+    Args:
+        func: The function to parse.
+
+    Returns:
+        ParsedSignature with port configs and parameter info.
+
+    Raises:
+        ValueError: If the function has *args or **kwargs.
+    """
+    sig = inspect.signature(func)
+
+    in_ports: dict[str, PortConfig] = {}
+    special_params: set[str] = set()
+    regular_params: list[str] = []
+
+    for param_name, param in sig.parameters.items():
+        # Check for unsupported parameter types
+        if param.kind == inspect.Parameter.VAR_POSITIONAL:
+            raise ValueError(f"*args not supported in function {func.__name__}")
+        if param.kind == inspect.Parameter.VAR_KEYWORD:
+            raise ValueError(f"**kwargs not supported in function {func.__name__}")
+
+        # Check for special parameters
+        if param_name in SPECIAL_PARAMS:
+            special_params.add(param_name)
+            continue
+
+        # Regular parameter - becomes an input port
+        annotation = param.annotation if param.annotation is not inspect.Parameter.empty else _MISSING
+        in_ports[param_name] = _annotation_to_port_config(annotation)
+        regular_params.append(param_name)
+
+    # Parse return annotation for output ports
+    return_annotation = sig.return_annotation
+    out_ports = _parse_return_annotation(return_annotation)
+
+    return ParsedSignature(
+        in_ports=in_ports,
+        out_ports=out_ports,
+        special_params=special_params,
+        regular_params=regular_params,
+    )
+
+# %% [markdown]
+# ## Default Salvo Conditions
+#
+# Generate default salvo conditions for input and output.
+
+# %%
+#|export
+def _generate_input_salvo_condition(in_ports: dict[str, PortConfig]) -> dict[str, SalvoConditionConfig]:
+    """Generate default input salvo condition.
+
+    Default: Fires when all input ports have at least one packet.
+
+    Args:
+        in_ports: The input port configurations.
+
+    Returns:
+        Dict with a single "trigger" salvo condition.
+    """
+    if not in_ports:
+        # No input ports - use always-true condition
+        return {
+            "trigger": SalvoConditionConfig(
+                max_salvos=MaxSalvosFiniteConfig(max=1),
+                ports={},
+                term=SalvoConditionTermTrueConfig(),
+            )
+        }
+
+    # Build condition: all ports must be non-empty
+    port_terms = [
+        SalvoConditionTermPortConfig(port_name=port_name, state=PortStateNonEmptyConfig())
+        for port_name in in_ports.keys()
+    ]
+
+    if len(port_terms) == 1:
+        term = port_terms[0]
+    else:
+        term = SalvoConditionTermAndConfig(terms=port_terms)
+
+    # Include all packets from all ports
+    ports = {port_name: PacketCountAllConfig() for port_name in in_ports.keys()}
+
+    return {
+        "trigger": SalvoConditionConfig(
+            max_salvos=MaxSalvosFiniteConfig(max=1),
+            ports=ports,
+            term=term,
+        )
+    }
+
+
+def _generate_output_salvo_condition(out_ports: dict[str, PortConfig]) -> dict[str, SalvoConditionConfig]:
+    """Generate default output salvo condition.
+
+    Default: Fires once per epoch (no port conditions).
+
+    Args:
+        out_ports: The output port configurations.
+
+    Returns:
+        Dict with a single "send" salvo condition.
+    """
+    if not out_ports:
+        # No output ports - no output salvo condition needed
+        return {}
+
+    # Include all packets from all output ports
+    ports = {port_name: PacketCountAllConfig() for port_name in out_ports.keys()}
+
+    return {
+        "send": SalvoConditionConfig(
+            max_salvos=MaxSalvosFiniteConfig(max=1),
+            ports=ports,
+            term=SalvoConditionTermTrueConfig(),
+        )
+    }
+
+# %% [markdown]
+# ## Execution Wrapper
+#
+# Create the wrapper function that bridges user functions to node execution.
+
+# %%
+#|export
+def _create_exec_func(func: Callable, parsed_sig: ParsedSignature) -> Callable:
+    """Create the exec_node_func that wraps the user function.
+
+    The wrapper:
+    1. Extracts packet values from input ports
+    2. Handles special parameters (ctx, print)
+    3. Calls the user function
+    4. Routes return value to output ports
+    5. Sends the output salvo
+
+    Args:
+        func: The user function to wrap.
+        parsed_sig: The parsed function signature.
+
+    Returns:
+        An exec_node_func suitable for NodeExecutionConfig.
+    """
+    is_async = asyncio.iscoroutinefunction(func)
+
+    async def exec_node_func_async(ctx, packets):
+        """Async wrapper for the user function."""
+        kwargs = {}
+
+        # Extract packet values for regular parameters
+        for param_name in parsed_sig.regular_params:
+            if param_name in packets and packets[param_name]:
+                # Get first packet from this port and consume it
+                packet_id = packets[param_name][0]
+                value = ctx.consume_packet(packet_id)
+                kwargs[param_name] = value
+            else:
+                # Port has no packets - this shouldn't happen with proper salvo conditions
+                raise ValueError(f"No packets in port '{param_name}' for function {func.__name__}")
+
+        # Handle special parameters
+        if "ctx" in parsed_sig.special_params:
+            kwargs["ctx"] = ctx
+        if "print" in parsed_sig.special_params:
+            kwargs["print"] = ctx.print
+
+        # Call the user function
+        if is_async:
+            result = await func(**kwargs)
+        else:
+            result = func(**kwargs)
+
+        # Route result to output ports
+        if parsed_sig.out_ports:
+            if len(parsed_sig.out_ports) == 1:
+                # Single output port - send result directly
+                port_name = list(parsed_sig.out_ports.keys())[0]
+                packet_id = ctx.create_packet(result)
+                ctx.load_output_port(port_name, packet_id)
+            else:
+                # Multiple output ports - result must be a dict
+                if not isinstance(result, dict):
+                    raise TypeError(
+                        f"Function {func.__name__} has multiple output ports "
+                        f"but returned {type(result).__name__} instead of dict"
+                    )
+                for port_name in parsed_sig.out_ports.keys():
+                    if port_name in result:
+                        packet_id = ctx.create_packet(result[port_name])
+                        ctx.load_output_port(port_name, packet_id)
+
+            # Send the output salvo
+            ctx.send_output_salvo("send")
+
+    def exec_node_func_sync(ctx, packets):
+        """Sync wrapper that runs the async wrapper."""
+        # Create event loop if needed
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        return loop.run_until_complete(exec_node_func_async(ctx, packets))
+
+    # Return the async version directly since Net uses async execution
+    return exec_node_func_async
+
+# %% [markdown]
+# ## Config Merger
+#
+# Merge user-provided `_node_config` with auto-generated config.
+
+# %%
+#|export
+def _deep_merge_dicts(base: dict, override: dict) -> dict:
+    """Deep merge two dictionaries.
+
+    Override values take precedence. Nested dicts are merged recursively.
+
+    Args:
+        base: The base dictionary.
+        override: The override dictionary.
+
+    Returns:
+        Merged dictionary.
+    """
+    result = base.copy()
+    for key, value in override.items():
+        if key in result and isinstance(result[key], dict) and isinstance(value, dict):
+            result[key] = _deep_merge_dicts(result[key], value)
+        else:
+            result[key] = value
+    return result
+
+
+def _parse_node_config_override(override: Any) -> dict:
+    """Parse a _node_config override value.
+
+    Args:
+        override: Can be NodeConfig, dict, or TOML string.
+
+    Returns:
+        A dictionary suitable for merging.
+    """
+    if override is None:
+        return {}
+
+    if isinstance(override, NodeConfig):
+        return override.model_dump(exclude_none=True, exclude_unset=True)
+
+    if isinstance(override, dict):
+        return override
+
+    if isinstance(override, str):
+        # Parse as TOML
+        return tomllib.loads(override)
+
+    raise TypeError(f"_node_config must be NodeConfig, dict, or TOML string, got {type(override)}")
+
+# %% [markdown]
+# ## Factory Functions
+#
+# The main entry points for the node factory.
+
+# %%
+#|export
+def from_function(
+    func: Callable,
+    name: str | None = None,
+) -> NodeConfig:
+    """Create a NodeConfig from a function.
+
+    Parses the function signature to determine input/output ports and
+    generates default salvo conditions.
+
+    Args:
+        func: The function to create a node from.
+        name: Optional node name (defaults to function name).
+
+    Returns:
+        A complete NodeConfig.
+
+    Example:
+        def process(data: str, ctx) -> int:
+            ctx.print(f"Processing: {data}")
+            return len(data)
+
+        config = from_function(process)
+        # Creates node with:
+        # - in_ports: {"data": PortConfig(port_type=str)}
+        # - out_ports: {"out": PortConfig(port_type=int)}
+        # - Default salvo conditions
+        # - exec_node_func that wraps process()
+    """
+    # Parse the function signature
+    parsed_sig = parse_function_signature(func)
+
+    # Generate base config
+    node_name = name or func.__name__
+
+    base_config_dict = {
+        "name": node_name,
+        "in_ports": {k: v.model_dump() for k, v in parsed_sig.in_ports.items()},
+        "out_ports": {k: v.model_dump() for k, v in parsed_sig.out_ports.items()},
+        "in_salvo_conditions": {
+            k: v.model_dump()
+            for k, v in _generate_input_salvo_condition(parsed_sig.in_ports).items()
+        },
+        "out_salvo_conditions": {
+            k: v.model_dump()
+            for k, v in _generate_output_salvo_condition(parsed_sig.out_ports).items()
+        },
+    }
+
+    # Apply _node_config override if present
+    if hasattr(func, "_node_config"):
+        override = _parse_node_config_override(func._node_config)
+        base_config_dict = _deep_merge_dicts(base_config_dict, override)
+
+    # Create the NodeConfig
+    config = NodeConfig.model_validate(base_config_dict)
+
+    # Create execution config with the wrapper function
+    exec_func = _create_exec_func(func, parsed_sig)
+    config.execution_config = NodeExecutionConfig(exec_node_func=exec_func)
+
+    return config
+
+
+def get_node_config(func: Callable | str, name: str | None = None, **kwargs) -> NodeConfig:
+    """Factory function to get NodeConfig from a function.
+
+    This implements the factory module protocol. The `func` argument
+    can be a callable or an import path string.
+
+    Args:
+        func: The function or its import path.
+        name: Optional node name.
+        **kwargs: Additional arguments (ignored, for factory compatibility).
+
+    Returns:
+        NodeConfig without execution_config (per factory protocol).
+    """
+    if isinstance(func, str):
+        # Import the function from path
+        import importlib
+        module_path, func_name = func.rsplit(".", 1)
+        module = importlib.import_module(module_path)
+        func = getattr(module, func_name)
+
+    # Get full config and strip execution_config
+    config = from_function(func, name)
+    config.execution_config = None
+    return config
+
+
+def get_node_funcs(func: Callable | str, name: str | None = None, **kwargs) -> tuple:
+    """Factory function to get execution functions.
+
+    This implements the factory module protocol.
+
+    Args:
+        func: The function or its import path.
+        name: Optional node name (unused, for signature compatibility).
+        **kwargs: Additional arguments (ignored, for factory compatibility).
+
+    Returns:
+        Tuple of (exec_func, start_func, stop_func, on_failure_func).
+    """
+    if isinstance(func, str):
+        # Import the function from path
+        import importlib
+        module_path, func_name = func.rsplit(".", 1)
+        module = importlib.import_module(module_path)
+        func = getattr(module, func_name)
+
+    parsed_sig = parse_function_signature(func)
+    exec_func = _create_exec_func(func, parsed_sig)
+
+    return (exec_func, None, None, None)
+
+# %% [markdown]
+# ## Tests
+
+# %%
+# Test basic signature parsing
+def simple_func(a: int, b: str) -> float:
+    return float(a) + len(b)
+
+parsed = parse_function_signature(simple_func)
+assert parsed.regular_params == ["a", "b"]
+assert "a" in parsed.in_ports
+assert "b" in parsed.in_ports
+assert parsed.in_ports["a"].port_type == int
+assert parsed.in_ports["b"].port_type == str
+assert "out" in parsed.out_ports
+assert parsed.out_ports["out"].port_type == float
+print("Basic parsing test passed")
+
+# %%
+# Test special params
+def with_special(data: str, ctx, print) -> int:
+    return len(data)
+
+parsed = parse_function_signature(with_special)
+assert parsed.regular_params == ["data"]
+assert "ctx" in parsed.special_params
+assert "print" in parsed.special_params
+assert "ctx" not in parsed.in_ports
+assert "print" not in parsed.in_ports
+print("Special params test passed")
+
+# %%
+# Test no annotations
+def no_annot(x, y):
+    pass
+
+parsed = parse_function_signature(no_annot)
+assert parsed.regular_params == ["x", "y"]
+assert parsed.in_ports["x"].port_type is None
+assert parsed.in_ports["y"].port_type is None
+assert len(parsed.out_ports) == 0  # No return annotation
+print("No annotations test passed")
+
+# %%
+# Test PortConfig annotation
+def with_port_config(data: PortConfig(port_type="DataFrame")) -> int:
+    return 42
+
+parsed = parse_function_signature(with_port_config)
+assert parsed.in_ports["data"].port_type == "DataFrame"
+print("PortConfig annotation test passed")
+
+# %%
+# Test from_function
+config = from_function(simple_func)
+assert config.name == "simple_func"
+assert "a" in config.in_ports
+assert "b" in config.in_ports
+assert "out" in config.out_ports
+assert "trigger" in config.in_salvo_conditions
+assert "send" in config.out_salvo_conditions
+assert config.execution_config is not None
+assert config.execution_config.exec_node_func is not None
+print("from_function test passed")
+
+# %%
+# Test _node_config override
+def custom_func(x: int) -> int:
+    return x * 2
+
+custom_func._node_config = {
+    "name": "CustomName",
+}
+
+config = from_function(custom_func)
+assert config.name == "CustomName"
+print("_node_config override test passed")
+
+# %%
+# Test TOML override
+def toml_func(x: int) -> int:
+    return x * 3
+
+toml_func._node_config = '''
+name = "TomlNode"
+'''
+
+config = from_function(toml_func)
+assert config.name == "TomlNode"
+print("TOML override test passed")
