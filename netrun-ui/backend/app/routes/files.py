@@ -8,7 +8,12 @@ import tomli_w
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-from ..converter import ui_to_graph_config, graph_config_to_ui
+from ..converter import (
+    ui_to_graph_config,
+    graph_config_to_ui,
+    extract_graph_and_extras,
+    merge_graph_with_extras,
+)
 
 router = APIRouter()
 
@@ -25,6 +30,7 @@ class FileReadResponse(BaseModel):
     nodes: list[dict[str, Any]]
     edges: list[dict[str, Any]]
     meta: dict[str, Any] | None = None
+    extra_data: dict[str, Any] | None = None  # Non-graph data (pools, etc.)
 
 
 class FileSaveRequest(BaseModel):
@@ -34,6 +40,7 @@ class FileSaveRequest(BaseModel):
     nodes: list[dict[str, Any]]
     edges: list[dict[str, Any]]
     meta: dict[str, Any] | None = None
+    extra_data: dict[str, Any] | None = None  # Non-graph data (pools, etc.)
 
 
 class FileSaveResponse(BaseModel):
@@ -44,7 +51,12 @@ class FileSaveResponse(BaseModel):
 
 @router.post("/read", response_model=FileReadResponse)
 async def read_file(request: FileReadRequest) -> FileReadResponse:
-    """Read a .netrun.json or .netrun.toml file and return UI-compatible data."""
+    """Read a .netrun.json or .netrun.toml file and return UI-compatible data.
+
+    Supports both GraphConfig (graph-only) and NetConfig (full config with pools).
+    When loading NetConfig, non-graph data (pools, etc.) is returned in extra_data
+    so it can be preserved when saving.
+    """
     path = Path(request.path)
 
     if not path.exists():
@@ -66,14 +78,14 @@ async def read_file(request: FileReadRequest) -> FileReadResponse:
             data = tomli.loads(content)
             file_format = "toml"
 
-        # Extract graph config (could be at top level or nested under "graph")
-        graph_data = data.get("graph", data)
+        # Extract graph config and any extra data (pools, net-level settings)
+        graph_data, extra_data = extract_graph_and_extras(data)
 
         # Convert to UI format
         nodes, edges = graph_config_to_ui(graph_data)
 
-        # Extract meta if present
-        meta = data.get("meta")
+        # Extract graph-level meta if present
+        meta = graph_data.get("meta")
 
         return FileReadResponse(
             path=str(path),
@@ -81,6 +93,7 @@ async def read_file(request: FileReadRequest) -> FileReadResponse:
             nodes=nodes,
             edges=edges,
             meta=meta,
+            extra_data=extra_data if extra_data else None,
         )
 
     except json.JSONDecodeError as e:
@@ -93,7 +106,11 @@ async def read_file(request: FileReadRequest) -> FileReadResponse:
 
 @router.post("/save", response_model=FileSaveResponse)
 async def save_file(request: FileSaveRequest) -> FileSaveResponse:
-    """Save UI data to a .netrun.json or .netrun.toml file."""
+    """Save UI data to a .netrun.json or .netrun.toml file.
+
+    If extra_data is provided (e.g., pools from a NetConfig file), it will be
+    preserved in the output. Otherwise, produces a graph-only format.
+    """
     path = Path(request.path)
 
     # Ensure directory exists
@@ -103,13 +120,12 @@ async def save_file(request: FileSaveRequest) -> FileSaveResponse:
         # Convert UI format to GraphConfig
         graph_config = ui_to_graph_config(request.nodes, request.edges)
 
-        # Build output data structure
-        output_data = {
-            "graph": graph_config,
-        }
-
-        if request.meta:
-            output_data["meta"] = request.meta
+        # Merge graph with any extra data (pools, net-level settings)
+        output_data = merge_graph_with_extras(
+            graph_config,
+            request.extra_data or {},
+            request.meta,
+        )
 
         # Serialize based on format
         if request.format == "json":

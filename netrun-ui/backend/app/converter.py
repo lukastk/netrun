@@ -5,10 +5,81 @@ UI Format (flowStore.ts):
 - edges: list of {id, source, target, sourceHandle, targetHandle, ...}
 
 GraphConfig Format (netrun.net.config):
-- nodes: list of NodeConfig {name, in_ports, out_ports, in_salvo_conditions, out_salvo_conditions, factory, factory_args, ...}
+- nodes: list of NodeConfig {name, in_ports, out_ports, in_salvo_conditions, out_salvo_conditions, factory, factory_args, meta, ...}
 - edges: list of EdgeConfig {source_str, target_str} or {source, target}
+- meta: optional dict for graph-level metadata
+
+NetConfig Format (netrun.net.config):
+- pools: dict[str, PoolConfig] (required)
+- graph: GraphConfig
+- meta: optional dict for net-level metadata
+- ... other net-level settings
 """
 from typing import Any
+
+
+def is_net_config(data: dict[str, Any]) -> bool:
+    """Check if the data is a full NetConfig (vs just GraphConfig).
+
+    NetConfig has a required 'pools' field and 'graph' field.
+    GraphConfig has 'nodes' at the top level.
+    """
+    return "pools" in data or ("graph" in data and "nodes" in data.get("graph", {}))
+
+
+def extract_graph_and_extras(data: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
+    """Extract graph data and extra (non-graph) data from a config file.
+
+    Args:
+        data: The parsed file data.
+
+    Returns:
+        Tuple of (graph_data, extra_data).
+        - graph_data: The GraphConfig portion
+        - extra_data: Everything else (pools, net-level meta, etc.)
+    """
+    if "graph" in data:
+        # NetConfig format - graph is nested
+        graph_data = data["graph"]
+        extra_data = {k: v for k, v in data.items() if k != "graph"}
+    else:
+        # GraphConfig format - graph is at top level
+        graph_data = data
+        extra_data = {}
+
+    return graph_data, extra_data
+
+
+def merge_graph_with_extras(
+    graph_config: dict[str, Any],
+    extra_data: dict[str, Any],
+    graph_meta: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Merge graph config with extra data to produce final output.
+
+    Args:
+        graph_config: The GraphConfig portion.
+        extra_data: Non-graph data to preserve (pools, net-level settings).
+        graph_meta: Optional graph-level meta to include.
+
+    Returns:
+        Complete config ready for serialization.
+    """
+    # Add graph-level meta if provided
+    if graph_meta:
+        graph_config = {**graph_config, "meta": graph_meta}
+
+    if extra_data:
+        # Has extra data - produce NetConfig format
+        return {
+            **extra_data,
+            "graph": graph_config,
+        }
+    else:
+        # No extra data - produce GraphConfig format (graph at top level)
+        return {
+            "graph": graph_config,
+        }
 
 
 def graph_config_to_ui(graph_data: dict[str, Any]) -> tuple[list[dict], list[dict]]:

@@ -41,6 +41,7 @@ export interface FileReadResponse {
 	nodes: UINode[];
 	edges: UIEdge[];
 	meta?: Record<string, unknown>;
+	extra_data?: Record<string, unknown>;  // Non-graph data (pools, etc.)
 }
 
 export interface FileSaveResponse {
@@ -141,11 +142,12 @@ class ApiClient {
 		format: 'json' | 'toml',
 		nodes: UINode[],
 		edges: UIEdge[],
-		meta?: Record<string, unknown>
+		meta?: Record<string, unknown>,
+		extra_data?: Record<string, unknown>  // Non-graph data (pools, etc.)
 	): Promise<FileSaveResponse> {
 		return this.request<FileSaveResponse>('/files/save', {
 			method: 'POST',
-			body: JSON.stringify({ path, format, nodes, edges, meta }),
+			body: JSON.stringify({ path, format, nodes, edges, meta, extra_data }),
 		});
 	}
 
