@@ -293,30 +293,34 @@ print(f"  Output queues: {list(net_config.output_queues.keys())}")
 
 # %%
 # For JSON serialization, we need to remove the closure-based exec funcs
-# or use string import paths instead
+# since the function factory creates closures that can't be serialized.
 
-# Let's demonstrate serializing just the graph config with the factory node
-graph_for_json = GraphConfig(
-    nodes=[
-        # The factory node can be serialized
-        NodeConfig(
-            factory="netrun.node_factories.function",
-            factory_args={"func": "examples.net.function_factory_nodes.double_number"},
-        ),
-    ],
-    edges=[],
+# Let's demonstrate serializing a graph config with a factory node
+node_for_json = NodeConfig(
+    factory="netrun.node_factories.function",
+    factory_args={"func": "examples.net.function_factory_nodes.double_number"},
 )
+
+# The factory expansion creates execution_config with closures.
+# We need to remove it before JSON serialization.
+print(f"Node has execution_config: {node_for_json.execution_config is not None}")
+
+# Remove execution_config for serialization (closures can't be serialized)
+node_for_json = node_for_json.model_copy(update={"execution_config": None})
+
+graph_for_json = GraphConfig(nodes=[node_for_json], edges=[])
 
 # Serialize to JSON
 import json
 json_str = graph_for_json.model_dump_json(indent=2)
-print("Serialized GraphConfig (factory node):")
+print("\nSerialized GraphConfig (factory node, without execution_config):")
 print(json_str)
 
-# Deserialize back
+# Deserialize back - the factory will re-expand and recreate execution_config
 loaded = GraphConfig.model_validate_json(json_str)
 print(f"\nDeserialized node name: {loaded.nodes[0].name}")
 print(f"Factory preserved: {loaded.nodes[0].factory}")
+print(f"Execution config recreated: {loaded.nodes[0].execution_config is not None}")
 
 # %% [markdown]
 # ## Running the Network (Concept)
