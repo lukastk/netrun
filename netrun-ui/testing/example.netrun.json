@@ -1,76 +1,116 @@
 {
+  "meta": {
+    "description": "Example netrun configuration for testing the UI"
+  },
   "graph": {
     "nodes": [
       {
-        "name": "DataSource",
+        "name": "DataSource2",
         "in_ports": {},
         "out_ports": {
-          "data": {"port_type": "int"},
-          "metadata": {"port_type": "dict"}
+          "data": {
+            "port_type": "int"
+          },
+          "metadata": {
+            "port_type": "dict"
+          }
         },
         "meta": {
           "ui": {
             "id": "node-source",
-            "label": "DataSource",
-            "position": {"x": 100, "y": 150}
+            "label": "DataSource2",
+            "position": {
+              "x": 210,
+              "y": -165
+            }
           }
         }
       },
       {
-        "name": "Processor",
+        "name": "Processors",
         "in_ports": {
-          "input": {"port_type": "int"},
-          "config": {"port_type": "dict"}
+          "input": {
+            "port_type": "int"
+          },
+          "config": {
+            "port_type": "dict"
+          }
         },
         "out_ports": {
-          "output": {"port_type": "int"},
-          "logs": {"port_type": "str"}
+          "output": {
+            "port_type": "int"
+          },
+          "logs": {
+            "port_type": "str"
+          }
         },
         "meta": {
           "ui": {
             "id": "node-processor",
-            "label": "Processor",
-            "position": {"x": 400, "y": 100}
+            "label": "Processors",
+            "position": {
+              "x": 400,
+              "y": 100
+            }
           }
         }
       },
       {
         "name": "Logger",
         "in_ports": {
-          "message": {"port_type": "str"}
+          "message": {
+            "port_type": "str"
+          }
         },
         "out_ports": {},
         "meta": {
           "ui": {
             "id": "node-logger",
             "label": "Logger",
-            "position": {"x": 700, "y": 200}
+            "position": {
+              "x": 700,
+              "y": 200
+            }
           }
         }
       },
       {
         "name": "OutputSink",
         "in_ports": {
-          "value": {"port_type": "any"}
+          "value": {
+            "port_type": "any"
+          }
         },
         "out_ports": {},
         "meta": {
           "ui": {
             "id": "node-sink",
             "label": "OutputSink",
-            "position": {"x": 700, "y": 50}
+            "position": {
+              "x": 700,
+              "y": 50
+            }
           }
         }
       }
     ],
     "edges": [
-      {"source_str": "DataSource.data", "target_str": "Processor.input"},
-      {"source_str": "DataSource.metadata", "target_str": "Processor.config"},
-      {"source_str": "Processor.output", "target_str": "OutputSink.value"},
-      {"source_str": "Processor.logs", "target_str": "Logger.message"}
+      {
+        "source_str": "DataSource2.data",
+        "target_str": "Processors.input"
+      },
+      {
+        "source_str": "DataSource2.metadata",
+        "target_str": "Processors.config"
+      },
+      {
+        "source_str": "Processors.output",
+        "target_str": "OutputSink.value"
+      },
+      {
+        "source_str": "Processors.logs",
+        "target_str": "Logger.message"
+      }
     ]
-  },
-  "meta": {
-    "description": "Example netrun configuration for testing the UI"
   }
 }

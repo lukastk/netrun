@@ -5,13 +5,22 @@
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import FlowEditor from '$lib/components/FlowEditor.svelte';
 	import FileExplorer from '$lib/components/FileExplorer.svelte';
-	import { nodes, currentFilePath, activeTab } from '$lib/stores/flowStore';
+	import { nodes, currentFilePath, activeTab, recentFiles, loadFromFile } from '$lib/stores/flowStore';
 
 	// Initial path for file explorer (from environment variable or default to home)
 	const initialPath = import.meta.env.VITE_INITIAL_PATH || '~';
 
 	// File explorer visibility state
 	let showFileExplorer = $state(true);
+
+	// Handle opening a recent file
+	async function openRecentFile(path: string) {
+		try {
+			await loadFromFile(path);
+		} catch (e) {
+			alert(`Failed to open: ${(e as Error).message}`);
+		}
+	}
 </script>
 
 <div class="app">
@@ -44,9 +53,7 @@
 								<button class="primary" onclick={() => {
 									const path = prompt('Enter file path to open:');
 									if (path) {
-										import('$lib/stores/flowStore').then(({ loadFromFile }) => {
-											loadFromFile(path).catch(e => alert(`Failed to open: ${e.message}`));
-										});
+										openRecentFile(path);
 									}
 								}}>
 									Open File
@@ -60,7 +67,25 @@
 									New File
 								</button>
 							</div>
-							<p class="hint">Or use Cmd+O to open, Cmd+N for new file</p>
+
+							{#if $recentFiles.length > 0}
+								<div class="recent-files">
+									<p class="recent-title">Recent Files</p>
+									<div class="recent-list">
+										{#each $recentFiles.slice(0, 5) as file}
+											<button
+												class="recent-file"
+												onclick={() => openRecentFile(file.path)}
+												title={file.path}
+											>
+												{file.name}
+											</button>
+										{/each}
+									</div>
+								</div>
+							{:else}
+								<p class="hint">Or use Cmd+O to open, Cmd+N for new file</p>
+							{/if}
 						</div>
 					</div>
 				{/if}
@@ -183,5 +208,45 @@
 		font-size: 12px;
 		color: var(--text-secondary, #666);
 		margin-bottom: 0;
+	}
+
+	.recent-files {
+		margin-top: 24px;
+		padding-top: 24px;
+		border-top: 1px solid var(--border-color, #404040);
+	}
+
+	.recent-title {
+		font-size: 12px;
+		color: var(--text-secondary, #a0a0a0);
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		margin-bottom: 12px;
+	}
+
+	.recent-list {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.recent-file {
+		padding: 8px 12px;
+		background: var(--bg-tertiary, #2d2d2d);
+		border: 1px solid transparent;
+		border-radius: 4px;
+		color: var(--accent-color, #3b82f6);
+		font-size: 13px;
+		text-align: left;
+		cursor: pointer;
+		transition: all 0.15s ease;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.recent-file:hover {
+		background: var(--border-color, #404040);
+		border-color: var(--accent-color, #3b82f6);
 	}
 </style>

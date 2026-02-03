@@ -228,6 +228,231 @@ export function deleteEdges(ids: string[]) {
 	});
 }
 
+// Copy/Paste functionality
+import { copyToClipboard, getClipboardNodes, hasClipboardContent } from './clipboardStore';
+export { hasClipboardContent } from './clipboardStore';
+
+// Recent files
+import { addRecentFile } from './recentFilesStore';
+export { recentFiles, removeRecentFile, clearRecentFiles } from './recentFilesStore';
+
+/**
+ * Update extraData (pools, etc.) for the active tab
+ */
+export function updateExtraData(updates: Record<string, unknown>): void {
+	const tab = get(activeTab);
+	if (!tab) return;
+
+	pushHistory();
+	updateActiveTab({
+		extraData: { ...(tab.extraData || {}), ...updates },
+	});
+}
+
+/**
+ * Update graphMeta for the active tab
+ */
+export function updateGraphMeta(updates: Record<string, unknown>): void {
+	const tab = get(activeTab);
+	if (!tab) return;
+
+	pushHistory();
+	updateActiveTab({
+		graphMeta: { ...(tab.graphMeta || {}), ...updates },
+	});
+}
+
+/**
+ * Update extraData without pushing history (for live editing)
+ */
+export function updateExtraDataLive(updates: Record<string, unknown>): void {
+	const tab = get(activeTab);
+	if (!tab) return;
+
+	updateActiveTab({
+		extraData: { ...(tab.extraData || {}), ...updates },
+		isDirty: true,
+	});
+}
+
+/**
+ * Update graphMeta without pushing history (for live editing)
+ */
+export function updateGraphMetaLive(updates: Record<string, unknown>): void {
+	const tab = get(activeTab);
+	if (!tab) return;
+
+	updateActiveTab({
+		graphMeta: { ...(tab.graphMeta || {}), ...updates },
+		isDirty: true,
+	});
+}
+
+/**
+ * Validate a single node and return validation errors
+ */
+function validateNode(node: NetrunNode): string[] {
+	const errors: string[] = [];
+
+	// Check label
+	if (!node.data.label || node.data.label.trim() === '') {
+		errors.push('Node must have a name');
+	}
+
+	// Check factory nodes have factory path
+	if (node.data.nodeType === 'factory') {
+		if (!node.data.factory || node.data.factory.trim() === '') {
+			errors.push('Factory node must have a factory path');
+		}
+	}
+
+	// Check ports have names
+	for (const port of node.data.inPorts) {
+		if (!port.name || port.name.trim() === '') {
+			errors.push('Input port missing name');
+			break;
+		}
+	}
+	for (const port of node.data.outPorts) {
+		if (!port.name || port.name.trim() === '') {
+			errors.push('Output port missing name');
+			break;
+		}
+	}
+
+	return errors;
+}
+
+/**
+ * Validate all nodes in the active tab and update their validation state
+ */
+export function validateAllNodes(): { valid: boolean; errorCount: number } {
+	const tab = get(activeTab);
+	if (!tab) return { valid: true, errorCount: 0 };
+
+	let errorCount = 0;
+	const updatedNodes = tab.nodes.map(node => {
+		const errors = validateNode(node);
+		const isValid = errors.length === 0;
+		if (!isValid) errorCount++;
+
+		return {
+			...node,
+			data: {
+				...node.data,
+				isValid,
+				validationErrors: isValid ? undefined : errors,
+			},
+		};
+	});
+
+	updateActiveTab({ nodes: updatedNodes });
+
+	return { valid: errorCount === 0, errorCount };
+}
+
+/**
+ * Clear validation state on all nodes
+ */
+export function clearValidation(): void {
+	const tab = get(activeTab);
+	if (!tab) return;
+
+	const updatedNodes = tab.nodes.map(node => ({
+		...node,
+		data: {
+			...node.data,
+			isValid: true,
+			validationErrors: undefined,
+		},
+	}));
+
+	updateActiveTab({ nodes: updatedNodes });
+}
+
+/**
+ * Copy selected nodes to clipboard
+ */
+export function copySelectedNodes(): void {
+	const selectedIds = get(selectedNodeIds);
+	if (selectedIds.size === 0) return;
+
+	const tab = get(activeTab);
+	if (!tab) return;
+
+	const nodesToCopy = tab.nodes.filter(node => selectedIds.has(node.id));
+	copyToClipboard(nodesToCopy, get(activeTabId));
+}
+
+/**
+ * Paste nodes from clipboard at the given position
+ * If no position given, offsets from original positions
+ */
+export function pasteNodes(position?: { x: number; y: number }): NetrunNode[] {
+	if (!hasClipboardContent()) return [];
+
+	const clipboardNodes = getClipboardNodes();
+	const tab = get(activeTab);
+	if (!tab || clipboardNodes.length === 0) return [];
+
+	pushHistory();
+
+	// Calculate offset for pasting
+	// If position given, center the pasted nodes there
+	// Otherwise, offset by 50px from original positions
+	let offsetX = 50;
+	let offsetY = 50;
+
+	if (position && clipboardNodes.length > 0) {
+		// Find bounding box of clipboard nodes
+		const minX = Math.min(...clipboardNodes.map(n => n.position.x));
+		const minY = Math.min(...clipboardNodes.map(n => n.position.y));
+		const maxX = Math.max(...clipboardNodes.map(n => n.position.x));
+		const maxY = Math.max(...clipboardNodes.map(n => n.position.y));
+
+		// Center of clipboard nodes
+		const centerX = (minX + maxX) / 2;
+		const centerY = (minY + maxY) / 2;
+
+		// Offset to move center to target position
+		offsetX = position.x - centerX;
+		offsetY = position.y - centerY;
+	}
+
+	// Create new nodes with new IDs and offset positions
+	const newNodes: NetrunNode[] = clipboardNodes.map(node => ({
+		...node,
+		id: generateNodeId(),
+		position: {
+			x: node.position.x + offsetX,
+			y: node.position.y + offsetY,
+		},
+		data: { ...node.data },
+		selected: false,
+	}));
+
+	// Add new nodes
+	updateActiveTab({
+		nodes: [...tab.nodes, ...newNodes],
+	});
+
+	// Select the pasted nodes
+	selectedNodeIds.set(new Set(newNodes.map(n => n.id)));
+
+	return newNodes;
+}
+
+/**
+ * Cut selected nodes (copy + delete)
+ */
+export function cutSelectedNodes(): void {
+	copySelectedNodes();
+	const selectedIds = get(selectedNodeIds);
+	if (selectedIds.size > 0) {
+		deleteNodes(Array.from(selectedIds));
+	}
+}
+
 // Generate unique IDs
 let nodeCounter = 0;
 export function generateNodeId(): string {
@@ -356,6 +581,9 @@ export async function loadFromFile(path: string): Promise<void> {
 			fileFormat: response.format,
 		});
 	}
+
+	// Track in recent files
+	addRecentFile(path);
 }
 
 // Save to file via API

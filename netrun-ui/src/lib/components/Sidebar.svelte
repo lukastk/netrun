@@ -5,6 +5,10 @@
 		updateNodeDataLive,
 		updateFactoryNodePreview,
 		pushHistory,
+		extraData,
+		graphMeta,
+		updateExtraDataLive,
+		updateGraphMetaLive,
 		type NetrunNodeData,
 		type PortConfig
 	} from '$lib/stores/flowStore';
@@ -19,12 +23,23 @@
 		inPorts: true,
 		outPorts: true,
 		factory: true,
-		execution: false
+		execution: false,
+		// Net-level sections
+		graphSettings: true,
+		pools: true,
+		uiSettings: false,
 	});
 
 	function toggleSection(section: keyof typeof sectionsOpen) {
 		sectionsOpen[section] = !sectionsOpen[section];
 	}
+
+	// Pool types for the dropdown
+	const poolTypes = [
+		{ value: 'ThreadPool', label: 'Thread Pool' },
+		{ value: 'MultiprocessPool', label: 'Multiprocess Pool' },
+		{ value: 'RemotePoolClient', label: 'Remote Pool' },
+	];
 
 	// Update handlers - use "Live" version for typing, push history on blur
 	function updateLabel(event: Event) {
@@ -294,9 +309,146 @@
 				</section>
 			{/if}
 		{:else}
-			<div class="no-selection">
-				<p>Select a node to edit its properties</p>
-			</div>
+			<!-- Net-level settings when no node is selected -->
+
+			<!-- Graph Settings Section -->
+			<section class="section">
+				<button
+					class="section-header"
+					onclick={() => toggleSection('graphSettings')}
+				>
+					<span class="section-title">Graph Settings</span>
+					<span class="section-toggle">{sectionsOpen.graphSettings ? '−' : '+'}</span>
+				</button>
+				{#if sectionsOpen.graphSettings}
+					<div class="section-content">
+						<div class="field">
+							<label for="graph-name">Name</label>
+							<input
+								id="graph-name"
+								type="text"
+								value={($graphMeta as Record<string, unknown>)?.name ?? ''}
+								oninput={(e) => updateGraphMetaLive({ name: (e.target as HTMLInputElement).value })}
+								onblur={() => pushHistory()}
+								placeholder="Graph name"
+							/>
+						</div>
+						<div class="field">
+							<label for="graph-description">Description</label>
+							<textarea
+								id="graph-description"
+								value={String(($graphMeta as Record<string, unknown>)?.description ?? '')}
+								oninput={(e) => updateGraphMetaLive({ description: (e.target as HTMLTextAreaElement).value })}
+								onblur={() => pushHistory()}
+								placeholder="Graph description"
+								rows="3"
+							></textarea>
+						</div>
+					</div>
+				{/if}
+			</section>
+
+			<!-- Pools Section -->
+			<section class="section">
+				<button
+					class="section-header"
+					onclick={() => toggleSection('pools')}
+				>
+					<span class="section-title">Pools</span>
+					<span class="section-toggle">{sectionsOpen.pools ? '−' : '+'}</span>
+				</button>
+				{#if sectionsOpen.pools}
+					{@const pools = ($extraData as Record<string, unknown>)?.pools as Record<string, unknown> | undefined}
+					<div class="section-content">
+						{#if pools && Object.keys(pools).length > 0}
+							{#each Object.entries(pools) as [poolName, poolConfig]}
+								<div class="pool-item">
+									<div class="pool-header">
+										<span class="pool-name">{poolName}</span>
+										<button
+											class="remove-btn"
+											onclick={() => {
+												const currentPools = { ...pools };
+												delete currentPools[poolName];
+												updateExtraDataLive({ pools: currentPools });
+												pushHistory();
+											}}
+											title="Remove pool"
+										>
+											&times;
+										</button>
+									</div>
+									<div class="pool-details">
+										{#if typeof poolConfig === 'object' && poolConfig !== null}
+											{#each Object.entries(poolConfig as Record<string, unknown>) as [key, value]}
+												<div class="pool-field">
+													<span class="pool-key">{key}:</span>
+													<span class="pool-value">{JSON.stringify(value)}</span>
+												</div>
+											{/each}
+										{/if}
+									</div>
+								</div>
+							{/each}
+						{:else}
+							<p class="empty-hint">No pools configured</p>
+						{/if}
+						<button
+							class="add-btn"
+							onclick={() => {
+								const name = prompt('Pool name:');
+								if (name) {
+									const currentPools = (pools || {}) as Record<string, unknown>;
+									updateExtraDataLive({
+										pools: {
+											...currentPools,
+											[name]: { type: 'ThreadPool', num_workers: 4 }
+										}
+									});
+									pushHistory();
+								}
+							}}
+						>
+							+ Add Pool
+						</button>
+					</div>
+				{/if}
+			</section>
+
+			<!-- UI Settings Section -->
+			<section class="section">
+				<button
+					class="section-header"
+					onclick={() => toggleSection('uiSettings')}
+				>
+					<span class="section-title">UI Settings</span>
+					<span class="section-toggle">{sectionsOpen.uiSettings ? '−' : '+'}</span>
+				</button>
+				{#if sectionsOpen.uiSettings}
+					{@const uiMeta = (($graphMeta as Record<string, unknown>)?.ui || {}) as Record<string, unknown>}
+					<div class="section-content">
+						<div class="field">
+							<label for="edge-style">Edge Style</label>
+							<select
+								id="edge-style"
+								value={uiMeta.edgeStyle ?? 'smoothstep'}
+								onchange={(e) => {
+									updateGraphMetaLive({
+										ui: { ...uiMeta, edgeStyle: (e.target as HTMLSelectElement).value }
+									});
+									pushHistory();
+								}}
+							>
+								<option value="smoothstep">Smooth Step</option>
+								<option value="straight">Straight</option>
+								<option value="step">Step</option>
+								<option value="default">Bezier</option>
+							</select>
+						</div>
+						<p class="empty-hint">More settings coming soon</p>
+					</div>
+				{/if}
+			</section>
 		{/if}
 	</div>
 </aside>
@@ -328,12 +480,6 @@
 		flex: 1;
 		overflow-y: auto;
 		padding: 8px;
-	}
-
-	.no-selection {
-		padding: 24px 16px;
-		text-align: center;
-		color: var(--text-secondary, #a0a0a0);
 	}
 
 	.section {
@@ -512,5 +658,96 @@
 	input.mono {
 		font-family: 'SF Mono', Monaco, Consolas, monospace;
 		font-size: 11px;
+	}
+
+	/* Textarea styling */
+	.field textarea {
+		width: 100%;
+		padding: 8px;
+		background: var(--bg-primary, #1a1a1a);
+		border: 1px solid var(--border-color, #404040);
+		border-radius: 4px;
+		color: var(--text-primary, #fff);
+		font-size: 13px;
+		font-family: inherit;
+		resize: vertical;
+	}
+
+	.field textarea:focus {
+		outline: none;
+		border-color: var(--accent-color, #3b82f6);
+	}
+
+	/* Select styling */
+	.field select {
+		width: 100%;
+		padding: 8px;
+		background: var(--bg-primary, #1a1a1a);
+		border: 1px solid var(--border-color, #404040);
+		border-radius: 4px;
+		color: var(--text-primary, #fff);
+		font-size: 13px;
+		cursor: pointer;
+	}
+
+	.field select:focus {
+		outline: none;
+		border-color: var(--accent-color, #3b82f6);
+	}
+
+	/* Pool item styling */
+	.pool-item {
+		background: var(--bg-primary, #1a1a1a);
+		border: 1px solid var(--border-color, #404040);
+		border-radius: 4px;
+		margin-bottom: 8px;
+		overflow: hidden;
+	}
+
+	.pool-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		padding: 8px 10px;
+		background: var(--bg-tertiary, #2d2d2d);
+	}
+
+	.pool-name {
+		font-weight: 500;
+		font-size: 12px;
+		color: var(--text-primary, #fff);
+	}
+
+	.pool-details {
+		padding: 8px 10px;
+	}
+
+	.pool-field {
+		display: flex;
+		gap: 8px;
+		font-size: 11px;
+		margin-bottom: 4px;
+	}
+
+	.pool-field:last-child {
+		margin-bottom: 0;
+	}
+
+	.pool-key {
+		color: var(--text-secondary, #a0a0a0);
+		font-family: 'SF Mono', Monaco, Consolas, monospace;
+	}
+
+	.pool-value {
+		color: var(--text-primary, #fff);
+		font-family: 'SF Mono', Monaco, Consolas, monospace;
+	}
+
+	.empty-hint {
+		font-size: 12px;
+		color: var(--text-secondary, #a0a0a0);
+		text-align: center;
+		padding: 8px;
+		margin: 0;
 	}
 </style>
