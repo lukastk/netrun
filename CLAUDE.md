@@ -251,6 +251,12 @@ cd netrun
 uv sync  # Install dependencies
 ```
 
+### Code Quality Guidelines
+
+- **No hacks or workarounds**: If you find yourself writing code like `time.sleep(0.01)` to "get different timestamps" or similar workarounds, STOP and discuss with the user. There's likely a better design that captures the data properly at the source.
+- **Capture data at the source**: Timestamps, metadata, and context should be captured when events occur, not approximated later. For example, `ctx.print()` should capture the timestamp when called, not when the buffer is flushed.
+- **Ask before implementing workarounds**: If the current design doesn't support what you need, propose a design change rather than working around it.
+
 ---
 
 # netrun-sim Documentation
