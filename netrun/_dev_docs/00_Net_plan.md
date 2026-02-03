@@ -709,11 +709,11 @@ async def _run_loop(self):
 - [x] Add `get_epoch_log()` and `get_node_log()` methods
 - [x] Add `print_echo_stdout` support
 
-### Phase 4: Error Handling
-- [ ] Implement retry logic
-- [ ] Implement deferred net actions
-- [ ] Implement `on_node_failure` callbacks
-- [ ] Implement dead letter queue
+### Phase 4: Error Handling ✅
+- [x] Implement retry logic (`_handle_epoch_failure`, `_execute_epoch_with_retry`)
+- [x] Deferred net actions already implemented in Phase 2
+- [x] Implement `on_node_failure` callbacks (`_call_failure_callback`)
+- [x] Implement dead letter queue (`dead_letter_queue`, `clear_dead_letter_queue`)
 
 ### Phase 5: Lifecycle ✅ (partial)
 - [x] Implement `start()`, `stop()`, `pause()`

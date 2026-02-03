@@ -1480,3 +1480,126 @@ def test_net_stop_sync():
 
 # %%
 test_net_stop_sync()
+
+# %% [markdown]
+# ## Dead Letter Queue Tests
+
+# %%
+#|export
+def test_net_dead_letter_queue_empty():
+    """Test dead letter queue is initially empty."""
+    config = create_simple_net_config()
+    net = Net(config)
+
+    assert net.dead_letter_queue == []
+
+# %%
+test_net_dead_letter_queue_empty()
+
+# %%
+#|export
+def test_net_dead_letter_queue_returns_copy():
+    """Test dead_letter_queue returns a copy, not the internal list."""
+    config = create_simple_net_config()
+    net = Net(config)
+
+    # Add an item to internal queue
+    net._dead_letter_queue.append({"epoch_id": "test"})
+
+    # Get queue
+    queue = net.dead_letter_queue
+
+    # Modify returned queue
+    queue.append({"epoch_id": "test2"})
+
+    # Internal queue should not be affected
+    assert len(net._dead_letter_queue) == 1
+
+# %%
+test_net_dead_letter_queue_returns_copy()
+
+# %%
+#|export
+def test_net_clear_dead_letter_queue():
+    """Test clear_dead_letter_queue returns items and clears queue."""
+    config = create_simple_net_config()
+    net = Net(config)
+
+    # Add items to internal queue
+    net._dead_letter_queue.append({"epoch_id": "epoch1"})
+    net._dead_letter_queue.append({"epoch_id": "epoch2"})
+
+    # Clear and get items
+    items = net.clear_dead_letter_queue()
+
+    assert len(items) == 2
+    assert items[0]["epoch_id"] == "epoch1"
+    assert items[1]["epoch_id"] == "epoch2"
+
+    # Queue should now be empty
+    assert net.dead_letter_queue == []
+
+# %%
+test_net_clear_dead_letter_queue()
+
+# %% [markdown]
+# ## Retry Configuration Tests
+
+# %%
+#|export
+def test_node_execution_config_retry_defaults():
+    """Test NodeExecutionConfig retry defaults."""
+    config = NodeExecutionConfig(node_name="TestNode")
+
+    assert config.retries == 0
+    assert config.retry_wait == 0.0
+    assert config.on_node_failure is None
+
+# %%
+test_node_execution_config_retry_defaults()
+
+# %%
+#|export
+def test_node_execution_config_with_retries():
+    """Test NodeExecutionConfig with retry settings."""
+    config = NodeExecutionConfig(
+        node_name="RetryNode",
+        retries=3,
+        retry_wait=0.5,
+    )
+
+    assert config.retries == 3
+    assert config.retry_wait == 0.5
+
+# %%
+test_node_execution_config_with_retries()
+
+# %%
+#|export
+def test_node_failure_context_full():
+    """Test NodeFailureContext with all fields."""
+    ts1 = datetime.now()
+    ts2 = datetime.now()
+    exc1 = ValueError("first error")
+    exc2 = ValueError("second error")
+
+    ctx = NodeFailureContext(
+        epoch_id="epoch_fail",
+        node_name="FailNode",
+        retry_count=2,
+        exception=exc2,
+        retry_timestamps=[ts1, ts2],
+        retry_exceptions=[exc1, exc2],
+        input_salvo={"in": ["p1", "p2"]},
+    )
+
+    assert ctx.epoch_id == "epoch_fail"
+    assert ctx.node_name == "FailNode"
+    assert ctx.retry_count == 2
+    assert ctx.exception == exc2
+    assert ctx.retry_timestamps == [ts1, ts2]
+    assert ctx.retry_exceptions == [exc1, exc2]
+    assert ctx.input_salvo == {"in": ["p1", "p2"]}
+
+# %%
+test_node_failure_context_full()

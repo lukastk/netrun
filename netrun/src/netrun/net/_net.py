@@ -420,6 +420,9 @@ class Net:
         # Running epoch tracking
         self._running_epochs: set[str] = set()
 
+        # Dead letter queue for failed epochs
+        self._dead_letter_queue: list[dict[str, Any]] = []
+
         # Build node execution configs lookup
         self._node_execution_configs: dict[str, NodeExecutionConfig] = {}
         for node_config in self.config.graph.nodes:
@@ -485,6 +488,31 @@ class Net:
     def paused(self) -> bool:
         """Check if the Net is paused."""
         return self._paused
+
+    @property
+    def dead_letter_queue(self) -> list[dict[str, Any]]:
+        """Get the dead letter queue containing failed epochs.
+
+        Each entry contains:
+        - epoch_id: The failed epoch ID
+        - node_name: The node name
+        - error: The exception that caused failure
+        - retry_count: Number of retries attempted
+        - retry_timestamps: Timestamps of each retry attempt
+        - retry_exceptions: Exceptions from each retry attempt
+        - packets: The input packets for the epoch
+        """
+        return list(self._dead_letter_queue)
+
+    def clear_dead_letter_queue(self) -> list[dict[str, Any]]:
+        """Clear the dead letter queue and return its contents.
+
+        Returns:
+            The contents of the dead letter queue before clearing.
+        """
+        items = self._dead_letter_queue.copy()
+        self._dead_letter_queue.clear()
+        return items
 
     def _get_node_execution_config(self, node_name: str) -> NodeExecutionConfig | None:
         """Get the execution config for a node."""
@@ -773,14 +801,14 @@ class Net:
         return deferred_to_real
 
     async def _execute_epoch(self, epoch_id: str) -> NodeExecutionResult | None:
-        """Execute a single startable epoch.
+        """Execute a single startable epoch with retry support.
 
         This method:
         1. Checks rate limiting
         2. Starts the epoch in netsim
         3. Dispatches the node function to a worker
         4. Waits for completion
-        5. Commits deferred actions (on success) or handles failure
+        5. Commits deferred actions (on success) or handles failure with retries
 
         Args:
             epoch_id: The ID of the epoch to execute.
@@ -811,57 +839,207 @@ class Net:
         self._running_epochs.add(epoch_id)
 
         try:
-            # Determine allocation method
-            allocation_method = (
-                config.pool_allocation_method or
-                self._config.default_pool_allocation_method
+            return await self._execute_epoch_with_retry(
+                epoch_id=epoch_id,
+                node_name=node_name,
+                config=config,
+                packets=packets,
+                packet_values=packet_values,
+                retry_count=0,
+                retry_timestamps=[],
+                retry_exceptions=[],
             )
-
-            # Get func key for this node
-            func_key = self._get_func_key(config)
-
-            # Dispatch to worker
-            job_result = await self._execution_manager.run_allocate(
-                pool_worker_ids=config.pools,
-                allocation_method=allocation_method,
-                func_import_path_or_key=func_key,
-                send_channel=False,  # Deferred mode doesn't need channel
-                func_args=(epoch_id, node_name, packets, packet_values),
-                func_kwargs={
-                    "retry_count": 0,
-                    "retry_timestamps": [],
-                    "retry_exceptions": [],
-                },
-            )
-
-            # Extract NodeExecutionResult from job result
-            execution_result: NodeExecutionResult = job_result.result
-
-            # Handle print buffer
-            if execution_result.print_buffer:
-                self._handle_print_buffer(epoch_id, execution_result.print_buffer)
-
-            # Check for errors
-            if execution_result.exception is not None:
-                # Epoch failed - cancel it
-                self._netsim.do_action(netrun_sim.NetAction.cancel_epoch(epoch_id))
-                raise execution_result.exception
-
-            if execution_result.cancelled:
-                # Epoch was cancelled via ctx.cancel_epoch()
-                self._netsim.do_action(netrun_sim.NetAction.cancel_epoch(epoch_id))
-                return execution_result
-
-            # Success - commit deferred actions
-            self._commit_epoch_result(epoch_id, execution_result)
-
-            # Finish the epoch
-            self._netsim.do_action(netrun_sim.NetAction.finish_epoch(epoch_id))
-
-            return execution_result
-
         finally:
             self._running_epochs.discard(epoch_id)
+
+    async def _execute_epoch_with_retry(
+        self,
+        epoch_id: str,
+        node_name: str,
+        config: NodeExecutionConfig,
+        packets: dict[str, list[str]],
+        packet_values: dict[str, Any],
+        retry_count: int,
+        retry_timestamps: list[datetime],
+        retry_exceptions: list[Exception],
+    ) -> NodeExecutionResult | None:
+        """Execute an epoch with retry support.
+
+        Args:
+            epoch_id: The epoch ID.
+            node_name: The node name.
+            config: The node's execution config.
+            packets: Input packets by port name.
+            packet_values: Packet ID to value mapping.
+            retry_count: Current retry count.
+            retry_timestamps: Timestamps of previous retry attempts.
+            retry_exceptions: Exceptions from previous retry attempts.
+
+        Returns:
+            The NodeExecutionResult if successful, None if cancelled.
+        """
+        # Determine allocation method
+        allocation_method = (
+            config.pool_allocation_method or
+            self._config.default_pool_allocation_method
+        )
+
+        # Get func key for this node
+        func_key = self._get_func_key(config)
+
+        # Dispatch to worker
+        job_result = await self._execution_manager.run_allocate(
+            pool_worker_ids=config.pools,
+            allocation_method=allocation_method,
+            func_import_path_or_key=func_key,
+            send_channel=False,  # Deferred mode doesn't need channel
+            func_args=(epoch_id, node_name, packets, packet_values),
+            func_kwargs={
+                "retry_count": retry_count,
+                "retry_timestamps": retry_timestamps,
+                "retry_exceptions": retry_exceptions,
+            },
+        )
+
+        # Extract NodeExecutionResult from job result
+        execution_result: NodeExecutionResult = job_result.result
+
+        # Handle print buffer
+        if execution_result.print_buffer:
+            self._handle_print_buffer(epoch_id, execution_result.print_buffer)
+
+        # Check for errors
+        if execution_result.exception is not None:
+            return await self._handle_epoch_failure(
+                epoch_id=epoch_id,
+                node_name=node_name,
+                config=config,
+                packets=packets,
+                packet_values=packet_values,
+                error=execution_result.exception,
+                retry_count=retry_count,
+                retry_timestamps=retry_timestamps,
+                retry_exceptions=retry_exceptions,
+            )
+
+        if execution_result.cancelled:
+            # Epoch was cancelled via ctx.cancel_epoch()
+            self._netsim.do_action(netrun_sim.NetAction.cancel_epoch(epoch_id))
+            return execution_result
+
+        # Success - commit deferred actions
+        self._commit_epoch_result(epoch_id, execution_result)
+
+        # Finish the epoch
+        self._netsim.do_action(netrun_sim.NetAction.finish_epoch(epoch_id))
+
+        return execution_result
+
+    async def _handle_epoch_failure(
+        self,
+        epoch_id: str,
+        node_name: str,
+        config: NodeExecutionConfig,
+        packets: dict[str, list[str]],
+        packet_values: dict[str, Any],
+        error: Exception,
+        retry_count: int,
+        retry_timestamps: list[datetime],
+        retry_exceptions: list[Exception],
+    ) -> NodeExecutionResult | None:
+        """Handle a failed epoch execution with retry logic.
+
+        Args:
+            epoch_id: The epoch ID.
+            node_name: The node name.
+            config: The node's execution config.
+            packets: Input packets by port name.
+            packet_values: Packet ID to value mapping.
+            error: The exception that occurred.
+            retry_count: Current retry count.
+            retry_timestamps: Timestamps of previous retry attempts.
+            retry_exceptions: Exceptions from previous retry attempts.
+
+        Returns:
+            NodeExecutionResult if retry succeeds, None if max retries exceeded.
+
+        Raises:
+            Exception: If on_error is "raise" and max retries exceeded.
+        """
+        # Update retry tracking
+        new_retry_timestamps = retry_timestamps + [get_timestamp_utc()]
+        new_retry_exceptions = retry_exceptions + [error]
+
+        # Call on_node_failure callback if configured
+        if config.on_node_failure is not None:
+            failure_ctx = NodeFailureContext(
+                epoch_id=epoch_id,
+                node_name=node_name,
+                retry_count=retry_count,
+                exception=error,
+                retry_timestamps=new_retry_timestamps,
+                retry_exceptions=new_retry_exceptions,
+                input_salvo=packets,
+            )
+            await self._call_failure_callback(config.on_node_failure, failure_ctx)
+
+        # Check if we should retry
+        if retry_count < config.retries:
+            # Wait before retry
+            if config.retry_wait > 0:
+                await asyncio.sleep(config.retry_wait)
+
+            # Retry (deferred actions were discarded, so we start fresh)
+            return await self._execute_epoch_with_retry(
+                epoch_id=epoch_id,
+                node_name=node_name,
+                config=config,
+                packets=packets,
+                packet_values=packet_values,
+                retry_count=retry_count + 1,
+                retry_timestamps=new_retry_timestamps,
+                retry_exceptions=new_retry_exceptions,
+            )
+        else:
+            # Max retries exceeded - cancel the epoch
+            self._netsim.do_action(netrun_sim.NetAction.cancel_epoch(epoch_id))
+
+            # Store in dead letter queue
+            self._dead_letter_queue.append({
+                "epoch_id": epoch_id,
+                "node_name": node_name,
+                "error": error,
+                "retry_count": retry_count,
+                "retry_timestamps": new_retry_timestamps,
+                "retry_exceptions": new_retry_exceptions,
+                "packets": packets,
+            })
+
+            # Re-raise the error
+            raise error
+
+    async def _call_failure_callback(
+        self,
+        callback: Callable | str,
+        failure_ctx: NodeFailureContext,
+    ) -> None:
+        """Call an on_node_failure callback.
+
+        Args:
+            callback: The callback function or import path.
+            failure_ctx: The failure context.
+        """
+        if isinstance(callback, str):
+            # Import from path
+            import importlib
+            module_path, func_name = callback.rsplit(".", 1)
+            module = importlib.import_module(module_path)
+            callback = getattr(module, func_name)
+
+        # Call the callback (may be sync or async)
+        result = callback(failure_ctx)
+        if asyncio.iscoroutine(result):
+            await result
 
     async def execute_startable_epochs(self) -> list[tuple[str, NodeExecutionResult | None]]:
         """Execute all currently startable epochs.
