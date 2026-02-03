@@ -101,6 +101,24 @@ def _get_type_import_path(type_obj: type) -> str:
 
     return f"{module}.{qualname}"
 
+
+def _import_from_path(import_path: str) -> Any:
+    """Import an object from a dotted import path.
+
+    Args:
+        import_path: Dotted import path (e.g., "myapp.utils.my_function").
+
+    Returns:
+        The imported object.
+
+    Raises:
+        ImportError: If the module cannot be imported.
+        AttributeError: If the object doesn't exist in the module.
+    """
+    module_path, name = import_path.rsplit(".", 1)
+    module = importlib.import_module(module_path)
+    return getattr(module, name)
+
 # %% [markdown]
 # # Graph configs
 #
@@ -647,6 +665,24 @@ class NodeExecutionConfig(BaseModel):
             return func
         return _get_callable_import_path(func)
 
+    def resolve(self) -> "NodeExecutionConfig":
+        """Return a resolved copy with string import paths converted to callables.
+
+        Returns:
+            A new NodeExecutionConfig with all string function references
+            resolved to actual callable objects.
+        """
+        updates = {}
+
+        for field_name in ("exec_node_func", "start_node_func", "stop_node_func", "on_node_failure"):
+            value = getattr(self, field_name)
+            if isinstance(value, str):
+                updates[field_name] = _import_from_path(value)
+
+        if updates:
+            return self.model_copy(update=updates)
+        return self
+
 # %%
 #|export
 class NodeConfig(BaseModel):
@@ -689,40 +725,6 @@ class NodeConfig(BaseModel):
 
     factory_args: dict[str, Any] = Field(default_factory=dict)
     """Arguments passed to factory functions."""
-
-    @model_validator(mode="before")
-    @classmethod
-    def expand_factory(cls, data: dict[str, Any]) -> dict[str, Any]:
-        """If factory is set, expand it and merge with provided data."""
-        if not isinstance(data, dict):
-            return data
-
-        factory = data.get("factory")
-        if factory is None:
-            return data
-
-        # Generate base config from factory
-        factory_args = data.get("factory_args", {})
-        base_config = cls.from_factory(factory=factory, args=factory_args)
-
-        # Merge: base config first, then overrides from data
-        merged = base_config.model_dump(exclude={"factory", "factory_args"})
-
-        for key, value in data.items():
-            if key in ("factory", "factory_args"):
-                continue
-            if value is not None:
-                # For dict fields, merge instead of replace
-                if key in ("in_ports", "out_ports", "in_salvo_conditions", "out_salvo_conditions") and isinstance(value, dict):
-                    merged[key] = {**merged.get(key, {}), **value}
-                else:
-                    merged[key] = value
-
-        # Keep factory/factory_args for serialization
-        merged["factory"] = factory
-        merged["factory_args"] = factory_args
-
-        return merged
 
     @field_serializer("factory", when_used='json')
     def serialize_factory(self, factory: str | ModuleType | None) -> str | None:
@@ -800,6 +802,82 @@ class NodeConfig(BaseModel):
             execution_config=execution_config,
         )
 
+    def resolve(self) -> "NodeConfig":
+        """Return a resolved copy with factory expanded and imports resolved.
+
+        If this node has a factory set, expands it to generate the full config.
+        Also resolves any string import paths in execution_config to callables.
+
+        Returns:
+            A new NodeConfig with factory expanded and functions resolved.
+            If no resolution is needed, returns self.
+        """
+        result = self
+
+        # If factory is set, expand it
+        if self.factory is not None:
+            # Import module if string
+            if isinstance(self.factory, str):
+                module = importlib.import_module(self.factory)
+            else:
+                module = self.factory
+
+            # Get factory functions
+            get_node_config_fn = getattr(module, "get_node_config")
+            get_node_funcs_fn = getattr(module, "get_node_funcs")
+
+            # Call factories
+            base_config = get_node_config_fn(**self.factory_args)
+            exec_func, start_func, stop_func, on_failure_func = get_node_funcs_fn(**self.factory_args)
+
+            # Build execution config from factory functions
+            factory_exec_config = NodeExecutionConfig(
+                exec_node_func=exec_func,
+                start_node_func=start_func,
+                stop_node_func=stop_func,
+                on_node_failure=on_failure_func,
+            )
+
+            # Merge: base config first, then any explicit overrides from self
+            merged_in_ports = {**base_config.in_ports, **self.in_ports}
+            merged_out_ports = {**base_config.out_ports, **self.out_ports}
+            merged_in_salvo = {**base_config.in_salvo_conditions, **self.in_salvo_conditions}
+            merged_out_salvo = {**base_config.out_salvo_conditions, **self.out_salvo_conditions}
+
+            # Use explicit name if provided, else factory name
+            name = self.name if self.name else base_config.name
+
+            # Merge execution configs if both exist
+            if self.execution_config is not None:
+                # Override factory exec_config with explicit fields
+                exec_config_dict = factory_exec_config.model_dump()
+                for field_name, value in self.execution_config.model_dump().items():
+                    if value is not None:
+                        exec_config_dict[field_name] = value
+                merged_exec_config = NodeExecutionConfig.model_validate(exec_config_dict)
+            else:
+                merged_exec_config = factory_exec_config
+
+            result = NodeConfig.model_construct(
+                name=name,
+                in_ports=merged_in_ports,
+                out_ports=merged_out_ports,
+                in_salvo_conditions=merged_in_salvo,
+                out_salvo_conditions=merged_out_salvo,
+                execution_config=merged_exec_config,
+                # Clear factory fields in resolved config
+                factory=None,
+                factory_args={},
+            )
+
+        # Resolve execution_config import paths
+        if result.execution_config is not None:
+            resolved_exec = result.execution_config.resolve()
+            if resolved_exec is not result.execution_config:
+                result = result.model_copy(update={"execution_config": resolved_exec})
+
+        return result
+
     def to_netrun_sim(self) -> netrun_sim.Node:
         return netrun_sim.Node(
             name=self.name,
@@ -849,6 +927,17 @@ class GraphConfig(BaseModel):
     """
     nodes: list[NodeConfig]
     edges: list[EdgeConfig] = Field(default_factory=list)
+
+    def resolve(self) -> "GraphConfig":
+        """Return a resolved copy with all nodes resolved.
+
+        Resolves all node factories and import paths.
+
+        Returns:
+            A new GraphConfig with all nodes resolved.
+        """
+        resolved_nodes = [node.resolve() for node in self.nodes]
+        return GraphConfig(nodes=resolved_nodes, edges=self.edges)
 
     def get_graph(self) -> netrun_sim.Graph:
         """Convert this config to a netrun_sim.Graph object."""
@@ -986,6 +1075,32 @@ class NetConfig(BaseModel):
         if isinstance(callback, str):
             return callback
         return _get_callable_import_path(callback)
+
+    def resolve(self) -> "NetConfig":
+        """Return a resolved copy with all factories and imports resolved.
+
+        Resolves:
+        - All node factories in the graph
+        - All string import paths to callables
+        - dead_letter_callback if it's a string
+
+        Returns:
+            A new NetConfig ready for execution by Net.
+        """
+        updates = {}
+
+        # Resolve graph
+        resolved_graph = self.graph.resolve()
+        if resolved_graph is not self.graph:
+            updates["graph"] = resolved_graph
+
+        # Resolve dead_letter_callback
+        if isinstance(self.dead_letter_callback, str):
+            updates["dead_letter_callback"] = _import_from_path(self.dead_letter_callback)
+
+        if updates:
+            return self.model_copy(update=updates)
+        return self
 
 # %% [markdown]
 # # Examples

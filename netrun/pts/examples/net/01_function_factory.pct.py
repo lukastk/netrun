@@ -214,8 +214,9 @@ print(f"  Edges: {len(config_dict.get('graph', {}).get('edges', []))}")
 # %% [markdown]
 # ### Creating NetConfig from TOML
 #
-# Now we can create a `NetConfig` from the parsed TOML. The factory field
-# will be expanded automatically when creating `NodeConfig` objects.
+# Now we can create a `NetConfig` from the parsed TOML. With deferred resolution,
+# the factory field is preserved as-is until `resolve()` is called (typically
+# by `Net.__init__`).
 
 # %%
 # Create GraphConfig from the TOML (nodes and edges)
@@ -285,42 +286,44 @@ print(f"  Nodes: {[n.name for n in net_config.graph.nodes]}")
 print(f"  Output queues: {list(net_config.output_queues.keys())}")
 
 # %% [markdown]
-# ### JSON Serialization
+# ### JSON Serialization with Deferred Resolution
 #
-# The NetConfig can be serialized to JSON. Factory-created nodes will have
-# their factory and factory_args preserved, while execution functions will
-# be serialized to import paths (or error if they can't be serialized).
+# With deferred config resolution, `NodeConfig` objects created with a factory
+# are NOT eagerly expanded. The factory and factory_args are preserved, and
+# `execution_config` stays None until `resolve()` is called. This means
+# configs can be serialized to JSON without any workarounds.
 
 # %%
-# For JSON serialization, we need to remove the closure-based exec funcs
-# since the function factory creates closures that can't be serialized.
-
 # Let's demonstrate serializing a graph config with a factory node
 node_for_json = NodeConfig(
     factory="netrun.node_factories.function",
     factory_args={"func": "examples.net.function_factory_nodes.double_number"},
 )
 
-# The factory expansion creates execution_config with closures.
-# We need to remove it before JSON serialization.
+# With deferred resolution, execution_config is NOT populated at creation time
 print(f"Node has execution_config: {node_for_json.execution_config is not None}")
-
-# Remove execution_config for serialization (closures can't be serialized)
-node_for_json = node_for_json.model_copy(update={"execution_config": None})
+print(f"Factory preserved: {node_for_json.factory}")
 
 graph_for_json = GraphConfig(nodes=[node_for_json], edges=[])
 
-# Serialize to JSON
+# Serialize to JSON - no workarounds needed!
 import json
 json_str = graph_for_json.model_dump_json(indent=2)
-print("\nSerialized GraphConfig (factory node, without execution_config):")
+print("\nSerialized GraphConfig:")
 print(json_str)
 
-# Deserialize back - the factory will re-expand and recreate execution_config
+# Deserialize back
 loaded = GraphConfig.model_validate_json(json_str)
 print(f"\nDeserialized node name: {loaded.nodes[0].name}")
 print(f"Factory preserved: {loaded.nodes[0].factory}")
-print(f"Execution config recreated: {loaded.nodes[0].execution_config is not None}")
+print(f"Execution config still None: {loaded.nodes[0].execution_config is None}")
+
+# %%
+# Resolution happens when you call resolve() - typically done by Net.__init__
+resolved = loaded.resolve()
+print(f"\nAfter resolve():")
+print(f"  Execution config created: {resolved.nodes[0].execution_config is not None}")
+print(f"  Factory still preserved: {resolved.nodes[0].factory}")
 
 # %% [markdown]
 # ## Running the Network (Concept)
