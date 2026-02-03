@@ -347,6 +347,8 @@ async def load_subgraph(request: SubgraphLoadRequest) -> SubgraphLoadResponse:
             source=source,
         )
 
+    except HTTPException:
+        raise  # Re-raise HTTP exceptions as-is
     except json.JSONDecodeError as e:
         raise HTTPException(status_code=400, detail=f"Invalid JSON: {e}")
     except Exception as e:
