@@ -25,7 +25,6 @@ from nblite import nbl_export; nbl_export();
 # First, let's import all the types we need.
 
 # %%
-import netrun_sim
 from netrun.net.config import (
     # Net configuration
     NetConfig,
@@ -47,6 +46,8 @@ from netrun.net.config import (
     MaxSalvosFiniteConfig,
     PacketCountAllConfig,
     PortStateNonEmptyConfig,
+    # Output queues
+    OutputQueueConfig,
 )
 from netrun.net._net import Net, NodeExecutionContext
 from netrun.execution_manager import RunAllocationMethod
@@ -122,21 +123,26 @@ def process_node(ctx: NodeExecutionContext, packets: dict) -> None:
 
 
 def sink_node(ctx: NodeExecutionContext, packets: dict) -> None:
-    """Sink node that collects final results.
+    """Sink node that collects final results and outputs them.
 
-    This node consumes packets and stores the results.
+    This node consumes packets, logs them, and sends them to an output port.
+    The output port is unconnected, so packets go to the configured output queue.
     """
     ctx.print(f"[{ctx.node_name}] Collecting results")
 
     input_packet_ids = packets.get("in", [])
-    results = []
 
     for packet_id in input_packet_ids:
         value = ctx.consume_packet(packet_id)
-        results.append(value)
         ctx.print(f"[{ctx.node_name}] Collected: {value}")
 
-    ctx.print(f"[{ctx.node_name}] Total collected: {len(results)} items")
+        # Create output packet for the output queue
+        out_packet_id = ctx.create_packet(value)
+        ctx.load_output_port("out", out_packet_id)
+
+    # Send to output queue (Sink.out is unconnected)
+    ctx.send_output_salvo("send")
+    ctx.print(f"[{ctx.node_name}] Sent {len(input_packet_ids)} items to output queue")
 
 # %% [markdown]
 # ## Creating the Graph Configuration
@@ -177,7 +183,6 @@ def create_graph_config() -> GraphConfig:
                     ),
                 },
                 execution_config=NodeExecutionConfig(
-                    node_name="Source",
                     pools=["main_pool"],
                     exec_node_func=source_node,
                 ),
@@ -206,7 +211,6 @@ def create_graph_config() -> GraphConfig:
                     ),
                 },
                 execution_config=NodeExecutionConfig(
-                    node_name="Process",
                     pools=["thread_pool"],
                     exec_node_func=process_node,
                     retries=2,
@@ -215,10 +219,11 @@ def create_graph_config() -> GraphConfig:
                 ),
             ),
 
-            # Sink node - input only
+            # Sink node - input and OUTPUT (to output queue)
             NodeGraphConfig(
                 name="Sink",
                 in_ports={"in": PortConfig()},
+                out_ports={"out": PortConfig()},  # Unconnected - goes to output queue
                 in_salvo_conditions={
                     "trigger": SalvoConditionConfig(
                         max_salvos=MaxSalvosFiniteConfig(max=1),
@@ -229,8 +234,14 @@ def create_graph_config() -> GraphConfig:
                         ),
                     ),
                 },
+                out_salvo_conditions={
+                    "send": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"out": PacketCountAllConfig()},
+                        term=SalvoConditionTermTrueConfig(),
+                    ),
+                },
                 execution_config=NodeExecutionConfig(
-                    node_name="Sink",
                     pools=["main_pool"],
                     exec_node_func=sink_node,
                     print_echo_stdout=True,  # Echo prints to stdout for debugging
@@ -240,11 +251,12 @@ def create_graph_config() -> GraphConfig:
         edges=[
             EdgeConfig(source_str="Source.out", target_str="Process.in"),
             EdgeConfig(source_str="Process.out", target_str="Sink.in"),
+            # Note: Sink.out is unconnected - packets go to output queue
         ],
     )
 
 # %% [markdown]
-# ## Configuring Pools
+# ## Configuring Pools and Output Queues
 #
 # The Net uses different pool types for executing node functions:
 #
@@ -252,6 +264,10 @@ def create_graph_config() -> GraphConfig:
 # - **ThreadPoolConfig**: Multiple worker threads in the same process
 # - **MultiprocessPoolConfig**: Multiple subprocesses with worker threads
 # - **RemotePoolConfig**: Network-based workers via WebSockets
+#
+# **Output Queues** collect packets from unconnected output ports:
+# - Packets sent from configured ports go into named queues
+# - Use `get_output()`, `try_get_output()`, or `get_all_outputs()` to retrieve them
 
 # %%
 def create_net_config() -> NetConfig:
@@ -283,6 +299,11 @@ def create_net_config() -> NetConfig:
         },
         graph=create_graph_config(),
         default_pool_allocation_method=RunAllocationMethod.ROUND_ROBIN,
+
+        # Output queues - collect packets from unconnected output ports
+        output_queues={
+            "results": OutputQueueConfig(ports=[("Sink", "out")]),
+        },
     )
 
 # %% [markdown]
@@ -300,6 +321,7 @@ net = Net(config)
 print("Net created successfully!")
 print(f"Graph nodes: {list(net.graph.nodes().keys())}")
 print(f"Graph edges: {len(net.graph.edges())}")
+print(f"Output queues: {net.list_output_queues()}")
 
 # %%
 # Check the validation
@@ -308,6 +330,27 @@ if errors:
     print(f"Validation errors: {errors}")
 else:
     print("Graph is valid!")
+
+# %% [markdown]
+# ## Graph Queries
+#
+# The Net provides methods to query the graph topology:
+# - `get_edges_from_port(node, port)` - Get edges connected to an output port
+# - `has_downstream_connection(node, port)` - Check if a port is connected
+
+# %%
+# Check which ports have downstream connections
+print("Port connectivity:")
+for node_name in net.graph.nodes().keys():
+    node = net.graph.nodes()[node_name]
+    for port_name in node.out_ports:
+        has_connection = net.has_downstream_connection(node_name, port_name)
+        edges = net.get_edges_from_port(node_name, port_name)
+        if has_connection:
+            targets = [f"{e.target.node_name}.{e.target.port_name}" for e in edges]
+            print(f"  {node_name}.{port_name} -> {', '.join(targets)}")
+        else:
+            print(f"  {node_name}.{port_name} -> (unconnected - goes to output queue)")
 
 # %% [markdown]
 # ## Net Lifecycle
@@ -346,17 +389,16 @@ async with Net(config) as net:
 print(f"Net stopped: {not net.started}")
 
 # %% [markdown]
-# ## Full Network Execution with Print Capture
+# ## Full Network Execution with Output Queues
 #
-# Now let's run the complete network and see the print capture in action.
-# We'll create packets outside the network and inject them into the Source node.
+# Now let's run the complete network and collect results via output queues.
 #
 # **Key steps:**
-# 1. Create packets outside the network using `NetAction.create_packet(None)`
-# 2. Store packet values in the Net's PacketStore
-# 3. Transport packets to Source's input port using `transport_packet_to_location`
-# 4. Run simulation - this triggers the Source epoch automatically
-# 5. Execute epochs and watch print capture in action
+# 1. Inject data using `inject_data()` helper (creates packets and transports them)
+# 2. Run simulation to trigger epochs automatically
+# 3. Execute epochs using `execute_epoch()` (public method)
+# 4. Collect results from the output queue using `get_all_outputs()`
+# 5. View captured print logs using `list_epoch_log_ids()`
 
 # %%
 import asyncio
@@ -370,84 +412,71 @@ async def run_full_network():
         print(f"Nodes: {list(net.graph.nodes().keys())}")
         print()
 
-        # Step 1: Create packets OUTSIDE the network
-        # These represent external data being injected into the flow
-        print("Creating external packets...")
+        # Step 1: Inject data using the helper method
+        # This creates packets and transports them to the input port in one call
+        print("Injecting data into Source node...")
         external_data = [
             {"id": 0, "data": "item_0"},
             {"id": 1, "data": "item_1"},
             {"id": 2, "data": "item_2"},
         ]
 
-        packet_ids = []
-        for data in external_data:
-            # Create packet outside any epoch (epoch_id=None)
-            response, _ = net._netsim.do_action(
-                netrun_sim.NetAction.create_packet(None)
-            )
-            packet_id = response.packet_id
-            packet_ids.append(packet_id)
-
-            # Store the packet value in the Net's packet store
-            net._packet_store.register(packet_id, data)
-            print(f"  Created packet {packet_id[:12]}... with value: {data}")
-
+        packet_ids = net.inject_data("Source", "in", external_data)
+        print(f"  Injected {len(packet_ids)} packets")
         print()
 
-        # Step 2: Transport packets to Source's input port
-        # This simulates external data arriving at the network entry point
-        print("Transporting packets to Source input port...")
-        for packet_id in packet_ids:
-            net._netsim.do_action(
-                netrun_sim.NetAction.transport_packet_to_location(
-                    packet_id,
-                    netrun_sim.PacketLocation.input_port("Source", "in"),
-                )
-            )
-        print(f"  Transported {len(packet_ids)} packets to Source.in")
-
-        # Step 3: Run simulation - this triggers the Source epoch automatically
-        # because Source's input salvo condition is satisfied (in port non-empty)
+        # Step 2: Run simulation - this triggers the Source epoch automatically
         print("Running simulation to trigger Source epoch...")
         await net.run_until_blocked()
 
-        # Get and execute the Source epoch
+        # Execute epochs as they become available
         startable = net.get_startable_epochs()
         if startable:
             source_epoch_id = startable[0]
             print(f"Executing Source epoch: {str(source_epoch_id)[:12]}...")
-            await net._execute_epoch(source_epoch_id)
+            await net.execute_epoch(source_epoch_id)  # Public method!
             print("Source epoch executed")
 
         # Run simulation to move packets through the network
         await net.run_until_blocked()
         print("Packets moved to Process node")
 
-        # Get and execute the Process epoch
+        # Execute Process epoch
         startable = net.get_startable_epochs()
         if startable:
             process_epoch_id = startable[0]
             print(f"Executing Process epoch: {str(process_epoch_id)[:12]}...")
-            await net._execute_epoch(process_epoch_id)
+            await net.execute_epoch(process_epoch_id)
 
         # Run simulation again
         await net.run_until_blocked()
         print("Packets moved to Sink node")
 
-        # Get and execute the Sink epoch
+        # Execute Sink epoch
         startable = net.get_startable_epochs()
         if startable:
             sink_epoch_id = startable[0]
             print(f"Executing Sink epoch: {str(sink_epoch_id)[:12]}...")
-            await net._execute_epoch(sink_epoch_id)
+            await net.execute_epoch(sink_epoch_id)
+
+        print()
+        print("=" * 70)
+        print("OUTPUT QUEUE RESULTS")
+        print("=" * 70)
+
+        # Collect results from output queue
+        results = net.get_all_outputs("results")
+        print(f"\nCollected {len(results)} results from 'results' queue:")
+        for result in results:
+            print(f"  - {result.value} (from {result.from_node}.{result.from_port})")
 
         print()
         print("=" * 70)
         print("CAPTURED PRINT LOGS")
         print("=" * 70)
 
-        # Display logs for each epoch
-        for epoch_id in net._epoch_print_logs.keys():
+        # Display logs using the public list_epoch_log_ids() method
+        for epoch_id in net.list_epoch_log_ids():
             epoch_log = net.get_epoch_log(epoch_id)
             print(f"\n--- Epoch {str(epoch_id)[:12]}... ({len(epoch_log)} lines) ---")
             for timestamp, line in epoch_log:
@@ -485,7 +514,6 @@ def create_rate_limited_config() -> NetConfig:
                         ),
                     },
                     execution_config=NodeExecutionConfig(
-                        node_name="RateLimited",
                         rate_limit_per_second=5,  # Max 5 epochs per second
                     ),
                 ),
@@ -516,14 +544,20 @@ print(f"6th and 7th blocked: {not any(results[5:])}")
 # 1. **Node Functions**: How to define `exec_node_func` with `NodeExecutionContext`
 # 2. **Graph Configuration**: Defining nodes, ports, edges, and salvo conditions
 # 3. **Pool Configuration**: Setting up different pool types (Main, Thread, Multiprocess)
-# 4. **Net Lifecycle**: Using `start()`, `stop()`, `pause()`, `resume()`, context manager
-# 5. **Simulation**: Using `run_step()` and `run_until_blocked()`
-# 6. **Print Capture**: How `ctx.print()` captures output with automatic timestamps
-# 7. **Viewing Logs**: Retrieving print logs by epoch or chronologically
-# 8. **Rate Limiting**: Controlling epoch start frequency
+# 4. **Output Queues**: Collecting results from unconnected output ports
+# 5. **Helper Methods**:
+#    - `inject_data()` - Create and inject packets in one call
+#    - `execute_epoch()` - Public method to execute epochs
+#    - `list_epoch_log_ids()` - List epochs with captured logs
+#    - `has_downstream_connection()` / `get_edges_from_port()` - Query graph topology
+# 6. **Net Lifecycle**: Using `start()`, `stop()`, `pause()`, `resume()`, context manager
+# 7. **Simulation**: Using `run_step()` and `run_until_blocked()`
+# 8. **Print Capture**: How `ctx.print()` captures output with automatic timestamps
+# 9. **Rate Limiting**: Controlling epoch start frequency
 #
 # The Net class orchestrates the flow-based execution by:
 # - Using `netrun-sim` for packet flow simulation
 # - Dispatching node functions to worker pools via `ExecutionManager`
 # - Managing packet values in `PacketStore`
+# - Routing output packets to configured queues
 # - Handling errors, retries, and print capture

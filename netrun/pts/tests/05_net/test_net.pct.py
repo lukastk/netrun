@@ -1368,7 +1368,7 @@ test_node_execution_config_new_fields()
 #|export
 def test_node_execution_config_defaults():
     """Test NodeExecutionConfig has correct defaults for new fields."""
-    config = NodeExecutionConfig(node_name="DefaultNode")
+    config = NodeExecutionConfig()
 
     assert config.print_flush_interval == 0.1
     assert config.print_buffer_max_size is None
@@ -1549,7 +1549,7 @@ test_net_clear_dead_letter_queue()
 #|export
 def test_node_execution_config_retry_defaults():
     """Test NodeExecutionConfig retry defaults."""
-    config = NodeExecutionConfig(node_name="TestNode")
+    config = NodeExecutionConfig()
 
     assert config.retries == 0
     assert config.retry_wait == 0.0
@@ -2038,7 +2038,7 @@ test_node_execution_result_with_func_result()
 def test_preprocessor_handles_cancel_epoch():
     """Test preprocessor handles EpochCancelled correctly."""
     node_configs = {
-        "CancelNode": NodeExecutionConfig(node_name="CancelNode")
+        "CancelNode": NodeExecutionConfig()
     }
     preprocessor = create_net_func_preprocessor(node_configs)
 
@@ -2069,7 +2069,7 @@ test_preprocessor_handles_cancel_epoch()
 def test_deferred_actions_preserved_in_result():
     """Test that deferred actions are preserved in execution result."""
     node_configs = {
-        "ActionNode": NodeExecutionConfig(node_name="ActionNode")
+        "ActionNode": NodeExecutionConfig()
     }
     preprocessor = create_net_func_preprocessor(node_configs)
 

@@ -1258,16 +1258,16 @@ class Net:
         """Get list of currently running epoch IDs."""
         return list(self._running_epochs)
 
-    def _get_func_key(self, config: NodeExecutionConfig) -> str:
+    def _get_func_key(self, node_name: str) -> str:
         """Get the function key for a node's exec_node_func.
 
         Args:
-            config: The node's execution config.
+            node_name: The node name.
 
         Returns:
             A unique function key for this node.
         """
-        return f"net:node:{config.node_name}"
+        return f"net:node:{node_name}"
 
     def _get_input_packet_values(self, epoch_id: str) -> tuple[dict[str, list[str]], dict[str, Any]]:
         """Get the input packets and their values for an epoch.
@@ -1475,7 +1475,7 @@ class Net:
         )
 
         # Get func key for this node
-        func_key = self._get_func_key(config)
+        func_key = self._get_func_key(node_name)
 
         # Dispatch to worker
         job_result = await self._execution_manager.run_allocate(
@@ -1668,7 +1668,7 @@ class Net:
                 continue
 
             config = node_config.execution_config
-            func_key = self._get_func_key(config)
+            func_key = self._get_func_key(node_config.name)
 
             # Register with each pool the node can use
             for pool_id in config.pools:
