@@ -18,8 +18,16 @@
 		switchToTabIndex,
 		switchToNextTab,
 		switchToPreviousTab,
+		copySelectedNodes,
+		pasteNodes,
+		cutSelectedNodes,
+		selectedNodeIds,
+		validateAllNodes,
 	} from '$lib/stores/flowStore';
 	import { api } from '$lib/api';
+
+	// Validation state
+	let lastValidationResult = $state<{ valid: boolean; errorCount: number } | null>(null);
 
 	// State for loading/saving
 	let isLoading = $state(false);
@@ -174,6 +182,36 @@
 			event.preventDefault();
 			switchToPreviousTab();
 		}
+		// Cmd/Ctrl + C for copy
+		if ((event.metaKey || event.ctrlKey) && event.key === 'c') {
+			// Only handle if we have selected nodes and not in an input field
+			if ($selectedNodeIds.size > 0 && !isInputFocused()) {
+				event.preventDefault();
+				copySelectedNodes();
+			}
+		}
+		// Cmd/Ctrl + V for paste
+		if ((event.metaKey || event.ctrlKey) && event.key === 'v') {
+			if (!isInputFocused()) {
+				event.preventDefault();
+				pasteNodes();
+			}
+		}
+		// Cmd/Ctrl + X for cut
+		if ((event.metaKey || event.ctrlKey) && event.key === 'x') {
+			if ($selectedNodeIds.size > 0 && !isInputFocused()) {
+				event.preventDefault();
+				cutSelectedNodes();
+			}
+		}
+	}
+
+	// Check if an input element is focused (to avoid interfering with text editing)
+	function isInputFocused(): boolean {
+		const activeElement = document.activeElement;
+		return activeElement instanceof HTMLInputElement ||
+			activeElement instanceof HTMLTextAreaElement ||
+			activeElement?.getAttribute('contenteditable') === 'true';
 	}
 </script>
 
@@ -216,6 +254,20 @@
 	</div>
 
 	<div class="toolbar-section right">
+		<button
+			onclick={() => {
+				lastValidationResult = validateAllNodes();
+			}}
+			title="Validate all nodes"
+			class:has-errors={lastValidationResult && !lastValidationResult.valid}
+		>
+			<span class="icon">✓</span>
+			<span class="label">Validate</span>
+			{#if lastValidationResult && !lastValidationResult.valid}
+				<span class="error-badge">{lastValidationResult.errorCount}</span>
+			{/if}
+		</button>
+		<div class="separator"></div>
 		<button onclick={handleAddNode} title="Add regular node">
 			<span class="icon">+</span>
 			<span class="label">Add Node</span>
@@ -311,5 +363,25 @@
 	.dirty-indicator {
 		color: var(--accent-color, #3b82f6);
 		margin-left: 2px;
+	}
+
+	button.has-errors {
+		background: var(--error-color, #ef4444);
+		border-color: var(--error-color, #ef4444);
+	}
+
+	button.has-errors:hover:not(:disabled) {
+		background: #dc2626;
+		border-color: #dc2626;
+	}
+
+	.error-badge {
+		background: #fff;
+		color: var(--error-color, #ef4444);
+		font-size: 10px;
+		font-weight: 700;
+		padding: 1px 5px;
+		border-radius: 8px;
+		margin-left: 4px;
 	}
 </style>

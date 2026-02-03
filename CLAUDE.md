@@ -31,6 +31,10 @@ This separation of concerns allows the actual execution and data storage to be i
 
 `netrun-ui` is a SvelteKit-based visual editor for creating and editing netrun flow configurations.
 
+**Reference Documentation** (read these for context when working on netrun-ui):
+- `netrun-ui/PROJECT_SPEC.md` - Full project specification, features, MVP phases, and implementation status
+- `netrun-ui/SVELTEFLOW_DOCS.md` - SvelteFlow API reference and patterns used in this project
+
 ## Development Notes (_dev_notes)
 
 Each subproject may have a `_dev_notes/` directory containing implementation plans and development documentation. **These are critical for maintaining context across sessions.**

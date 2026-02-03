@@ -1,6 +1,6 @@
 <script lang="ts">
 	import { api, type FileEntry } from '$lib/api';
-	import { loadFromFile } from '$lib/stores/flowStore';
+	import { loadFromFile, recentFiles, removeRecentFile } from '$lib/stores/flowStore';
 
 	// Props
 	interface Props {
@@ -86,6 +86,30 @@
 			{/if}
 		</div>
 	</div>
+
+	<!-- Recent Files Section -->
+	{#if $recentFiles.length > 0}
+		<div class="recent-files-section">
+			<div class="section-header">
+				<span class="section-title">Recent</span>
+			</div>
+			<div class="recent-files-list">
+				{#each $recentFiles.slice(0, 5) as file}
+					<button
+						class="file-entry netrun-file"
+						onclick={() => loadFromFile(file.path).catch(e => {
+							alert(`Failed to open: ${e.message}`);
+							removeRecentFile(file.path);
+						})}
+						title={file.path}
+					>
+						<span class="entry-icon">📊</span>
+						<span class="entry-name">{file.name}</span>
+					</button>
+				{/each}
+			</div>
+		</div>
+	{/if}
 
 	<div class="path-bar">
 		<button onclick={handleGoUp} disabled={!parentPath} class="icon-btn" title="Go up">↑</button>
@@ -173,6 +197,27 @@
 	.icon-btn:disabled {
 		opacity: 0.3;
 		cursor: not-allowed;
+	}
+
+	.recent-files-section {
+		border-bottom: 1px solid var(--border-color, #404040);
+	}
+
+	.section-header {
+		padding: 8px 12px;
+		background: var(--bg-tertiary, #2d2d2d);
+	}
+
+	.section-title {
+		font-size: 11px;
+		font-weight: 600;
+		color: var(--text-secondary, #a0a0a0);
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+	}
+
+	.recent-files-list {
+		padding: 4px 8px;
 	}
 
 	.path-bar {
