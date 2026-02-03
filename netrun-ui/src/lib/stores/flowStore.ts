@@ -52,6 +52,12 @@ export const selectedNode = derived(
 export const currentFilePath = writable<string | null>(null);
 export const isDirty = writable(false);
 
+// Extra data from NetConfig files (pools, etc.) - preserved when loading/saving
+export const extraData = writable<Record<string, unknown> | null>(null);
+
+// Graph-level meta
+export const graphMeta = writable<Record<string, unknown> | null>(null);
+
 // Undo/Redo history
 interface HistoryState {
 	nodes: NetrunNode[];
@@ -272,6 +278,10 @@ export async function loadFromFile(path: string): Promise<void> {
 	fileFormat.set(response.format);
 	isDirty.set(false);
 	history.set({ past: [], future: [] });
+
+	// Store extra data (pools, etc.) from NetConfig files
+	extraData.set(response.extra_data || null);
+	graphMeta.set(response.meta || null);
 }
 
 // Save to file via API
@@ -319,7 +329,18 @@ export async function saveToFile(path?: string): Promise<void> {
 		type: edge.type,
 	}));
 
-	await api.saveFile(savePath, format, apiNodes, apiEdges);
+	// Include extra data and meta when saving
+	const currentExtraData = get(extraData);
+	const currentMeta = get(graphMeta);
+
+	await api.saveFile(
+		savePath,
+		format,
+		apiNodes,
+		apiEdges,
+		currentMeta ?? undefined,
+		currentExtraData ?? undefined
+	);
 
 	currentFilePath.set(savePath);
 	fileFormat.set(format);
@@ -333,6 +354,8 @@ export function clearFlow(): void {
 	currentFilePath.set(null);
 	isDirty.set(false);
 	history.set({ past: [], future: [] });
+	extraData.set(null);
+	graphMeta.set(null);
 }
 
 // Update factory node with preview from API

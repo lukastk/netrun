@@ -630,6 +630,22 @@ class NodeConfig(BaseModel):
 
     execution_config: NodeExecutionConfig | None = None
 
+    meta: dict[str, Any] = Field(default_factory=dict)
+    """Arbitrary metadata for this node.
+
+    Can be used to store UI position, custom tags, documentation, or any
+    other tool-specific data that should be preserved across serialization.
+
+    Example:
+        NodeConfig(
+            name="Processor",
+            meta={
+                "ui": {"id": "node-1", "position": {"x": 100, "y": 200}},
+                "description": "Processes incoming data",
+            }
+        )
+    """
+
     # Factory support
     factory: str | ModuleType | None = None
     """Factory module or import path. If set, generates base config from factory.
@@ -716,6 +732,7 @@ class NodeConfig(BaseModel):
             in_salvo_conditions=base_config.in_salvo_conditions,
             out_salvo_conditions=base_config.out_salvo_conditions,
             execution_config=execution_config,
+            meta=base_config.meta,
         )
 
     def resolve(self) -> "NodeConfig":
@@ -774,6 +791,9 @@ class NodeConfig(BaseModel):
             else:
                 merged_exec_config = factory_exec_config
 
+            # Merge meta: base config first, then explicit overrides from self
+            merged_meta = {**base_config.meta, **self.meta}
+
             result = NodeConfig.model_construct(
                 name=name,
                 in_ports=merged_in_ports,
@@ -781,6 +801,7 @@ class NodeConfig(BaseModel):
                 in_salvo_conditions=merged_in_salvo,
                 out_salvo_conditions=merged_out_salvo,
                 execution_config=merged_exec_config,
+                meta=merged_meta,
                 # Clear factory fields in resolved config
                 factory=None,
                 factory_args={},
@@ -837,6 +858,13 @@ class GraphConfig(BaseModel):
     """
     nodes: list[NodeConfig]
     edges: list[EdgeConfig] = Field(default_factory=list)
+
+    meta: dict[str, Any] = Field(default_factory=dict)
+    """Arbitrary metadata for the graph.
+
+    Can be used to store descriptions, UI viewport state, or any other
+    tool-specific data that should be preserved across serialization.
+    """
 
     def resolve(self) -> "GraphConfig":
         """Return a resolved copy with all nodes resolved.
@@ -915,6 +943,13 @@ class NetConfig(BaseModel):
 
     pools: dict[str, PoolConfig]
     graph: GraphConfig
+
+    meta: dict[str, Any] = Field(default_factory=dict)
+    """Arbitrary metadata for the net configuration.
+
+    Can be used to store descriptions, version info, or any other
+    tool-specific data that should be preserved across serialization.
+    """
 
     default_pool_allocation_method: RunAllocationMethod = RunAllocationMethod.ROUND_ROBIN
     """
