@@ -244,6 +244,78 @@ Communication:
 
 ---
 
+## Current Implementation Status
+
+### Phase 1 - Complete
+
+**Backend (`netrun-ui/backend/`):**
+- FastAPI server with CORS for local development
+- `POST /api/files/read` - Read `.netrun.json` or `.netrun.toml` files
+- `POST /api/files/save` - Save files
+- `POST /api/files/convert` - Convert between JSON and TOML
+- `POST /api/factories/signature` - Get factory function signature
+- `POST /api/factories/preview` - Preview factory-generated config
+- `POST /api/factories/validate-import` - Validate import paths
+- Converter module to translate between UI format and `GraphConfig` format
+
+**Frontend:**
+- SvelteFlow-based graph editor with custom `NetrunNode` component
+- Nodes display input ports (left, green) and output ports (right, orange)
+- Drag to create edges between ports
+- Properties sidebar with collapsible sections (General, Factory, Input Ports, Output Ports)
+- Toolbar with Open, Save, Undo, Redo, Add Node, Add Factory buttons
+- Keyboard shortcuts: Cmd+O (open), Cmd+S (save), Cmd+Z (undo), Cmd+Shift+Z (redo)
+- Factory nodes with editable factory path and "Refresh Preview" button
+- Validation error display on nodes
+
+### Current UX Limitations (to address in Phase 2)
+
+1. **No workspace/directory concept**: The app doesn't "open into" a folder. Users must provide full file paths.
+
+2. **Primitive file dialogs**: Uses browser `prompt()` for file paths instead of a proper file picker. This is because:
+   - Browsers can't access the filesystem directly
+   - A proper solution requires either:
+     - File explorer UI that lists files from the backend
+     - Tauri for native file dialogs (desktop app)
+
+3. **Demo nodes on startup**: Currently shows 3 demo nodes when opening the app (for testing). Should instead show:
+   - Empty canvas with "Open file" or "Create new" prompts
+   - Or remember last opened file
+
+4. **No "New File" action**: Can't easily clear the canvas and start fresh without refreshing the page.
+
+5. **Single file only**: No tabs for multiple open files.
+
+6. **No recent files**: No way to quickly reopen previously edited files.
+
+### Phase 2 Priorities
+
+1. **File explorer sidebar** (left, collapsible)
+   - Backend endpoint to list directory contents
+   - Tree view UI component
+   - Click to open files
+   - Context menu for new file, rename, delete
+
+2. **Proper empty state**
+   - Remove demo nodes
+   - Show welcome screen with "Open File" / "New File" options
+   - Or show file explorer by default
+
+3. **New File action**
+   - Toolbar button and Cmd+N shortcut
+   - Clears canvas, sets "Untitled" state
+
+4. **Tabs for multiple files**
+   - Tab bar below toolbar
+   - Close button on tabs
+   - Dirty indicator on unsaved tabs
+
+5. **Recent files**
+   - Store in localStorage or backend config
+   - Show in welcome screen or File menu
+
+---
+
 ## Open Questions
 
 (To be resolved through discussion)
