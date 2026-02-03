@@ -715,11 +715,12 @@ async def _run_loop(self):
 - [x] Implement `on_node_failure` callbacks (`_call_failure_callback`)
 - [x] Implement dead letter queue (`dead_letter_queue`, `clear_dead_letter_queue`)
 
-### Phase 5: Lifecycle ✅ (partial)
+### Phase 5: Lifecycle ✅
 - [x] Implement `start()`, `stop()`, `pause()`
 - [x] Implement `run_step()` and `run_until_blocked()`
-- [ ] Implement background execution
-- [ ] SIGINT handling
+- [x] Implement background execution (`start_background()`, `_run_loop()`, `wait_until_done()`)
+- [x] SIGINT handling (`_install_sigint_handler()`, `_restore_sigint_handler()`)
+- [x] `is_blocked()` method to check if network can make progress
 
 ### Phase 6: Testing & Polish
 - [x] Unit tests for NodeExecutionContext
