@@ -2,7 +2,9 @@
 	import {
 		selectedNode,
 		updateNodeData,
+		updateNodeDataLive,
 		updateFactoryNodePreview,
+		pushHistory,
 		type NetrunNodeData,
 		type PortConfig
 	} from '$lib/stores/flowStore';
@@ -24,12 +26,17 @@
 		sectionsOpen[section] = !sectionsOpen[section];
 	}
 
-	// Update handlers
+	// Update handlers - use "Live" version for typing, push history on blur
 	function updateLabel(event: Event) {
 		const target = event.target as HTMLInputElement;
 		if ($selectedNode) {
-			updateNodeData($selectedNode.id, { label: target.value });
+			updateNodeDataLive($selectedNode.id, { label: target.value });
 		}
+	}
+
+	function onFieldBlur() {
+		// Push history when user finishes editing a field
+		pushHistory();
 	}
 
 	function updatePortName(
@@ -40,7 +47,7 @@
 		if (!$selectedNode) return;
 		const ports = [...$selectedNode.data[portType]];
 		ports[index] = { ...ports[index], name: newName };
-		updateNodeData($selectedNode.id, { [portType]: ports });
+		updateNodeDataLive($selectedNode.id, { [portType]: ports });
 	}
 
 	function updatePortType(
@@ -51,7 +58,7 @@
 		if (!$selectedNode) return;
 		const ports = [...$selectedNode.data[portType]];
 		ports[index] = { ...ports[index], type: newType || undefined };
-		updateNodeData($selectedNode.id, { [portType]: ports });
+		updateNodeDataLive($selectedNode.id, { [portType]: ports });
 	}
 
 	function addPort(portType: 'inPorts' | 'outPorts') {
@@ -75,7 +82,7 @@
 		if (!$selectedNode) return;
 		const factoryArgs = { ...($selectedNode.data.factoryArgs || {}) };
 		factoryArgs[key] = value;
-		updateNodeData($selectedNode.id, { factoryArgs });
+		updateNodeDataLive($selectedNode.id, { factoryArgs });
 	}
 
 	async function refreshFactoryPreview() {
@@ -94,7 +101,7 @@
 	function updateFactoryPath(event: Event) {
 		const target = event.target as HTMLInputElement;
 		if ($selectedNode) {
-			updateNodeData($selectedNode.id, { factory: target.value });
+			updateNodeDataLive($selectedNode.id, { factory: target.value });
 		}
 	}
 </script>
@@ -124,6 +131,7 @@
 								type="text"
 								value={$selectedNode.data.label}
 								oninput={updateLabel}
+								onblur={onFieldBlur}
 							/>
 						</div>
 						<div class="field">

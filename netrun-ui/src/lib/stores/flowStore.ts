@@ -133,6 +133,26 @@ export function updateNodeData(id: string, dataUpdates: Partial<NetrunNodeData>)
 	));
 }
 
+// Update node data without pushing history (for live editing like typing)
+export function updateNodeDataLive(id: string, dataUpdates: Partial<NetrunNodeData>) {
+	nodes.update(n => n.map(node =>
+		node.id === id ? { ...node, data: { ...node.data, ...dataUpdates } } : node
+	));
+	isDirty.set(true);
+}
+
+// Update node positions (called when nodes are dragged)
+export function updateNodePositions(updates: Array<{ id: string; position: { x: number; y: number } }>) {
+	nodes.update(n => n.map(node => {
+		const update = updates.find(u => u.id === node.id);
+		if (update) {
+			return { ...node, position: update.position };
+		}
+		return node;
+	}));
+	isDirty.set(true);
+}
+
 export function deleteNodes(ids: string[]) {
 	pushHistory();
 	const idSet = new Set(ids);
