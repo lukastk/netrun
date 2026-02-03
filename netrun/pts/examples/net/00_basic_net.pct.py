@@ -21,7 +21,6 @@
 # First, let's import all the types we need.
 
 # %%
-import asyncio
 from netrun.net.config import (
     # Net configuration
     NetConfig,
@@ -297,35 +296,30 @@ else:
 # - `run_until_blocked()` - Run until no more progress can be made
 
 # %%
-async def demonstrate_lifecycle():
-    """Demonstrate Net lifecycle operations."""
+# Create a fresh Net and demonstrate lifecycle
+config = create_net_config()
 
-    config = create_net_config()
+# Using context manager for automatic start/stop
+async with Net(config) as net:
+    print(f"Net started: {net.started}")
+    print(f"Net paused: {net.paused}")
 
-    # Using context manager for automatic start/stop
-    async with Net(config) as net:
-        print(f"Net started: {net.started}")
-        print(f"Net paused: {net.paused}")
+    # Run a simulation step
+    made_progress, events = await net.run_step()
+    print(f"Run step - made progress: {made_progress}, events: {len(events)}")
 
-        # Run a simulation step
-        made_progress, events = await net.run_step()
-        print(f"Run step - made progress: {made_progress}, events: {len(events)}")
+    # Check for startable epochs
+    startable = net.get_startable_epochs()
+    print(f"Startable epochs: {len(startable)}")
 
-        # Check for startable epochs
-        startable = net.get_startable_epochs()
-        print(f"Startable epochs: {len(startable)}")
+    # Pause and resume
+    await net.pause()
+    print(f"Paused: {net.paused}")
 
-        # Pause and resume
-        await net.pause()
-        print(f"Paused: {net.paused}")
+    await net.resume()
+    print(f"Resumed: {net.paused}")
 
-        await net.resume()
-        print(f"Resumed: {net.paused}")
-
-    print(f"Net stopped: {not net.started}")
-
-# Run the demonstration
-asyncio.run(demonstrate_lifecycle())
+print(f"Net stopped: {not net.started}")
 
 # %% [markdown]
 # ## Print Capture
@@ -336,27 +330,98 @@ asyncio.run(demonstrate_lifecycle())
 # - Optionally echoed to stdout for debugging
 
 # %%
-async def demonstrate_print_capture():
-    """Demonstrate how print capture works."""
+import time
 
-    config = create_net_config()
+# Create a Net and simulate print capture from multiple epochs
+config = create_net_config()
 
-    async with Net(config) as net:
-        # Manually call _handle_print_buffer to simulate receiving prints
-        # (In normal operation, this happens automatically when workers send prints)
-        net._handle_print_buffer("demo_epoch", [
-            "Line 1: Starting processing\n",
-            "Line 2: Processing data\n",
-            "Line 3: Complete\n",
-        ])
+async with Net(config) as net:
+    # Simulate prints arriving from different epochs at different times
+    # (In normal operation, this happens automatically when workers send prints)
 
-        # Retrieve the logs
-        epoch_log = net.get_epoch_log("demo_epoch")
-        print(f"Epoch log has {len(epoch_log)} entries:")
-        for timestamp, line in epoch_log:
-            print(f"  [{timestamp.strftime('%H:%M:%S')}] {line.strip()}")
+    # First epoch starts processing
+    net._handle_print_buffer("epoch_001", [
+        "[Source] Starting source node\n",
+        "[Source] Created packet 0: {'id': 0, 'data': 'item_0'}\n",
+    ])
 
-asyncio.run(demonstrate_print_capture())
+    time.sleep(0.01)  # Small delay to get different timestamps
+
+    # Second epoch starts
+    net._handle_print_buffer("epoch_002", [
+        "[Process] Processing started (retry #0)\n",
+        "[Process] Received 1 packets\n",
+    ])
+
+    time.sleep(0.01)
+
+    # More prints from first epoch
+    net._handle_print_buffer("epoch_001", [
+        "[Source] Created packet 1: {'id': 1, 'data': 'item_1'}\n",
+        "[Source] Sent output salvo\n",
+    ])
+
+    time.sleep(0.01)
+
+    # More prints from second epoch
+    net._handle_print_buffer("epoch_002", [
+        "[Process] Processing: {'id': 0, 'data': 'item_0'}\n",
+        "[Process] Processing complete\n",
+    ])
+
+    # Third epoch
+    net._handle_print_buffer("epoch_003", [
+        "[Sink] Collecting results\n",
+        "[Sink] Collected: {'id': 0, 'data': 'ITEM_0', 'processed': True}\n",
+        "[Sink] Total collected: 1 items\n",
+    ])
+
+    # Store net for displaying logs
+    demo_net = net
+
+# %% [markdown]
+# ## Viewing Print Logs by Epoch
+#
+# The Net stores all captured prints with timestamps. You can retrieve logs
+# by epoch ID to see what happened during each execution.
+
+# %%
+print("=" * 60)
+print("PRINT LOGS BY EPOCH")
+print("=" * 60)
+
+for epoch_id in ["epoch_001", "epoch_002", "epoch_003"]:
+    epoch_log = demo_net.get_epoch_log(epoch_id)
+    print(f"\n--- {epoch_id} ({len(epoch_log)} lines) ---")
+    for timestamp, line in epoch_log:
+        print(f"  [{timestamp.strftime('%H:%M:%S.%f')[:-3]}] {line.strip()}")
+
+# %% [markdown]
+# ## Viewing All Logs Chronologically
+#
+# You can also combine logs from all epochs to see the chronological order
+# of all print statements across the entire network execution.
+
+# %%
+print("=" * 60)
+print("ALL LOGS (CHRONOLOGICAL)")
+print("=" * 60)
+
+# Collect all logs with epoch info
+all_logs = []
+for epoch_id in ["epoch_001", "epoch_002", "epoch_003"]:
+    for timestamp, line in demo_net.get_epoch_log(epoch_id):
+        all_logs.append((timestamp, epoch_id, line))
+
+# Sort by timestamp
+all_logs.sort(key=lambda x: x[0])
+
+# Display
+print(f"\nTotal log entries: {len(all_logs)}")
+print("-" * 60)
+for timestamp, epoch_id, line in all_logs:
+    time_str = timestamp.strftime('%H:%M:%S.%f')[:-3]
+    print(f"[{time_str}] ({epoch_id}) {line.strip()}")
 
 # %% [markdown]
 # ## Rate Limiting
@@ -419,7 +484,8 @@ print(f"6th and 7th blocked: {not any(results[5:])}")
 # 4. **Net Lifecycle**: Using `start()`, `stop()`, `pause()`, `resume()`, context manager
 # 5. **Simulation**: Using `run_step()` and `run_until_blocked()`
 # 6. **Print Capture**: How `ctx.print()` output is captured and retrieved
-# 7. **Rate Limiting**: Controlling epoch start frequency
+# 7. **Viewing Logs**: Retrieving print logs by epoch or chronologically
+# 8. **Rate Limiting**: Controlling epoch start frequency
 #
 # The Net class orchestrates the flow-based execution by:
 # - Using `netrun-sim` for packet flow simulation
