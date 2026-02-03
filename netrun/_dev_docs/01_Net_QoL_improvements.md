@@ -930,15 +930,13 @@ Useful for debugging and inspection.
 
 **Estimated effort**: Small.
 
-### Phase 5: Log Access Improvements (Priority: Medium)
+### Phase 5: Log Access Improvements (Priority: Medium) ✅ COMPLETED
 
 Make log access more convenient.
 
-1. `list_epoch_log_ids() -> list[str]`
-2. `list_node_log_names() -> list[str]`
-3. `get_all_logs_chronological() -> list[...]`
-
-**Estimated effort**: Small.
+1. ✅ `list_epoch_log_ids() -> list[str]`
+2. ✅ `list_node_log_names() -> list[str]`
+3. ✅ `get_all_logs_chronological() -> list[tuple[datetime, str, str, str]]`
 
 ### Phase 6: Public Epoch Execution (Priority: Medium)
 

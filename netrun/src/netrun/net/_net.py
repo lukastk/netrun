@@ -970,6 +970,46 @@ class Net:
         """
         return list(self._node_print_logs.get(node_name, []))
 
+    def list_epoch_log_ids(self) -> list[str]:
+        """Get all epoch IDs that have print logs.
+
+        Returns:
+            List of epoch IDs with logs.
+        """
+        return list(self._epoch_print_logs.keys())
+
+    def list_node_log_names(self) -> list[str]:
+        """Get all node names that have print logs.
+
+        Returns:
+            List of node names with logs.
+        """
+        return list(self._node_print_logs.keys())
+
+    def get_all_logs_chronological(self) -> list[tuple[datetime, str, str, str]]:
+        """Get all print logs across all epochs, sorted by timestamp.
+
+        Returns:
+            List of (timestamp, epoch_id, node_name, message) tuples,
+            sorted by timestamp ascending.
+        """
+        all_logs = []
+
+        for epoch_id, logs in self._epoch_print_logs.items():
+            # Get node_name for this epoch
+            try:
+                epoch = self._netsim.get_epoch(epoch_id)
+                node_name = epoch.node_name if epoch else "unknown"
+            except (ValueError, KeyError):
+                node_name = "unknown"
+
+            for timestamp, message in logs:
+                all_logs.append((timestamp, epoch_id, node_name, message))
+
+        # Sort by timestamp
+        all_logs.sort(key=lambda x: x[0])
+        return all_logs
+
     async def start(self) -> None:
         """Start the Net.
 
