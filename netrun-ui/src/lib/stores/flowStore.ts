@@ -3,6 +3,7 @@
  */
 import { writable, derived, get } from 'svelte/store';
 import type { Node, Edge } from '@xyflow/svelte';
+import { api, type UINode, type UIEdge } from '$lib/api';
 
 // Types for netrun node data
 export interface PortConfig {
@@ -200,4 +201,162 @@ export function createFactoryNode(
 			isValid: true,
 		}
 	};
+}
+
+// File format store
+export const fileFormat = writable<'json' | 'toml'>('json');
+
+// Helper to convert API port info to our PortConfig
+function apiPortToPortConfig(port: { name: string; type?: string | null }): PortConfig {
+	return {
+		name: port.name,
+		type: port.type ?? undefined,
+	};
+}
+
+// Load from file via API
+export async function loadFromFile(path: string): Promise<void> {
+	const response = await api.readFile(path);
+
+	// Convert API response to our node/edge types
+	const loadedNodes: NetrunNode[] = response.nodes.map(node => ({
+		id: node.id,
+		type: node.type as 'netrunNode',
+		position: node.position,
+		data: {
+			label: node.data.label,
+			nodeType: node.data.nodeType,
+			inPorts: node.data.inPorts.map(apiPortToPortConfig),
+			outPorts: node.data.outPorts.map(apiPortToPortConfig),
+			factory: node.data.factory,
+			factoryArgs: node.data.factoryArgs,
+			isValid: node.data.isValid ?? true,
+			validationErrors: node.data.validationErrors,
+			_config: node.data._config as Record<string, unknown> | undefined,
+		}
+	}));
+
+	const loadedEdges: NetrunEdge[] = response.edges.map(edge => ({
+		id: edge.id,
+		source: edge.source,
+		target: edge.target,
+		sourceHandle: edge.sourceHandle,
+		targetHandle: edge.targetHandle,
+		type: edge.type || 'smoothstep',
+	}));
+
+	// Update stores
+	nodes.set(loadedNodes);
+	edges.set(loadedEdges);
+	currentFilePath.set(path);
+	fileFormat.set(response.format);
+	isDirty.set(false);
+	history.set({ past: [], future: [] });
+}
+
+// Save to file via API
+export async function saveToFile(path?: string): Promise<void> {
+	const savePath = path || get(currentFilePath);
+	if (!savePath) {
+		throw new Error('No file path specified');
+	}
+
+	// Determine format from path extension or use current format
+	let format = get(fileFormat);
+	if (savePath.endsWith('.json')) {
+		format = 'json';
+	} else if (savePath.endsWith('.toml')) {
+		format = 'toml';
+	}
+
+	const currentNodes = get(nodes);
+	const currentEdges = get(edges);
+
+	// Convert to API format
+	const apiNodes: UINode[] = currentNodes.map(node => ({
+		id: node.id,
+		type: node.type || 'netrunNode',
+		position: node.position,
+		data: {
+			label: node.data.label,
+			nodeType: node.data.nodeType,
+			inPorts: node.data.inPorts.map(p => ({ name: p.name, type: p.type })),
+			outPorts: node.data.outPorts.map(p => ({ name: p.name, type: p.type })),
+			factory: node.data.factory,
+			factoryArgs: node.data.factoryArgs,
+			isValid: node.data.isValid,
+			validationErrors: node.data.validationErrors,
+			_config: node.data._config as Record<string, unknown> | undefined,
+		}
+	}));
+
+	const apiEdges: UIEdge[] = currentEdges.map(edge => ({
+		id: edge.id,
+		source: edge.source,
+		target: edge.target,
+		sourceHandle: edge.sourceHandle ?? undefined,
+		targetHandle: edge.targetHandle ?? undefined,
+		type: edge.type,
+	}));
+
+	await api.saveFile(savePath, format, apiNodes, apiEdges);
+
+	currentFilePath.set(savePath);
+	fileFormat.set(format);
+	isDirty.set(false);
+}
+
+// Clear the current flow
+export function clearFlow(): void {
+	nodes.set([]);
+	edges.set([]);
+	currentFilePath.set(null);
+	isDirty.set(false);
+	history.set({ past: [], future: [] });
+}
+
+// Update factory node with preview from API
+export async function updateFactoryNodePreview(nodeId: string): Promise<void> {
+	const currentNodes = get(nodes);
+	const node = currentNodes.find(n => n.id === nodeId);
+
+	if (!node || node.data.nodeType !== 'factory' || !node.data.factory) {
+		return;
+	}
+
+	try {
+		const preview = await api.previewFactory(
+			node.data.factory,
+			node.data.factoryArgs || {}
+		);
+
+		if (preview.error) {
+			// Update node with error state
+			updateNodeData(nodeId, {
+				isValid: false,
+				validationErrors: [preview.error],
+			});
+			return;
+		}
+
+		// Update node with preview data
+		updateNodeData(nodeId, {
+			label: preview.name || node.data.label,
+			inPorts: preview.in_ports.map(p => ({
+				name: p.name,
+				type: p.port_type || undefined,
+			})),
+			outPorts: preview.out_ports.map(p => ({
+				name: p.name,
+				type: p.port_type || undefined,
+			})),
+			isValid: true,
+			validationErrors: [],
+		});
+	} catch (error) {
+		updateNodeData(nodeId, {
+			isValid: false,
+			validationErrors: [(error as Error).message],
+		});
+	}
 }

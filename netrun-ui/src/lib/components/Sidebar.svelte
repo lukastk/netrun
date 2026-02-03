@@ -2,9 +2,14 @@
 	import {
 		selectedNode,
 		updateNodeData,
+		updateFactoryNodePreview,
 		type NetrunNodeData,
 		type PortConfig
 	} from '$lib/stores/flowStore';
+	import { api } from '$lib/api';
+
+	// Loading state for factory preview
+	let isRefreshing = $state(false);
 
 	// Collapsible sections state
 	let sectionsOpen = $state({
@@ -72,6 +77,26 @@
 		factoryArgs[key] = value;
 		updateNodeData($selectedNode.id, { factoryArgs });
 	}
+
+	async function refreshFactoryPreview() {
+		if (!$selectedNode || $selectedNode.data.nodeType !== 'factory') return;
+
+		isRefreshing = true;
+		try {
+			await updateFactoryNodePreview($selectedNode.id);
+		} catch (error) {
+			console.error('Failed to refresh factory preview:', error);
+		} finally {
+			isRefreshing = false;
+		}
+	}
+
+	function updateFactoryPath(event: Event) {
+		const target = event.target as HTMLInputElement;
+		if ($selectedNode) {
+			updateNodeData($selectedNode.id, { factory: target.value });
+		}
+	}
 </script>
 
 <aside class="sidebar">
@@ -128,10 +153,16 @@
 					{#if sectionsOpen.factory}
 						<div class="section-content">
 							<div class="field">
-								<label>Factory Path</label>
-								<div class="readonly-value mono">{$selectedNode.data.factory}</div>
+								<label for="factory-path">Factory Path</label>
+								<input
+									id="factory-path"
+									type="text"
+									value={$selectedNode.data.factory || ''}
+									oninput={updateFactoryPath}
+									class="mono"
+								/>
 							</div>
-							{#if $selectedNode.data.factoryArgs}
+							{#if $selectedNode.data.factoryArgs && Object.keys($selectedNode.data.factoryArgs).length > 0}
 								<div class="field">
 									<label>Arguments</label>
 									<div class="factory-args">
@@ -146,6 +177,20 @@
 											</div>
 										{/each}
 									</div>
+								</div>
+							{/if}
+							<button
+								class="refresh-btn"
+								onclick={refreshFactoryPreview}
+								disabled={isRefreshing || !$selectedNode.data.factory}
+							>
+								{isRefreshing ? 'Refreshing...' : 'Refresh Preview'}
+							</button>
+							{#if $selectedNode.data.isValid === false && $selectedNode.data.validationErrors}
+								<div class="factory-errors">
+									{#each $selectedNode.data.validationErrors as error}
+										<div class="error-message">{error}</div>
+									{/each}
 								</div>
 							{/if}
 						</div>
@@ -422,5 +467,42 @@
 
 	.factory-arg input {
 		flex: 1;
+	}
+
+	.refresh-btn {
+		width: 100%;
+		margin-top: 12px;
+		padding: 8px;
+		font-size: 12px;
+		background: var(--accent-color, #3b82f6);
+		color: white;
+		border: none;
+		border-radius: 4px;
+	}
+
+	.refresh-btn:hover:not(:disabled) {
+		background: var(--accent-hover, #2563eb);
+	}
+
+	.refresh-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.factory-errors {
+		margin-top: 8px;
+		padding: 8px;
+		background: rgba(239, 68, 68, 0.1);
+		border-radius: 4px;
+	}
+
+	.error-message {
+		color: var(--error-color, #ef4444);
+		font-size: 11px;
+	}
+
+	input.mono {
+		font-family: 'SF Mono', Monaco, Consolas, monospace;
+		font-size: 11px;
 	}
 </style>

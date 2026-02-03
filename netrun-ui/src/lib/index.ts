@@ -6,3 +6,6 @@ export { default as Toolbar } from './components/Toolbar.svelte';
 
 // Stores
 export * from './stores/flowStore';
+
+// API
+export * from './api';
