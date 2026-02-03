@@ -8,8 +8,16 @@
 		redo,
 		history,
 		currentFilePath,
-		isDirty
+		isDirty,
+		loadFromFile,
+		saveToFile,
+		updateFactoryNodePreview
 	} from '$lib/stores/flowStore';
+	import { api } from '$lib/api';
+
+	// State for loading/saving
+	let isLoading = $state(false);
+	let errorMessage = $state<string | null>(null);
 
 	// Add node at center of viewport
 	// TODO: Get actual viewport center from SvelteFlow
@@ -18,22 +26,75 @@
 		addNode(newNode);
 	}
 
-	function handleAddFactoryNode() {
+	async function handleAddFactoryNode() {
 		const factory = prompt('Enter factory import path:', 'netrun.node_factories.function');
 		if (factory) {
 			const newNode = createFactoryNode({ x: 200, y: 200 }, factory);
 			addNode(newNode);
+
+			// Try to get preview from backend
+			try {
+				await updateFactoryNodePreview(newNode.id);
+			} catch (e) {
+				// Factory preview failed, but node is still added
+				console.warn('Could not get factory preview:', e);
+			}
 		}
 	}
 
-	function handleSave() {
-		// TODO: Implement save via backend API
-		alert('Save not yet implemented - needs backend API');
+	async function handleSave() {
+		errorMessage = null;
+
+		// If no current file, prompt for path
+		let path = $currentFilePath;
+		if (!path) {
+			path = prompt('Enter file path (e.g., /path/to/file.netrun.json):');
+			if (!path) return;
+		}
+
+		isLoading = true;
+		try {
+			await saveToFile(path);
+		} catch (e) {
+			errorMessage = (e as Error).message;
+			alert(`Save failed: ${errorMessage}`);
+		} finally {
+			isLoading = false;
+		}
 	}
 
-	function handleOpen() {
-		// TODO: Implement open via backend API
-		alert('Open not yet implemented - needs backend API');
+	async function handleSaveAs() {
+		errorMessage = null;
+
+		const path = prompt('Enter file path (e.g., /path/to/file.netrun.json):');
+		if (!path) return;
+
+		isLoading = true;
+		try {
+			await saveToFile(path);
+		} catch (e) {
+			errorMessage = (e as Error).message;
+			alert(`Save failed: ${errorMessage}`);
+		} finally {
+			isLoading = false;
+		}
+	}
+
+	async function handleOpen() {
+		errorMessage = null;
+
+		const path = prompt('Enter file path to open:');
+		if (!path) return;
+
+		isLoading = true;
+		try {
+			await loadFromFile(path);
+		} catch (e) {
+			errorMessage = (e as Error).message;
+			alert(`Open failed: ${errorMessage}`);
+		} finally {
+			isLoading = false;
+		}
 	}
 
 	function handleUndo() {
