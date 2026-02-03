@@ -189,6 +189,22 @@ pub fn diamond_graph() -> Graph {
     Graph::new(nodes, edges)
 }
 
+/// Creates a graph with an unconnected output port (sink node): A -> B (with unconnected out)
+///
+/// Node B has an input port and an output port, but the output port is not connected
+/// to any edge. This is useful for testing orphaned packet behavior.
+pub fn sink_graph() -> Graph {
+    let nodes = vec![
+        simple_node("A", vec![], vec!["out"]),
+        simple_node("B", vec!["in"], vec!["out"]), // "out" port has no edge
+    ];
+
+    // Only connect A to B's input, B's output is unconnected
+    let edges = vec![edge("A", "out", "B", "in")];
+
+    Graph::new(nodes, edges)
+}
+
 /// Creates a node with custom salvo conditions.
 pub fn node_with_conditions(
     name: &str,
@@ -240,5 +256,21 @@ mod tests {
         assert_eq!(graph.nodes().len(), 4);
         assert_eq!(graph.edges().len(), 4);
         assert!(graph.validate().is_empty());
+    }
+
+    #[test]
+    fn test_sink_graph_creation() {
+        let graph = sink_graph();
+        assert_eq!(graph.nodes().len(), 2);
+        assert_eq!(graph.edges().len(), 1);
+        assert!(graph.validate().is_empty());
+        // Verify B has an output port but no edge from it
+        let node_b = graph.nodes().get("B").unwrap();
+        assert!(node_b.out_ports.contains_key("out"));
+        assert!(graph.get_edge_by_tail(&PortRef {
+            node_name: "B".to_string(),
+            port_type: PortType::Output,
+            port_name: "out".to_string(),
+        }).is_none());
     }
 }
