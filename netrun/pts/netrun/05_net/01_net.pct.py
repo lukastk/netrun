@@ -1403,15 +1403,35 @@ class Net:
 
         return deferred_to_real
 
-    async def _execute_epoch(self, epoch_id: str) -> NodeExecutionResult | None:
-        """Execute a single startable epoch with retry support.
+    async def execute_epoch(self, epoch_id: str) -> NodeExecutionResult | None:
+        """Execute a single startable epoch.
 
-        This method:
+        This is the public API for manually executing epochs. It:
         1. Checks rate limiting
         2. Starts the epoch in netsim
         3. Dispatches the node function to a worker
         4. Waits for completion
         5. Commits deferred actions (on success) or handles failure with retries
+
+        Args:
+            epoch_id: The ID of the epoch to execute. Must be a startable epoch.
+
+        Returns:
+            The NodeExecutionResult if execution succeeded, None if skipped
+            (e.g., due to rate limiting or no execution function).
+
+        Raises:
+            Exception: If the node function raises and max retries exceeded.
+
+        Example:
+            startable = net.get_startable_epochs()
+            if startable:
+                result = await net.execute_epoch(startable[0])
+        """
+        return await self._execute_epoch(epoch_id)
+
+    async def _execute_epoch(self, epoch_id: str) -> NodeExecutionResult | None:
+        """Internal: Execute a single startable epoch with retry support.
 
         Args:
             epoch_id: The ID of the epoch to execute.
