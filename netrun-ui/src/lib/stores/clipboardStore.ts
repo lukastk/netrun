@@ -4,10 +4,10 @@
  * Maintains a clipboard of copied nodes that works across tabs.
  */
 import { writable, get } from 'svelte/store';
-import type { NetrunNode } from './flowStore';
+import type { FlowNode } from './flowStore';
 
 interface ClipboardState {
-	nodes: NetrunNode[];
+	nodes: FlowNode[];
 	sourceTabId: string | null;
 }
 
@@ -20,7 +20,7 @@ export const clipboard = writable<ClipboardState>({
 /**
  * Copy nodes to clipboard
  */
-export function copyToClipboard(nodes: NetrunNode[], sourceTabId: string | null): void {
+export function copyToClipboard(nodes: FlowNode[], sourceTabId: string | null): void {
 	// Deep clone nodes to avoid reference issues
 	const clonedNodes = nodes.map(node => ({
 		...node,
@@ -37,7 +37,7 @@ export function copyToClipboard(nodes: NetrunNode[], sourceTabId: string | null)
 /**
  * Get nodes from clipboard
  */
-export function getClipboardNodes(): NetrunNode[] {
+export function getClipboardNodes(): FlowNode[] {
 	return get(clipboard).nodes;
 }
 

@@ -15,6 +15,7 @@
 	import { derived } from 'svelte/store';
 
 	import NetrunNodeComponent from './NetrunNode.svelte';
+	import SubgraphNodeComponent from './SubgraphNode.svelte';
 	import {
 		nodes,
 		edges,
@@ -50,7 +51,8 @@
 
 	// Register custom node types
 	const nodeTypes: NodeTypes = {
-		netrunNode: NetrunNodeComponent
+		netrunNode: NetrunNodeComponent,
+		subgraphNode: SubgraphNodeComponent
 	};
 
 	// Handle new connections
@@ -135,6 +137,7 @@
 		<Controls />
 		<MiniMap
 			nodeColor={(node) => {
+				if (node.data?.nodeType === 'subgraph') return '#22c55e';
 				if (node.data?.nodeType === 'factory') return '#7c3aed';
 				return '#3b82f6';
 			}}

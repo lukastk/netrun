@@ -4,11 +4,12 @@
  * Manages multiple open files with per-tab state isolation.
  */
 import { writable, derived, get } from 'svelte/store';
-import type { NetrunNode, NetrunEdge } from './flowStore';
+import type { NetrunEdge, SubgraphNodeData, FlowNode, AnyNodeData } from './flowStore';
+import { api } from '$lib/api';
 
 // History state for undo/redo
 interface HistoryState {
-	nodes: NetrunNode[];
+	nodes: FlowNode[];
 	edges: NetrunEdge[];
 }
 
@@ -17,18 +18,27 @@ interface History {
 	future: HistoryState[];
 }
 
+// Context for subgraph tabs
+export interface SubgraphContext {
+	parentTabId: string;
+	nodeId: string;
+	path: string[]; // Breadcrumb: ["Root", "Subgraph1", "Nested"]
+}
+
 // Complete state for a single tab
 export interface TabState {
 	id: string;
 	filePath: string | null;
 	fileName: string;
 	isDirty: boolean;
-	nodes: NetrunNode[];
+	nodes: FlowNode[];
 	edges: NetrunEdge[];
 	history: History;
 	extraData: Record<string, unknown> | null;
 	graphMeta: Record<string, unknown> | null;
 	fileFormat: 'json' | 'toml';
+	// Subgraph context (null for root tabs)
+	subgraphContext: SubgraphContext | null;
 }
 
 // Generate unique tab ID
@@ -56,6 +66,7 @@ export function createEmptyTabState(filePath?: string | null): TabState {
 		extraData: null,
 		graphMeta: null,
 		fileFormat: 'json',
+		subgraphContext: null,
 	};
 }
 
@@ -216,7 +227,7 @@ export function updateTab(tabId: string, updates: Partial<TabState>): void {
 }
 
 // Set active tab's nodes
-export function setActiveTabNodes(nodes: NetrunNode[]): void {
+export function setActiveTabNodes(nodes: FlowNode[]): void {
 	updateActiveTab({ nodes });
 }
 
@@ -238,4 +249,132 @@ export function markActiveTabClean(): void {
 // Check if any tab has unsaved changes
 export function hasUnsavedChanges(): boolean {
 	return get(tabs).some(t => t.isDirty);
+}
+
+// Open a subgraph in a new tab
+export async function openSubgraphTab(nodeId: string, data: SubgraphNodeData): Promise<string | null> {
+	const parentTab = get(activeTab);
+	if (!parentTab) return null;
+
+	// Check if this subgraph is already open in a tab
+	const existingTab = get(tabs).find(
+		t => t.subgraphContext?.parentTabId === parentTab.id && t.subgraphContext?.nodeId === nodeId
+	);
+
+	if (existingTab) {
+		// Switch to existing tab
+		switchTab(existingTab.id);
+		return existingTab.id;
+	}
+
+	try {
+		// Load subgraph content
+		const subgraphConfig = data._subgraphConfig;
+		let nodes: FlowNode[] = [];
+		let edges: NetrunEdge[] = [];
+
+		if (subgraphConfig) {
+			// Load from inline config
+			const response = await api.loadSubgraph(undefined, subgraphConfig);
+			nodes = response.nodes.map(node => ({
+				id: node.id,
+				type: node.type as 'netrunNode' | 'subgraphNode',
+				position: node.position,
+				data: node.data
+			})) as FlowNode[];
+			edges = response.edges;
+		} else if (data.source && data.source !== 'Inline') {
+			// Load from file
+			const response = await api.loadSubgraph(data.source);
+			nodes = response.nodes.map(node => ({
+				id: node.id,
+				type: node.type as 'netrunNode' | 'subgraphNode',
+				position: node.position,
+				data: node.data
+			})) as FlowNode[];
+			edges = response.edges;
+		}
+
+		// Build breadcrumb path
+		const parentPath = parentTab.subgraphContext?.path || [parentTab.fileName];
+		const path = [...parentPath, data.label];
+
+		// Create new tab
+		const newTabId = generateTabId();
+		const newTab: TabState = {
+			id: newTabId,
+			filePath: null, // Subgraph tabs don't have their own file path
+			fileName: data.label,
+			isDirty: false,
+			nodes,
+			edges,
+			history: { past: [], future: [] },
+			extraData: null,
+			graphMeta: null,
+			fileFormat: parentTab.fileFormat,
+			subgraphContext: {
+				parentTabId: parentTab.id,
+				nodeId,
+				path,
+			},
+		};
+
+		tabs.update(t => [...t, newTab]);
+		activeTabId.set(newTabId);
+
+		return newTabId;
+	} catch (error) {
+		console.error('Failed to open subgraph:', error);
+		return null;
+	}
+}
+
+// Get the breadcrumb path for the active tab
+export function getActiveBreadcrumb(): string[] {
+	const tab = get(activeTab);
+	if (!tab) return [];
+	if (tab.subgraphContext) {
+		return tab.subgraphContext.path;
+	}
+	return [tab.fileName];
+}
+
+// Navigate to a specific level in the breadcrumb
+export function navigateToBreadcrumb(index: number): void {
+	const tab = get(activeTab);
+	if (!tab || !tab.subgraphContext) return;
+
+	const path = tab.subgraphContext.path;
+	if (index >= path.length - 1) return; // Already at this level
+
+	// Find the tab at the target level
+	let targetTabId: string | null = null;
+
+	if (index === 0) {
+		// Navigate to root
+		// Find the root tab by following parentTabId chain
+		let currentTab: TabState | null = tab;
+		while (currentTab && currentTab.subgraphContext) {
+			targetTabId = currentTab.subgraphContext.parentTabId;
+			currentTab = get(tabs).find(t => t.id === targetTabId) || null;
+		}
+	} else {
+		// Navigate to intermediate level
+		// We need to find the tab with path matching up to index
+		const targetPath = path.slice(0, index + 1);
+		const tabList = get(tabs);
+
+		for (const t of tabList) {
+			if (!t.subgraphContext) continue;
+			const tPath = t.subgraphContext.path;
+			if (tPath.length === targetPath.length && tPath.every((p, i) => p === targetPath[i])) {
+				targetTabId = t.id;
+				break;
+			}
+		}
+	}
+
+	if (targetTabId) {
+		switchTab(targetTabId);
+	}
 }

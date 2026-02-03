@@ -82,6 +82,18 @@ def merge_graph_with_extras(
         }
 
 
+def _count_subgraph_nodes(subgraph: dict[str, Any]) -> int:
+    """Count the total number of nodes inside a subgraph (including nested)."""
+    nodes = subgraph.get("nodes", [])
+    count = 0
+    for node in nodes:
+        if node.get("type") == "subgraph":
+            count += _count_subgraph_nodes(node)
+        else:
+            count += 1
+    return count
+
+
 def graph_config_to_ui(graph_data: dict[str, Any]) -> tuple[list[dict], list[dict]]:
     """Convert GraphConfig-style data to UI format.
 
@@ -106,42 +118,86 @@ def graph_config_to_ui(graph_data: dict[str, Any]) -> tuple[list[dict], list[dic
         ui_meta = meta.get("ui", {})
         position = ui_meta.get("position", {"x": i * 200, "y": 100})
 
-        # Determine node type
-        is_factory = node.get("factory") is not None
-        node_type = "factory" if is_factory else "regular"
+        # Check if this is a subgraph
+        is_subgraph = node.get("type") == "subgraph"
 
-        # Convert ports
-        in_ports = [
-            {"name": name, "type": port.get("port_type")}
-            for name, port in node.get("in_ports", {}).items()
-        ]
-        out_ports = [
-            {"name": name, "type": port.get("port_type")}
-            for name, port in node.get("out_ports", {}).items()
-        ]
+        if is_subgraph:
+            # Handle subgraph node
+            exposed_in_ports = node.get("exposed_in_ports", {})
+            exposed_out_ports = node.get("exposed_out_ports", {})
 
-        ui_node = {
-            "id": ui_meta.get("id", node_name),
-            "type": "netrunNode",
-            "position": position,
-            "data": {
-                "label": ui_meta.get("label", node_name),
-                "nodeType": node_type,
-                "inPorts": in_ports,
-                "outPorts": out_ports,
-                "isValid": True,
-            },
-        }
+            # Convert exposed ports to UI format
+            in_ports = [
+                {"name": exposed_name, "type": None}
+                for exposed_name in exposed_in_ports.keys()
+            ]
+            out_ports = [
+                {"name": exposed_name, "type": None}
+                for exposed_name in exposed_out_ports.keys()
+            ]
 
-        if is_factory:
-            ui_node["data"]["factory"] = node.get("factory")
-            ui_node["data"]["factoryArgs"] = node.get("factory_args", {})
+            # Determine source type
+            is_file_ref = node.get("path") is not None
+            source = node.get("path") if is_file_ref else "Inline"
+            node_count = _count_subgraph_nodes(node) if not is_file_ref else None
 
-        # Store original config data for non-UI fields
-        ui_node["data"]["_config"] = {
-            k: v for k, v in node.items()
-            if k not in ("name", "in_ports", "out_ports", "factory", "factory_args", "meta")
-        }
+            ui_node = {
+                "id": ui_meta.get("id", node_name),
+                "type": "subgraphNode",
+                "position": position,
+                "data": {
+                    "label": ui_meta.get("label", node_name),
+                    "nodeType": "subgraph",
+                    "inPorts": in_ports,
+                    "outPorts": out_ports,
+                    "isValid": True,
+                    "source": source,
+                    "nodeCount": node_count,
+                    # Store the full subgraph config for round-trip
+                    "_subgraphConfig": {
+                        k: v for k, v in node.items()
+                        if k not in ("meta",)  # Exclude meta, we handle it separately
+                    },
+                },
+            }
+        else:
+            # Handle regular node
+            # Determine node type
+            is_factory = node.get("factory") is not None
+            node_type = "factory" if is_factory else "regular"
+
+            # Convert ports
+            in_ports = [
+                {"name": name, "type": port.get("port_type")}
+                for name, port in node.get("in_ports", {}).items()
+            ]
+            out_ports = [
+                {"name": name, "type": port.get("port_type")}
+                for name, port in node.get("out_ports", {}).items()
+            ]
+
+            ui_node = {
+                "id": ui_meta.get("id", node_name),
+                "type": "netrunNode",
+                "position": position,
+                "data": {
+                    "label": ui_meta.get("label", node_name),
+                    "nodeType": node_type,
+                    "inPorts": in_ports,
+                    "outPorts": out_ports,
+                    "isValid": True,
+                },
+            }
+
+            if is_factory:
+                ui_node["data"]["factory"] = node.get("factory")
+                ui_node["data"]["factoryArgs"] = node.get("factory_args", {})
+
+            # Store original config data for non-UI fields
+            ui_node["data"]["_config"] = {
+                k: v for k, v in node.items()
+                if k not in ("name", "in_ports", "out_ports", "factory", "factory_args", "meta", "type")
+            }
 
         ui_nodes.append(ui_node)
 
@@ -212,48 +268,82 @@ def ui_to_graph_config(ui_nodes: list[dict], ui_edges: list[dict]) -> dict[str, 
     for node in ui_nodes:
         data = node.get("data", {})
         position = node.get("position", {"x": 0, "y": 0})
+        node_type = data.get("nodeType")
 
-        # Build in_ports dict
-        in_ports = {}
-        for port in data.get("inPorts", []):
-            port_config = {}
-            if port.get("type"):
-                port_config["port_type"] = port["type"]
-            in_ports[port["name"]] = port_config
+        # Check if this is a subgraph node
+        if node_type == "subgraph" or node.get("type") == "subgraphNode":
+            # Restore subgraph config
+            subgraph_config = data.get("_subgraphConfig", {})
 
-        # Build out_ports dict
-        out_ports = {}
-        for port in data.get("outPorts", []):
-            port_config = {}
-            if port.get("type"):
-                port_config["port_type"] = port["type"]
-            out_ports[port["name"]] = port_config
+            config_node = {
+                "type": "subgraph",
+                "name": data.get("label", node["id"]),
+                **subgraph_config,
+                "meta": {
+                    "ui": {
+                        "id": node["id"],
+                        "label": data.get("label"),
+                        "position": position,
+                    }
+                },
+            }
 
-        config_node = {
-            "name": data.get("label", node["id"]),
-            "in_ports": in_ports,
-            "out_ports": out_ports,
-            "meta": {
-                "ui": {
-                    "id": node["id"],
-                    "label": data.get("label"),
-                    "position": position,
-                }
-            },
-        }
+            # Update exposed ports from UI if they were modified
+            # (in case ports were added/removed in the UI)
+            in_ports = data.get("inPorts", [])
+            out_ports = data.get("outPorts", [])
 
-        # Add factory if present
-        if data.get("nodeType") == "factory":
-            if data.get("factory"):
-                config_node["factory"] = data["factory"]
-            if data.get("factoryArgs"):
-                config_node["factory_args"] = data["factoryArgs"]
+            # If the subgraph config doesn't have exposed_in_ports but UI has inPorts,
+            # we need to preserve the existing mapping or create placeholders
+            if "exposed_in_ports" not in config_node and in_ports:
+                config_node["exposed_in_ports"] = {}
+            if "exposed_out_ports" not in config_node and out_ports:
+                config_node["exposed_out_ports"] = {}
 
-        # Restore any extra config data
-        extra_config = data.get("_config", {})
-        for key, value in extra_config.items():
-            if key not in config_node:
-                config_node[key] = value
+        else:
+            # Handle regular node
+            # Build in_ports dict
+            in_ports = {}
+            for port in data.get("inPorts", []):
+                port_config = {}
+                if port.get("type"):
+                    port_config["port_type"] = port["type"]
+                in_ports[port["name"]] = port_config
+
+            # Build out_ports dict
+            out_ports = {}
+            for port in data.get("outPorts", []):
+                port_config = {}
+                if port.get("type"):
+                    port_config["port_type"] = port["type"]
+                out_ports[port["name"]] = port_config
+
+            config_node = {
+                "type": "node",
+                "name": data.get("label", node["id"]),
+                "in_ports": in_ports,
+                "out_ports": out_ports,
+                "meta": {
+                    "ui": {
+                        "id": node["id"],
+                        "label": data.get("label"),
+                        "position": position,
+                    }
+                },
+            }
+
+            # Add factory if present
+            if node_type == "factory":
+                if data.get("factory"):
+                    config_node["factory"] = data["factory"]
+                if data.get("factoryArgs"):
+                    config_node["factory_args"] = data["factoryArgs"]
+
+            # Restore any extra config data
+            extra_config = data.get("_config", {})
+            for key, value in extra_config.items():
+                if key not in config_node:
+                    config_node[key] = value
 
         config_nodes.append(config_node)
 

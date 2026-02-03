@@ -23,6 +23,7 @@
 		cutSelectedNodes,
 		selectedNodeIds,
 		validateAllNodes,
+		createSubgraphFromSelection,
 	} from '$lib/stores/flowStore';
 	import { api } from '$lib/api';
 
@@ -53,6 +54,25 @@
 				// Factory preview failed, but node is still added
 				console.warn('Could not get factory preview:', e);
 			}
+		}
+	}
+
+	async function handleCreateSubgraph() {
+		if ($selectedNodeIds.size < 2) {
+			alert('Please select at least 2 nodes to create a subgraph');
+			return;
+		}
+
+		const name = prompt('Enter subgraph name:', 'MySubgraph');
+		if (!name) return;
+
+		try {
+			const success = await createSubgraphFromSelection(name);
+			if (!success) {
+				alert('Failed to create subgraph');
+			}
+		} catch (e) {
+			alert(`Error creating subgraph: ${(e as Error).message}`);
 		}
 	}
 
@@ -204,6 +224,13 @@
 				cutSelectedNodes();
 			}
 		}
+		// Cmd/Ctrl + G for create subgraph
+		if ((event.metaKey || event.ctrlKey) && event.key === 'g') {
+			if ($selectedNodeIds.size >= 2 && !isInputFocused()) {
+				event.preventDefault();
+				handleCreateSubgraph();
+			}
+		}
 	}
 
 	// Check if an input element is focused (to avoid interfering with text editing)
@@ -276,6 +303,15 @@
 			<span class="icon">⚙</span>
 			<span class="label">Add Factory</span>
 		</button>
+		<button
+			onclick={handleCreateSubgraph}
+			title="Create subgraph from selection (Cmd+G)"
+			class="subgraph"
+			disabled={$selectedNodeIds.size < 2}
+		>
+			<span class="icon">SG</span>
+			<span class="label">Subgraph</span>
+		</button>
 	</div>
 </header>
 
@@ -339,6 +375,14 @@
 
 	button.factory:hover:not(:disabled) {
 		background: linear-gradient(135deg, #4338ca 0%, #6d28d9 100%);
+	}
+
+	button.subgraph {
+		background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
+	}
+
+	button.subgraph:hover:not(:disabled) {
+		background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
 	}
 
 	.icon {

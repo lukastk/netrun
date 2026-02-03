@@ -28,20 +28,44 @@ export interface PortConfig {
 	[key: string]: unknown; // Allow additional properties
 }
 
-export interface NetrunNodeData extends Record<string, unknown> {
+// Base data interface shared by all node types
+export interface BaseNodeData extends Record<string, unknown> {
 	label: string;
-	nodeType: 'regular' | 'factory';
+	nodeType: 'regular' | 'factory' | 'subgraph';
 	inPorts: PortConfig[];
 	outPorts: PortConfig[];
-	// For factory nodes
-	factory?: string;
-	factoryArgs?: Record<string, unknown>;
 	// Validation state
 	isValid?: boolean;
 	validationErrors?: string[];
 }
 
+// Extended data for regular/factory nodes
+export interface NetrunNodeData extends BaseNodeData {
+	nodeType: 'regular' | 'factory';
+	// For factory nodes
+	factory?: string;
+	factoryArgs?: Record<string, unknown>;
+	// Extra config data
+	_config?: Record<string, unknown>;
+}
+
+// Extended data for subgraph nodes
+export interface SubgraphNodeData extends BaseNodeData {
+	nodeType: 'subgraph';
+	// Subgraph-specific
+	source?: string; // "Inline" or file path
+	nodeCount?: number; // Number of nodes inside (for inline)
+	// Store full subgraph config for round-trip serialization
+	_subgraphConfig?: Record<string, unknown>;
+}
+
+// Combined type for any flow node data
+export type AnyNodeData = NetrunNodeData | SubgraphNodeData;
+
+// Use generic Node with AnyNodeData to avoid union type issues
+export type FlowNode = Node<AnyNodeData>;
 export type NetrunNode = Node<NetrunNodeData, 'netrunNode'>;
+export type SubgraphNode = Node<SubgraphNodeData, 'subgraphNode'>;
 export type NetrunEdge = Edge;
 
 // Re-export tab stores for convenience
@@ -291,7 +315,7 @@ export function updateGraphMetaLive(updates: Record<string, unknown>): void {
 /**
  * Validate a single node and return validation errors
  */
-function validateNode(node: NetrunNode): string[] {
+function validateNode(node: FlowNode): string[] {
 	const errors: string[] = [];
 
 	// Check label
@@ -301,7 +325,8 @@ function validateNode(node: NetrunNode): string[] {
 
 	// Check factory nodes have factory path
 	if (node.data.nodeType === 'factory') {
-		if (!node.data.factory || node.data.factory.trim() === '') {
+		const data = node.data as NetrunNodeData;
+		if (!data.factory || data.factory.trim() === '') {
 			errors.push('Factory node must have a factory path');
 		}
 	}
@@ -388,7 +413,7 @@ export function copySelectedNodes(): void {
  * Paste nodes from clipboard at the given position
  * If no position given, offsets from original positions
  */
-export function pasteNodes(position?: { x: number; y: number }): NetrunNode[] {
+export function pasteNodes(position?: { x: number; y: number }): FlowNode[] {
 	if (!hasClipboardContent()) return [];
 
 	const clipboardNodes = getClipboardNodes();
@@ -420,7 +445,7 @@ export function pasteNodes(position?: { x: number; y: number }): NetrunNode[] {
 	}
 
 	// Create new nodes with new IDs and offset positions
-	const newNodes: NetrunNode[] = clipboardNodes.map(node => ({
+	const newNodes: FlowNode[] = clipboardNodes.map(node => ({
 		...node,
 		id: generateNodeId(),
 		position: {
@@ -525,22 +550,45 @@ export async function loadFromFile(path: string): Promise<void> {
 	const response = await api.readFile(path);
 
 	// Convert API response to our node/edge types
-	const loadedNodes: NetrunNode[] = response.nodes.map(node => ({
-		id: node.id,
-		type: node.type as 'netrunNode',
-		position: node.position,
-		data: {
-			label: node.data.label,
-			nodeType: node.data.nodeType,
-			inPorts: node.data.inPorts.map(apiPortToPortConfig),
-			outPorts: node.data.outPorts.map(apiPortToPortConfig),
-			factory: node.data.factory,
-			factoryArgs: node.data.factoryArgs,
-			isValid: node.data.isValid ?? true,
-			validationErrors: node.data.validationErrors,
-			_config: node.data._config as Record<string, unknown> | undefined,
+	const loadedNodes: FlowNode[] = response.nodes.map(node => {
+		if (node.data.nodeType === 'subgraph') {
+			// Subgraph node
+			return {
+				id: node.id,
+				type: node.type as 'subgraphNode',
+				position: node.position,
+				data: {
+					label: node.data.label,
+					nodeType: 'subgraph' as const,
+					inPorts: node.data.inPorts.map(apiPortToPortConfig),
+					outPorts: node.data.outPorts.map(apiPortToPortConfig),
+					isValid: node.data.isValid ?? true,
+					validationErrors: node.data.validationErrors,
+					source: node.data.source,
+					nodeCount: node.data.nodeCount,
+					_subgraphConfig: node.data._subgraphConfig,
+				}
+			} as SubgraphNode;
+		} else {
+			// Regular or factory node
+			return {
+				id: node.id,
+				type: node.type as 'netrunNode',
+				position: node.position,
+				data: {
+					label: node.data.label,
+					nodeType: node.data.nodeType as 'regular' | 'factory',
+					inPorts: node.data.inPorts.map(apiPortToPortConfig),
+					outPorts: node.data.outPorts.map(apiPortToPortConfig),
+					factory: node.data.factory,
+					factoryArgs: node.data.factoryArgs,
+					isValid: node.data.isValid ?? true,
+					validationErrors: node.data.validationErrors,
+					_config: node.data._config as Record<string, unknown> | undefined,
+				}
+			} as NetrunNode;
 		}
-	}));
+	});
 
 	const loadedEdges: NetrunEdge[] = response.edges.map(edge => ({
 		id: edge.id,
@@ -605,22 +653,57 @@ export async function saveToFile(path?: string): Promise<void> {
 	}
 
 	// Convert to API format
-	const apiNodes: UINode[] = tab.nodes.map(node => ({
-		id: node.id,
-		type: node.type || 'netrunNode',
-		position: node.position,
-		data: {
-			label: node.data.label,
-			nodeType: node.data.nodeType,
-			inPorts: node.data.inPorts.map(p => ({ name: p.name, type: p.type })),
-			outPorts: node.data.outPorts.map(p => ({ name: p.name, type: p.type })),
-			factory: node.data.factory,
-			factoryArgs: node.data.factoryArgs,
-			isValid: node.data.isValid,
-			validationErrors: node.data.validationErrors,
-			_config: node.data._config as Record<string, unknown> | undefined,
+	const apiNodes: UINode[] = tab.nodes.map(node => {
+		const data = node.data as NetrunNodeData | SubgraphNodeData;
+		const baseData = {
+			label: data.label,
+			nodeType: data.nodeType as 'regular' | 'factory' | 'subgraph',
+			inPorts: data.inPorts.map(p => ({ name: p.name, type: p.type })),
+			outPorts: data.outPorts.map(p => ({ name: p.name, type: p.type })),
+			isValid: data.isValid,
+			validationErrors: data.validationErrors,
+		};
+
+		// Add type-specific properties
+		if (data.nodeType === 'factory') {
+			const factoryData = data as NetrunNodeData;
+			return {
+				id: node.id,
+				type: node.type || 'netrunNode',
+				position: node.position,
+				data: {
+					...baseData,
+					factory: factoryData.factory,
+					factoryArgs: factoryData.factoryArgs,
+					_config: factoryData._config as Record<string, unknown> | undefined,
+				}
+			};
+		} else if (data.nodeType === 'subgraph') {
+			const subgraphData = data as SubgraphNodeData;
+			return {
+				id: node.id,
+				type: node.type || 'subgraphNode',
+				position: node.position,
+				data: {
+					...baseData,
+					source: subgraphData.source,
+					nodeCount: subgraphData.nodeCount,
+					_subgraphConfig: subgraphData._subgraphConfig,
+				}
+			};
+		} else {
+			const regularData = data as NetrunNodeData;
+			return {
+				id: node.id,
+				type: node.type || 'netrunNode',
+				position: node.position,
+				data: {
+					...baseData,
+					_config: regularData._config as Record<string, unknown> | undefined,
+				}
+			};
 		}
-	}));
+	});
 
 	const apiEdges: UIEdge[] = tab.edges.map(edge => ({
 		id: edge.id,
@@ -710,5 +793,202 @@ export async function updateFactoryNodePreview(nodeId: string): Promise<void> {
 			isValid: false,
 			validationErrors: [(error as Error).message],
 		});
+	}
+}
+
+/**
+ * Create a subgraph from selected nodes
+ */
+export async function createSubgraphFromSelection(subgraphName: string): Promise<boolean> {
+	const tab = get(activeTab);
+	if (!tab) return false;
+
+	const selectedIds = get(selectedNodeIds);
+	if (selectedIds.size < 2) {
+		console.warn('Need at least 2 nodes selected to create a subgraph');
+		return false;
+	}
+
+	// Get selected nodes and all edges
+	const selectedNodes = tab.nodes.filter(n => selectedIds.has(n.id));
+
+	// Convert nodes to API format
+	const apiNodes: UINode[] = selectedNodes.map(node => {
+		const baseData = {
+			label: node.data.label,
+			nodeType: node.data.nodeType,
+			inPorts: node.data.inPorts,
+			outPorts: node.data.outPorts,
+			isValid: node.data.isValid,
+			validationErrors: node.data.validationErrors,
+		};
+
+		if (node.data.nodeType === 'subgraph') {
+			const subgraphData = node.data as SubgraphNodeData;
+			return {
+				id: node.id,
+				type: node.type || 'subgraphNode',
+				position: node.position,
+				data: {
+					...baseData,
+					source: subgraphData.source,
+					nodeCount: subgraphData.nodeCount,
+					_subgraphConfig: subgraphData._subgraphConfig,
+				}
+			};
+		} else {
+			const regularData = node.data as NetrunNodeData;
+			return {
+				id: node.id,
+				type: node.type || 'netrunNode',
+				position: node.position,
+				data: {
+					...baseData,
+					factory: regularData.factory,
+					factoryArgs: regularData.factoryArgs,
+					_config: regularData._config,
+				}
+			};
+		}
+	});
+
+	// Convert all nodes to API format
+	const allApiNodes: UINode[] = tab.nodes.map(node => {
+		const baseData = {
+			label: node.data.label,
+			nodeType: node.data.nodeType,
+			inPorts: node.data.inPorts,
+			outPorts: node.data.outPorts,
+			isValid: node.data.isValid,
+			validationErrors: node.data.validationErrors,
+		};
+
+		if (node.data.nodeType === 'subgraph') {
+			const subgraphData = node.data as SubgraphNodeData;
+			return {
+				id: node.id,
+				type: node.type || 'subgraphNode',
+				position: node.position,
+				data: {
+					...baseData,
+					source: subgraphData.source,
+					nodeCount: subgraphData.nodeCount,
+					_subgraphConfig: subgraphData._subgraphConfig,
+				}
+			};
+		} else {
+			const regularData = node.data as NetrunNodeData;
+			return {
+				id: node.id,
+				type: node.type || 'netrunNode',
+				position: node.position,
+				data: {
+					...baseData,
+					factory: regularData.factory,
+					factoryArgs: regularData.factoryArgs,
+					_config: regularData._config,
+				}
+			};
+		}
+	});
+
+	const apiEdges: UIEdge[] = tab.edges.map(edge => ({
+		id: edge.id,
+		source: edge.source,
+		target: edge.target,
+		sourceHandle: edge.sourceHandle ?? undefined,
+		targetHandle: edge.targetHandle ?? undefined,
+		type: edge.type,
+	}));
+
+	try {
+		const response = await api.createSubgraph(
+			subgraphName,
+			Array.from(selectedIds),
+			allApiNodes,
+			apiEdges
+		);
+
+		// Convert response to our types
+		const subgraphNode: SubgraphNode = {
+			id: response.subgraph_node.id,
+			type: 'subgraphNode',
+			position: response.subgraph_node.position,
+			data: {
+				label: response.subgraph_node.data.label,
+				nodeType: 'subgraph',
+				inPorts: response.subgraph_node.data.inPorts.map(apiPortToPortConfig),
+				outPorts: response.subgraph_node.data.outPorts.map(apiPortToPortConfig),
+				isValid: response.subgraph_node.data.isValid ?? true,
+				validationErrors: response.subgraph_node.data.validationErrors,
+				source: response.subgraph_node.data.source,
+				nodeCount: response.subgraph_node.data.nodeCount,
+				_subgraphConfig: response.subgraph_node.data._subgraphConfig,
+			}
+		};
+
+		// Convert remaining nodes back to our types
+		const remainingNodes: FlowNode[] = response.remaining_nodes.map(node => {
+			if (node.data.nodeType === 'subgraph') {
+				return {
+					id: node.id,
+					type: 'subgraphNode' as const,
+					position: node.position,
+					data: {
+						label: node.data.label,
+						nodeType: 'subgraph' as const,
+						inPorts: node.data.inPorts.map(apiPortToPortConfig),
+						outPorts: node.data.outPorts.map(apiPortToPortConfig),
+						isValid: node.data.isValid ?? true,
+						validationErrors: node.data.validationErrors,
+						source: node.data.source,
+						nodeCount: node.data.nodeCount,
+						_subgraphConfig: node.data._subgraphConfig,
+					}
+				} as SubgraphNode;
+			} else {
+				return {
+					id: node.id,
+					type: 'netrunNode' as const,
+					position: node.position,
+					data: {
+						label: node.data.label,
+						nodeType: node.data.nodeType as 'regular' | 'factory',
+						inPorts: node.data.inPorts.map(apiPortToPortConfig),
+						outPorts: node.data.outPorts.map(apiPortToPortConfig),
+						factory: node.data.factory,
+						factoryArgs: node.data.factoryArgs,
+						isValid: node.data.isValid ?? true,
+						validationErrors: node.data.validationErrors,
+						_config: node.data._config as Record<string, unknown> | undefined,
+					}
+				} as NetrunNode;
+			}
+		});
+
+		const remainingEdges: NetrunEdge[] = response.remaining_edges.map(edge => ({
+			id: edge.id,
+			source: edge.source,
+			target: edge.target,
+			sourceHandle: edge.sourceHandle,
+			targetHandle: edge.targetHandle,
+			type: edge.type || 'smoothstep',
+		}));
+
+		// Update the tab with new nodes and edges
+		pushHistory();
+		updateActiveTab({
+			nodes: [...remainingNodes, subgraphNode],
+			edges: remainingEdges,
+			isDirty: true,
+		});
+
+		// Select the new subgraph node
+		selectedNodeIds.set(new Set([subgraphNode.id]));
+
+		return true;
+	} catch (error) {
+		console.error('Failed to create subgraph:', error);
+		return false;
 	}
 }

@@ -3,4 +3,6 @@
 !.gitignore
 !example.netrun.json
 !simple.netrun.toml
+!with_subgraphs.netrun.json
+!subgraph_internal.netrun.json
 !README.md

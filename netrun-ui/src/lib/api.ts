@@ -9,21 +9,27 @@ export interface PortInfo {
 	type?: string | null;
 }
 
+export interface UINodeData {
+	label: string;
+	nodeType: 'regular' | 'factory' | 'subgraph';
+	inPorts: PortInfo[];
+	outPorts: PortInfo[];
+	factory?: string;
+	factoryArgs?: Record<string, unknown>;
+	isValid?: boolean;
+	validationErrors?: string[];
+	_config?: Record<string, unknown>;
+	// Subgraph-specific
+	source?: string;
+	nodeCount?: number;
+	_subgraphConfig?: Record<string, unknown>;
+}
+
 export interface UINode {
 	id: string;
 	type: string;
 	position: { x: number; y: number };
-	data: {
-		label: string;
-		nodeType: 'regular' | 'factory';
-		inPorts: PortInfo[];
-		outPorts: PortInfo[];
-		factory?: string;
-		factoryArgs?: Record<string, unknown>;
-		isValid?: boolean;
-		validationErrors?: string[];
-		_config?: Record<string, unknown>;
-	};
+	data: UINodeData;
 }
 
 export interface UIEdge {
@@ -92,6 +98,29 @@ export interface DirectoryListResponse {
 	path: string;
 	parent: string | null;
 	entries: FileEntry[];
+}
+
+// Subgraph interfaces
+export interface SubgraphLoadResponse {
+	nodes: UINode[];
+	edges: UIEdge[];
+	exposed_in_ports: Record<string, unknown>;
+	exposed_out_ports: Record<string, unknown>;
+	source: string;
+}
+
+export interface SubgraphCreateRequest {
+	subgraph_name: string;
+	selected_node_ids: string[];
+	all_nodes: UINode[];
+	all_edges: UIEdge[];
+}
+
+export interface SubgraphCreateResponse {
+	subgraph_node: UINode;
+	remaining_nodes: UINode[];
+	remaining_edges: UIEdge[];
+	internal_edges: UIEdge[];
 }
 
 class ApiClient {
@@ -231,6 +260,44 @@ class ApiClient {
 		return this.request<DirectoryListResponse>('/files/list', {
 			method: 'POST',
 			body: JSON.stringify({ path, include_hidden: includeHidden }),
+		});
+	}
+
+	/**
+	 * Load subgraph content for editing
+	 * @param path Path to external file (optional)
+	 * @param inlineConfig Inline subgraph configuration (optional)
+	 */
+	async loadSubgraph(
+		path?: string,
+		inlineConfig?: Record<string, unknown>
+	): Promise<SubgraphLoadResponse> {
+		return this.request<SubgraphLoadResponse>('/files/subgraph/load', {
+			method: 'POST',
+			body: JSON.stringify({
+				path: path || null,
+				inline_config: inlineConfig || null,
+			}),
+		});
+	}
+
+	/**
+	 * Create a subgraph from selected nodes
+	 */
+	async createSubgraph(
+		subgraphName: string,
+		selectedNodeIds: string[],
+		allNodes: UINode[],
+		allEdges: UIEdge[]
+	): Promise<SubgraphCreateResponse> {
+		return this.request<SubgraphCreateResponse>('/files/subgraph/create', {
+			method: 'POST',
+			body: JSON.stringify({
+				subgraph_name: subgraphName,
+				selected_node_ids: selectedNodeIds,
+				all_nodes: allNodes,
+				all_edges: allEdges,
+			}),
 		});
 	}
 }

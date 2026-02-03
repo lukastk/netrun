@@ -23,6 +23,7 @@
 		inPorts: true,
 		outPorts: true,
 		factory: true,
+		subgraph: true,
 		execution: false,
 		// Net-level sections
 		graphSettings: true,
@@ -95,7 +96,7 @@
 
 	function updateFactoryArg(key: string, value: string) {
 		if (!$selectedNode) return;
-		const factoryArgs = { ...($selectedNode.data.factoryArgs || {}) };
+		const factoryArgs: Record<string, unknown> = { ...($selectedNode.data.factoryArgs || {}) };
 		factoryArgs[key] = value;
 		updateNodeDataLive($selectedNode.id, { factoryArgs });
 	}
@@ -152,7 +153,13 @@
 						<div class="field">
 							<label>Type</label>
 							<div class="readonly-value">
-								{$selectedNode.data.nodeType === 'factory' ? 'Factory Node' : 'Regular Node'}
+								{#if $selectedNode.data.nodeType === 'factory'}
+									Factory Node
+								{:else if $selectedNode.data.nodeType === 'subgraph'}
+									Subgraph Node
+								{:else}
+									Regular Node
+								{/if}
 							</div>
 						</div>
 						<div class="field">
@@ -216,6 +223,40 @@
 									{/each}
 								</div>
 							{/if}
+						</div>
+					{/if}
+				</section>
+			{/if}
+
+			<!-- Subgraph Section (only for subgraph nodes) -->
+			{#if $selectedNode.data.nodeType === 'subgraph'}
+				<section class="section">
+					<button
+						class="section-header"
+						onclick={() => toggleSection('subgraph')}
+					>
+						<span class="section-title">Subgraph</span>
+						<span class="section-toggle">{sectionsOpen.subgraph ? '−' : '+'}</span>
+					</button>
+					{#if sectionsOpen.subgraph}
+						<div class="section-content">
+							<div class="field">
+								<label>Source</label>
+								<div class="readonly-value mono">
+									{$selectedNode.data.source || 'Inline'}
+								</div>
+							</div>
+							{#if $selectedNode.data.nodeCount !== undefined}
+								<div class="field">
+									<label>Node Count</label>
+									<div class="readonly-value">
+										{$selectedNode.data.nodeCount} node{$selectedNode.data.nodeCount !== 1 ? 's' : ''}
+									</div>
+								</div>
+							{/if}
+							<div class="subgraph-hint">
+								Double-click the node to edit its contents
+							</div>
 						</div>
 					{/if}
 				</section>
@@ -653,6 +694,17 @@
 	.error-message {
 		color: var(--error-color, #ef4444);
 		font-size: 11px;
+	}
+
+	.subgraph-hint {
+		margin-top: 12px;
+		padding: 8px;
+		background: rgba(34, 197, 94, 0.1);
+		border-radius: 4px;
+		color: var(--text-secondary, #a0a0a0);
+		font-size: 11px;
+		font-style: italic;
+		text-align: center;
 	}
 
 	input.mono {

@@ -15,6 +15,9 @@
 # %%
 #|export
 import pytest
+import tempfile
+import json
+from pathlib import Path
 from netrun.net.config import (
     # Port slot spec
     PortSlotSpecInfiniteConfig,
@@ -51,6 +54,9 @@ from netrun.net.config import (
     NodeConfig,
     # Graph
     GraphConfig,
+    # Subgraph
+    ExposedPortConfig,
+    SubgraphConfig,
 )
 import netrun_sim
 
@@ -1021,3 +1027,512 @@ def test_config_to_netrun_sim_integration():
 
 # %%
 test_config_to_netrun_sim_integration();
+
+# %% [markdown]
+# ## Subgraph Tests
+
+# %%
+#|export
+def test_exposed_port_config():
+    """Test ExposedPortConfig creation."""
+    config = ExposedPortConfig(
+        internal_node="Processor",
+        internal_port="input",
+        rename="in",
+    )
+    assert config.internal_node == "Processor"
+    assert config.internal_port == "input"
+    assert config.rename == "in"
+    assert config.get_exposed_name() == "in"
+
+    # Without rename, should use internal_port
+    config2 = ExposedPortConfig(
+        internal_node="Processor",
+        internal_port="input",
+    )
+    assert config2.get_exposed_name() == "input"
+
+# %%
+test_exposed_port_config();
+
+# %%
+#|export
+def test_subgraph_config_inline():
+    """Test SubgraphConfig with inline nodes."""
+    config = SubgraphConfig(
+        name="preprocess",
+        nodes=[
+            NodeConfig(
+                name="A",
+                in_ports={"in": PortConfig()},
+                out_ports={"out": PortConfig()},
+            ),
+            NodeConfig(
+                name="B",
+                in_ports={"in": PortConfig()},
+                out_ports={"out": PortConfig()},
+            ),
+        ],
+        edges=[EdgeConfig(source_str="A.out", target_str="B.in")],
+        exposed_in_ports={"input": ExposedPortConfig(internal_node="A", internal_port="in")},
+        exposed_out_ports={"output": ExposedPortConfig(internal_node="B", internal_port="out")},
+    )
+    assert config.type == "subgraph"
+    assert config.name == "preprocess"
+    assert len(config.nodes) == 2
+    assert len(config.edges) == 1
+    assert "input" in config.exposed_in_ports
+    assert "output" in config.exposed_out_ports
+
+# %%
+test_subgraph_config_inline();
+
+# %%
+#|export
+def test_subgraph_config_validation_both():
+    """Test SubgraphConfig raises error when both nodes and path provided."""
+    with pytest.raises(ValueError, match="cannot specify both 'nodes' and 'path'"):
+        SubgraphConfig(
+            name="test",
+            nodes=[NodeConfig(name="A")],
+            path="./test.netrun.json",
+        )
+
+# %%
+test_subgraph_config_validation_both();
+
+# %%
+#|export
+def test_subgraph_config_validation_neither():
+    """Test SubgraphConfig raises error when neither nodes nor path provided."""
+    with pytest.raises(ValueError, match="must specify either 'nodes'"):
+        SubgraphConfig(name="test")
+
+# %%
+test_subgraph_config_validation_neither();
+
+# %%
+#|export
+def test_subgraph_resolve_inline():
+    """Test SubgraphConfig.resolve() with inline nodes."""
+    config = SubgraphConfig(
+        name="preprocess",
+        nodes=[
+            NodeConfig(
+                name="A",
+                in_ports={"in": PortConfig()},
+                out_ports={"out": PortConfig()},
+            ),
+            NodeConfig(
+                name="B",
+                in_ports={"in": PortConfig()},
+                out_ports={"out": PortConfig()},
+            ),
+        ],
+        edges=[EdgeConfig(source_str="A.out", target_str="B.in")],
+        exposed_in_ports={"input": ExposedPortConfig(internal_node="A", internal_port="in")},
+        exposed_out_ports={"output": ExposedPortConfig(internal_node="B", internal_port="out")},
+    )
+
+    nodes, edges, in_map, out_map = config.resolve()
+
+    # Check nodes are prefixed
+    assert len(nodes) == 2
+    node_names = [n.name for n in nodes]
+    assert "preprocess.A" in node_names
+    assert "preprocess.B" in node_names
+
+    # Check edges are rewritten
+    assert len(edges) == 1
+    edge = edges[0]
+    assert edge.get_source().node_name == "preprocess.A"
+    assert edge.get_target().node_name == "preprocess.B"
+
+    # Check port mappings
+    assert in_map == {"input": "preprocess.A.in"}
+    assert out_map == {"output": "preprocess.B.out"}
+
+# %%
+test_subgraph_resolve_inline();
+
+# %%
+#|export
+def test_graph_config_with_subgraph():
+    """Test GraphConfig with mixed nodes and subgraphs."""
+    config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Source",
+                out_ports={"out": PortConfig()},
+            ),
+            SubgraphConfig(
+                name="preprocess",
+                nodes=[
+                    NodeConfig(
+                        name="A",
+                        in_ports={"in": PortConfig()},
+                        out_ports={"out": PortConfig()},
+                    ),
+                    NodeConfig(
+                        name="B",
+                        in_ports={"in": PortConfig()},
+                        out_ports={"out": PortConfig()},
+                    ),
+                ],
+                edges=[EdgeConfig(source_str="A.out", target_str="B.in")],
+                exposed_in_ports={"input": ExposedPortConfig(internal_node="A", internal_port="in")},
+                exposed_out_ports={"output": ExposedPortConfig(internal_node="B", internal_port="out")},
+            ),
+            NodeConfig(
+                name="Sink",
+                in_ports={"in": PortConfig()},
+            ),
+        ],
+        edges=[
+            EdgeConfig(source_str="Source.out", target_str="preprocess.input"),
+            EdgeConfig(source_str="preprocess.output", target_str="Sink.in"),
+        ],
+    )
+
+    assert config.has_subgraphs()
+
+    # Resolve the graph
+    resolved = config.resolve()
+
+    # Check that subgraphs are flattened
+    assert not resolved.has_subgraphs()
+    assert len(resolved.nodes) == 4  # Source + preprocess.A + preprocess.B + Sink
+
+    node_names = [n.name for n in resolved.nodes]
+    assert "Source" in node_names
+    assert "preprocess.A" in node_names
+    assert "preprocess.B" in node_names
+    assert "Sink" in node_names
+
+    # Check edges are properly rewritten
+    assert len(resolved.edges) == 3  # Source->preprocess.A + preprocess.A->B + preprocess.B->Sink
+
+    # Should now be able to get graph
+    graph = resolved.get_graph()
+    assert len(graph.nodes()) == 4
+    assert len(graph.edges()) == 3
+
+# %%
+test_graph_config_with_subgraph();
+
+# %%
+#|export
+def test_graph_config_get_graph_error_with_subgraphs():
+    """Test GraphConfig.get_graph() raises error if subgraphs present."""
+    config = GraphConfig(
+        nodes=[
+            SubgraphConfig(
+                name="test",
+                nodes=[NodeConfig(name="A")],
+            ),
+        ],
+    )
+
+    with pytest.raises(ValueError, match="Call resolve\\(\\) first"):
+        config.get_graph()
+
+# %%
+test_graph_config_get_graph_error_with_subgraphs();
+
+# %%
+#|export
+def test_subgraph_nested():
+    """Test nested subgraphs."""
+    config = GraphConfig(
+        nodes=[
+            NodeConfig(name="Source", out_ports={"out": PortConfig()}),
+            SubgraphConfig(
+                name="outer",
+                nodes=[
+                    NodeConfig(
+                        name="Entry",
+                        in_ports={"in": PortConfig()},
+                        out_ports={"out": PortConfig()},
+                    ),
+                    SubgraphConfig(
+                        name="inner",
+                        nodes=[
+                            NodeConfig(
+                                name="Process",
+                                in_ports={"in": PortConfig()},
+                                out_ports={"out": PortConfig()},
+                            ),
+                        ],
+                        exposed_in_ports={"input": ExposedPortConfig(internal_node="Process", internal_port="in")},
+                        exposed_out_ports={"output": ExposedPortConfig(internal_node="Process", internal_port="out")},
+                    ),
+                    NodeConfig(
+                        name="Exit",
+                        in_ports={"in": PortConfig()},
+                        out_ports={"out": PortConfig()},
+                    ),
+                ],
+                edges=[
+                    EdgeConfig(source_str="Entry.out", target_str="inner.input"),
+                    EdgeConfig(source_str="inner.output", target_str="Exit.in"),
+                ],
+                exposed_in_ports={"input": ExposedPortConfig(internal_node="Entry", internal_port="in")},
+                exposed_out_ports={"output": ExposedPortConfig(internal_node="Exit", internal_port="out")},
+            ),
+            NodeConfig(name="Sink", in_ports={"in": PortConfig()}),
+        ],
+        edges=[
+            EdgeConfig(source_str="Source.out", target_str="outer.input"),
+            EdgeConfig(source_str="outer.output", target_str="Sink.in"),
+        ],
+    )
+
+    resolved = config.resolve()
+
+    # Check all nodes are flattened with proper prefixes
+    node_names = [n.name for n in resolved.nodes]
+    assert "Source" in node_names
+    assert "outer.Entry" in node_names
+    assert "outer.inner.Process" in node_names  # Nested subgraph node
+    assert "outer.Exit" in node_names
+    assert "Sink" in node_names
+
+    # Verify graph is valid
+    graph = resolved.get_graph()
+    assert len(graph.nodes()) == 5
+
+# %%
+test_subgraph_nested();
+
+# %%
+#|export
+def test_subgraph_name_collision():
+    """Test that name collisions are detected."""
+    # Create a config where two subgraphs would produce nodes with the same prefixed name
+    config = GraphConfig(
+        nodes=[
+            SubgraphConfig(
+                name="sg",
+                nodes=[
+                    NodeConfig(name="A", in_ports={"in": PortConfig()}, out_ports={"out": PortConfig()}),
+                ],
+                exposed_in_ports={"input": ExposedPortConfig(internal_node="A", internal_port="in")},
+                exposed_out_ports={"output": ExposedPortConfig(internal_node="A", internal_port="out")},
+            ),
+            SubgraphConfig(
+                name="sg",  # Same name as above
+                nodes=[
+                    NodeConfig(name="A", in_ports={"in": PortConfig()}),  # Same internal name as above -> collision!
+                ],
+                exposed_in_ports={"input": ExposedPortConfig(internal_node="A", internal_port="in")},
+            ),
+        ],
+        edges=[
+            EdgeConfig(source_str="sg.output", target_str="sg.input"),
+        ],
+    )
+
+    # This should fail because both subgraphs produce "sg.A"
+    with pytest.raises(ValueError, match="Node name collision"):
+        config.resolve()
+
+# %%
+test_subgraph_name_collision();
+
+# %%
+#|export
+def test_subgraph_json_roundtrip():
+    """Test SubgraphConfig JSON serialization roundtrip."""
+    config = SubgraphConfig(
+        name="preprocess",
+        nodes=[
+            NodeConfig(
+                name="A",
+                in_ports={"in": PortConfig()},
+                out_ports={"out": PortConfig()},
+            ),
+            NodeConfig(
+                name="B",
+                in_ports={"in": PortConfig()},
+                out_ports={"out": PortConfig()},
+            ),
+        ],
+        edges=[EdgeConfig(source_str="A.out", target_str="B.in")],
+        exposed_in_ports={"input": ExposedPortConfig(internal_node="A", internal_port="in")},
+        exposed_out_ports={"output": ExposedPortConfig(internal_node="B", internal_port="out")},
+        meta={"description": "Preprocessing pipeline"},
+    )
+
+    json_str = config.model_dump_json()
+    loaded = SubgraphConfig.model_validate_json(json_str)
+
+    assert loaded.name == config.name
+    assert len(loaded.nodes) == len(config.nodes)
+    assert len(loaded.edges) == len(config.edges)
+    assert loaded.exposed_in_ports == config.exposed_in_ports
+    assert loaded.exposed_out_ports == config.exposed_out_ports
+    assert loaded.meta == config.meta
+
+# %%
+test_subgraph_json_roundtrip();
+
+# %%
+#|export
+def test_graph_config_with_subgraph_json_roundtrip():
+    """Test GraphConfig with subgraphs JSON serialization roundtrip."""
+    config = GraphConfig(
+        nodes=[
+            NodeConfig(name="Source", out_ports={"out": PortConfig()}),
+            SubgraphConfig(
+                name="preprocess",
+                nodes=[
+                    NodeConfig(
+                        name="A",
+                        in_ports={"in": PortConfig()},
+                        out_ports={"out": PortConfig()},
+                    ),
+                ],
+                exposed_in_ports={"input": ExposedPortConfig(internal_node="A", internal_port="in")},
+                exposed_out_ports={"output": ExposedPortConfig(internal_node="A", internal_port="out")},
+            ),
+            NodeConfig(name="Sink", in_ports={"in": PortConfig()}),
+        ],
+        edges=[
+            EdgeConfig(source_str="Source.out", target_str="preprocess.input"),
+            EdgeConfig(source_str="preprocess.output", target_str="Sink.in"),
+        ],
+    )
+
+    json_str = config.model_dump_json(indent=2)
+    loaded = GraphConfig.model_validate_json(json_str)
+
+    # Verify structure
+    assert len(loaded.nodes) == 3
+    assert loaded.has_subgraphs()
+
+    # Find the subgraph
+    subgraph = next(n for n in loaded.nodes if isinstance(n, SubgraphConfig))
+    assert subgraph.name == "preprocess"
+    assert len(subgraph.nodes) == 1
+
+    # Resolve and verify
+    resolved = loaded.resolve()
+    assert not resolved.has_subgraphs()
+    graph = resolved.get_graph()
+    assert len(graph.nodes()) == 3
+
+# %%
+test_graph_config_with_subgraph_json_roundtrip();
+
+# %%
+#|export
+def test_subgraph_file_reference():
+    """Test SubgraphConfig with file reference."""
+    # Create a temporary subgraph file
+    with tempfile.TemporaryDirectory() as tmpdir:
+        subgraph_path = Path(tmpdir) / "subgraph.netrun.json"
+
+        # Write a graph config to file
+        subgraph_data = {
+            "nodes": [
+                {
+                    "type": "node",
+                    "name": "Internal",
+                    "in_ports": {"in": {"slots_spec": {"type": "infinite"}}},
+                    "out_ports": {"out": {"slots_spec": {"type": "infinite"}}},
+                },
+            ],
+            "edges": [],
+        }
+        with open(subgraph_path, "w") as f:
+            json.dump(subgraph_data, f)
+
+        # Create subgraph config referencing the file
+        config = SubgraphConfig(
+            name="external",
+            path=str(subgraph_path),
+            exposed_in_ports={"input": ExposedPortConfig(internal_node="Internal", internal_port="in")},
+            exposed_out_ports={"output": ExposedPortConfig(internal_node="Internal", internal_port="out")},
+        )
+
+        # Resolve
+        nodes, edges, in_map, out_map = config.resolve(base_path=Path(tmpdir))
+
+        assert len(nodes) == 1
+        assert nodes[0].name == "external.Internal"
+        assert in_map == {"input": "external.Internal.in"}
+        assert out_map == {"output": "external.Internal.out"}
+
+# %%
+test_subgraph_file_reference();
+
+# %%
+#|export
+def test_subgraph_file_not_found():
+    """Test SubgraphConfig raises error when file not found."""
+    config = SubgraphConfig(
+        name="missing",
+        path="./nonexistent.netrun.json",
+    )
+
+    with pytest.raises(FileNotFoundError):
+        config.resolve()
+
+# %%
+test_subgraph_file_not_found();
+
+# %%
+#|export
+def test_subgraph_circular_reference():
+    """Test SubgraphConfig detects circular file references."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Create two files that reference each other
+        file_a = Path(tmpdir) / "a.netrun.json"
+        file_b = Path(tmpdir) / "b.netrun.json"
+
+        # a.netrun.json contains a subgraph referencing b.netrun.json
+        a_data = {
+            "nodes": [
+                {
+                    "type": "subgraph",
+                    "name": "ref_b",
+                    "path": str(file_b),
+                    "exposed_in_ports": {},
+                    "exposed_out_ports": {},
+                },
+            ],
+            "edges": [],
+        }
+
+        # b.netrun.json contains a subgraph referencing a.netrun.json
+        b_data = {
+            "nodes": [
+                {
+                    "type": "subgraph",
+                    "name": "ref_a",
+                    "path": str(file_a),
+                    "exposed_in_ports": {},
+                    "exposed_out_ports": {},
+                },
+            ],
+            "edges": [],
+        }
+
+        with open(file_a, "w") as f:
+            json.dump(a_data, f)
+        with open(file_b, "w") as f:
+            json.dump(b_data, f)
+
+        # Create subgraph config referencing file_a
+        config = SubgraphConfig(
+            name="start",
+            path=str(file_a),
+            exposed_in_ports={},
+            exposed_out_ports={},
+        )
+
+        with pytest.raises(ValueError, match="Circular subgraph reference"):
+            config.resolve(base_path=Path(tmpdir))
+
+# %%
+test_subgraph_circular_reference();

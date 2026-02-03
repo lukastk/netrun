@@ -2,6 +2,7 @@
 	import { SvelteFlowProvider } from '@xyflow/svelte';
 	import Toolbar from '$lib/components/Toolbar.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
+	import Breadcrumb from '$lib/components/Breadcrumb.svelte';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import FlowEditor from '$lib/components/FlowEditor.svelte';
 	import FileExplorer from '$lib/components/FileExplorer.svelte';
@@ -26,6 +27,7 @@
 <div class="app">
 	<Toolbar />
 	<TabBar />
+	<Breadcrumb />
 	<div class="main-content">
 		<!-- File Explorer (left, collapsible) -->
 		{#if showFileExplorer}
