@@ -1,25 +1,22 @@
 <script lang="ts">
 	import { SvelteFlowProvider } from '@xyflow/svelte';
 	import Toolbar from '$lib/components/Toolbar.svelte';
+	import TabBar from '$lib/components/TabBar.svelte';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import FlowEditor from '$lib/components/FlowEditor.svelte';
 	import FileExplorer from '$lib/components/FileExplorer.svelte';
-	import { nodes, currentFilePath } from '$lib/stores/flowStore';
+	import { nodes, currentFilePath, activeTab } from '$lib/stores/flowStore';
 
 	// Initial path for file explorer (from environment variable or default to home)
 	const initialPath = import.meta.env.VITE_INITIAL_PATH || '~';
 
 	// File explorer visibility state
 	let showFileExplorer = $state(true);
-
-	// Check if the canvas is empty (no nodes)
-	$effect(() => {
-		// This effect just tracks the nodes - the empty state is shown via the template
-	});
 </script>
 
 <div class="app">
 	<Toolbar />
+	<TabBar />
 	<div class="main-content">
 		<!-- File Explorer (left, collapsible) -->
 		{#if showFileExplorer}

@@ -12,6 +12,7 @@
 		ConnectionLineType
 	} from '@xyflow/svelte';
 	import '@xyflow/svelte/dist/style.css';
+	import { derived } from 'svelte/store';
 
 	import NetrunNodeComponent from './NetrunNode.svelte';
 	import {
@@ -28,6 +29,24 @@
 		type NetrunNodeData,
 		type NetrunEdge
 	} from '$lib/stores/flowStore';
+
+	// Derive nodes and edges with selection state applied
+	// This ensures SvelteFlow sees the correct selection even after data updates
+	const nodesWithSelection = derived(
+		[nodes, selectedNodeIds],
+		([$nodes, $selectedNodeIds]) => $nodes.map(node => ({
+			...node,
+			selected: $selectedNodeIds.has(node.id)
+		}))
+	);
+
+	const edgesWithSelection = derived(
+		[edges, selectedEdgeIds],
+		([$edges, $selectedEdgeIds]) => $edges.map(edge => ({
+			...edge,
+			selected: $selectedEdgeIds.has(edge.id)
+		}))
+	);
 
 	// Register custom node types
 	const nodeTypes: NodeTypes = {
@@ -92,8 +111,8 @@
 
 <div class="flow-editor">
 	<SvelteFlow
-		nodes={$nodes}
-		edges={$edges}
+		nodes={$nodesWithSelection}
+		edges={$edgesWithSelection}
 		{nodeTypes}
 		onconnect={onConnect}
 		ondelete={onDelete}
