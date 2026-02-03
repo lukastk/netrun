@@ -1830,3 +1830,187 @@ fn test_undo_complex_run_step_exact_state() {
         diffs.join("\n")
     );
 }
+
+// =============================================================================
+// ORPHANED PACKET TESTS
+// =============================================================================
+
+#[test]
+fn test_send_output_salvo_unconnected_port() {
+    // Create a sink graph: A -> B, where B has an unconnected "out" port
+    let graph = sink_graph();
+    let mut net = NetSim::new(graph);
+
+    // Create a packet and place it on the edge from A to B
+    let p1 = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
+    let edge_a_b = PacketLocation::Edge(Edge {
+        source: PortRef {
+            node_name: "A".to_string(),
+            port_type: PortType::Output,
+            port_name: "out".to_string(),
+        },
+        target: PortRef {
+            node_name: "B".to_string(),
+            port_type: PortType::Input,
+            port_name: "in".to_string(),
+        },
+    });
+    net._packets.get_mut(&p1).unwrap().location = edge_a_b.clone();
+    net._packets_by_location
+        .get_mut(&PacketLocation::OutsideNet)
+        .unwrap()
+        .shift_remove(&p1);
+    net._packets_by_location
+        .get_mut(&edge_a_b)
+        .unwrap()
+        .insert(p1);
+
+    // Run until blocked - packet moves to B's input port, epoch becomes startable
+    net.do_action(&NetAction::RunStep);
+    let startable = net.get_startable_epochs();
+    assert_eq!(startable.len(), 1);
+    let epoch_id = startable[0].clone();
+
+    // Start the epoch
+    net.do_action(&NetAction::StartEpoch(epoch_id.clone()));
+
+    // Create an output packet inside the epoch
+    let out_packet = get_packet_id(&net.do_action(&NetAction::CreatePacket(Some(epoch_id.clone()))));
+
+    // Load packet into the unconnected output port
+    net.do_action(&NetAction::LoadPacketIntoOutputPort(
+        out_packet,
+        "out".to_string(),
+    ));
+
+    // Send output salvo - this should orphan the packet instead of erroring
+    let response = net.do_action(&NetAction::SendOutputSalvo(
+        epoch_id.clone(),
+        "default".to_string(),
+    ));
+
+    // Should succeed, not error
+    let events = match response {
+        NetActionResponse::Success(_, events) => events,
+        other => panic!("Expected success, got {:?}", other),
+    };
+
+    // Verify PacketOrphaned event was generated
+    let orphaned_events: Vec<_> = events
+        .iter()
+        .filter(|e| matches!(e, NetEvent::PacketOrphaned(..)))
+        .collect();
+    assert_eq!(orphaned_events.len(), 1);
+
+    // Verify the event has correct data
+    // PacketOrphaned(EventUTC, PacketID, EpochID, NodeName, PortName, SalvoConditionName)
+    match &orphaned_events[0] {
+        NetEvent::PacketOrphaned(_, packet_id, _, from_node, from_port, salvo_condition) => {
+            assert_eq!(*packet_id, out_packet);
+            assert_eq!(from_node, "B");
+            assert_eq!(from_port, "out");
+            assert_eq!(salvo_condition, "default");
+        }
+        _ => unreachable!(),
+    }
+
+    // Verify packet is now at OutsideNet
+    let packet = net._packets.get(&out_packet).unwrap();
+    assert_eq!(packet.location, PacketLocation::OutsideNet);
+
+    // Verify epoch's orphaned_packets is populated
+    let epoch = net._epochs.get(&epoch_id).unwrap();
+    assert_eq!(epoch.orphaned_packets.len(), 1);
+    assert_eq!(epoch.orphaned_packets[0].packet_id, out_packet);
+    assert_eq!(epoch.orphaned_packets[0].from_port, "out");
+    assert_eq!(epoch.orphaned_packets[0].salvo_condition, "default");
+}
+
+#[test]
+fn test_undo_send_output_salvo_with_orphaned_packets() {
+    // Create a sink graph: A -> B, where B has an unconnected "out" port
+    let graph = sink_graph();
+    let mut net = NetSim::new(graph);
+
+    // Create a packet and place it on the edge from A to B
+    let p1 = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
+    let edge_a_b = PacketLocation::Edge(Edge {
+        source: PortRef {
+            node_name: "A".to_string(),
+            port_type: PortType::Output,
+            port_name: "out".to_string(),
+        },
+        target: PortRef {
+            node_name: "B".to_string(),
+            port_type: PortType::Input,
+            port_name: "in".to_string(),
+        },
+    });
+    net._packets.get_mut(&p1).unwrap().location = edge_a_b.clone();
+    net._packets_by_location
+        .get_mut(&PacketLocation::OutsideNet)
+        .unwrap()
+        .shift_remove(&p1);
+    net._packets_by_location
+        .get_mut(&edge_a_b)
+        .unwrap()
+        .insert(p1);
+
+    // Run until blocked - packet moves to B's input port, epoch becomes startable
+    net.do_action(&NetAction::RunStep);
+    let startable = net.get_startable_epochs();
+    let epoch_id = startable[0].clone();
+
+    // Start the epoch
+    net.do_action(&NetAction::StartEpoch(epoch_id.clone()));
+
+    // Create an output packet inside the epoch
+    let out_packet = get_packet_id(&net.do_action(&NetAction::CreatePacket(Some(epoch_id.clone()))));
+
+    // Load packet into the unconnected output port
+    net.do_action(&NetAction::LoadPacketIntoOutputPort(
+        out_packet,
+        "out".to_string(),
+    ));
+
+    // Capture state before sending output salvo
+    let before = NetSimSnapshot::capture(&net);
+
+    // Send output salvo - this orphans the packet
+    let action = NetAction::SendOutputSalvo(epoch_id.clone(), "default".to_string());
+    let events = match net.do_action(&action) {
+        NetActionResponse::Success(_, events) => events,
+        other => panic!("Expected success, got {:?}", other),
+    };
+
+    // Verify packet was orphaned
+    assert_eq!(
+        net._packets.get(&out_packet).unwrap().location,
+        PacketLocation::OutsideNet
+    );
+    assert_eq!(net._epochs.get(&epoch_id).unwrap().orphaned_packets.len(), 1);
+
+    // Undo the action
+    net.undo_action(&action, &events)
+        .expect("Undo should succeed");
+
+    // Capture state after undo
+    let after = NetSimSnapshot::capture(&net);
+
+    // Verify packet is back in output port
+    assert_eq!(
+        net._packets.get(&out_packet).unwrap().location,
+        PacketLocation::OutputPort(epoch_id.clone(), "out".to_string())
+    );
+
+    // Verify epoch's orphaned_packets is empty again
+    assert!(net._epochs.get(&epoch_id).unwrap().orphaned_packets.is_empty());
+
+    // Full state comparison
+    let diffs = before.diff(&after);
+    assert!(
+        diffs.is_empty(),
+        "State not exactly restored:\n{}",
+        diffs.join("\n")
+    );
+}
