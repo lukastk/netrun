@@ -172,3 +172,72 @@ async def convert_format(request: ConvertRequest) -> ConvertResponse:
 
     except (json.JSONDecodeError, tomli.TOMLDecodeError) as e:
         raise HTTPException(status_code=400, detail=f"Parse error: {e}")
+
+
+class DirectoryListRequest(BaseModel):
+    """Request to list directory contents."""
+    path: str
+    include_hidden: bool = False
+
+
+class FileEntry(BaseModel):
+    """A file or directory entry."""
+    name: str
+    path: str
+    is_dir: bool
+    is_netrun_file: bool = False  # True for .netrun.json or .netrun.toml
+
+
+class DirectoryListResponse(BaseModel):
+    """Response with directory contents."""
+    path: str
+    parent: str | None
+    entries: list[FileEntry]
+
+
+@router.post("/list", response_model=DirectoryListResponse)
+async def list_directory(request: DirectoryListRequest) -> DirectoryListResponse:
+    """List contents of a directory, highlighting netrun config files."""
+    path = Path(request.path).expanduser().resolve()
+
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"Directory not found: {path}")
+
+    if not path.is_dir():
+        raise HTTPException(status_code=400, detail=f"Path is not a directory: {path}")
+
+    entries = []
+
+    try:
+        for item in sorted(path.iterdir(), key=lambda x: (not x.is_dir(), x.name.lower())):
+            # Skip hidden files unless requested
+            if not request.include_hidden and item.name.startswith('.'):
+                continue
+
+            is_netrun = (
+                item.is_file() and
+                (item.name.endswith('.netrun.json') or
+                 item.name.endswith('.netrun.toml') or
+                 item.suffix in ('.json', '.toml'))
+            )
+
+            entries.append(FileEntry(
+                name=item.name,
+                path=str(item),
+                is_dir=item.is_dir(),
+                is_netrun_file=is_netrun,
+            ))
+
+        # Get parent directory
+        parent = str(path.parent) if path.parent != path else None
+
+        return DirectoryListResponse(
+            path=str(path),
+            parent=parent,
+            entries=entries,
+        )
+
+    except PermissionError:
+        raise HTTPException(status_code=403, detail=f"Permission denied: {path}")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error listing directory: {e}")
