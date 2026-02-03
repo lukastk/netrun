@@ -805,6 +805,86 @@ class Net:
             raise KeyError(f"No output queue configured for port '{port}' on node '{node}'")
         return resolved
 
+    # --- Packet Creation & Injection API ---
+
+    def create_external_packet(self, value: Any) -> str:
+        """Create a packet outside the network with a value.
+
+        The packet is created in the OutsideNet location and can be
+        transported to input ports using inject_packet().
+
+        Args:
+            value: The value to store in the packet.
+
+        Returns:
+            The packet ID (ULID string).
+        """
+        response, _ = self._netsim.do_action(netrun_sim.NetAction.create_packet(None))
+        packet_id = str(response.packet_id)
+        self._packet_store.register(packet_id, value)
+        return packet_id
+
+    def create_external_packets(self, values: list[Any]) -> list[str]:
+        """Create multiple packets outside the network.
+
+        Args:
+            values: List of values to store in packets.
+
+        Returns:
+            List of packet IDs in the same order as values.
+        """
+        packet_ids = []
+        for value in values:
+            packet_id = self.create_external_packet(value)
+            packet_ids.append(packet_id)
+        return packet_ids
+
+    def inject_packet(self, packet_id: str, node_name: str, port_name: str) -> None:
+        """Transport a packet to a node's input port.
+
+        Args:
+            packet_id: The packet ID to transport.
+            node_name: Target node name.
+            port_name: Target input port name.
+
+        Raises:
+            RuntimeError: If the transport fails (e.g., port doesn't exist or is full).
+        """
+        response, _ = self._netsim.do_action(
+            netrun_sim.NetAction.transport_packet_to_location(
+                packet_id,
+                netrun_sim.PacketLocation.input_port(node_name, port_name),
+            )
+        )
+        # Check for errors in response
+        if hasattr(response, 'error') and response.error:
+            raise RuntimeError(f"Failed to inject packet: {response.error}")
+
+    def inject_data(self, node_name: str, port_name: str, values: list[Any]) -> list[str]:
+        """Create packets with values and inject them into a node's input port.
+
+        This is a convenience method that combines create_external_packets()
+        and inject_packet() into a single call.
+
+        Args:
+            node_name: Target node name.
+            port_name: Target input port name.
+            values: List of values to create packets for.
+
+        Returns:
+            List of created packet IDs.
+
+        Example:
+            packet_ids = net.inject_data("Source", "in", [
+                {"id": 1, "data": "hello"},
+                {"id": 2, "data": "world"},
+            ])
+        """
+        packet_ids = self.create_external_packets(values)
+        for packet_id in packet_ids:
+            self.inject_packet(packet_id, node_name, port_name)
+        return packet_ids
+
     def _get_node_execution_config(self, node_name: str) -> NodeExecutionConfig | None:
         """Get the execution config for a node."""
         return self._node_execution_configs.get(node_name)

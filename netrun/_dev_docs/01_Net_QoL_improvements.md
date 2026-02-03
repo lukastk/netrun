@@ -898,18 +898,16 @@ The main feature for DAG-style workflows.
 12. ✅ `output_count()` - queue depth
 13. ✅ `list_output_queues()` - list configured queues
 
-### Phase 2: Packet Creation & Injection (Priority: High)
+### Phase 2: Packet Creation & Injection (Priority: High) ✅ COMPLETED
 
 These are the most commonly needed operations based on the example.
 
-1. `create_external_packet(value) -> str`
-2. `create_external_packets(values) -> list[str]`
-3. `inject_packet(packet_id, node_name, port_name)`
-4. `inject_data(node_name, port_name, values) -> list[str]`
+1. ✅ `create_external_packet(value) -> str`
+2. ✅ `create_external_packets(values) -> list[str]`
+3. ✅ `inject_packet(packet_id, node_name, port_name)`
+4. ✅ `inject_data(node_name, port_name, values) -> list[str]`
 
-**Estimated effort**: Small - these are thin wrappers around existing netrun-sim operations.
-
-### Phase 3: Packet Extraction (Priority: Medium)
+### Phase 3: Packet Extraction (Priority: Medium) (SKIP)
 
 Direct packet extraction (lower priority now that Output Queues exist).
 
