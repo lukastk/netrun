@@ -1,8 +1,12 @@
 # Ignore user-created test files, but keep examples
 *
 !.gitignore
+!README.md
 !example.netrun.json
 !simple.netrun.toml
 !with_subgraphs.netrun.json
 !subgraph_internal.netrun.json
-!README.md
+!nested_subgraphs.netrun.json
+!shared_component.netrun.json
+!multiple_refs.netrun.json
+!complex_pipeline.netrun.json
