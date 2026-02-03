@@ -463,6 +463,28 @@ class Salvo:
     @property
     def packets(self) -> List[Tuple[str, str]]: ...
 
+class OrphanedPacketInfo:
+    """Information about a packet sent to an unconnected output port.
+
+    When a packet is sent from an output port that has no connected edge,
+    it is moved to OutsideNet and tracked as "orphaned".
+    """
+
+    @property
+    def packet_id(self) -> str:
+        """The ID of the orphaned packet."""
+        ...
+
+    @property
+    def from_port(self) -> str:
+        """The name of the output port the packet was sent from."""
+        ...
+
+    @property
+    def salvo_condition(self) -> str:
+        """The salvo condition that triggered the send."""
+        ...
+
 class Epoch:
     """An execution instance of a node."""
 
@@ -476,6 +498,10 @@ class Epoch:
     def out_salvos(self) -> List[Salvo]: ...
     @property
     def state(self) -> EpochState: ...
+    @property
+    def orphaned_packets(self) -> List[OrphanedPacketInfo]:
+        """Packets that were sent to unconnected output ports (moved to OutsideNet)."""
+        ...
     def get_id(self) -> ULID: ...
     def start_time(self) -> int: ...
 
@@ -612,11 +638,12 @@ class NetEvent:
     - `PacketMoved`: A packet moved from one location to another
     - `InputSalvoTriggered`: An input salvo condition was triggered
     - `OutputSalvoTriggered`: An output salvo condition was triggered
+    - `PacketOrphaned`: A packet was sent to an unconnected output port
     """
 
     @property
     def kind(self) -> str:
-        """Get the event kind (e.g., 'PacketMoved', 'EpochCreated')."""
+        """Get the event kind (e.g., 'PacketMoved', 'EpochCreated', 'PacketOrphaned')."""
         ...
 
     @property
@@ -646,7 +673,17 @@ class NetEvent:
 
     @property
     def salvo_condition(self) -> Optional[str]:
-        """Get the salvo condition name for salvo-triggered events."""
+        """Get the salvo condition name for salvo-triggered and PacketOrphaned events."""
+        ...
+
+    @property
+    def node_name(self) -> Optional[str]:
+        """Get the node name for PacketOrphaned events."""
+        ...
+
+    @property
+    def orphaned_port_name(self) -> Optional[str]:
+        """Get the port name for PacketOrphaned events (the output port the packet was sent from)."""
         ...
 
 class NetActionResponseData:
@@ -855,6 +892,7 @@ __all__ = [
     "EpochState",
     "Packet",
     "Salvo",
+    "OrphanedPacketInfo",
     "Epoch",
     "NetAction",
     "NetEvent",

@@ -25,7 +25,7 @@ This separation of concerns allows the actual execution and data storage to be i
 **Important:** The `netrun` package uses **nblite** for literate programming. Before writing any code for `netrun`, you **must** read `netrun/NBLITE_INSTRUCTIONS.md` carefully. Key points:
 - Source code lives in `.pct.py` files (percent notebooks), not in the exported Python modules
 - Never edit files in `src/netrun/` directly - they are auto-generated
-- After editing `.pct.py` files, run `nbl export --pipeline "pts->nbs"` then `nbl export`
+- After editing `.pct.py` files, run `nbl export --reverse` then `nbl export`
 
 ## Repository Structure
 
@@ -223,7 +223,7 @@ async with manager:
 ### Editing Code
 
 1. Edit `.pct.py` files in `pts/netrun/` or `pts/tests/`
-2. Export to notebooks: `nbl export --pipeline "pts->nbs"`
+2. Export to notebooks: `nbl export --reverse`
 3. Export to Python modules: `nbl export`
 
 **Never edit files in `src/` directly** - they are auto-generated.
@@ -250,6 +250,12 @@ uv run pytest src/tests/pool/test_multiprocess.py -v -s
 cd netrun
 uv sync  # Install dependencies
 ```
+
+### Code Quality Guidelines
+
+- **No hacks or workarounds**: If you find yourself writing code like `time.sleep(0.01)` to "get different timestamps" or similar workarounds, STOP and discuss with the user. There's likely a better design that captures the data properly at the source.
+- **Capture data at the source**: Timestamps, metadata, and context should be captured when events occur, not approximated later. For example, `ctx.print()` should capture the timestamp when called, not when the buffer is flushed.
+- **Ask before implementing workarounds**: If the current design doesn't support what you need, propose a design change rather than working around it.
 
 ---
 

@@ -37,7 +37,7 @@ from netrun.net.config import (
     # Edge and node
     PortRefConfig,
     EdgeConfig,
-    NodeGraphConfig,
+    NodeConfig,
     # Graph
     GraphConfig,
 )
@@ -416,8 +416,8 @@ def test_edge_config_invalid_shorthand():
 
 # %% nbs/tests/05_net/test_config.ipynb 77
 def test_node_graph_config_minimal():
-    """Test NodeGraphConfig with minimal configuration."""
-    config = NodeGraphConfig(name="A")
+    """Test NodeConfig with minimal configuration."""
+    config = NodeConfig(name="A")
     assert config.name == "A"
     assert config.in_ports == {}
     assert config.out_ports == {}
@@ -429,8 +429,8 @@ def test_node_graph_config_minimal():
 
 # %% nbs/tests/05_net/test_config.ipynb 79
 def test_node_graph_config_with_ports():
-    """Test NodeGraphConfig with ports."""
-    config = NodeGraphConfig(
+    """Test NodeConfig with ports."""
+    config = NodeConfig(
         name="B",
         in_ports={"in1": PortConfig(), "in2": PortConfig(slots_spec=PortSlotSpecFiniteConfig(capacity=5))},
         out_ports={"out": PortConfig()},
@@ -444,8 +444,8 @@ def test_node_graph_config_with_ports():
 
 # %% nbs/tests/05_net/test_config.ipynb 81
 def test_node_graph_config_with_salvo_conditions():
-    """Test NodeGraphConfig with salvo conditions."""
-    config = NodeGraphConfig(
+    """Test NodeConfig with salvo conditions."""
+    config = NodeConfig(
         name="C",
         in_ports={"in": PortConfig()},
         out_ports={"out": PortConfig()},
@@ -476,8 +476,8 @@ def test_graph_config_simple():
     """Test GraphConfig with simple A -> B graph."""
     config = GraphConfig(
         nodes=[
-            NodeGraphConfig(name="A", out_ports={"out": PortConfig()}),
-            NodeGraphConfig(
+            NodeConfig(name="A", out_ports={"out": PortConfig()}),
+            NodeConfig(
                 name="B",
                 in_ports={"in": PortConfig()},
                 in_salvo_conditions={
@@ -504,8 +504,8 @@ def test_graph_config_no_edges():
     """Test GraphConfig with no edges (disconnected nodes)."""
     config = GraphConfig(
         nodes=[
-            NodeGraphConfig(name="A", out_ports={"out": PortConfig()}),
-            NodeGraphConfig(name="B", in_ports={"in": PortConfig()}),
+            NodeConfig(name="A", out_ports={"out": PortConfig()}),
+            NodeConfig(name="B", in_ports={"in": PortConfig()}),
         ],
         edges=[],
     )
@@ -518,8 +518,8 @@ def test_graph_config_complex():
     """Test GraphConfig with multiple nodes and edges."""
     config = GraphConfig(
         nodes=[
-            NodeGraphConfig(name="Source", out_ports={"out": PortConfig()}),
-            NodeGraphConfig(
+            NodeConfig(name="Source", out_ports={"out": PortConfig()}),
+            NodeConfig(
                 name="Processor",
                 in_ports={"in1": PortConfig(), "in2": PortConfig()},
                 out_ports={"out": PortConfig()},
@@ -536,7 +536,7 @@ def test_graph_config_complex():
                     ),
                 },
             ),
-            NodeGraphConfig(
+            NodeConfig(
                 name="Sink",
                 in_ports={"in": PortConfig()},
                 in_salvo_conditions={
@@ -565,8 +565,8 @@ def test_graph_config_validates_correctly():
     # This config has a valid graph
     valid_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(name="A", out_ports={"out": PortConfig()}),
-            NodeGraphConfig(name="B", in_ports={"in": PortConfig()}),
+            NodeConfig(name="A", out_ports={"out": PortConfig()}),
+            NodeConfig(name="B", in_ports={"in": PortConfig()}),
         ],
         edges=[EdgeConfig(source_str="A.out", target_str="B.in")],
     )
@@ -660,8 +660,8 @@ def test_graph_config_json_roundtrip():
     """Test GraphConfig complete JSON roundtrip."""
     config = GraphConfig(
         nodes=[
-            NodeGraphConfig(name="A", out_ports={"out": PortConfig()}),
-            NodeGraphConfig(
+            NodeConfig(name="A", out_ports={"out": PortConfig()}),
+            NodeConfig(
                 name="B",
                 in_ports={"in": PortConfig(slots_spec=PortSlotSpecFiniteConfig(capacity=5))},
                 in_salvo_conditions={
@@ -692,8 +692,8 @@ def test_graph_config_json_roundtrip_complex():
     """Test GraphConfig JSON roundtrip with complex nested terms."""
     config = GraphConfig(
         nodes=[
-            NodeGraphConfig(name="Source", out_ports={"out": PortConfig()}),
-            NodeGraphConfig(
+            NodeConfig(name="Source", out_ports={"out": PortConfig()}),
+            NodeConfig(
                 name="Processor",
                 in_ports={"in1": PortConfig(), "in2": PortConfig()},
                 out_ports={"out": PortConfig()},
@@ -747,8 +747,8 @@ def test_config_to_netrun_sim_integration():
     """Test that configs properly integrate with netrun_sim."""
     config = GraphConfig(
         nodes=[
-            NodeGraphConfig(name="A", out_ports={"out": PortConfig()}),
-            NodeGraphConfig(
+            NodeConfig(name="A", out_ports={"out": PortConfig()}),
+            NodeConfig(
                 name="B",
                 in_ports={"in": PortConfig()},
                 in_salvo_conditions={

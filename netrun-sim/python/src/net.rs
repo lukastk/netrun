@@ -12,8 +12,8 @@ use netrun_sim::net::{
     Epoch as CoreEpoch, NetAction as CoreNetSimAction,
     NetActionResponse as CoreNetSimActionResponse,
     NetActionResponseData as CoreNetSimActionResponseData, NetEvent as CoreNetSimEvent,
-    NetSim as CoreNetSim, Packet as CorePacket, PacketLocation as CorePacketLocation,
-    Salvo as CoreSalvo,
+    NetSim as CoreNetSim, OrphanedPacketInfo as CoreOrphanedPacketInfo, Packet as CorePacket,
+    PacketLocation as CorePacketLocation, Salvo as CoreSalvo,
 };
 
 /// Convert Rust ULID to Python ulid.ULID
@@ -259,6 +259,49 @@ impl Salvo {
     }
 }
 
+/// Information about a packet sent to an unconnected output port.
+#[pyclass]
+#[derive(Clone)]
+pub struct OrphanedPacketInfo {
+    #[pyo3(get)]
+    pub packet_id: String,
+    #[pyo3(get)]
+    pub from_port: String,
+    #[pyo3(get)]
+    pub salvo_condition: String,
+}
+
+#[pymethods]
+impl OrphanedPacketInfo {
+    fn __repr__(&self) -> String {
+        format!(
+            "OrphanedPacketInfo(packet_id='{}', from_port={:?}, salvo_condition={:?})",
+            self.packet_id, self.from_port, self.salvo_condition
+        )
+    }
+}
+
+impl OrphanedPacketInfo {
+    pub fn from_core(info: &CoreOrphanedPacketInfo) -> Self {
+        OrphanedPacketInfo {
+            packet_id: info.packet_id.to_string(),
+            from_port: info.from_port.clone(),
+            salvo_condition: info.salvo_condition.clone(),
+        }
+    }
+
+    pub fn to_core(&self) -> PyResult<CoreOrphanedPacketInfo> {
+        let packet_id = ulid::Ulid::from_string(&self.packet_id).map_err(|e| {
+            PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
+        })?;
+        Ok(CoreOrphanedPacketInfo {
+            packet_id,
+            from_port: self.from_port.clone(),
+            salvo_condition: self.salvo_condition.clone(),
+        })
+    }
+}
+
 /// An execution instance of a node.
 #[pyclass]
 #[derive(Clone)]
@@ -273,6 +316,8 @@ pub struct Epoch {
     pub out_salvos: Vec<Salvo>,
     #[pyo3(get)]
     pub state: EpochState,
+    #[pyo3(get)]
+    pub orphaned_packets: Vec<OrphanedPacketInfo>,
 }
 
 #[pymethods]
@@ -313,6 +358,11 @@ impl Epoch {
             out_salvos: epoch.out_salvos.iter().map(Salvo::from_core).collect(),
             // EpochState is now directly the core type (re-exported from core)
             state: epoch.state.clone(),
+            orphaned_packets: epoch
+                .orphaned_packets
+                .iter()
+                .map(OrphanedPacketInfo::from_core)
+                .collect(),
         }
     }
 
@@ -320,12 +370,18 @@ impl Epoch {
         let id = ulid::Ulid::from_string(&self.id).map_err(|e| {
             PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
         })?;
+        let orphaned_packets: Result<Vec<_>, _> = self
+            .orphaned_packets
+            .iter()
+            .map(|info| info.to_core())
+            .collect();
         Ok(CoreEpoch {
             id,
             node_name: self.node_name.clone(),
             in_salvo: self.in_salvo.to_core(),
             out_salvos: self.out_salvos.iter().map(|s| s.to_core()).collect(),
             state: self.state.clone(),
+            orphaned_packets: orphaned_packets?,
         })
     }
 }
@@ -595,6 +651,7 @@ enum NetEventKind {
     PacketMoved(i128, String, PacketLocation, PacketLocation, usize), // (ts, packet_id, from, to, from_index)
     InputSalvoTriggered(i128, String, String),
     OutputSalvoTriggered(i128, String, String),
+    PacketOrphaned(i128, String, String, String, String, String), // (ts, packet_id, epoch_id, node_name, port_name, salvo_condition)
 }
 
 #[pymethods]
@@ -612,6 +669,7 @@ impl NetEvent {
             NetEventKind::PacketMoved(_, _, _, _, _) => "PacketMoved".to_string(),
             NetEventKind::InputSalvoTriggered(_, _, _) => "InputSalvoTriggered".to_string(),
             NetEventKind::OutputSalvoTriggered(_, _, _) => "OutputSalvoTriggered".to_string(),
+            NetEventKind::PacketOrphaned(_, _, _, _, _, _) => "PacketOrphaned".to_string(),
         }
     }
 
@@ -627,7 +685,8 @@ impl NetEvent {
             | NetEventKind::EpochCancelled(ts, _)
             | NetEventKind::PacketMoved(ts, _, _, _, _)
             | NetEventKind::InputSalvoTriggered(ts, _, _)
-            | NetEventKind::OutputSalvoTriggered(ts, _, _) => *ts,
+            | NetEventKind::OutputSalvoTriggered(ts, _, _)
+            | NetEventKind::PacketOrphaned(ts, _, _, _, _, _) => *ts,
         }
     }
 
@@ -637,7 +696,8 @@ impl NetEvent {
             NetEventKind::PacketCreated(_, id)
             | NetEventKind::PacketConsumed(_, id, _)
             | NetEventKind::PacketDestroyed(_, id, _)
-            | NetEventKind::PacketMoved(_, id, _, _, _) => Some(id.clone()),
+            | NetEventKind::PacketMoved(_, id, _, _, _)
+            | NetEventKind::PacketOrphaned(_, id, _, _, _, _) => Some(id.clone()),
             _ => None,
         }
     }
@@ -652,6 +712,7 @@ impl NetEvent {
             NetEventKind::EpochFinished(_, epoch) | NetEventKind::EpochCancelled(_, epoch) => {
                 Some(epoch.id.clone())
             }
+            NetEventKind::PacketOrphaned(_, _, epoch_id, _, _, _) => Some(epoch_id.clone()),
             _ => None,
         }
     }
@@ -707,7 +768,26 @@ impl NetEvent {
     fn salvo_condition(&self) -> Option<String> {
         match &self.inner {
             NetEventKind::InputSalvoTriggered(_, _, cond)
-            | NetEventKind::OutputSalvoTriggered(_, _, cond) => Some(cond.clone()),
+            | NetEventKind::OutputSalvoTriggered(_, _, cond)
+            | NetEventKind::PacketOrphaned(_, _, _, _, _, cond) => Some(cond.clone()),
+            _ => None,
+        }
+    }
+
+    /// Get the node name (for PacketOrphaned events).
+    #[getter]
+    fn node_name(&self) -> Option<String> {
+        match &self.inner {
+            NetEventKind::PacketOrphaned(_, _, _, node_name, _, _) => Some(node_name.clone()),
+            _ => None,
+        }
+    }
+
+    /// Get the port name (for PacketOrphaned events - the output port the packet was sent from).
+    #[getter]
+    fn orphaned_port_name(&self) -> Option<String> {
+        match &self.inner {
+            NetEventKind::PacketOrphaned(_, _, _, _, port_name, _) => Some(port_name.clone()),
             _ => None,
         }
     }
@@ -775,6 +855,12 @@ impl NetEvent {
                     ts, eid, cond
                 )
             }
+            NetEventKind::PacketOrphaned(ts, packet_id, epoch_id, node_name, port_name, cond) => {
+                format!(
+                    "NetEvent.PacketOrphaned(ts={}, packet_id='{}', epoch_id='{}', node={:?}, port={:?}, condition={:?})",
+                    ts, packet_id, epoch_id, node_name, port_name, cond
+                )
+            }
         }
     }
 }
@@ -821,6 +907,16 @@ impl NetEvent {
             }
             CoreNetSimEvent::OutputSalvoTriggered(ts, eid, cond) => {
                 NetEventKind::OutputSalvoTriggered(*ts, eid.to_string(), cond.clone())
+            }
+            CoreNetSimEvent::PacketOrphaned(ts, packet_id, epoch_id, node_name, port_name, cond) => {
+                NetEventKind::PacketOrphaned(
+                    *ts,
+                    packet_id.to_string(),
+                    epoch_id.to_string(),
+                    node_name.clone(),
+                    port_name.clone(),
+                    cond.clone(),
+                )
             }
         };
         NetEvent { inner }
@@ -894,6 +990,22 @@ impl NetEvent {
                 Ok(CoreNetSimEvent::OutputSalvoTriggered(
                     *ts,
                     ulid,
+                    cond.clone(),
+                ))
+            }
+            NetEventKind::PacketOrphaned(ts, packet_id, epoch_id, node_name, port_name, cond) => {
+                let packet_ulid = ulid::Ulid::from_string(packet_id).map_err(|e| {
+                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
+                })?;
+                let epoch_ulid = ulid::Ulid::from_string(epoch_id).map_err(|e| {
+                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
+                })?;
+                Ok(CoreNetSimEvent::PacketOrphaned(
+                    *ts,
+                    packet_ulid,
+                    epoch_ulid,
+                    node_name.clone(),
+                    port_name.clone(),
                     cond.clone(),
                 ))
             }
@@ -1122,6 +1234,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<EpochState>()?;
     m.add_class::<Packet>()?;
     m.add_class::<Salvo>()?;
+    m.add_class::<OrphanedPacketInfo>()?;
     m.add_class::<Epoch>()?;
     m.add_class::<NetAction>()?;
     m.add_class::<NetEvent>()?;
