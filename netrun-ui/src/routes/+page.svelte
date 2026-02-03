@@ -6,6 +6,9 @@
 	import FileExplorer from '$lib/components/FileExplorer.svelte';
 	import { nodes, currentFilePath } from '$lib/stores/flowStore';
 
+	// Initial path for file explorer (from environment variable or default to home)
+	const initialPath = import.meta.env.VITE_INITIAL_PATH || '~';
+
 	// File explorer visibility state
 	let showFileExplorer = $state(true);
 
@@ -21,7 +24,7 @@
 		<!-- File Explorer (left, collapsible) -->
 		{#if showFileExplorer}
 			<div class="file-explorer-container">
-				<FileExplorer onClose={() => showFileExplorer = false} />
+				<FileExplorer initialPath={initialPath} onClose={() => showFileExplorer = false} />
 			</div>
 		{:else}
 			<button class="show-explorer-btn" onclick={() => showFileExplorer = true} title="Show file explorer">

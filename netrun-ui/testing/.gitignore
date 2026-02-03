@@ -1,0 +1,6 @@
+# Ignore user-created test files, but keep examples
+*
+!.gitignore
+!example.netrun.json
+!simple.netrun.toml
+!README.md

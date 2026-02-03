@@ -4,6 +4,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TESTING_DIR="$SCRIPT_DIR/testing"
 
 echo "Starting netrun-ui..."
 echo ""
@@ -17,16 +18,18 @@ BACKEND_PID=$!
 # Wait a moment for backend to start
 sleep 2
 
-# Start frontend
+# Start frontend with testing directory as initial path
 echo "Starting frontend (Vite) on http://localhost:5173..."
+echo "File explorer will open to: $TESTING_DIR"
 cd "$SCRIPT_DIR"
-npm run dev &
+VITE_INITIAL_PATH="$TESTING_DIR" npm run dev &
 FRONTEND_PID=$!
 
 echo ""
 echo "Both services started!"
 echo "  Backend:  http://127.0.0.1:8000"
 echo "  Frontend: http://localhost:5173"
+echo "  Testing:  $TESTING_DIR"
 echo ""
 echo "Press Ctrl+C to stop both services."
 
