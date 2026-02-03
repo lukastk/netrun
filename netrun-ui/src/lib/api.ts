@@ -267,15 +267,18 @@ class ApiClient {
 	 * Load subgraph content for editing
 	 * @param path Path to external file (optional)
 	 * @param inlineConfig Inline subgraph configuration (optional)
+	 * @param basePath Base path for resolving relative paths (optional)
 	 */
 	async loadSubgraph(
 		path?: string,
-		inlineConfig?: Record<string, unknown>
+		inlineConfig?: Record<string, unknown>,
+		basePath?: string
 	): Promise<SubgraphLoadResponse> {
 		return this.request<SubgraphLoadResponse>('/files/subgraph/load', {
 			method: 'POST',
 			body: JSON.stringify({
 				path: path || null,
+				base_path: basePath || null,
 				inline_config: inlineConfig || null,
 			}),
 		});
