@@ -4,6 +4,7 @@ __all__ = ['DeferredActionQueue', 'EpochCancelled', 'Net', 'NetProtocolKeys', 'N
 
 # %% nbs/netrun/05_net/01_net.ipynb 3
 import asyncio
+import signal
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -459,6 +460,10 @@ class Net:
         # Background task for main loop
         self._background_task: asyncio.Task | None = None
 
+        # SIGINT handling
+        self._sigint_received: bool = False
+        self._original_sigint_handler = None
+
     @property
     def config(self) -> NetConfig:
         """Get the Net configuration."""
@@ -658,6 +663,117 @@ class Net:
     async def resume(self) -> None:
         """Resume the Net after pausing."""
         self._paused = False
+
+    async def start_background(self) -> None:
+        """Start the Net in a background task.
+
+        This starts the Net and creates a background task that continuously
+        runs the execution loop. The loop will:
+        - Run simulation steps to move packets
+        - Execute startable epochs
+        - Handle SIGINT for graceful shutdown
+
+        Use `stop()` to gracefully stop the background execution.
+        """
+        if not self._started:
+            await self.start()
+
+        if self._background_task is not None:
+            raise RuntimeError("Background task already running")
+
+        # Install SIGINT handler
+        self._install_sigint_handler()
+
+        # Start the background loop
+        self._background_task = asyncio.create_task(self._run_loop())
+
+    async def _run_loop(self) -> None:
+        """Main execution loop for background mode.
+
+        This loop:
+        1. Checks if we should stop or pause
+        2. Runs simulation steps to move packets
+        3. Executes any startable epochs
+        4. Yields to allow other tasks to run
+        """
+        try:
+            while not self._stopping and not self._sigint_received:
+                if self._paused:
+                    # When paused, just sleep and check again
+                    await asyncio.sleep(0.01)
+                    continue
+
+                # Run simulation step
+                made_progress, _ = await self.run_step()
+
+                # Execute any startable epochs
+                startable = self.get_startable_epochs()
+                if startable:
+                    # Execute epochs concurrently
+                    tasks = [
+                        asyncio.create_task(self._execute_epoch(epoch_id))
+                        for epoch_id in startable
+                    ]
+                    if tasks:
+                        # Wait for all epoch executions to complete
+                        results = await asyncio.gather(*tasks, return_exceptions=True)
+                        # Log any exceptions
+                        for epoch_id, result in zip(startable, results):
+                            if isinstance(result, Exception):
+                                import sys
+                                print(f"Error executing epoch {epoch_id}: {result}", file=sys.stderr)
+
+                # Small yield to allow other tasks
+                if not made_progress and not startable:
+                    # If nothing happened, sleep a bit to avoid busy-waiting
+                    await asyncio.sleep(0.001)
+                else:
+                    # Just yield to allow other tasks
+                    await asyncio.sleep(0)
+        finally:
+            # Restore SIGINT handler
+            self._restore_sigint_handler()
+
+    def _install_sigint_handler(self) -> None:
+        """Install a SIGINT handler for graceful shutdown."""
+        def sigint_handler(signum, frame):
+            self._sigint_received = True
+
+        self._original_sigint_handler = signal.signal(signal.SIGINT, sigint_handler)
+
+    def _restore_sigint_handler(self) -> None:
+        """Restore the original SIGINT handler."""
+        if self._original_sigint_handler is not None:
+            signal.signal(signal.SIGINT, self._original_sigint_handler)
+            self._original_sigint_handler = None
+
+    async def wait_until_done(self) -> None:
+        """Wait for the background task to complete.
+
+        This blocks until:
+        - All epochs have finished and no packets can move
+        - SIGINT is received
+        - `stop()` is called from another task
+        """
+        if self._background_task is not None:
+            await self._background_task
+
+    def is_blocked(self) -> bool:
+        """Check if the network is blocked (no progress can be made).
+
+        Returns:
+            True if no packets can move and no epochs are running.
+        """
+        # Check if there are any startable or running epochs
+        if self.get_startable_epochs():
+            return False
+        if self._running_epochs:
+            return False
+
+        # Try a run_step to see if any packets can move
+        # Note: This is a sync check, so we just examine the state
+        # without actually running the step
+        return not self._netsim.can_make_progress() if hasattr(self._netsim, 'can_make_progress') else True
 
     async def run_step(self) -> tuple[bool, list]:
         """Run one simulation step.

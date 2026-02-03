@@ -1603,3 +1603,110 @@ def test_node_failure_context_full():
 
 # %%
 test_node_failure_context_full()
+
+# %% [markdown]
+# ## Background Execution Tests
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_net_start_background():
+    """Test Net can start in background mode."""
+    graph_config = GraphConfig(
+        nodes=[
+            NodeGraphConfig(name="Node1"),
+        ],
+    )
+    config = NetConfig(
+        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    net = Net(config)
+    await net.start_background()
+
+    assert net.started
+    assert net._background_task is not None
+    assert not net._background_task.done()
+
+    await net.stop()
+    assert not net.started
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_net_start_background_already_running():
+    """Test start_background raises if background task already running."""
+    graph_config = GraphConfig(
+        nodes=[
+            NodeGraphConfig(name="Node1"),
+        ],
+    )
+    config = NetConfig(
+        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    net = Net(config)
+    await net.start_background()
+
+    try:
+        with pytest.raises(RuntimeError, match="Background task already running"):
+            await net.start_background()
+    finally:
+        await net.stop()
+
+# %%
+#|export
+def test_net_is_blocked_empty_network():
+    """Test is_blocked returns True for empty network."""
+    graph_config = GraphConfig(
+        nodes=[
+            NodeGraphConfig(name="Node1"),
+        ],
+    )
+    config = NetConfig(
+        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    net = Net(config)
+    assert net.is_blocked()
+
+# %%
+#|export
+def test_net_is_blocked_with_running_epochs():
+    """Test is_blocked returns False when epochs are running."""
+    graph_config = GraphConfig(
+        nodes=[
+            NodeGraphConfig(name="Node1"),
+        ],
+    )
+    config = NetConfig(
+        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    net = Net(config)
+    net._running_epochs.add("epoch_123")
+    assert not net.is_blocked()
+
+# %%
+#|export
+def test_net_install_sigint_handler():
+    """Test _install_sigint_handler sets up handler."""
+    graph_config = GraphConfig(
+        nodes=[
+            NodeGraphConfig(name="Node1"),
+        ],
+    )
+    config = NetConfig(
+        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    net = Net(config)
+    net._install_sigint_handler()
+    assert net._original_sigint_handler is not None
+    net._restore_sigint_handler()
+    assert net._original_sigint_handler is None
