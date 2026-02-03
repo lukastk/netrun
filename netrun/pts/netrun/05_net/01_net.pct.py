@@ -102,7 +102,10 @@ class NodeExecutionContext:
     """Context object passed to node execution functions.
 
     This is the primary interface for nodes to interact with the Net during execution.
-    All operations are synchronous and block until complete.
+    All operations are deferred and committed when the function completes.
+
+    Packet operations (create, consume, load_output_port, send_output_salvo) are
+    queued locally and executed atomically when the epoch completes successfully.
     """
 
     # Identity
@@ -115,12 +118,19 @@ class NodeExecutionContext:
     retry_exceptions: list[Exception] = field(default_factory=list)
 
     # Internal (not for user access)
-    _channel: SyncRPCChannel = field(repr=False, default=None)
     _config: NodeExecutionConfig = field(repr=False, default=None)
     _print_buffer: list[tuple[datetime, str]] = field(default_factory=list, repr=False)
-    _last_print_flush: float = field(default_factory=time.time, repr=False)
     _created_packets: list[str] = field(default_factory=list, repr=False)
     _consumed_packets: list[str] = field(default_factory=list, repr=False)
+
+    # Input packet values passed from Net (packet_id -> value)
+    _input_packet_values: dict[str, Any] = field(default_factory=dict, repr=False)
+
+    # Deferred actions queue
+    _deferred_actions: "DeferredActionQueue" = field(default_factory=lambda: DeferredActionQueue(), repr=False)
+
+    # Track if epoch was cancelled
+    _cancelled: bool = field(default=False, repr=False)
 
     def create_packet(self, value: Any) -> str:
         """Create a new packet with the given value.
@@ -129,20 +139,13 @@ class NodeExecutionContext:
             value: The value to store in the packet.
 
         Returns:
-            The packet ID (or a deferred ID if defer_net_actions=True).
+            A deferred packet ID (format: "deferred_{uuid}").
+            This ID is valid within this epoch and will be mapped
+            to a real packet ID when the epoch commits.
         """
-        self._channel.send(
-            NetProtocolKeys.UP_CREATE_PACKET.value,
-            (self.epoch_id, value)
-        )
-
-        key, data = self._channel.recv()
-        if key != NetProtocolKeys.UP_CREATE_PACKET_RESPONSE.value:
-            raise RuntimeError(f"Expected {NetProtocolKeys.UP_CREATE_PACKET_RESPONSE.value}, got {key}")
-
-        packet_id = data
-        self._created_packets.append(packet_id)
-        return packet_id
+        deferred_id = self._deferred_actions.add_create_packet(value)
+        self._created_packets.append(deferred_id)
+        return deferred_id
 
     def create_packet_from_value_func(
         self,
@@ -158,7 +161,7 @@ class NodeExecutionContext:
             kwargs: Keyword arguments to pass to the function.
 
         Returns:
-            The packet ID.
+            A deferred packet ID.
         """
         if kwargs is None:
             kwargs = {}
@@ -169,57 +172,40 @@ class NodeExecutionContext:
             kwargs=kwargs,
         )
 
-        self._channel.send(
-            NetProtocolKeys.UP_CREATE_PACKET.value,
-            (self.epoch_id, lazy_spec)
-        )
-
-        key, data = self._channel.recv()
-        if key != NetProtocolKeys.UP_CREATE_PACKET_RESPONSE.value:
-            raise RuntimeError(f"Expected {NetProtocolKeys.UP_CREATE_PACKET_RESPONSE.value}, got {key}")
-
-        packet_id = data
-        self._created_packets.append(packet_id)
-        return packet_id
+        deferred_id = self._deferred_actions.add_create_packet(lazy_spec)
+        self._created_packets.append(deferred_id)
+        return deferred_id
 
     def consume_packet(self, packet_id: str) -> Any:
         """Consume a packet and return its value.
 
-        The packet is removed from the network.
+        The packet is removed from the network when the epoch commits.
 
         Args:
             packet_id: The ID of the packet to consume.
 
         Returns:
             The packet's value.
+
+        Raises:
+            KeyError: If the packet_id is not in the input packets for this epoch.
         """
-        self._channel.send(
-            NetProtocolKeys.UP_CONSUME_PACKET.value,
-            (self.epoch_id, packet_id)
-        )
+        if packet_id not in self._input_packet_values:
+            raise KeyError(f"Packet {packet_id} not found in input packets for epoch {self.epoch_id}")
 
-        key, data = self._channel.recv()
-        if key != NetProtocolKeys.UP_CONSUME_PACKET_RESPONSE.value:
-            raise RuntimeError(f"Expected {NetProtocolKeys.UP_CONSUME_PACKET_RESPONSE.value}, got {key}")
-
+        value = self._input_packet_values[packet_id]
+        self._deferred_actions.add_consume_packet(packet_id)
         self._consumed_packets.append(packet_id)
-        return data
+        return value
 
     def load_output_port(self, port_name: str, packet_id: str) -> None:
         """Load a packet into an output port.
 
         Args:
             port_name: The name of the output port.
-            packet_id: The ID of the packet to load.
+            packet_id: The ID of the packet to load (can be a deferred ID).
         """
-        self._channel.send(
-            NetProtocolKeys.UP_LOAD_OUTPUT_PORT.value,
-            (self.epoch_id, port_name, packet_id)
-        )
-
-        key, data = self._channel.recv()
-        if key != NetProtocolKeys.UP_LOAD_OUTPUT_PORT_RESPONSE.value:
-            raise RuntimeError(f"Expected {NetProtocolKeys.UP_LOAD_OUTPUT_PORT_RESPONSE.value}, got {key}")
+        self._deferred_actions.add_load_output_port(port_name, packet_id)
 
     def send_output_salvo(self, salvo_condition_name: str) -> None:
         """Send packets from output ports onto edges.
@@ -227,39 +213,31 @@ class NodeExecutionContext:
         Args:
             salvo_condition_name: The name of the output salvo condition to trigger.
         """
-        self._channel.send(
-            NetProtocolKeys.UP_SEND_OUTPUT_SALVO.value,
-            (self.epoch_id, salvo_condition_name)
-        )
-
-        key, data = self._channel.recv()
-        if key != NetProtocolKeys.UP_SEND_OUTPUT_SALVO_RESPONSE.value:
-            raise RuntimeError(f"Expected {NetProtocolKeys.UP_SEND_OUTPUT_SALVO_RESPONSE.value}, got {key}")
+        self._deferred_actions.add_send_output_salvo(salvo_condition_name)
 
     def cancel_epoch(self) -> NoReturn:
         """Cancel the current epoch.
 
         This immediately terminates the epoch execution.
+        All deferred actions are discarded.
         Raises EpochCancelled which should not be caught by user code.
         """
-        self._channel.send(
-            NetProtocolKeys.UP_CANCEL_EPOCH.value,
-            (self.epoch_id,)
-        )
+        self._cancelled = True
+        self._deferred_actions.discard()
         raise EpochCancelled(f"Epoch {self.epoch_id} cancelled")
 
     def print(self, *args, sep: str = " ", end: str = "\n", flush: bool = False) -> None:
-        """Capture print output with periodic flushing.
+        """Capture print output.
 
         This method behaves like the built-in print() but captures output
-        and periodically sends it back to the Net. Each print is timestamped
-        at the time it is called.
+        with timestamps. Each print is timestamped at the time it is called.
+        All captured output is returned to the Net when the epoch completes.
 
         Args:
             *args: Values to print (same as builtin print).
             sep: Separator between values (default: " ").
             end: String to append at end (default: "\\n").
-            flush: If True, immediately flush buffer to Net.
+            flush: Ignored (kept for API compatibility with builtin print).
         """
         # Capture timestamp immediately when print is called
         timestamp = get_timestamp_utc()
@@ -275,36 +253,53 @@ class NodeExecutionContext:
         # Add to buffer with timestamp
         self._print_buffer.append((timestamp, message))
 
-        # Check if we should flush
-        now = time.time()
-        flush_interval = self._config.print_flush_interval if self._config else 0.1
-        time_threshold_exceeded = (now - self._last_print_flush) >= flush_interval
+    def _get_execution_result(self) -> "NodeExecutionResult":
+        """Get the execution result including deferred actions and print buffer.
 
-        buffer_max_size = self._config.print_buffer_max_size if self._config else None
-        buffer_size_exceeded = (
-            buffer_max_size is not None and
-            len(self._print_buffer) >= buffer_max_size
+        This is called by the func_preprocessor after the node function completes.
+        """
+        return NodeExecutionResult(
+            cancelled=self._cancelled,
+            deferred_actions=self._deferred_actions,
+            print_buffer=self._print_buffer.copy(),
+            created_packets=self._created_packets.copy(),
+            consumed_packets=self._consumed_packets.copy(),
         )
 
-        should_flush = flush or time_threshold_exceeded or buffer_size_exceeded
+# %% [markdown]
+# ## NodeExecutionResult
+#
+# Result returned from a node function execution, containing deferred actions and print buffer.
 
-        if should_flush and self._print_buffer:
-            self._flush_print_buffer()
+# %%
+#|export
+@dataclass
+class NodeExecutionResult:
+    """Result of a node function execution.
 
-    def _flush_print_buffer(self) -> None:
-        """Send buffered prints to Net via channel."""
-        if not self._print_buffer:
-            return
+    This is returned by the func_preprocessor wrapper and contains all the
+    deferred actions and captured prints that need to be processed by Net.
+    """
+    cancelled: bool
+    """Whether the epoch was cancelled via ctx.cancel_epoch()."""
 
-        buffer = self._print_buffer.copy()
-        self._print_buffer.clear()
-        self._last_print_flush = time.time()
+    deferred_actions: "DeferredActionQueue"
+    """Queue of deferred packet operations to commit."""
 
-        self._channel.send(
-            NetProtocolKeys.UP_PRINT_BUFFER.value,
-            (self.epoch_id, buffer)
-        )
-        # Note: Print buffer sends don't require a response
+    print_buffer: list[tuple[datetime, str]]
+    """Captured print output with timestamps."""
+
+    created_packets: list[str]
+    """List of deferred packet IDs that were created."""
+
+    consumed_packets: list[str]
+    """List of packet IDs that were consumed."""
+
+    func_result: Any = None
+    """The return value from the node function (if any)."""
+
+    exception: Exception | None = None
+    """Exception raised by the node function (if any)."""
 
 # %% [markdown]
 # ## NodeFailureContext
@@ -358,33 +353,6 @@ class DeferredActionQueue:
         """Queue sending an output salvo."""
         self.actions.append(("send_output_salvo", (salvo_condition_name,)))
 
-    def commit(self, netsim: netrun_sim.NetSim, packet_store: PacketStore, epoch_id: str) -> dict[str, str]:
-        """Commit all actions. Returns deferred_id -> real_id mapping."""
-        from ulid import ULID
-
-        for action_type, args in self.actions:
-            if action_type == "create_packet":
-                deferred_id, value = args
-                real_id = str(ULID())
-                self.deferred_to_real_ids[deferred_id] = real_id
-                packet_store.register(real_id, value)
-                netsim.do_action(netrun_sim.NetAction.create_packet(epoch_id))
-            elif action_type == "consume_packet":
-                packet_id, = args
-                # Map deferred IDs to real IDs if needed
-                real_packet_id = self.deferred_to_real_ids.get(packet_id, packet_id)
-                packet_store.consume(real_packet_id)
-                netsim.do_action(netrun_sim.NetAction.consume_packet(real_packet_id))
-            elif action_type == "load_output_port":
-                port_name, packet_id = args
-                real_packet_id = self.deferred_to_real_ids.get(packet_id, packet_id)
-                netsim.do_action(netrun_sim.NetAction.load_packet_into_output_port(real_packet_id, port_name))
-            elif action_type == "send_output_salvo":
-                salvo_condition_name, = args
-                netsim.do_action(netrun_sim.NetAction.send_output_salvo(epoch_id, salvo_condition_name))
-
-        return self.deferred_to_real_ids
-
     def discard(self) -> None:
         """Discard all queued actions (on failure/retry)."""
         self.actions.clear()
@@ -395,7 +363,7 @@ class DeferredActionQueue:
 # ## func_preprocessor and func_done_callback
 #
 # These functions transform node functions to accept context-creation arguments
-# and handle final buffer flush.
+# and return NodeExecutionResult with all deferred actions.
 
 # %%
 #|export
@@ -403,8 +371,10 @@ def create_net_func_preprocessor(node_execution_configs: dict[str, NodeExecution
     """Create a func_preprocessor for Net execution.
 
     The preprocessor transforms `exec_node_func(ctx, packets)` into a wrapped function
-    that accepts context-creation arguments and creates the NodeExecutionContext locally
-    in the worker.
+    that:
+    1. Creates a NodeExecutionContext with input packet values
+    2. Runs the node function
+    3. Returns NodeExecutionResult with deferred actions and print buffer
 
     Args:
         node_execution_configs: Mapping of node names to their execution configs.
@@ -413,17 +383,17 @@ def create_net_func_preprocessor(node_execution_configs: dict[str, NodeExecution
         A preprocessor function.
     """
     def preprocessor(exec_node_func: Callable) -> Callable:
-        """Transform exec_node_func(ctx, packets) -> wrapped(channel, epoch_id, node_name, packets, ...)"""
+        """Transform exec_node_func(ctx, packets) -> wrapped(epoch_id, node_name, packets, packet_values, ...)"""
 
         def wrapped(
-            channel: SyncRPCChannel,
             epoch_id: str,
             node_name: str,
             packets: dict[str, list[str]],
+            packet_values: dict[str, Any],
             retry_count: int = 0,
             retry_timestamps: list[datetime] | None = None,
             retry_exceptions: list[Exception] | None = None,
-        ):
+        ) -> NodeExecutionResult:
             config = node_execution_configs.get(node_name)
 
             ctx = NodeExecutionContext(
@@ -432,16 +402,27 @@ def create_net_func_preprocessor(node_execution_configs: dict[str, NodeExecution
                 retry_count=retry_count,
                 retry_timestamps=retry_timestamps or [],
                 retry_exceptions=retry_exceptions or [],
-                _channel=channel,
                 _config=config,
+                _input_packet_values=packet_values,
             )
 
+            func_result = None
+            exception = None
+
             try:
-                result = exec_node_func(ctx, packets)
-                return result
-            finally:
-                # Always flush remaining buffer
-                ctx._flush_print_buffer()
+                func_result = exec_node_func(ctx, packets)
+            except EpochCancelled:
+                # Expected when ctx.cancel_epoch() is called
+                pass
+            except Exception as e:
+                exception = e
+
+            # Get the execution result with all deferred actions
+            result = ctx._get_execution_result()
+            result.func_result = func_result
+            result.exception = exception
+
+            return result
 
         return wrapped
 
@@ -449,27 +430,16 @@ def create_net_func_preprocessor(node_execution_configs: dict[str, NodeExecution
 
 
 def create_net_func_done_callback() -> Callable:
-    """Create func_done_callback that handles post-execution cleanup.
+    """Create func_done_callback for Net execution.
 
-    The callback is called after function execution with the same args/kwargs
-    that were passed to the function, plus the result.
+    This callback is no longer needed since all state is returned in NodeExecutionResult,
+    but we provide a no-op for compatibility.
 
     Returns:
-        A done callback function.
+        A no-op callback function.
     """
-    def callback(
-        channel: SyncRPCChannel,
-        epoch_id: str,
-        node_name: str,
-        packets: dict[str, list[str]],
-        retry_count: int = 0,
-        retry_timestamps: list[datetime] | None = None,
-        retry_exceptions: list[Exception] | None = None,
-        *,
-        result=None,
-    ):
-        # The wrapped function already handles the final flush in its finally block.
-        # This callback is available for additional cleanup if needed.
+    def callback(*args, **kwargs):
+        # All work is done by the preprocessor wrapper
         pass
 
     return callback
@@ -666,12 +636,16 @@ class Net:
     async def start(self) -> None:
         """Start the Net.
 
-        This starts the ExecutionManager and all pools.
+        This starts the ExecutionManager, all pools, and registers node functions.
         """
         if self._started:
             raise RuntimeError("Net already started")
 
         await self._execution_manager.start()
+
+        # Register node functions with all workers
+        await self._register_node_functions()
+
         self._started = True
 
     def start_sync(self) -> None:
@@ -760,6 +734,243 @@ class Net:
     def get_running_epochs(self) -> list[str]:
         """Get list of currently running epoch IDs."""
         return list(self._running_epochs)
+
+    def _get_func_key(self, config: NodeExecutionConfig) -> str:
+        """Get the function key for a node's exec_node_func.
+
+        Args:
+            config: The node's execution config.
+
+        Returns:
+            A unique function key for this node.
+        """
+        return f"net:node:{config.node_name}"
+
+    def _get_input_packet_values(self, epoch_id: str) -> tuple[dict[str, list[str]], dict[str, Any]]:
+        """Get the input packets and their values for an epoch.
+
+        Args:
+            epoch_id: The epoch ID.
+
+        Returns:
+            Tuple of (packets, packet_values) where:
+            - packets: dict mapping port_name -> list of packet_ids
+            - packet_values: dict mapping packet_id -> value
+        """
+        epoch = self._netsim.get_epoch(epoch_id)
+
+        # Get input salvo (packets by port)
+        packets: dict[str, list[str]] = {}
+        packet_values: dict[str, Any] = {}
+
+        # The epoch's input_salvo contains packet IDs organized by port
+        input_salvo = epoch.input_salvo
+        if input_salvo:
+            for port_name, packet_ids in input_salvo.items():
+                packets[port_name] = list(packet_ids)
+                for packet_id in packet_ids:
+                    # Get the value from PacketStore
+                    value = self._packet_store.get(packet_id)
+                    packet_values[packet_id] = value
+
+        return packets, packet_values
+
+    def _commit_epoch_result(self, epoch_id: str, result: NodeExecutionResult) -> dict[str, str]:
+        """Commit the deferred actions from an epoch's execution result.
+
+        Args:
+            epoch_id: The epoch ID.
+            result: The NodeExecutionResult from the worker.
+
+        Returns:
+            Mapping of deferred packet IDs to real packet IDs.
+        """
+        from ulid import ULID
+
+        deferred_to_real: dict[str, str] = {}
+
+        # Process each deferred action in order
+        for action_type, args in result.deferred_actions.actions:
+            if action_type == "create_packet":
+                deferred_id, value = args
+                # Generate real packet ID
+                real_id = str(ULID())
+                deferred_to_real[deferred_id] = real_id
+
+                # Store value in PacketStore
+                self._packet_store.register(real_id, value)
+
+                # Create packet in netsim (inside the epoch)
+                self._netsim.do_action(netrun_sim.NetAction.create_packet(epoch_id))
+
+            elif action_type == "consume_packet":
+                packet_id, = args
+                # Map deferred IDs if needed (though consume usually uses real IDs)
+                real_packet_id = deferred_to_real.get(packet_id, packet_id)
+
+                # Consume from PacketStore
+                self._packet_store.consume(real_packet_id)
+
+                # Consume in netsim
+                self._netsim.do_action(netrun_sim.NetAction.consume_packet(real_packet_id))
+
+            elif action_type == "load_output_port":
+                port_name, packet_id = args
+                # Map deferred ID to real ID
+                real_packet_id = deferred_to_real.get(packet_id, packet_id)
+
+                # Load into output port in netsim
+                self._netsim.do_action(
+                    netrun_sim.NetAction.load_packet_into_output_port(real_packet_id, port_name)
+                )
+
+            elif action_type == "send_output_salvo":
+                salvo_condition_name, = args
+
+                # Send output salvo in netsim
+                self._netsim.do_action(
+                    netrun_sim.NetAction.send_output_salvo(epoch_id, salvo_condition_name)
+                )
+
+        return deferred_to_real
+
+    async def _execute_epoch(self, epoch_id: str) -> NodeExecutionResult | None:
+        """Execute a single startable epoch.
+
+        This method:
+        1. Checks rate limiting
+        2. Starts the epoch in netsim
+        3. Dispatches the node function to a worker
+        4. Waits for completion
+        5. Commits deferred actions (on success) or handles failure
+
+        Args:
+            epoch_id: The ID of the epoch to execute.
+
+        Returns:
+            The NodeExecutionResult if execution succeeded, None if skipped.
+        """
+        epoch = self._netsim.get_epoch(epoch_id)
+        node_name = epoch.node_name
+        config = self._get_node_execution_config(node_name)
+
+        # Check if node has an execution function
+        if config is None or config.exec_node_func is None:
+            # No execution function - just mark as running and finish immediately
+            self._netsim.do_action(netrun_sim.NetAction.start_epoch(epoch_id))
+            self._netsim.do_action(netrun_sim.NetAction.finish_epoch(epoch_id))
+            return None
+
+        # Check rate limiting
+        if not self._check_rate_limit(node_name):
+            return None  # Will be retried on next call
+
+        # Get input packet values
+        packets, packet_values = self._get_input_packet_values(epoch_id)
+
+        # Transition epoch to Running
+        self._netsim.do_action(netrun_sim.NetAction.start_epoch(epoch_id))
+        self._running_epochs.add(epoch_id)
+
+        try:
+            # Determine allocation method
+            allocation_method = (
+                config.pool_allocation_method or
+                self._config.default_pool_allocation_method
+            )
+
+            # Get func key for this node
+            func_key = self._get_func_key(config)
+
+            # Dispatch to worker
+            job_result = await self._execution_manager.run_allocate(
+                pool_worker_ids=config.pools,
+                allocation_method=allocation_method,
+                func_import_path_or_key=func_key,
+                send_channel=False,  # Deferred mode doesn't need channel
+                func_args=(epoch_id, node_name, packets, packet_values),
+                func_kwargs={
+                    "retry_count": 0,
+                    "retry_timestamps": [],
+                    "retry_exceptions": [],
+                },
+            )
+
+            # Extract NodeExecutionResult from job result
+            execution_result: NodeExecutionResult = job_result.result
+
+            # Handle print buffer
+            if execution_result.print_buffer:
+                self._handle_print_buffer(epoch_id, execution_result.print_buffer)
+
+            # Check for errors
+            if execution_result.exception is not None:
+                # Epoch failed - cancel it
+                self._netsim.do_action(netrun_sim.NetAction.cancel_epoch(epoch_id))
+                raise execution_result.exception
+
+            if execution_result.cancelled:
+                # Epoch was cancelled via ctx.cancel_epoch()
+                self._netsim.do_action(netrun_sim.NetAction.cancel_epoch(epoch_id))
+                return execution_result
+
+            # Success - commit deferred actions
+            self._commit_epoch_result(epoch_id, execution_result)
+
+            # Finish the epoch
+            self._netsim.do_action(netrun_sim.NetAction.finish_epoch(epoch_id))
+
+            return execution_result
+
+        finally:
+            self._running_epochs.discard(epoch_id)
+
+    async def execute_startable_epochs(self) -> list[tuple[str, NodeExecutionResult | None]]:
+        """Execute all currently startable epochs.
+
+        Returns:
+            List of (epoch_id, result) tuples for epochs that were executed.
+            Results may be None if the epoch was skipped (no exec func or rate limited).
+        """
+        results = []
+        startable = self.get_startable_epochs()
+
+        for epoch_id in startable:
+            try:
+                result = await self._execute_epoch(epoch_id)
+                results.append((epoch_id, result))
+            except Exception as e:
+                # Store error but continue with other epochs
+                results.append((epoch_id, None))
+                # Re-raise if on_error is "raise"
+                # For now, just log the error
+                import sys
+                print(f"Error executing epoch {epoch_id}: {e}", file=sys.stderr)
+
+        return results
+
+    async def _register_node_functions(self) -> None:
+        """Register all node functions with the execution manager pools.
+
+        This sends the exec_node_func for each node to all workers in the
+        configured pools, so they can be called by function key.
+        """
+        for node_config in self.config.graph.nodes:
+            if node_config.execution_config is None:
+                continue
+            if node_config.execution_config.exec_node_func is None:
+                continue
+
+            config = node_config.execution_config
+            func_key = self._get_func_key(config)
+
+            # Register with each pool the node can use
+            for pool_id in config.pools:
+                await self._execution_manager.send_function_to_pool(
+                    pool_id=pool_id,
+                    func_key=func_key,
+                    func=config.exec_node_func,
+                )
 
     async def __aenter__(self) -> "Net":
         """Context manager entry - starts the Net."""
