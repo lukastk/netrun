@@ -24,6 +24,7 @@
 		deleteNodes,
 		deleteEdges,
 		pushHistory,
+		updateNodePositions,
 		type NetrunNodeData,
 		type NetrunEdge
 	} from '$lib/stores/flowStore';
@@ -65,8 +66,14 @@
 		selectedEdgeIds.set(new Set(params.edges.map(e => e.id)));
 	}
 
-	// Handle node drag end (for undo history)
-	function onNodeDragStop() {
+	// Handle node drag end - sync positions to store and push history
+	function onNodeDragStop(event: { nodes: Node[] }) {
+		// Update positions in our store
+		const updates = event.nodes.map(node => ({
+			id: node.id,
+			position: node.position
+		}));
+		updateNodePositions(updates);
 		pushHistory();
 	}
 
