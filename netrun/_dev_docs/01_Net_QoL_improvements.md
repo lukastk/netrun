@@ -938,13 +938,11 @@ Make log access more convenient.
 2. ✅ `list_node_log_names() -> list[str]`
 3. ✅ `get_all_logs_chronological() -> list[tuple[datetime, str, str, str]]`
 
-### Phase 6: Public Epoch Execution (Priority: Medium)
+### Phase 6: Public Epoch Execution (Priority: Medium) ✅ COMPLETED
 
 Make `_execute_epoch` public.
 
-1. `execute_epoch(epoch_id)` - rename `_execute_epoch` to public
-
-**Estimated effort**: Trivial - just rename.
+1. ✅ `execute_epoch(epoch_id)` - public wrapper around `_execute_epoch`
 
 ### Phase 7: Graph Queries (Priority: Low)
 
