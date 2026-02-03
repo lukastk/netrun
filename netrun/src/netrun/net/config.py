@@ -3,9 +3,11 @@
 __all__ = ['EdgeConfig', 'GraphConfig', 'MainPoolConfig', 'MaxSalvosConfig', 'MaxSalvosFiniteConfig', 'MaxSalvosInfiniteConfig', 'MultiprocessPoolConfig', 'NetConfig', 'NodeExecutionConfig', 'NodeExecutionFunc', 'NodeGraphConfig', 'NodeStartFunc', 'NodeStopFunc', 'OnNodeFailureFunc', 'OutputQueueConfig', 'PacketCountAllConfig', 'PacketCountConfig', 'PacketCountNConfig', 'PacketID', 'PoolConfig', 'PoolSpecConfig', 'PortConfig', 'PortRefConfig', 'PortSlotSpecConfig', 'PortSlotSpecFiniteConfig', 'PortSlotSpecInfiniteConfig', 'PortStateConfig', 'PortStateEmptyConfig', 'PortStateEqualsConfig', 'PortStateEqualsOrGreaterThanConfig', 'PortStateEqualsOrLessThanConfig', 'PortStateFullConfig', 'PortStateGreaterThanConfig', 'PortStateLessThanConfig', 'PortStateNonEmptyConfig', 'PortStateNonFullConfig', 'RemotePoolConfig', 'SalvoConditionConfig', 'SalvoConditionTermAndConfig', 'SalvoConditionTermConfig', 'SalvoConditionTermFalseConfig', 'SalvoConditionTermNotConfig', 'SalvoConditionTermOrConfig', 'SalvoConditionTermPortConfig', 'SalvoConditionTermTrueConfig', 'ThreadPoolConfig']
 
 # %% nbs/netrun/05_net/00_config.ipynb 2
-from pydantic import BaseModel, Field
-from typing import Annotated, Literal, NewType
+from pydantic import BaseModel, Field, model_validator, field_serializer
+from typing import Annotated, Literal, NewType, Any
+from types import ModuleType
 from collections.abc import Callable
+import importlib
 from ulid import ULID
 
 import netrun_sim
@@ -350,17 +352,16 @@ class NodeExecutionConfig(BaseModel):
     """Runtime configuration for a node's execution behavior."""
     model_config = {"arbitrary_types_allowed": True}
 
-    node_name: str
     pools: list[str] = Field(default_factory=list)
-    exec_node_func: NodeExecutionFunc | str = None
+    exec_node_func: NodeExecutionFunc | str | None = None
     """
     The function to execute the node with.
     If a string, it is interpreted as the import path of the function.
     """
 
-    start_node_func: NodeStartFunc | str = None
-    stop_node_func: NodeStopFunc | str = None
-    on_node_failure: OnNodeFailureFunc | str = None
+    start_node_func: NodeStartFunc | str | None = None
+    stop_node_func: NodeStopFunc | str | None = None
+    on_node_failure: OnNodeFailureFunc | str | None = None
 
     # Additional execution options (from PROJECT_SPEC.md)
     defer_startup: bool = False
@@ -407,16 +408,158 @@ class NodeExecutionConfig(BaseModel):
     How to select a worker when node has multiple pools. None = use Net default.
     """
 
+    @field_serializer("exec_node_func", "start_node_func", "stop_node_func", "on_node_failure")
+    def serialize_func(self, func: Callable | str | None) -> str | None:
+        """Serialize functions to their import path or None if not a string.
+
+        Functions can only be roundtripped if they are specified as import path strings.
+        """
+        if func is None:
+            return None
+        if isinstance(func, str):
+            return func
+        # Can't serialize function objects - return None
+        return None
+
 # %% nbs/netrun/05_net/00_config.ipynb 24
 class NodeGraphConfig(BaseModel):
-    """Configuration for a node's graph structure (ports and salvo conditions)."""
-    name: str
+    """Configuration for a node's graph structure (ports and salvo conditions).
+
+    Can be created directly or from a factory module using the `factory` field
+    or the `from_factory()` class method.
+
+    Example with factory:
+        # Using factory field
+        config = NodeGraphConfig(
+            factory="myapp.nodes.worker",
+            factory_args={"name": "Worker1", "threshold": 0.5},
+        )
+
+        # Using from_factory class method
+        config = NodeGraphConfig.from_factory(
+            factory="myapp.nodes.worker",
+            args={"name": "Worker1", "threshold": 0.5},
+        )
+    """
+    model_config = {"arbitrary_types_allowed": True}
+
+    name: str = ""
     in_ports: dict[str, PortConfig] = Field(default_factory=dict)
     out_ports: dict[str, PortConfig] = Field(default_factory=dict)
     in_salvo_conditions: dict[str, SalvoConditionConfig] = Field(default_factory=dict)
     out_salvo_conditions: dict[str, SalvoConditionConfig] = Field(default_factory=dict)
 
     execution_config: NodeExecutionConfig | None = None
+
+    # Factory support
+    factory: str | ModuleType | None = None
+    """Factory module or import path. If set, generates base config from factory.
+
+    The factory module must contain two functions:
+    - get_node_config(**args) -> NodeGraphConfig (without execution_config)
+    - get_node_funcs(**args) -> tuple[exec_func, start_func, stop_func, on_failure_func]
+    """
+
+    factory_args: dict[str, Any] = Field(default_factory=dict)
+    """Arguments passed to factory functions."""
+
+    @model_validator(mode="before")
+    @classmethod
+    def expand_factory(cls, data: dict[str, Any]) -> dict[str, Any]:
+        """If factory is set, expand it and merge with provided data."""
+        if not isinstance(data, dict):
+            return data
+
+        factory = data.get("factory")
+        if factory is None:
+            return data
+
+        # Generate base config from factory
+        factory_args = data.get("factory_args", {})
+        base_config = cls.from_factory(factory=factory, args=factory_args)
+
+        # Merge: base config first, then overrides from data
+        merged = base_config.model_dump(exclude={"factory", "factory_args"})
+
+        for key, value in data.items():
+            if key in ("factory", "factory_args"):
+                continue
+            if value is not None:
+                # For dict fields, merge instead of replace
+                if key in ("in_ports", "out_ports", "in_salvo_conditions", "out_salvo_conditions") and isinstance(value, dict):
+                    merged[key] = {**merged.get(key, {}), **value}
+                else:
+                    merged[key] = value
+
+        # Keep factory/factory_args for serialization
+        merged["factory"] = factory
+        merged["factory_args"] = factory_args
+
+        return merged
+
+    @field_serializer("factory")
+    def serialize_factory(self, factory: str | ModuleType | None) -> str | None:
+        """Serialize factory to import path string."""
+        if factory is None:
+            return None
+        if isinstance(factory, str):
+            return factory
+        # Convert module to import path
+        return factory.__name__
+
+    @classmethod
+    def from_factory(
+        cls,
+        factory: str | ModuleType,
+        args: dict[str, Any] | None = None,
+    ) -> "NodeGraphConfig":
+        """Create a NodeGraphConfig from a factory module.
+
+        Args:
+            factory: Factory module or import path to module containing
+                     get_node_config() and get_node_funcs().
+            args: Arguments passed to both factory functions.
+
+        Returns:
+            Complete NodeGraphConfig with execution_config populated.
+
+        Raises:
+            ImportError: If factory module cannot be imported.
+            AttributeError: If module missing get_node_config or get_node_funcs.
+        """
+        args = args or {}
+
+        # Import module if string
+        if isinstance(factory, str):
+            module = importlib.import_module(factory)
+        else:
+            module = factory
+
+        # Get factory functions
+        get_node_config = getattr(module, "get_node_config")
+        get_node_funcs = getattr(module, "get_node_funcs")
+
+        # Call factories
+        base_config = get_node_config(**args)
+        exec_func, start_func, stop_func, on_failure_func = get_node_funcs(**args)
+
+        # Build execution config from functions
+        execution_config = NodeExecutionConfig(
+            exec_node_func=exec_func,
+            start_node_func=start_func,
+            stop_node_func=stop_func,
+            on_node_failure=on_failure_func,
+        )
+
+        # Return complete config (don't set factory/factory_args here - that's for the field-based path)
+        return cls.model_construct(
+            name=base_config.name,
+            in_ports=base_config.in_ports,
+            out_ports=base_config.out_ports,
+            in_salvo_conditions=base_config.in_salvo_conditions,
+            out_salvo_conditions=base_config.out_salvo_conditions,
+            execution_config=execution_config,
+        )
 
     def to_netrun_sim(self) -> netrun_sim.Node:
         return netrun_sim.Node(
