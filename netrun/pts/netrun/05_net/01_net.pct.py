@@ -117,7 +117,7 @@ class NodeExecutionContext:
     # Internal (not for user access)
     _channel: SyncRPCChannel = field(repr=False, default=None)
     _config: NodeExecutionConfig = field(repr=False, default=None)
-    _print_buffer: list[str] = field(default_factory=list, repr=False)
+    _print_buffer: list[tuple[datetime, str]] = field(default_factory=list, repr=False)
     _last_print_flush: float = field(default_factory=time.time, repr=False)
     _created_packets: list[str] = field(default_factory=list, repr=False)
     _consumed_packets: list[str] = field(default_factory=list, repr=False)
@@ -252,7 +252,8 @@ class NodeExecutionContext:
         """Capture print output with periodic flushing.
 
         This method behaves like the built-in print() but captures output
-        and periodically sends it back to the Net.
+        and periodically sends it back to the Net. Each print is timestamped
+        at the time it is called.
 
         Args:
             *args: Values to print (same as builtin print).
@@ -260,6 +261,9 @@ class NodeExecutionContext:
             end: String to append at end (default: "\\n").
             flush: If True, immediately flush buffer to Net.
         """
+        # Capture timestamp immediately when print is called
+        timestamp = get_timestamp_utc()
+
         # Format the message (same as builtin print)
         message = sep.join(str(arg) for arg in args) + end
 
@@ -268,8 +272,8 @@ class NodeExecutionContext:
             import builtins
             builtins.print(*args, sep=sep, end=end, flush=True)
 
-        # Add to buffer
-        self._print_buffer.append(message)
+        # Add to buffer with timestamp
+        self._print_buffer.append((timestamp, message))
 
         # Check if we should flush
         now = time.time()
@@ -610,19 +614,18 @@ class Net:
         self._epoch_start_times.setdefault(node_name, []).append(now)
         return True
 
-    def _handle_print_buffer(self, epoch_id: str, buffer: list[str]) -> None:
+    def _handle_print_buffer(self, epoch_id: str, buffer: list[tuple[datetime, str]]) -> None:
         """Handle print buffer received from a worker.
 
         Args:
             epoch_id: The epoch that sent the prints.
-            buffer: The list of print messages.
+            buffer: List of (timestamp, message) tuples. Timestamps are captured
+                    at the time ctx.print() was called in the worker.
         """
-        timestamp = get_timestamp_utc()
-
         # Store by epoch
         if epoch_id not in self._epoch_print_logs:
             self._epoch_print_logs[epoch_id] = []
-        for line in buffer:
+        for timestamp, line in buffer:
             self._epoch_print_logs[epoch_id].append((timestamp, line))
 
         # Also store by node (get node_name from epoch)
@@ -632,7 +635,7 @@ class Net:
                 node_name = epoch.node_name
                 if node_name not in self._node_print_logs:
                     self._node_print_logs[node_name] = []
-                for line in buffer:
+                for timestamp, line in buffer:
                     self._node_print_logs[node_name].append((timestamp, line))
         except (ValueError, KeyError):
             # Epoch not found or invalid ID - skip node-level logging

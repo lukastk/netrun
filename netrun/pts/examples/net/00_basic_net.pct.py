@@ -21,6 +21,7 @@
 # First, let's import all the types we need.
 
 # %%
+from datetime import datetime
 from netrun.net.config import (
     # Net configuration
     NetConfig,
@@ -53,7 +54,7 @@ from netrun.execution_manager import RunAllocationMethod
 # receives a `NodeExecutionContext` and a dictionary of input packets.
 #
 # The context provides methods for:
-# - `ctx.print()` - Captured print output
+# - `ctx.print()` - Captured print output (with automatic timestamps)
 # - `ctx.consume_packet(packet_id)` - Get packet value and remove it
 # - `ctx.create_packet(value)` - Create a new packet with a value
 # - `ctx.load_output_port(port, packet_id)` - Load packet into output port
@@ -322,58 +323,50 @@ async with Net(config) as net:
 print(f"Net stopped: {not net.started}")
 
 # %% [markdown]
-# ## Print Capture
+# ## Print Capture with Timestamps
 #
-# Node functions can use `ctx.print()` to capture output. This output is:
-# - Buffered and periodically flushed back to the Net
+# Node functions can use `ctx.print()` to capture output. Each print call is
+# automatically timestamped when it is called, not when the buffer is flushed.
+# This ensures accurate timing information for debugging and analysis.
+#
+# The captured output is:
+# - Stored as `(timestamp, message)` tuples
 # - Stored per-epoch and per-node for later retrieval
 # - Optionally echoed to stdout for debugging
 
 # %%
-import time
-
 # Create a Net and simulate print capture from multiple epochs
+# In real usage, ctx.print() captures timestamps automatically
 config = create_net_config()
 
 async with Net(config) as net:
-    # Simulate prints arriving from different epochs at different times
-    # (In normal operation, this happens automatically when workers send prints)
+    # Simulate prints arriving from different epochs
+    # Each print is a (timestamp, message) tuple - timestamps are captured
+    # when ctx.print() is called in the worker, not when buffer is flushed
 
-    # First epoch starts processing
+    # First epoch - Source node processing
     net._handle_print_buffer("epoch_001", [
-        "[Source] Starting source node\n",
-        "[Source] Created packet 0: {'id': 0, 'data': 'item_0'}\n",
+        (datetime(2024, 1, 15, 10, 30, 0, 100000), "[Source] Starting source node\n"),
+        (datetime(2024, 1, 15, 10, 30, 0, 150000), "[Source] Created packet 0: {'id': 0, 'data': 'item_0'}\n"),
+        (datetime(2024, 1, 15, 10, 30, 0, 200000), "[Source] Created packet 1: {'id': 1, 'data': 'item_1'}\n"),
+        (datetime(2024, 1, 15, 10, 30, 0, 250000), "[Source] Sent output salvo\n"),
     ])
 
-    time.sleep(0.01)  # Small delay to get different timestamps
-
-    # Second epoch starts
+    # Second epoch - Process node (started slightly after Source finished)
     net._handle_print_buffer("epoch_002", [
-        "[Process] Processing started (retry #0)\n",
-        "[Process] Received 1 packets\n",
+        (datetime(2024, 1, 15, 10, 30, 0, 300000), "[Process] Processing started (retry #0)\n"),
+        (datetime(2024, 1, 15, 10, 30, 0, 350000), "[Process] Received 2 packets\n"),
+        (datetime(2024, 1, 15, 10, 30, 0, 400000), "[Process] Processing: {'id': 0, 'data': 'item_0'}\n"),
+        (datetime(2024, 1, 15, 10, 30, 0, 450000), "[Process] Processing: {'id': 1, 'data': 'item_1'}\n"),
+        (datetime(2024, 1, 15, 10, 30, 0, 500000), "[Process] Processing complete\n"),
     ])
 
-    time.sleep(0.01)
-
-    # More prints from first epoch
-    net._handle_print_buffer("epoch_001", [
-        "[Source] Created packet 1: {'id': 1, 'data': 'item_1'}\n",
-        "[Source] Sent output salvo\n",
-    ])
-
-    time.sleep(0.01)
-
-    # More prints from second epoch
-    net._handle_print_buffer("epoch_002", [
-        "[Process] Processing: {'id': 0, 'data': 'item_0'}\n",
-        "[Process] Processing complete\n",
-    ])
-
-    # Third epoch
+    # Third epoch - Sink node
     net._handle_print_buffer("epoch_003", [
-        "[Sink] Collecting results\n",
-        "[Sink] Collected: {'id': 0, 'data': 'ITEM_0', 'processed': True}\n",
-        "[Sink] Total collected: 1 items\n",
+        (datetime(2024, 1, 15, 10, 30, 0, 550000), "[Sink] Collecting results\n"),
+        (datetime(2024, 1, 15, 10, 30, 0, 600000), "[Sink] Collected: {'id': 0, 'data': 'ITEM_0', 'processed': True}\n"),
+        (datetime(2024, 1, 15, 10, 30, 0, 650000), "[Sink] Collected: {'id': 1, 'data': 'ITEM_1', 'processed': True}\n"),
+        (datetime(2024, 1, 15, 10, 30, 0, 700000), "[Sink] Total collected: 2 items\n"),
     ])
 
     # Store net for displaying logs
@@ -382,13 +375,13 @@ async with Net(config) as net:
 # %% [markdown]
 # ## Viewing Print Logs by Epoch
 #
-# The Net stores all captured prints with timestamps. You can retrieve logs
-# by epoch ID to see what happened during each execution.
+# The Net stores all captured prints with their original timestamps.
+# You can retrieve logs by epoch ID to see what happened during each execution.
 
 # %%
-print("=" * 60)
+print("=" * 70)
 print("PRINT LOGS BY EPOCH")
-print("=" * 60)
+print("=" * 70)
 
 for epoch_id in ["epoch_001", "epoch_002", "epoch_003"]:
     epoch_log = demo_net.get_epoch_log(epoch_id)
@@ -399,13 +392,13 @@ for epoch_id in ["epoch_001", "epoch_002", "epoch_003"]:
 # %% [markdown]
 # ## Viewing All Logs Chronologically
 #
-# You can also combine logs from all epochs to see the chronological order
+# You can combine logs from all epochs to see the chronological order
 # of all print statements across the entire network execution.
 
 # %%
-print("=" * 60)
+print("=" * 70)
 print("ALL LOGS (CHRONOLOGICAL)")
-print("=" * 60)
+print("=" * 70)
 
 # Collect all logs with epoch info
 all_logs = []
@@ -418,7 +411,7 @@ all_logs.sort(key=lambda x: x[0])
 
 # Display
 print(f"\nTotal log entries: {len(all_logs)}")
-print("-" * 60)
+print("-" * 70)
 for timestamp, epoch_id, line in all_logs:
     time_str = timestamp.strftime('%H:%M:%S.%f')[:-3]
     print(f"[{time_str}] ({epoch_id}) {line.strip()}")
@@ -483,7 +476,7 @@ print(f"6th and 7th blocked: {not any(results[5:])}")
 # 3. **Pool Configuration**: Setting up different pool types (Main, Thread, Multiprocess)
 # 4. **Net Lifecycle**: Using `start()`, `stop()`, `pause()`, `resume()`, context manager
 # 5. **Simulation**: Using `run_step()` and `run_until_blocked()`
-# 6. **Print Capture**: How `ctx.print()` output is captured and retrieved
+# 6. **Print Capture**: How `ctx.print()` captures output with automatic timestamps
 # 7. **Viewing Logs**: Retrieving print logs by epoch or chronologically
 # 8. **Rate Limiting**: Controlling epoch start frequency
 #

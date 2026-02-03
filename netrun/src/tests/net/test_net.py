@@ -104,9 +104,11 @@ def test_context_print_basic():
 
     ctx.print("Hello", "World")
 
-    # Buffer should contain the formatted message
+    # Buffer should contain (timestamp, message) tuple
     assert len(ctx._print_buffer) == 1
-    assert ctx._print_buffer[0] == "Hello World\n"
+    timestamp, message = ctx._print_buffer[0]
+    assert isinstance(timestamp, datetime)
+    assert message == "Hello World\n"
 
 # %% nbs/tests/05_net/test_net.ipynb 16
 def test_context_print_custom_separators():
@@ -118,7 +120,9 @@ def test_context_print_custom_separators():
 
     ctx.print("a", "b", "c", sep="-", end="!")
 
-    assert ctx._print_buffer[0] == "a-b-c!"
+    timestamp, message = ctx._print_buffer[0]
+    assert isinstance(timestamp, datetime)
+    assert message == "a-b-c!"
 
 # %% nbs/tests/05_net/test_net.ipynb 18
 def test_context_print_empty():
@@ -130,7 +134,9 @@ def test_context_print_empty():
 
     ctx.print()
 
-    assert ctx._print_buffer[0] == "\n"
+    timestamp, message = ctx._print_buffer[0]
+    assert isinstance(timestamp, datetime)
+    assert message == "\n"
 
 # %% nbs/tests/05_net/test_net.ipynb 20
 def test_context_print_non_string():
@@ -142,7 +148,9 @@ def test_context_print_non_string():
 
     ctx.print(1, 2.5, True, None, [1, 2, 3])
 
-    assert ctx._print_buffer[0] == "1 2.5 True None [1, 2, 3]\n"
+    timestamp, message = ctx._print_buffer[0]
+    assert isinstance(timestamp, datetime)
+    assert message == "1 2.5 True None [1, 2, 3]\n"
 
 # %% nbs/tests/05_net/test_net.ipynb 22
 def test_context_print_flush_interval():
@@ -178,7 +186,10 @@ def test_context_print_flush_interval():
     call_args = mock_channel.send.call_args
     assert call_args[0][0] == NetProtocolKeys.UP_PRINT_BUFFER.value
     assert call_args[0][1][0] == "epoch_flush"
-    assert "First message\n" in call_args[0][1][1]
+    # Buffer is list of (timestamp, message) tuples
+    buffer = call_args[0][1][1]
+    messages = [msg for _, msg in buffer]
+    assert "First message\n" in messages
 
 # %% nbs/tests/05_net/test_net.ipynb 24
 def test_context_print_buffer_max_size():
@@ -229,7 +240,10 @@ def test_context_print_explicit_flush():
 
     mock_channel.send.assert_called_once()
     call_args = mock_channel.send.call_args
-    assert "Immediate flush\n" in call_args[0][1][1]
+    # Buffer is list of (timestamp, message) tuples
+    buffer = call_args[0][1][1]
+    messages = [msg for _, msg in buffer]
+    assert "Immediate flush\n" in messages
 
 # %% nbs/tests/05_net/test_net.ipynb 28
 def test_context_print_echo_stdout(capsys):
@@ -251,8 +265,10 @@ def test_context_print_echo_stdout(capsys):
     captured = capsys.readouterr()
     assert "Echo this message" in captured.out
 
-    # Also check buffer
-    assert "Echo this message\n" in ctx._print_buffer
+    # Also check buffer contains the timestamped message
+    assert len(ctx._print_buffer) == 1
+    timestamp, message = ctx._print_buffer[0]
+    assert message == "Echo this message\n"
 
 # %% nbs/tests/05_net/test_net.ipynb 30
 def test_context_flush_print_buffer_empty():
@@ -939,15 +955,21 @@ def test_net_handle_print_buffer():
     config = create_simple_net_config()
     net = Net(config)
 
+    # Create timestamped print buffer (as would come from ctx.print())
+    ts1 = datetime.now()
+    ts2 = datetime.now()
+    buffer = [(ts1, "Line 1\n"), (ts2, "Line 2\n")]
+
     # Manually call _handle_print_buffer (normally called when receiving from worker)
-    net._handle_print_buffer("epoch_123", ["Line 1\n", "Line 2\n"])
+    net._handle_print_buffer("epoch_123", buffer)
 
     log = net.get_epoch_log("epoch_123")
     assert len(log) == 2
     assert log[0][1] == "Line 1\n"
     assert log[1][1] == "Line 2\n"
-    # Each entry should have a timestamp
-    assert isinstance(log[0][0], datetime)
+    # Timestamps should be preserved from the original buffer
+    assert log[0][0] == ts1
+    assert log[1][0] == ts2
 
 # %% nbs/tests/05_net/test_net.ipynb 103
 def test_net_check_rate_limit_no_config():
