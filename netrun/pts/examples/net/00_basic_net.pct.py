@@ -6,6 +6,10 @@
 #     name: python3
 # ---
 
+# %%
+#|hide
+from nblite import nbl_export; nbl_export();
+
 # %% [markdown]
 # # Basic Net Example
 #
@@ -21,6 +25,7 @@
 # First, let's import all the types we need.
 
 # %%
+import netrun_sim
 from netrun.net.config import (
     # Net configuration
     NetConfig,
@@ -61,18 +66,24 @@ from netrun.execution_manager import RunAllocationMethod
 
 # %%
 def source_node(ctx: NodeExecutionContext, packets: dict) -> None:
-    """Source node that generates initial data.
+    """Source node that receives initial data and passes it downstream.
 
-    This node creates output packets to start the flow.
+    This node consumes input packets and forwards them to the next node.
     """
     ctx.print(f"[{ctx.node_name}] Starting source node")
 
-    # Create some data to send downstream
-    for i in range(3):
-        value = {"id": i, "data": f"item_{i}"}
-        packet_id = ctx.create_packet(value)
-        ctx.print(f"[{ctx.node_name}] Created packet {i}: {value}")
-        ctx.load_output_port("out", packet_id)
+    # Get input packets from the "in" port
+    input_packet_ids = packets.get("in", [])
+    ctx.print(f"[{ctx.node_name}] Received {len(input_packet_ids)} input packets")
+
+    for packet_id in input_packet_ids:
+        # Consume the input packet to get its value
+        value = ctx.consume_packet(packet_id)
+        ctx.print(f"[{ctx.node_name}] Processing input: {value}")
+
+        # Create output packet and forward downstream
+        out_packet_id = ctx.create_packet(value)
+        ctx.load_output_port("out", out_packet_id)
 
     # Send all packets downstream
     ctx.send_output_salvo("send")
@@ -141,10 +152,22 @@ def create_graph_config() -> GraphConfig:
 
     return GraphConfig(
         nodes=[
-            # Source node - output only
+            # Source node - input and output
+            # Uses a "manual" salvo condition so we can trigger it externally
+            # by creating an epoch with packets from outside the network
             NodeGraphConfig(
                 name="Source",
+                in_ports={"in": PortConfig()},
                 out_ports={"out": PortConfig()},
+                in_salvo_conditions={
+                    # Manual trigger - no port requirements, always ready
+                    # We create epochs explicitly with packets from outside
+                    "manual": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={},  # No ports - packets provided externally
+                        term=SalvoConditionTermTrueConfig(),  # Always true
+                    ),
+                },
                 out_salvo_conditions={
                     "send": SalvoConditionConfig(
                         max_salvos=MaxSalvosFiniteConfig(max=1),
@@ -325,7 +348,13 @@ print(f"Net stopped: {not net.started}")
 # ## Full Network Execution with Print Capture
 #
 # Now let's run the complete network and see the print capture in action.
-# All `ctx.print()` calls are captured with timestamps automatically.
+# We'll create packets outside the network and inject them into the Source node.
+#
+# **Key steps:**
+# 1. Create packets outside the network using `NetAction.create_packet(None)`
+# 2. Store packet values in the Net's PacketStore
+# 3. Create a Source epoch with those packets using `NetAction.create_epoch`
+# 4. Execute epochs and watch print capture in action
 
 # %%
 import asyncio
@@ -339,11 +368,43 @@ async def run_full_network():
         print(f"Nodes: {list(net.graph.nodes().keys())}")
         print()
 
-        # Trigger the Source node by creating a manual epoch
-        source_epoch_id = net._netsim.create_epoch("Source", {})
+        # Step 1: Create packets OUTSIDE the network
+        # These represent external data being injected into the flow
+        print("Creating external packets...")
+        external_data = [
+            {"id": 0, "data": "item_0"},
+            {"id": 1, "data": "item_1"},
+            {"id": 2, "data": "item_2"},
+        ]
+
+        packet_ids = []
+        for data in external_data:
+            # Create packet outside any epoch (epoch_id=None)
+            response, _ = net._netsim.do_action(
+                netrun_sim.NetAction.create_packet(None)
+            )
+            packet_id = response.packet_id
+            packet_ids.append(packet_id)
+
+            # Store the packet value in the Net's packet store
+            net._packet_store.set(packet_id, data)
+            print(f"  Created packet {packet_id[:12]}... with value: {data}")
+
+        print()
+
+        # Step 2: Create the Source epoch with a manual salvo containing our packets
+        # The Salvo specifies which salvo condition triggered and the packet IDs
+        print("Creating Source epoch with external packets...")
+        response, _ = net._netsim.do_action(
+            netrun_sim.NetAction.create_epoch(
+                "Source",
+                netrun_sim.Salvo("manual", packet_ids),
+            )
+        )
+        source_epoch_id = response.epoch.id
         print(f"Created Source epoch: {source_epoch_id[:12]}...")
 
-        # Execute the Source epoch
+        # Step 3: Execute the Source epoch
         await net._execute_epoch(source_epoch_id)
         print("Source epoch executed")
 
@@ -384,7 +445,7 @@ async def run_full_network():
         return net
 
 # Run the network
-demo_net = asyncio.run(run_full_network())
+demo_net = await run_full_network()
 
 # %% [markdown]
 # ## Rate Limiting
