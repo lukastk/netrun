@@ -12,7 +12,7 @@ This document provides guidance for LLM agents contributing to nblite projects.
 
 1. **Never modify the exported Python module directly.** Those files are auto-generated and will be overwritten by `nbl export`.
 
-2. **If you edit `.pct.py` files, always run `nbl export --pipeline "pts->nbs"` afterward.** Otherwise, when `nbl export` runs (which typically goes `nbs->pts->lib`), your changes in `pts` will be overwritten by the older `nbs` versions.
+2. **If you edit `.pct.py` files, always run `nbl export --reverse` afterward.** Otherwise, when `nbl export` runs (which typically goes `nbs->pts->lib`), your changes in `pts` will be overwritten by the older `nbs` versions.
 
 ---
 
@@ -95,7 +95,7 @@ Percent notebooks are plaintext Python files that use `# %%` to delimit cells. T
 
 After editing a `.pct.py` file, run:
 ```bash
-nbl export --pipeline "pts->nbs"
+nbl export --reverse
 ```
 
 This syncs your changes back to the `.ipynb` notebooks. If you skip this step, your changes will be lost when someone runs `nbl export` (which exports nbs->pts->lib).
@@ -387,7 +387,7 @@ nbl clean path/to/nb.ipynb  # Clean specific notebook
 
 3. **Sync and export**:
    ```bash
-   nbl export --pipeline "pts->nbs"  # If editing pts
+   nbl export --reverse  # If editing pts
    nbl export                                # Generate module
    ```
 
@@ -430,7 +430,7 @@ from my_package.core import something  # Becomes: from ..core import something
 
 1. **Editing the Python module directly** - Changes will be overwritten. This should only be done if you want to quickly test something, or add a debug `print` statement, and if it is not a concern that it may get overwritten.
 
-2. **Forgetting `nbl export --pipeline "pts->nbs"`** - If you edit `.pct.py` files, sync them back to `.ipynb` before committing, otherwise your changes get lost
+2. **Forgetting `nbl export --reverse`** - If you edit `.pct.py` files, sync them back to `.ipynb` before committing, otherwise your changes get lost
 
 3. **Missing `#|export` directive** - Code without this directive won't appear in the module
 
