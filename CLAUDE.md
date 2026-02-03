@@ -25,7 +25,7 @@ This separation of concerns allows the actual execution and data storage to be i
 **Important:** The `netrun` package uses **nblite** for literate programming. Before writing any code for `netrun`, you **must** read `netrun/NBLITE_INSTRUCTIONS.md` carefully. Key points:
 - Source code lives in `.pct.py` files (percent notebooks), not in the exported Python modules
 - Never edit files in `src/netrun/` directly - they are auto-generated
-- After editing `.pct.py` files, run `nbl export --pipeline "pts->nbs"` then `nbl export`
+- After editing `.pct.py` files, run `nbl export --reverse` then `nbl export`
 
 ## Repository Structure
 
@@ -223,7 +223,7 @@ async with manager:
 ### Editing Code
 
 1. Edit `.pct.py` files in `pts/netrun/` or `pts/tests/`
-2. Export to notebooks: `nbl export --pipeline "pts->nbs"`
+2. Export to notebooks: `nbl export --reverse`
 3. Export to Python modules: `nbl export`
 
 **Never edit files in `src/` directly** - they are auto-generated.
