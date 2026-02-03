@@ -866,41 +866,37 @@ def has_downstream_connection(self, node_name: str, port_name: str) -> bool:
 
 ## Implementation Plan
 
-### Phase 0: netrun-sim Changes (Priority: Critical) ⭐
+### Phase 0: netrun-sim Changes (Priority: Critical) ✅ COMPLETED
 
 **Prerequisite for Output Queues.** See `02_netrun_sim_changes.md`.
 
-1. Add `PacketOrphaned` event type
-2. Modify `send_output_salvo` to allow unconnected ports
-3. Update `FinishedEpoch` response with orphaned packet info
-4. Update Python bindings
+1. ✅ Add `PacketOrphaned` event type
+2. ✅ Modify `send_output_salvo` to allow unconnected ports
+3. ✅ Update `FinishedEpoch` response with orphaned packet info
+4. ✅ Update Python bindings
 
-**Estimated effort**: Medium.
-
-### Phase 1: Output Queues System (Priority: High) ⭐
+### Phase 1: Output Queues System (Priority: High) ✅ COMPLETED
 
 The main feature for DAG-style workflows.
 
 **Configuration:**
-1. Add `OutputQueueConfig` class
-2. Add `output_queues`, `catch_all_output_queue`, `undeclared_output_behavior` to `NetConfig`
+1. ✅ Add `OutputQueueConfig` class
+2. ✅ Add `output_queues`, `catch_all_output_queue`, `undeclared_output_behavior` to `NetConfig`
 
 **Internal Implementation:**
-3. Add `_output_queues: dict[str, asyncio.Queue]` storage
-4. Add `_port_to_queue` reverse mapping
-5. Implement `_route_orphaned_packet()` method
-6. Hook into epoch completion to route orphaned packets
+3. ✅ Add `_output_queues: dict[str, asyncio.Queue]` storage
+4. ✅ Add `_port_to_queue` reverse mapping
+5. ✅ Implement `_route_orphaned_packet()` method
+6. ✅ Hook into epoch completion to route orphaned packets
 
 **Retrieval API:**
-7. `get_output()` - async await
-8. `get_output_sync()` - sync blocking
-9. `try_get_output()` - non-blocking
-10. `get_all_outputs()` - batch retrieval
-11. `has_output()` - check availability
-12. `output_count()` - queue depth
-13. `list_output_queues()` - list configured queues
-
-**Estimated effort**: Medium.
+7. ✅ `get_output()` - async await
+8. ⬜ `get_output_sync()` - sync blocking (not implemented - use `try_get_output()` instead)
+9. ✅ `try_get_output()` - non-blocking
+10. ✅ `get_all_outputs()` - batch retrieval
+11. ✅ `has_output()` - check availability
+12. ✅ `output_count()` - queue depth
+13. ✅ `list_output_queues()` - list configured queues
 
 ### Phase 2: Packet Creation & Injection (Priority: High)
 
