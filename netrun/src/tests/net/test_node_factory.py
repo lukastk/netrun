@@ -120,13 +120,21 @@ class TestFactorySerialization:
     """Tests for JSON serialization of factory configs."""
 
     def test_factory_serializes_to_string(self):
-        """Test that module objects serialize to import path strings."""
+        """Test that module objects serialize to import path strings.
+
+        Note: To serialize successfully, we remove execution_config which
+        contains closures from the sample factory. Closures can't be serialized
+        to JSON - use string import paths for serializable configs.
+        """
         import tests.net.sample_factory as factory_module
 
         config = NodeConfig(
             factory=factory_module,
             factory_args={"name": "SerializeNode"},
         )
+
+        # Remove execution_config (contains closures) to allow serialization
+        config = config.model_copy(update={"execution_config": None})
 
         # Serialize to JSON
         json_str = config.model_dump_json()
@@ -137,11 +145,19 @@ class TestFactorySerialization:
         assert loaded.factory == "tests.net.sample_factory"
 
     def test_factory_config_roundtrip(self):
-        """Test that factory configs roundtrip through JSON."""
+        """Test that factory configs roundtrip through JSON.
+
+        Note: execution_config is removed for serialization because the sample
+        factory returns closures. For production use, factories should return
+        string import paths for functions to enable JSON serialization.
+        """
         config = NodeConfig(
             factory=FACTORY_MODULE_PATH,
             factory_args={"name": "RoundtripNode", "threshold": 0.6},
         )
+
+        # Remove execution_config (contains closures) to allow serialization
+        config = config.model_copy(update={"execution_config": None})
 
         json_str = config.model_dump_json()
         loaded = NodeConfig.model_validate_json(json_str)
@@ -150,6 +166,29 @@ class TestFactorySerialization:
         assert loaded.factory == config.factory
         assert loaded.factory_args == config.factory_args
         assert "task" in loaded.in_ports
+
+    def test_closure_functions_fail_to_serialize(self):
+        """Test that configs with closure functions fail to serialize to JSON.
+
+        This is expected behavior - closures can't be converted to import paths.
+        Use string import paths for functions that need to be serialized.
+        """
+        from pydantic import ValidationError
+
+        config = NodeConfig(
+            factory=FACTORY_MODULE_PATH,
+            factory_args={"name": "ClosureNode"},
+        )
+
+        # Verify execution_config has a closure
+        assert config.execution_config is not None
+        assert config.execution_config.exec_node_func is not None
+
+        # Attempting to serialize to JSON should fail
+        with pytest.raises(Exception) as exc_info:
+            config.model_dump_json()
+
+        assert "closure" in str(exc_info.value).lower() or "local function" in str(exc_info.value).lower()
 
 
 class TestFactoryErrors:

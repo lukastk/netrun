@@ -72,10 +72,17 @@ class TestPortConfigSerialization:
         assert data["port_type"] == "DataFrame"
 
     def test_serialize_type_object(self):
-        """Test serialization of type object to string."""
+        """Test serialization of type object to import path string.
+
+        Type objects are serialized to their full import path during JSON
+        serialization, allowing isinstance capability after deserialization.
+        """
+        import json
         config = PortConfig(port_type=dict)
-        data = config.model_dump()
-        assert data["port_type"] == "dict"
+        # JSON serialization converts type to string
+        json_str = config.model_dump_json()
+        data = json.loads(json_str)
+        assert data["port_type"] == "dict"  # builtins use simple name
 
     def test_serialize_type_config(self):
         """Test serialization of PortTypeConfig to dict."""

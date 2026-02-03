@@ -309,21 +309,63 @@ class NodeExecutionContext:
 
         Returns:
             Tuple of (expected_type_name, matches).
+
+        Note:
+            String import paths (containing ".") are imported and used for isinstance checks.
+            This preserves isinstance capability after serialization roundtrips.
         """
         if isinstance(port_type, str):
-            # String: check type name
-            return (port_type, type(value).__name__ == port_type)
+            if "." in port_type:
+                # Full import path - import the type and use isinstance
+                try:
+                    type_obj = self._import_type(port_type)
+                    type_name = port_type.rsplit(".", 1)[-1]
+                    return (type_name, isinstance(value, type_obj))
+                except (ImportError, AttributeError):
+                    # Fall back to name match if import fails
+                    type_name = port_type.rsplit(".", 1)[-1]
+                    return (type_name, type(value).__name__ == type_name)
+            else:
+                # Simple name - do name match
+                return (port_type, type(value).__name__ == port_type)
 
         if isinstance(port_type, type):
             # Type object: use isinstance
             return (port_type.__name__, isinstance(value, port_type))
 
         if isinstance(port_type, PortTypeConfig):
-            # Config object: use name match (isinstance would require importing the type)
-            return (port_type.name, type(value).__name__ == port_type.name)
+            # Config object - check isinstance_check flag
+            if port_type.isinstance_check and "." in port_type.name:
+                try:
+                    type_obj = self._import_type(port_type.name)
+                    type_name = port_type.name.rsplit(".", 1)[-1]
+                    return (type_name, isinstance(value, type_obj))
+                except (ImportError, AttributeError):
+                    pass
+            # Fall back to name match
+            type_name = port_type.name.rsplit(".", 1)[-1] if "." in port_type.name else port_type.name
+            return (type_name, type(value).__name__ == type_name)
 
         # Unknown type spec - no validation
         return ("any", True)
+
+    def _import_type(self, import_path: str) -> type:
+        """Import a type from a dotted import path.
+
+        Args:
+            import_path: Dotted import path (e.g., "pandas.DataFrame").
+
+        Returns:
+            The imported type.
+
+        Raises:
+            ImportError: If the module cannot be imported.
+            AttributeError: If the type doesn't exist in the module.
+        """
+        import importlib
+        module_path, type_name = import_path.rsplit(".", 1)
+        module = importlib.import_module(module_path)
+        return getattr(module, type_name)
 
     def send_output_salvo(self, salvo_condition_name: str) -> None:
         """Send packets from output ports onto edges.
@@ -1857,17 +1899,43 @@ class Net:
 
         return results
 
+    def _import_from_path(self, import_path: str) -> Any:
+        """Import a function or type from a dotted import path.
+
+        Args:
+            import_path: Dotted import path (e.g., "myapp.utils.process_data").
+
+        Returns:
+            The imported object.
+
+        Raises:
+            ImportError: If the module cannot be imported.
+            AttributeError: If the attribute doesn't exist in the module.
+        """
+        import importlib
+        module_path, name = import_path.rsplit(".", 1)
+        module = importlib.import_module(module_path)
+        return getattr(module, name)
+
     async def _register_node_functions(self) -> None:
         """Register all node functions with the execution manager pools.
 
         This sends the exec_node_func for each node to all workers in the
         configured pools, so they can be called by function key.
+
+        String import paths are resolved to actual functions before registration.
         """
         for node_config in self.config.graph.nodes:
             if node_config.execution_config is None:
                 continue
-            if node_config.execution_config.exec_node_func is None:
+
+            exec_func = node_config.execution_config.exec_node_func
+            if exec_func is None:
                 continue
+
+            # Resolve string import path if needed
+            if isinstance(exec_func, str):
+                exec_func = self._import_from_path(exec_func)
 
             config = node_config.execution_config
             func_key = self._get_func_key(node_config.name)
@@ -1877,7 +1945,7 @@ class Net:
                 await self._execution_manager.send_function_to_pool(
                     pool_id=pool_id,
                     func_key=func_key,
-                    func=config.exec_node_func,
+                    func=exec_func,
                 )
 
     async def __aenter__(self) -> "Net":
