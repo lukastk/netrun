@@ -25,6 +25,82 @@ from ulid import ULID
 import netrun_sim
 from netrun.execution_manager import RunAllocationMethod
 
+# %%
+#|export
+def _get_callable_import_path(func: Callable) -> str:
+    """Get the import path for a callable (function or method).
+
+    Args:
+        func: The callable to get the import path for.
+
+    Returns:
+        The import path as "module.qualname" (e.g., "myapp.utils.process_data").
+
+    Raises:
+        ValueError: If the callable cannot be serialized (lambda, closure, __main__).
+    """
+    module = getattr(func, "__module__", None)
+    qualname = getattr(func, "__qualname__", None)
+
+    if module is None or qualname is None:
+        raise ValueError(
+            f"Cannot serialize callable {func}: missing __module__ or __qualname__"
+        )
+
+    if module == "__main__":
+        raise ValueError(
+            f"Cannot serialize callable '{qualname}' defined in __main__. "
+            "Move it to an importable module or use a string import path."
+        )
+
+    if "<lambda>" in qualname:
+        raise ValueError(
+            f"Cannot serialize lambda functions. "
+            "Define a named function or use a string import path."
+        )
+
+    if "<locals>" in qualname:
+        raise ValueError(
+            f"Cannot serialize closure/local function '{qualname}'. "
+            "Define it at module level or use a string import path."
+        )
+
+    return f"{module}.{qualname}"
+
+
+def _get_type_import_path(type_obj: type) -> str:
+    """Get the import path for a type.
+
+    Args:
+        type_obj: The type to get the import path for.
+
+    Returns:
+        The import path as "module.qualname" (e.g., "pandas.DataFrame").
+        For builtin types, returns just the name (e.g., "int", "str").
+
+    Raises:
+        ValueError: If the type cannot be serialized (__main__).
+    """
+    module = getattr(type_obj, "__module__", None)
+    qualname = getattr(type_obj, "__qualname__", None)
+
+    if module is None or qualname is None:
+        raise ValueError(
+            f"Cannot serialize type {type_obj}: missing __module__ or __qualname__"
+        )
+
+    if module == "__main__":
+        raise ValueError(
+            f"Cannot serialize type '{qualname}' defined in __main__. "
+            "Move it to an importable module or use a string import path."
+        )
+
+    if module == "builtins":
+        # Built-in types like int, str, list, dict - just use name
+        return qualname
+
+    return f"{module}.{qualname}"
+
 # %% [markdown]
 # # Graph configs
 #
@@ -114,17 +190,24 @@ class PortConfig(BaseModel):
         PortConfig(port_type=pd.DataFrame)  # Match with isinstance
     """
 
-    @field_serializer("port_type")
+    @field_serializer("port_type", when_used='json')
     def serialize_port_type(self, port_type: str | type | PortTypeConfig | None) -> str | dict | None:
-        """Serialize port_type for JSON roundtrip."""
+        """Serialize port_type to import path for JSON roundtrip.
+
+        Type objects are serialized to their full import path (e.g., "pandas.DataFrame")
+        to preserve isinstance capability after deserialization.
+
+        Note: Only called during JSON serialization (model_dump_json).
+
+        Raises:
+            ValueError: If type is defined in __main__ and cannot be imported.
+        """
         if port_type is None:
             return None
         if isinstance(port_type, str):
             return port_type
         if isinstance(port_type, type):
-            # Convert type to name string
-            # Note: loses isinstance capability on reload, becomes name match
-            return port_type.__name__
+            return _get_type_import_path(port_type)
         if isinstance(port_type, PortTypeConfig):
             return port_type.model_dump()
         return None
@@ -544,18 +627,25 @@ class NodeExecutionConfig(BaseModel):
     How to select a worker when node has multiple pools. None = use Net default.
     """
 
-    @field_serializer("exec_node_func", "start_node_func", "stop_node_func", "on_node_failure")
+    @field_serializer("exec_node_func", "start_node_func", "stop_node_func", "on_node_failure", when_used='json')
     def serialize_func(self, func: Callable | str | None) -> str | None:
-        """Serialize functions to their import path or None if not a string.
+        """Serialize functions to their import path for JSON.
 
-        Functions can only be roundtripped if they are specified as import path strings.
+        Function objects are serialized to their full import path
+        (e.g., "myapp.nodes.process_data") for JSON roundtripping.
+
+        Note: Only called during JSON serialization (model_dump_json), not
+        during Python serialization (model_dump). This allows factories to
+        return closures that work at runtime but fail if serialized to JSON.
+
+        Raises:
+            ValueError: If function is defined in __main__, is a lambda, or is a closure.
         """
         if func is None:
             return None
         if isinstance(func, str):
             return func
-        # Can't serialize function objects - return None
-        return None
+        return _get_callable_import_path(func)
 
 # %%
 #|export
@@ -634,15 +724,27 @@ class NodeConfig(BaseModel):
 
         return merged
 
-    @field_serializer("factory")
+    @field_serializer("factory", when_used='json')
     def serialize_factory(self, factory: str | ModuleType | None) -> str | None:
-        """Serialize factory to import path string."""
+        """Serialize factory to import path string for JSON.
+
+        Note: Only called during JSON serialization (model_dump_json).
+
+        Raises:
+            ValueError: If factory module is __main__.
+        """
         if factory is None:
             return None
         if isinstance(factory, str):
             return factory
         # Convert module to import path
-        return factory.__name__
+        module_name = factory.__name__
+        if module_name == "__main__":
+            raise ValueError(
+                "Cannot serialize factory module '__main__'. "
+                "Use a string import path or import the factory from a module."
+            )
+        return module_name
 
     @classmethod
     def from_factory(
@@ -829,6 +931,8 @@ class PoolConfig(BaseModel):
 #|export
 class NetConfig(BaseModel):
     """Configuration for a Net."""
+    model_config = {"arbitrary_types_allowed": True}
+
     pools: dict[str, PoolConfig]
     graph: GraphConfig
 
@@ -839,7 +943,7 @@ class NetConfig(BaseModel):
 
     dead_letter_queue: bool = True
     dead_letter_path: str | None = None
-    dead_letter_callback: Callable | str = None
+    dead_letter_callback: Callable | str | None = None
 
     # Output queue configuration
     output_queues: dict[str, OutputQueueConfig] = {}
@@ -867,6 +971,21 @@ class NetConfig(BaseModel):
     - "discard": Silently discard (default)
     - "error": Raise an error (original behavior)
     """
+
+    @field_serializer("dead_letter_callback", when_used='json')
+    def serialize_dead_letter_callback(self, callback: Callable | str | None) -> str | None:
+        """Serialize dead_letter_callback to import path for JSON.
+
+        Note: Only called during JSON serialization (model_dump_json).
+
+        Raises:
+            ValueError: If callback is defined in __main__, is a lambda, or is a closure.
+        """
+        if callback is None:
+            return None
+        if isinstance(callback, str):
+            return callback
+        return _get_callable_import_path(callback)
 
 # %% [markdown]
 # # Examples
