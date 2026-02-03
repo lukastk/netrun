@@ -6,7 +6,7 @@ from netrun.net._net import Net
 from netrun.net.config import (
     NetConfig,
     GraphConfig,
-    NodeGraphConfig,
+    NodeConfig,
     PortConfig,
     PoolConfig,
     MainPoolConfig,
@@ -18,16 +18,16 @@ def _create_net_with_edges() -> Net:
     """Create a Net with connected and unconnected ports."""
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(
+            NodeConfig(
                 name="Source",
                 out_ports={"out1": PortConfig(), "out2": PortConfig()},
             ),
-            NodeGraphConfig(
+            NodeConfig(
                 name="Middle",
                 in_ports={"in": PortConfig()},
                 out_ports={"out": PortConfig()},
             ),
-            NodeGraphConfig(
+            NodeConfig(
                 name="Sink",
                 in_ports={"in": PortConfig()},
                 out_ports={"dangling": PortConfig()},  # Unconnected output
@@ -128,12 +128,12 @@ def test_graph_with_multiple_edges_from_same_port():
     """Test get_edges_from_port with fan-out topology."""
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(
+            NodeConfig(
                 name="Source",
                 out_ports={"out": PortConfig()},
             ),
-            NodeGraphConfig(name="SinkA", in_ports={"in": PortConfig()}),
-            NodeGraphConfig(name="SinkB", in_ports={"in": PortConfig()}),
+            NodeConfig(name="SinkA", in_ports={"in": PortConfig()}),
+            NodeConfig(name="SinkB", in_ports={"in": PortConfig()}),
         ],
         edges=[
             EdgeConfig(source_str="Source.out", target_str="SinkA.in"),

@@ -6,7 +6,7 @@ from netrun.net._net import Net
 from netrun.net.config import (
     NetConfig,
     GraphConfig,
-    NodeGraphConfig,
+    NodeConfig,
     PortConfig,
     PoolConfig,
     MainPoolConfig,
@@ -23,7 +23,7 @@ def _create_simple_net() -> Net:
     """Create a simple Net for testing."""
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(
+            NodeConfig(
                 name="Source",
                 in_ports={"in": PortConfig()},
                 out_ports={"out": PortConfig()},

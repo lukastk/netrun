@@ -24,7 +24,7 @@ from netrun.net._net import (
 from netrun.net.config import (
     NetConfig,
     GraphConfig,
-    NodeGraphConfig,
+    NodeConfig,
     NodeExecutionConfig,
     PoolConfig,
     MainPoolConfig,
@@ -697,7 +697,7 @@ def create_simple_graph_config():
     """Helper to create a simple graph config for testing."""
     return GraphConfig(
         nodes=[
-            NodeGraphConfig(
+            NodeConfig(
                 name="Source",
                 out_ports={"out": PortConfig()},
                 out_salvo_conditions={
@@ -708,7 +708,7 @@ def create_simple_graph_config():
                     ),
                 },
             ),
-            NodeGraphConfig(
+            NodeConfig(
                 name="Sink",
                 in_ports={"in": PortConfig()},
                 in_salvo_conditions={
@@ -794,7 +794,7 @@ def test_net_with_node_execution_configs():
 
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(
+            NodeConfig(
                 name="NodeA",
                 out_ports={"out": PortConfig()},
                 execution_config=NodeExecutionConfig(
@@ -803,7 +803,7 @@ def test_net_with_node_execution_configs():
                     exec_node_func=dummy_func,
                 ),
             ),
-            NodeGraphConfig(
+            NodeConfig(
                 name="NodeB",
                 in_ports={"in": PortConfig()},
                 in_salvo_conditions={
@@ -991,7 +991,7 @@ def test_net_check_rate_limit_none_limit():
 
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(
+            NodeConfig(
                 name="LimitedNode",
                 in_ports={"in": PortConfig()},
                 in_salvo_conditions={
@@ -1029,7 +1029,7 @@ def test_net_check_rate_limit_enforced():
 
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(
+            NodeConfig(
                 name="RateLimited",
                 in_ports={"in": PortConfig()},
                 in_salvo_conditions={
@@ -1071,7 +1071,7 @@ def test_net_check_rate_limit_window_expires():
 
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(
+            NodeConfig(
                 name="WindowNode",
                 in_ports={"in": PortConfig()},
                 in_salvo_conditions={
@@ -1299,7 +1299,7 @@ async def test_net_start_background():
     """Test Net can start in background mode."""
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(name="Node1"),
+            NodeConfig(name="Node1"),
         ],
     )
     config = NetConfig(
@@ -1323,7 +1323,7 @@ async def test_net_start_background_already_running():
     """Test start_background raises if background task already running."""
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(name="Node1"),
+            NodeConfig(name="Node1"),
         ],
     )
     config = NetConfig(
@@ -1345,7 +1345,7 @@ def test_net_is_blocked_empty_network():
     """Test is_blocked returns True for empty network."""
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(name="Node1"),
+            NodeConfig(name="Node1"),
         ],
     )
     config = NetConfig(
@@ -1361,7 +1361,7 @@ def test_net_is_blocked_with_running_epochs():
     """Test is_blocked returns False when epochs are running."""
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(name="Node1"),
+            NodeConfig(name="Node1"),
         ],
     )
     config = NetConfig(
@@ -1378,7 +1378,7 @@ def test_net_install_sigint_handler():
     """Test _install_sigint_handler sets up handler."""
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(name="Node1"),
+            NodeConfig(name="Node1"),
         ],
     )
     config = NetConfig(
@@ -1413,7 +1413,7 @@ async def test_epoch_execution_simple_node():
 
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(
+            NodeConfig(
                 name="SimpleNode",
                 in_ports={"in": PortConfig()},
                 in_salvo_conditions={
@@ -1476,7 +1476,7 @@ async def test_epoch_execution_with_output():
 
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(
+            NodeConfig(
                 name="Producer",
                 out_ports={"out": PortConfig()},
                 out_salvo_conditions={
@@ -1525,7 +1525,7 @@ async def test_retry_on_failure():
 
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(
+            NodeConfig(
                 name="FailingNode",
                 in_ports={"in": PortConfig()},
                 in_salvo_conditions={
@@ -1569,7 +1569,7 @@ async def test_dead_letter_queue_after_max_retries():
 
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(
+            NodeConfig(
                 name="AlwaysFails",
                 in_ports={"in": PortConfig()},
                 in_salvo_conditions={
@@ -1624,7 +1624,7 @@ async def test_on_node_failure_callback():
 
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(
+            NodeConfig(
                 name="CallbackNode",
                 in_ports={"in": PortConfig()},
                 in_salvo_conditions={
