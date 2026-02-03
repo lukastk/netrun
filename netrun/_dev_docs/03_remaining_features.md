@@ -47,7 +47,7 @@ The following features from `PROJECT_SPEC.md` are complete:
 |---------|----------|--------|
 | Event History | Medium | Medium |
 | Net-Level Error Config | Medium | Small |
-| Port Types | Low | Medium |
+| ~~Port Types~~ | ~~Low~~ | ~~Medium~~ (DONE) |
 | ~~Node Factories~~ | ~~Low~~ | ~~Small~~ (DONE) |
 | Checkpointing | Low | Large |
 
@@ -312,70 +312,40 @@ def _do_action_with_history(self, action):
 
 ## Not Implemented Features
 
-### 1. Port Types (Type Checking)
+### 1. Port Types (Type Checking) ✅ IMPLEMENTED
 
-#### What is this?
+Port types are now fully implemented. See `_dev_docs/05_port_types.md` for full documentation.
 
-Validation that packet values match expected types when flowing through ports. Catches type mismatches early instead of getting confusing errors deep in node logic.
+#### Summary
 
-#### Why it matters
+Validation that packet values match expected types when loading into output ports.
 
-Without type checking:
-```python
-def process_node(ctx, packets):
-    df = ctx.consume_packet(packets["in"][0])
-    df.groupby("category")  # AttributeError: 'str' object has no attribute 'groupby'
-    # Confusing! Where did the string come from?
-```
-
-With type checking:
-```python
-# Port configured with port_type="DataFrame"
-# Error at packet creation time:
-# PacketTypeMismatch: Port 'out' expects DataFrame, got str
-```
-
-#### Proposed API
+#### Usage
 
 ```python
-from netrun.net.config import PortConfig
+from netrun.net.config import PortConfig, PortTypeConfig
 
-# By class name (string) - checked with type(value).__name__
+# String type - checks type(value).__name__
 PortConfig(port_type="DataFrame")
 
-# By class - checked with isinstance()
+# Type object - uses isinstance()
 import pandas as pd
 PortConfig(port_type=pd.DataFrame)
 
-# With explicit isinstance flag
-PortConfig(port_type={"class": MyClass, "isinstance": True})
+# PortTypeConfig for detailed control
+PortConfig(port_type=PortTypeConfig(name="list", isinstance_check=False))
 ```
 
-#### When validation happens
+#### Validation
 
-1. **`ctx.load_output_port()`**: Validate packet value matches output port type
-2. **`ctx.consume_packet()`**: Optionally validate input port type (may be redundant if output was checked)
+- Happens at `ctx.load_output_port()` time
+- Raises `PacketTypeMismatch` on failure with clear error message
+- Lazy values (LazyPacketValueSpec) skip validation
+- No validation if `port_type` is None (default)
 
-#### Implementation
+#### Tests
 
-```python
-# In PortConfig
-port_type: str | type | dict | None = None
-"""Expected type for packets on this port. None = no validation."""
-
-# New exception
-class PacketTypeMismatch(NetrunError):
-    def __init__(self, port_name: str, expected: str, actual: str, packet_id: str):
-        self.port_name = port_name
-        self.expected = expected
-        self.actual = actual
-        self.packet_id = packet_id
-        super().__init__(
-            f"Port '{port_name}' expects {expected}, got {actual} (packet {packet_id})"
-        )
-```
-
-**Effort:** Medium
+See `src/tests/net/test_port_types.py` (29 tests).
 
 ---
 
