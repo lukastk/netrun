@@ -29,7 +29,7 @@ from netrun.net.config import (
     # Net configuration
     NetConfig,
     GraphConfig,
-    NodeGraphConfig,
+    NodeConfig,
     NodeExecutionConfig,
     PoolConfig,
     # Pool types
@@ -160,7 +160,7 @@ def create_graph_config() -> GraphConfig:
         nodes=[
             # Source node - input and output
             # Triggered when packets arrive at its input port
-            NodeGraphConfig(
+            NodeConfig(
                 name="Source",
                 in_ports={"in": PortConfig()},
                 out_ports={"out": PortConfig()},
@@ -189,7 +189,7 @@ def create_graph_config() -> GraphConfig:
             ),
 
             # Process node - input and output
-            NodeGraphConfig(
+            NodeConfig(
                 name="Process",
                 in_ports={"in": PortConfig()},
                 out_ports={"out": PortConfig()},
@@ -220,7 +220,7 @@ def create_graph_config() -> GraphConfig:
             ),
 
             # Sink node - input and OUTPUT (to output queue)
-            NodeGraphConfig(
+            NodeConfig(
                 name="Sink",
                 in_ports={"in": PortConfig()},
                 out_ports={"out": PortConfig()},  # Unconnected - goes to output queue
@@ -503,7 +503,7 @@ def create_rate_limited_config() -> NetConfig:
         },
         graph=GraphConfig(
             nodes=[
-                NodeGraphConfig(
+                NodeConfig(
                     name="RateLimited",
                     in_ports={"in": PortConfig()},
                     in_salvo_conditions={

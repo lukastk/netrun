@@ -1,7 +1,7 @@
 # Sample factory module for testing node factories
 
 from netrun.net.config import (
-    NodeGraphConfig,
+    NodeConfig,
     PortConfig,
     SalvoConditionConfig,
     SalvoConditionTermPortConfig,
@@ -12,12 +12,12 @@ from netrun.net.config import (
 )
 
 
-def get_node_config(name: str, threshold: float = 0.5) -> NodeGraphConfig:
+def get_node_config(name: str, threshold: float = 0.5) -> NodeConfig:
     """Returns graph structure: name, ports, salvo conditions.
 
     Must NOT set execution_config - that comes from get_node_funcs().
     """
-    return NodeGraphConfig(
+    return NodeConfig(
         name=name,
         in_ports={"task": PortConfig()},
         out_ports={"result": PortConfig()},

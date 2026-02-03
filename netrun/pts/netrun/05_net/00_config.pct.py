@@ -559,7 +559,7 @@ class NodeExecutionConfig(BaseModel):
 
 # %%
 #|export
-class NodeGraphConfig(BaseModel):
+class NodeConfig(BaseModel):
     """Configuration for a node's graph structure (ports and salvo conditions).
 
     Can be created directly or from a factory module using the `factory` field
@@ -567,13 +567,13 @@ class NodeGraphConfig(BaseModel):
 
     Example with factory:
         # Using factory field
-        config = NodeGraphConfig(
+        config = NodeConfig(
             factory="myapp.nodes.worker",
             factory_args={"name": "Worker1", "threshold": 0.5},
         )
 
         # Using from_factory class method
-        config = NodeGraphConfig.from_factory(
+        config = NodeConfig.from_factory(
             factory="myapp.nodes.worker",
             args={"name": "Worker1", "threshold": 0.5},
         )
@@ -593,7 +593,7 @@ class NodeGraphConfig(BaseModel):
     """Factory module or import path. If set, generates base config from factory.
 
     The factory module must contain two functions:
-    - get_node_config(**args) -> NodeGraphConfig (without execution_config)
+    - get_node_config(**args) -> NodeConfig (without execution_config)
     - get_node_funcs(**args) -> tuple[exec_func, start_func, stop_func, on_failure_func]
     """
 
@@ -649,8 +649,8 @@ class NodeGraphConfig(BaseModel):
         cls,
         factory: str | ModuleType,
         args: dict[str, Any] | None = None,
-    ) -> "NodeGraphConfig":
-        """Create a NodeGraphConfig from a factory module.
+    ) -> "NodeConfig":
+        """Create a NodeConfig from a factory module.
 
         Args:
             factory: Factory module or import path to module containing
@@ -658,7 +658,7 @@ class NodeGraphConfig(BaseModel):
             args: Arguments passed to both factory functions.
 
         Returns:
-            Complete NodeGraphConfig with execution_config populated.
+            Complete NodeConfig with execution_config populated.
 
         Raises:
             ImportError: If factory module cannot be imported.
@@ -720,11 +720,11 @@ class GraphConfig(BaseModel):
     Example:
         config = GraphConfig(
             nodes=[
-                NodeGraphConfig(
+                NodeConfig(
                     name="A",
                     out_ports={"out": PortConfig()},
                 ),
-                NodeGraphConfig(
+                NodeConfig(
                     name="B",
                     in_ports={"in": PortConfig()},
                     in_salvo_conditions={
@@ -745,7 +745,7 @@ class GraphConfig(BaseModel):
         )
         graph = config.get_graph()
     """
-    nodes: list[NodeGraphConfig]
+    nodes: list[NodeConfig]
     edges: list[EdgeConfig] = Field(default_factory=list)
 
     def get_graph(self) -> netrun_sim.Graph:
@@ -878,11 +878,11 @@ class NetConfig(BaseModel):
 # Create a simple graph with two nodes: A (source) -> B (sink)
 config = GraphConfig(
     nodes=[
-        NodeGraphConfig(
+        NodeConfig(
             name="A",
             out_ports={"out": PortConfig()},
         ),
-        NodeGraphConfig(
+        NodeConfig(
             name="B",
             in_ports={"in": PortConfig()},
             in_salvo_conditions={
@@ -933,11 +933,11 @@ print(f"Loaded graph: {graph_loaded}")
 # Example with AND/OR logic in salvo conditions
 complex_config = GraphConfig(
     nodes=[
-        NodeGraphConfig(
+        NodeConfig(
             name="Source",
             out_ports={"out": PortConfig()},
         ),
-        NodeGraphConfig(
+        NodeConfig(
             name="Processor",
             in_ports={
                 "in1": PortConfig(slots_spec=PortSlotSpecFiniteConfig(capacity=5)),
@@ -977,7 +977,7 @@ complex_config = GraphConfig(
                 ),
             },
         ),
-        NodeGraphConfig(
+        NodeConfig(
             name="Sink",
             in_ports={"in": PortConfig()},
             in_salvo_conditions={

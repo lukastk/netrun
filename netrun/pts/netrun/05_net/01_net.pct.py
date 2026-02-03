@@ -1903,7 +1903,7 @@ class Net:
 from netrun.net.config import (
     NetConfig,
     GraphConfig,
-    NodeGraphConfig,
+    NodeConfig,
     NodeExecutionConfig,
     PoolConfig,
     MainPoolConfig,
@@ -1975,7 +1975,7 @@ pools = {
 graph_config = GraphConfig(
     nodes=[
         # Source node (runs on main pool)
-        NodeGraphConfig(
+        NodeConfig(
             name="Source",
             out_ports={"out": PortConfig()},
             out_salvo_conditions={
@@ -1996,7 +1996,7 @@ graph_config = GraphConfig(
             ),
         ),
         # Processor node (runs on thread pool)
-        NodeGraphConfig(
+        NodeConfig(
             name="Processor",
             in_ports={"in": PortConfig()},
             out_ports={"out": PortConfig()},
@@ -2028,7 +2028,7 @@ graph_config = GraphConfig(
             ),
         ),
         # Sink node (runs on multiprocess pool)
-        NodeGraphConfig(
+        NodeConfig(
             name="Sink",
             in_ports={"in": PortConfig()},
             in_salvo_conditions={

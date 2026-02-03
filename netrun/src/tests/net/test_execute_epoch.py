@@ -6,7 +6,7 @@ from netrun.net._net import Net, NodeExecutionContext
 from netrun.net.config import (
     NetConfig,
     GraphConfig,
-    NodeGraphConfig,
+    NodeConfig,
     NodeExecutionConfig,
     PortConfig,
     PoolConfig,
@@ -23,7 +23,7 @@ def _create_test_net(exec_func=None) -> Net:
     """Create a test Net with optional execution function."""
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(
+            NodeConfig(
                 name="TestNode",
                 in_ports={"in": PortConfig()},
                 in_salvo_conditions={

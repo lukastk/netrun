@@ -12,7 +12,7 @@ from netrun.net._net import (
 from netrun.net.config import (
     NetConfig,
     GraphConfig,
-    NodeGraphConfig,
+    NodeConfig,
     PortConfig,
     PoolConfig,
     MainPoolConfig,
@@ -57,7 +57,7 @@ def test_net_config_with_output_queues():
     """Test NetConfig with output queue configuration."""
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(name="Sink", out_ports={"out": PortConfig()}),
+            NodeConfig(name="Sink", out_ports={"out": PortConfig()}),
         ],
         edges=[],
     )
@@ -81,8 +81,8 @@ def test_net_initializes_output_queues():
     """Test that Net initializes output queues from config."""
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(name="Sink", out_ports={"out": PortConfig()}),
-            NodeGraphConfig(name="Logger", out_ports={"out": PortConfig()}),
+            NodeConfig(name="Sink", out_ports={"out": PortConfig()}),
+            NodeConfig(name="Logger", out_ports={"out": PortConfig()}),
         ],
         edges=[],
     )
@@ -113,7 +113,7 @@ def test_net_list_output_queues():
     """Test list_output_queues method."""
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(name="Sink", out_ports={"out": PortConfig()}),
+            NodeConfig(name="Sink", out_ports={"out": PortConfig()}),
         ],
         edges=[],
     )
@@ -136,7 +136,7 @@ def test_net_has_output_empty():
     """Test has_output returns False for empty queue."""
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(name="Sink", out_ports={"out": PortConfig()}),
+            NodeConfig(name="Sink", out_ports={"out": PortConfig()}),
         ],
         edges=[],
     )
@@ -157,7 +157,7 @@ def test_net_output_count_empty():
     """Test output_count returns 0 for empty queue."""
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(name="Sink", out_ports={"out": PortConfig()}),
+            NodeConfig(name="Sink", out_ports={"out": PortConfig()}),
         ],
         edges=[],
     )
@@ -178,7 +178,7 @@ def test_net_try_get_output_empty():
     """Test try_get_output returns None for empty queue."""
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(name="Sink", out_ports={"out": PortConfig()}),
+            NodeConfig(name="Sink", out_ports={"out": PortConfig()}),
         ],
         edges=[],
     )
@@ -200,7 +200,7 @@ def test_net_get_all_outputs_empty():
     """Test get_all_outputs returns empty list for empty queue."""
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(name="Sink", out_ports={"out": PortConfig()}),
+            NodeConfig(name="Sink", out_ports={"out": PortConfig()}),
         ],
         edges=[],
     )
@@ -222,7 +222,7 @@ def test_net_route_orphaned_packet_to_queue():
     """Test _route_orphaned_packet routes to configured queue."""
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(name="Sink", out_ports={"out": PortConfig()}),
+            NodeConfig(name="Sink", out_ports={"out": PortConfig()}),
         ],
         edges=[],
     )
@@ -267,7 +267,7 @@ def test_net_route_orphaned_packet_to_catch_all():
     """Test _route_orphaned_packet routes to catch-all queue."""
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(name="Unknown", out_ports={"out": PortConfig()}),
+            NodeConfig(name="Unknown", out_ports={"out": PortConfig()}),
         ],
         edges=[],
     )
@@ -303,7 +303,7 @@ def test_net_route_orphaned_packet_discard():
     """Test _route_orphaned_packet discards when undeclared_output_behavior is discard."""
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(name="Unknown", out_ports={"out": PortConfig()}),
+            NodeConfig(name="Unknown", out_ports={"out": PortConfig()}),
         ],
         edges=[],
     )
@@ -341,7 +341,7 @@ def test_net_route_orphaned_packet_error():
     """Test _route_orphaned_packet raises when undeclared_output_behavior is error."""
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(name="Unknown", out_ports={"out": PortConfig()}),
+            NodeConfig(name="Unknown", out_ports={"out": PortConfig()}),
         ],
         edges=[],
     )
@@ -373,7 +373,7 @@ def test_net_output_queue_not_found():
     """Test output queue methods raise KeyError for unknown queue."""
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(name="Sink", out_ports={"out": PortConfig()}),
+            NodeConfig(name="Sink", out_ports={"out": PortConfig()}),
         ],
         edges=[],
     )
@@ -403,7 +403,7 @@ def test_net_resolve_queue_name_by_node_port():
     """Test _resolve_queue_name with node/port lookup."""
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(name="Sink", out_ports={"out": PortConfig()}),
+            NodeConfig(name="Sink", out_ports={"out": PortConfig()}),
         ],
         edges=[],
     )
@@ -425,7 +425,7 @@ def test_net_resolve_queue_name_errors():
     """Test _resolve_queue_name raises errors for invalid args."""
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(name="Sink", out_ports={"out": PortConfig()}),
+            NodeConfig(name="Sink", out_ports={"out": PortConfig()}),
         ],
         edges=[],
     )
@@ -464,7 +464,7 @@ async def test_net_get_output_with_timeout():
 
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(name="Sink", out_ports={"out": PortConfig()}),
+            NodeConfig(name="Sink", out_ports={"out": PortConfig()}),
         ],
         edges=[],
     )
@@ -488,7 +488,7 @@ async def test_net_get_output_success():
     """Test get_output returns packet when available."""
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(name="Sink", out_ports={"out": PortConfig()}),
+            NodeConfig(name="Sink", out_ports={"out": PortConfig()}),
         ],
         edges=[],
     )
@@ -517,7 +517,7 @@ async def test_net_get_output_by_node_port():
     """Test get_output with node/port keywords."""
     graph_config = GraphConfig(
         nodes=[
-            NodeGraphConfig(name="Sink", out_ports={"out": PortConfig()}),
+            NodeConfig(name="Sink", out_ports={"out": PortConfig()}),
         ],
         edges=[],
     )
