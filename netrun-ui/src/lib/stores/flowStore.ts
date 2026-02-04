@@ -21,6 +21,7 @@ import {
 	type TabState,
 } from './tabsStore';
 import { triggerFileExplorerRefresh } from './fileExplorerStore';
+import { updateUrlWithFile } from './urlStore';
 
 // Types for netrun node data
 export interface PortConfig {
@@ -112,6 +113,28 @@ export const selectedNode = derived(
 	selectedNodes,
 	($selectedNodes) => $selectedNodes.length === 1 ? $selectedNodes[0] : null
 );
+
+/**
+ * Select a node by its label/name
+ * Used for deep linking via URL parameters
+ */
+export function selectNodeByName(name: string): boolean {
+	const tab = get(activeTab);
+	if (!tab) return false;
+
+	// Find node by label (case-insensitive)
+	const node = tab.nodes.find(n => n.data.label.toLowerCase() === name.toLowerCase());
+	if (!node) {
+		console.warn(`Node not found: ${name}`);
+		return false;
+	}
+
+	// Select the node
+	selectedNodeIds.set(new Set([node.id]));
+	selectedEdgeIds.set(new Set());
+
+	return true;
+}
 
 const MAX_HISTORY = 50;
 
@@ -635,6 +658,9 @@ export async function loadFromFile(path: string): Promise<void> {
 
 	// Track in recent files
 	addRecentFile(path);
+
+	// Update browser URL to reflect opened file
+	updateUrlWithFile(path);
 }
 
 // Save inline subgraph changes back to parent tab
@@ -814,6 +840,9 @@ export async function saveToFile(path?: string): Promise<void> {
 
 	// Refresh file explorer to show the new/updated file
 	triggerFileExplorerRefresh();
+
+	// Update URL to reflect the saved file path
+	updateUrlWithFile(savePath);
 }
 
 // Clear the current flow (reset active tab) and create a new file

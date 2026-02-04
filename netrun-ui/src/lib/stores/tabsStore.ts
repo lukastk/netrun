@@ -7,6 +7,7 @@ import { writable, derived, get } from 'svelte/store';
 import type { NetrunEdge, SubgraphNodeData, FlowNode, AnyNodeData } from './flowStore';
 import { api } from '$lib/api';
 import { showConfirm } from '$lib/stores/modalStore';
+import { updateUrlWithFile } from '$lib/stores/urlStore';
 
 // History state for undo/redo
 interface HistoryState {
@@ -115,8 +116,11 @@ export function createTab(filePath?: string | null, switchTo: boolean = true): s
 // Switch to a tab by ID
 export function switchTab(tabId: string): void {
 	const tabList = get(tabs);
-	if (tabList.find(t => t.id === tabId)) {
+	const targetTab = tabList.find(t => t.id === tabId);
+	if (targetTab) {
 		activeTabId.set(tabId);
+		// Update URL to reflect the active file
+		updateUrlWithFile(targetTab.filePath);
 	}
 }
 
@@ -124,7 +128,9 @@ export function switchTab(tabId: string): void {
 export function switchToTabIndex(index: number): void {
 	const tabList = get(tabs);
 	if (index >= 0 && index < tabList.length) {
-		activeTabId.set(tabList[index].id);
+		const targetTab = tabList[index];
+		activeTabId.set(targetTab.id);
+		updateUrlWithFile(targetTab.filePath);
 	}
 }
 
@@ -132,23 +138,33 @@ export function switchToTabIndex(index: number): void {
 export function switchToNextTab(): void {
 	const tabList = get(tabs);
 	const currentIndex = get(activeTabIndex);
+	let targetTab: TabState;
 	if (currentIndex < tabList.length - 1) {
-		activeTabId.set(tabList[currentIndex + 1].id);
+		targetTab = tabList[currentIndex + 1];
 	} else if (tabList.length > 0) {
 		// Wrap around to first tab
-		activeTabId.set(tabList[0].id);
+		targetTab = tabList[0];
+	} else {
+		return;
 	}
+	activeTabId.set(targetTab.id);
+	updateUrlWithFile(targetTab.filePath);
 }
 
 export function switchToPreviousTab(): void {
 	const tabList = get(tabs);
 	const currentIndex = get(activeTabIndex);
+	let targetTab: TabState;
 	if (currentIndex > 0) {
-		activeTabId.set(tabList[currentIndex - 1].id);
+		targetTab = tabList[currentIndex - 1];
 	} else if (tabList.length > 0) {
 		// Wrap around to last tab
-		activeTabId.set(tabList[tabList.length - 1].id);
+		targetTab = tabList[tabList.length - 1];
+	} else {
+		return;
 	}
+	activeTabId.set(targetTab.id);
+	updateUrlWithFile(targetTab.filePath);
 }
 
 // Close a tab by ID
@@ -177,6 +193,8 @@ export async function closeTab(tabId: string, confirmUnsaved: boolean = true): P
 		const newTab = createEmptyTabState();
 		tabs.set([newTab]);
 		activeTabId.set(newTab.id);
+		// Clear URL since there's no file open
+		updateUrlWithFile(null);
 		return true;
 	}
 
@@ -192,7 +210,10 @@ export async function closeTab(tabId: string, confirmUnsaved: boolean = true): P
 		const newTabList = get(tabs);
 		// Prefer the tab to the left, or the first one if we closed the leftmost
 		const newIndex = Math.min(closingIndex, newTabList.length - 1);
-		activeTabId.set(newTabList[newIndex].id);
+		const newActiveTab = newTabList[newIndex];
+		activeTabId.set(newActiveTab.id);
+		// Update URL to reflect new active file
+		updateUrlWithFile(newActiveTab.filePath);
 	}
 
 	return true;
