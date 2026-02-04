@@ -13,7 +13,7 @@
 		ConnectionLineType
 	} from '@xyflow/svelte';
 	import '@xyflow/svelte/dist/style.css';
-	import { derived } from 'svelte/store';
+	import { derived, get } from 'svelte/store';
 
 	import NetrunNodeComponent from './NetrunNode.svelte';
 	import SubgraphNodeComponent from './SubgraphNode.svelte';
@@ -28,9 +28,45 @@
 		deleteEdges,
 		pushHistory,
 		updateNodePositions,
+		graphMeta,
 		type NetrunNodeData,
 		type NetrunEdge
 	} from '$lib/stores/flowStore';
+
+	// Get edge style from graph meta, defaulting to smoothstep
+	const edgeStyle = derived(graphMeta, ($graphMeta) => {
+		const ui = ($graphMeta as Record<string, unknown>)?.ui as Record<string, unknown> | undefined;
+		return (ui?.edgeStyle as string) ?? 'smoothstep';
+	});
+
+	// Get edge markers setting from graph meta
+	const edgeMarkers = derived(graphMeta, ($graphMeta) => {
+		const ui = ($graphMeta as Record<string, unknown>)?.ui as Record<string, unknown> | undefined;
+		return (ui?.edgeMarkers as string) ?? 'arrow-end';
+	});
+
+	// Arrow marker configuration
+	const arrowMarker = {
+		type: MarkerType.ArrowClosed,
+		width: 20,
+		height: 20,
+		color: 'var(--border-color, #404040)',
+	};
+
+	// Get marker config based on setting
+	function getMarkers(setting: string): { markerStart?: typeof arrowMarker; markerEnd?: typeof arrowMarker } {
+		switch (setting) {
+			case 'arrow-start':
+				return { markerStart: arrowMarker };
+			case 'arrow-both':
+				return { markerStart: arrowMarker, markerEnd: arrowMarker };
+			case 'none':
+				return {};
+			case 'arrow-end':
+			default:
+				return { markerEnd: arrowMarker };
+		}
+	}
 
 	// Derive nodes and edges with selection state applied
 	// This ensures SvelteFlow sees the correct selection even after data updates
@@ -43,11 +79,17 @@
 	);
 
 	const edgesWithSelection = derived(
-		[edges, selectedEdgeIds],
-		([$edges, $selectedEdgeIds]) => $edges.map(edge => ({
-			...edge,
-			selected: $selectedEdgeIds.has(edge.id)
-		}))
+		[edges, selectedEdgeIds, edgeStyle, edgeMarkers],
+		([$edges, $selectedEdgeIds, $edgeStyle, $edgeMarkers]) => {
+			const markers = getMarkers($edgeMarkers);
+			return $edges.map(edge => ({
+				...edge,
+				type: $edgeStyle,
+				markerStart: markers.markerStart,
+				markerEnd: markers.markerEnd,
+				selected: $selectedEdgeIds.has(edge.id)
+			}));
+		}
 	);
 
 	// Register custom node types
@@ -59,19 +101,16 @@
 	// Handle new connections
 	function onConnect(connection: Connection) {
 		if (connection.source && connection.target) {
+			const markers = getMarkers(get(edgeMarkers));
 			const newEdge: NetrunEdge = {
 				id: generateEdgeId(),
 				source: connection.source,
 				target: connection.target,
 				sourceHandle: connection.sourceHandle,
 				targetHandle: connection.targetHandle,
-				type: 'smoothstep',
+				type: get(edgeStyle),
 				animated: false,
-				markerEnd: {
-					type: MarkerType.ArrowClosed,
-					width: 15,
-					height: 15,
-				}
+				...markers
 			};
 			addEdgeToStore(newEdge);
 		}
@@ -115,6 +154,16 @@
 		event.event.preventDefault();
 		// TODO: Show node context menu
 	}
+
+	// Map edge style to connection line type
+	function getConnectionLineType(style: string): ConnectionLineType {
+		switch (style) {
+			case 'straight': return ConnectionLineType.Straight;
+			case 'step': return ConnectionLineType.Step;
+			case 'default': return ConnectionLineType.Bezier;
+			default: return ConnectionLineType.SmoothStep;
+		}
+	}
 </script>
 
 <div class="flow-editor">
@@ -131,15 +180,12 @@
 		fitView
 		snapGrid={[15, 15]}
 		defaultEdgeOptions={{
-			type: 'smoothstep',
+			type: $edgeStyle,
 			animated: false,
-			markerEnd: {
-				type: MarkerType.ArrowClosed,
-				width: 15,
-				height: 15,
-			}
+			...getMarkers($edgeMarkers),
+			style: 'stroke-width: 2px;'
 		}}
-		connectionLineType={ConnectionLineType.SmoothStep}
+		connectionLineType={getConnectionLineType($edgeStyle)}
 		deleteKey="Delete"
 		selectionKey="Shift"
 		colorMode="dark"

@@ -231,12 +231,12 @@
 	}
 
 	:global(.subgraph-node .svelte-flow__handle-left) {
-		left: -6px;
+		left: -12px;
 		background: var(--port-input, #22c55e);
 	}
 
 	:global(.subgraph-node .svelte-flow__handle-right) {
-		right: -6px;
+		right: -12px;
 		background: var(--port-output, #f59e0b);
 	}
 

@@ -905,7 +905,24 @@
 								<option value="default">Bezier</option>
 							</select>
 						</div>
-						<p class="empty-hint">More settings coming soon</p>
+						<div class="field">
+							<label for="edge-markers">Edge Markers</label>
+							<select
+								id="edge-markers"
+								value={uiMeta.edgeMarkers ?? 'arrow-end'}
+								onchange={(e) => {
+									updateGraphMetaLive({
+										ui: { ...uiMeta, edgeMarkers: (e.target as HTMLSelectElement).value }
+									});
+									pushHistory();
+								}}
+							>
+								<option value="arrow-end">Arrow (end)</option>
+								<option value="arrow-start">Arrow (start)</option>
+								<option value="arrow-both">Arrow (both ends)</option>
+								<option value="none">None</option>
+							</select>
+						</div>
 					</div>
 				{/if}
 			</section>
