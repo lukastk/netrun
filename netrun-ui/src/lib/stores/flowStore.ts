@@ -483,12 +483,20 @@ export function updateGraphMetaLive(updates: Record<string, unknown>): void {
 /**
  * Validate a single node and return validation errors
  */
-function validateNode(node: FlowNode): string[] {
+function validateNode(node: FlowNode, allNodes: FlowNode[]): string[] {
 	const errors: string[] = [];
 
 	// Check label
 	if (!node.data.label || node.data.label.trim() === '') {
 		errors.push('Node must have a name');
+	} else {
+		// Check for duplicate names
+		const duplicates = allNodes.filter(
+			n => n.id !== node.id && n.data.label.trim() === node.data.label.trim()
+		);
+		if (duplicates.length > 0) {
+			errors.push('Duplicate node name');
+		}
 	}
 
 	// Check factory nodes have factory path
@@ -513,19 +521,28 @@ function validateNode(node: FlowNode): string[] {
 		}
 	}
 
+	// Check for duplicate port names within the node
+	const inPortNames = node.data.inPorts.map(p => p.name.trim()).filter(n => n);
+	const outPortNames = node.data.outPorts.map(p => p.name.trim()).filter(n => n);
+
+	if (new Set(inPortNames).size !== inPortNames.length) {
+		errors.push('Duplicate input port names');
+	}
+	if (new Set(outPortNames).size !== outPortNames.length) {
+		errors.push('Duplicate output port names');
+	}
+
 	return errors;
 }
 
 /**
- * Validate all nodes in the active tab and update their validation state
+ * Validate all nodes and return updated nodes with validation state
+ * This is a pure function that doesn't update state directly
  */
-export function validateAllNodes(): { valid: boolean; errorCount: number } {
-	const tab = get(activeTab);
-	if (!tab) return { valid: true, errorCount: 0 };
-
+function computeValidatedNodes(nodes: FlowNode[]): { nodes: FlowNode[]; errorCount: number } {
 	let errorCount = 0;
-	const updatedNodes = tab.nodes.map(node => {
-		const errors = validateNode(node);
+	const updatedNodes = nodes.map(node => {
+		const errors = validateNode(node, nodes);
 		const isValid = errors.length === 0;
 		if (!isValid) errorCount++;
 
@@ -539,10 +556,57 @@ export function validateAllNodes(): { valid: boolean; errorCount: number } {
 		};
 	});
 
+	return { nodes: updatedNodes, errorCount };
+}
+
+/**
+ * Validate all nodes in the active tab and update their validation state
+ */
+export function validateAllNodes(): { valid: boolean; errorCount: number } {
+	const tab = get(activeTab);
+	if (!tab) return { valid: true, errorCount: 0 };
+
+	const { nodes: updatedNodes, errorCount } = computeValidatedNodes(tab.nodes);
 	updateActiveTab({ nodes: updatedNodes });
 
 	return { valid: errorCount === 0, errorCount };
 }
+
+// Auto-validation: Subscribe to tab changes and validate nodes
+let lastValidatedNodesJSON = '';
+activeTab.subscribe((tab) => {
+	if (!tab) return;
+
+	// Create a simple hash of nodes to detect changes
+	// Only include fields that affect validation
+	const nodesForValidation = tab.nodes.map(n => ({
+		id: n.id,
+		label: n.data.label,
+		nodeType: n.data.nodeType,
+		factory: (n.data as NetrunNodeData).factory,
+		inPorts: n.data.inPorts.map(p => p.name),
+		outPorts: n.data.outPorts.map(p => p.name),
+	}));
+	const nodesJSON = JSON.stringify(nodesForValidation);
+
+	// Only revalidate if relevant data has changed
+	if (nodesJSON === lastValidatedNodesJSON) return;
+	lastValidatedNodesJSON = nodesJSON;
+
+	// Compute validation but check if it would change anything
+	const { nodes: validatedNodes, errorCount } = computeValidatedNodes(tab.nodes);
+
+	// Only update if validation state actually changed
+	const validationChanged = validatedNodes.some((vNode, i) => {
+		const origNode = tab.nodes[i];
+		return vNode.data.isValid !== origNode.data.isValid ||
+			JSON.stringify(vNode.data.validationErrors) !== JSON.stringify(origNode.data.validationErrors);
+	});
+
+	if (validationChanged) {
+		updateActiveTab({ nodes: validatedNodes });
+	}
+});
 
 /**
  * Clear validation state on all nodes
