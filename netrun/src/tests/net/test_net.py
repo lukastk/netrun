@@ -777,8 +777,8 @@ def test_net_with_multiple_pool_types():
     """Test Net can be created with multiple pool types."""
     config = NetConfig(
         pools={
-            "main": PoolConfig(id="main", spec=MainPoolConfig()),
-            "threads": PoolConfig(id="threads", spec=ThreadPoolConfig(num_workers=2)),
+            "main": PoolConfig(spec=MainPoolConfig()),
+            "threads": PoolConfig(spec=ThreadPoolConfig(num_workers=2)),
         },
         graph=create_simple_graph_config(),
     )
@@ -820,7 +820,7 @@ def test_net_with_node_execution_configs():
     )
 
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
     )
 
@@ -1011,7 +1011,7 @@ def test_net_check_rate_limit_none_limit():
     )
 
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
     )
 
@@ -1049,7 +1049,7 @@ def test_net_check_rate_limit_enforced():
     )
 
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
     )
 
@@ -1091,7 +1091,7 @@ def test_net_check_rate_limit_window_expires():
     )
 
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
     )
 
@@ -1138,7 +1138,7 @@ def test_node_execution_config_defaults():
 def test_net_config_default_pool_allocation_method():
     """Test NetConfig has default_pool_allocation_method field."""
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=create_simple_graph_config(),
         default_pool_allocation_method=RunAllocationMethod.RANDOM,
     )
@@ -1149,7 +1149,7 @@ def test_net_config_default_pool_allocation_method():
 def test_net_config_default_pool_allocation_method_default():
     """Test NetConfig.default_pool_allocation_method defaults to ROUND_ROBIN."""
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=create_simple_graph_config(),
     )
 
@@ -1303,7 +1303,7 @@ async def test_net_start_background():
         ],
     )
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
     )
 
@@ -1327,7 +1327,7 @@ async def test_net_start_background_already_running():
         ],
     )
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
     )
 
@@ -1349,7 +1349,7 @@ def test_net_is_blocked_empty_network():
         ],
     )
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
     )
 
@@ -1365,7 +1365,7 @@ def test_net_is_blocked_with_running_epochs():
         ],
     )
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
     )
 
@@ -1382,7 +1382,7 @@ def test_net_install_sigint_handler():
         ],
     )
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
     )
 
@@ -1437,7 +1437,7 @@ async def test_epoch_execution_simple_node():
     )
 
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
     )
 
@@ -1500,7 +1500,7 @@ async def test_epoch_execution_with_output():
     )
 
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
     )
 
@@ -1551,7 +1551,7 @@ async def test_retry_on_failure():
     )
 
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
     )
 
@@ -1595,7 +1595,7 @@ async def test_dead_letter_queue_after_max_retries():
     )
 
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
     )
 
@@ -1651,7 +1651,7 @@ async def test_on_node_failure_callback():
     )
 
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
     )
 

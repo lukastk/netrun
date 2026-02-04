@@ -172,3 +172,73 @@ jobs:
           python -c "import netrun; print('netrun OK')"
         env:
           PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
+
+  # =============================================================================
+  # netrun-ui visual editor tests
+  # =============================================================================
+  netrun-ui:
+    name: netrun-ui (${{ matrix.os }}, Python ${{ matrix.python-version }})
+    runs-on: ${{ matrix.os }}
+    needs: [netrun]  # netrun-ui depends on netrun
+    defaults:
+      run:
+        working-directory: netrun-ui
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]  # Skip Windows for now (pywebview issues)
+        python-version: ['3.11', '3.12']
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: netrun-ui/package-lock.json
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo registry
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: ${{ runner.os }}-cargo-registry-${{ hashFiles('netrun-sim/**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-registry-
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Build frontend
+        run: npm run build
+
+      - name: Install netrun-sim and netrun from source, then netrun-ui
+        run: |
+          python -m venv test-venv
+          source test-venv/bin/activate
+          pip install maturin
+          cd ../netrun-sim/python && maturin develop --release
+          cd ../../netrun && pip install -e .
+          cd ../netrun-ui && pip install -e .
+          python -c "import netrun_ui_backend; print('netrun-ui OK')"
+        env:
+          PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
+
+      - name: Run backend tests
+        run: |
+          source test-venv/bin/activate
+          pip install pytest httpx
+          pytest tests/ -v
+        env:
+          PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"

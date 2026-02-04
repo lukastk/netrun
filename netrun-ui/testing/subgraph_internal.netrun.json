@@ -1,0 +1,91 @@
+{
+  "meta": {
+    "description": "Internal subgraph for file-reference example - a simple data transformation pipeline"
+  },
+  "pools": {},
+  "graph": {
+    "nodes": [
+      {
+        "type": "node",
+        "name": "Validate",
+        "in_ports": {
+          "data": {
+            "port_type": "any"
+          }
+        },
+        "out_ports": {
+          "valid": {
+            "port_type": "any"
+          },
+          "invalid": {
+            "port_type": "any"
+          }
+        },
+        "meta": {
+          "ui": {
+            "id": "node-validate",
+            "label": "Validate",
+            "position": {
+              "x": 100,
+              "y": 50
+            }
+          }
+        }
+      },
+      {
+        "type": "node",
+        "name": "Transform",
+        "in_ports": {
+          "input": {
+            "port_type": "any"
+          }
+        },
+        "out_ports": {
+          "output": {
+            "port_type": "any"
+          }
+        },
+        "meta": {
+          "ui": {
+            "id": "node-transform",
+            "label": "Transform",
+            "position": {
+              "x": 350,
+              "y": 50
+            }
+          }
+        }
+      },
+      {
+        "type": "node",
+        "name": "ErrorLog",
+        "in_ports": {
+          "error": {
+            "port_type": "any"
+          }
+        },
+        "out_ports": {},
+        "meta": {
+          "ui": {
+            "id": "node-errorlog",
+            "label": "ErrorLog",
+            "position": {
+              "x": 350,
+              "y": 200
+            }
+          }
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source_str": "Validate.valid",
+        "target_str": "Transform.input"
+      },
+      {
+        "source_str": "Validate.invalid",
+        "target_str": "ErrorLog.error"
+      }
+    ]
+  }
+}
