@@ -82,6 +82,7 @@ export const graphMeta = derived(activeTab, ($activeTab) => $activeTab?.graphMet
 export const fileFormat = derived(activeTab, ($activeTab) => $activeTab?.fileFormat || 'json');
 export const history = derived(activeTab, ($activeTab) => $activeTab?.history || { past: [], future: [] });
 export const isInlineSubgraph = derived(activeTab, ($activeTab) => $activeTab?.subgraphContext?.isInline || false);
+export const isNewFile = derived(activeTab, ($activeTab) => $activeTab?.isNewFile || false);
 
 // Selection state (not per-tab, applies to current view)
 export const selectedNodeIds = writable<Set<string>>(new Set());
@@ -811,22 +812,27 @@ export async function saveToFile(path?: string): Promise<void> {
 	});
 }
 
-// Clear the current flow (reset active tab)
-export function clearFlow(format: 'json' | 'toml' = 'json'): void {
+// Clear the current flow (reset active tab) and create a new file
+export function clearFlow(format: 'json' | 'toml' = 'json', fileName?: string): void {
 	const tab = get(activeTab);
 	if (!tab) return;
 
 	const extension = format === 'toml' ? '.netrun.toml' : '.netrun.json';
+	const name = fileName || `Untitled${extension}`;
+	// Ensure filename has correct extension
+	const finalName = name.endsWith(extension) ? name : `${name}${extension}`;
+
 	updateActiveTab({
 		nodes: [],
 		edges: [],
 		filePath: null,
-		fileName: `Untitled${extension}`,
+		fileName: finalName,
 		isDirty: false,
 		history: { past: [], future: [] },
 		extraData: null,
 		graphMeta: null,
 		fileFormat: format,
+		isNewFile: true,
 	});
 }
 
