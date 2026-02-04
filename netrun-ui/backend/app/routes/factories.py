@@ -152,6 +152,10 @@ async def get_factory_signature(request: FactorySignatureRequest) -> FactorySign
         parameters = []
 
         for name, param in sig.parameters.items():
+            # Skip *args and **kwargs
+            if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
+                continue
+
             # Get type annotation as string
             type_str = None
             if param.annotation != inspect.Parameter.empty:
@@ -222,6 +226,58 @@ async def preview_factory(request: FactoryPreviewRequest) -> FactoryPreviewRespo
         # Call the factory
         try:
             node_config = get_node_config(**request.factory_args)
+        except ModuleNotFoundError as e:
+            return FactoryPreviewResponse(
+                factory_path=request.factory_path,
+                name="",
+                in_ports=[],
+                out_ports=[],
+                has_in_salvo_conditions=False,
+                has_out_salvo_conditions=False,
+                error=f"Module not found: {e.name}. Check the import path.",
+            )
+        except AttributeError as e:
+            return FactoryPreviewResponse(
+                factory_path=request.factory_path,
+                name="",
+                in_ports=[],
+                out_ports=[],
+                has_in_salvo_conditions=False,
+                has_out_salvo_conditions=False,
+                error=f"Function not found: {e}",
+            )
+        except TypeError as e:
+            # Missing required argument or wrong type
+            error_msg = str(e)
+            if "missing" in error_msg and "required" in error_msg:
+                return FactoryPreviewResponse(
+                    factory_path=request.factory_path,
+                    name="",
+                    in_ports=[],
+                    out_ports=[],
+                    has_in_salvo_conditions=False,
+                    has_out_salvo_conditions=False,
+                    error=f"Missing required argument: {error_msg}",
+                )
+            return FactoryPreviewResponse(
+                factory_path=request.factory_path,
+                name="",
+                in_ports=[],
+                out_ports=[],
+                has_in_salvo_conditions=False,
+                has_out_salvo_conditions=False,
+                error=f"Type error: {e}",
+            )
+        except ValueError as e:
+            return FactoryPreviewResponse(
+                factory_path=request.factory_path,
+                name="",
+                in_ports=[],
+                out_ports=[],
+                has_in_salvo_conditions=False,
+                has_out_salvo_conditions=False,
+                error=f"Invalid value: {e}",
+            )
         except Exception as e:
             return FactoryPreviewResponse(
                 factory_path=request.factory_path,
