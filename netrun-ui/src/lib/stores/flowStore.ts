@@ -326,6 +326,56 @@ export function getNodeSalvoConditions(
 	return conditions as Record<string, unknown>;
 }
 
+// Update node-level execution config
+export function updateNodeExecutionConfig(
+	id: string,
+	executionConfig: Record<string, unknown> | null
+) {
+	const tab = get(activeTab);
+	if (!tab) return;
+
+	updateActiveTab({
+		nodes: tab.nodes.map(node => {
+			if (node.id !== id) return node;
+
+			const config = (node.data._config || {}) as Record<string, unknown>;
+
+			let newConfig: Record<string, unknown>;
+			if (executionConfig === null || Object.keys(executionConfig).length === 0) {
+				// Remove execution_config to use defaults
+				const { execution_config: _removed, ...rest } = config;
+				newConfig = rest;
+			} else {
+				// Set the execution config
+				newConfig = { ...config, execution_config: executionConfig };
+			}
+
+			return {
+				...node,
+				data: {
+					...node.data,
+					_config: Object.keys(newConfig).length > 0 ? newConfig : undefined,
+				}
+			};
+		}),
+		isDirty: true,
+	});
+}
+
+// Get execution config from a node's _config
+export function getNodeExecutionConfig(
+	node: FlowNode
+): Record<string, unknown> | null {
+	const config = (node.data._config || {}) as Record<string, unknown>;
+	const executionConfig = config.execution_config;
+
+	if (executionConfig === undefined || executionConfig === null) {
+		return null; // Use defaults
+	}
+
+	return executionConfig as Record<string, unknown>;
+}
+
 // Update node positions (called when nodes are dragged)
 export function updateNodePositions(updates: Array<{ id: string; position: { x: number; y: number } }>) {
 	const tab = get(activeTab);
