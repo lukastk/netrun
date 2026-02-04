@@ -21,6 +21,7 @@
 	let error = $state<string | null>(null);
 	let expandedDirs = $state<Set<string>>(new Set());
 	let showNavigateModal = $state(false);
+	let recentsCollapsed = $state(true);
 
 	// Load directory contents
 	async function loadDirectory(path: string) {
@@ -107,24 +108,27 @@
 	<!-- Recent Files Section -->
 	{#if $recentFiles.length > 0}
 		<div class="recent-files-section">
-			<div class="section-header">
+			<button class="section-header" onclick={() => recentsCollapsed = !recentsCollapsed}>
 				<span class="section-title">Recent</span>
-			</div>
-			<div class="recent-files-list">
-				{#each $recentFiles.slice(0, 5) as file}
-					<button
-						class="file-entry netrun-file"
-						onclick={() => loadFromFile(file.path).catch(e => {
-							toasts.error(`Failed to open: ${e.message}`);
-							removeRecentFile(file.path);
-						})}
-						title={file.path}
-					>
-						<span class="entry-icon">📊</span>
-						<span class="entry-name">{file.name}</span>
-					</button>
-				{/each}
-			</div>
+				<span class="section-toggle">{recentsCollapsed ? '+' : '−'}</span>
+			</button>
+			{#if !recentsCollapsed}
+				<div class="recent-files-list">
+					{#each $recentFiles.slice(0, 5) as file}
+						<button
+							class="file-entry netrun-file"
+							onclick={() => loadFromFile(file.path).catch(e => {
+								toasts.error(`Failed to open: ${e.message}`);
+								removeRecentFile(file.path);
+							})}
+							title={file.path}
+						>
+							<span class="entry-icon">📊</span>
+							<span class="entry-name">{file.name}</span>
+						</button>
+					{/each}
+				</div>
+			{/if}
 		</div>
 	{/if}
 
@@ -233,8 +237,18 @@
 	}
 
 	.section-header {
+		display: flex;
+		justify-content: space-between;
+		align-items: center;
+		width: 100%;
 		padding: 8px 12px;
 		background: var(--bg-tertiary, #2d2d2d);
+		border: none;
+		cursor: pointer;
+	}
+
+	.section-header:hover {
+		background: var(--border-color, #404040);
 	}
 
 	.section-title {
@@ -243,6 +257,11 @@
 		color: var(--text-secondary, #a0a0a0);
 		text-transform: uppercase;
 		letter-spacing: 0.5px;
+	}
+
+	.section-toggle {
+		color: var(--text-secondary, #a0a0a0);
+		font-size: 12px;
 	}
 
 	.recent-files-list {
