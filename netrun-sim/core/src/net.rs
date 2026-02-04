@@ -355,7 +355,14 @@ pub enum NetEvent {
     OutputSalvoTriggered(EventUTC, EpochID, SalvoConditionName),
     /// A packet was sent to an unconnected output port and moved to OutsideNet.
     /// (timestamp, packet_id, epoch_id, node_name, port_name, salvo_condition)
-    PacketOrphaned(EventUTC, PacketID, EpochID, NodeName, PortName, SalvoConditionName),
+    PacketOrphaned(
+        EventUTC,
+        PacketID,
+        EpochID,
+        NodeName,
+        PortName,
+        SalvoConditionName,
+    ),
 }
 
 /// Data returned by a successful network action.
@@ -1260,8 +1267,14 @@ impl NetSim {
 
         // Get the locations to send packets to
         // Tuple: (packet_id, port_name, from_location, to_location, from_index, is_orphaned)
-        let mut packets_to_move: Vec<(PacketID, PortName, PacketLocation, PacketLocation, usize, bool)> =
-            Vec::new();
+        let mut packets_to_move: Vec<(
+            PacketID,
+            PortName,
+            PacketLocation,
+            PacketLocation,
+            usize,
+            bool,
+        )> = Vec::new();
         for (port_name, packet_count) in &salvo_condition.ports {
             let from_location = PacketLocation::OutputPort(*epoch_id, port_name.clone());
             let packets = self
@@ -1277,11 +1290,12 @@ impl NetSim {
                 .clone();
 
             // Check if there's an edge connected to this output port
-            let (to_location, is_orphaned) = if let Some(edge_ref) = self.graph.get_edge_by_tail(&PortRef {
-                node_name: node_name.clone(),
-                port_type: PortType::Output,
-                port_name: port_name.clone(),
-            }) {
+            let (to_location, is_orphaned) = if let Some(edge_ref) =
+                self.graph.get_edge_by_tail(&PortRef {
+                    node_name: node_name.clone(),
+                    port_type: PortType::Output,
+                    port_name: port_name.clone(),
+                }) {
                 // Connected: send to edge
                 (PacketLocation::Edge(edge_ref.clone()), false)
             } else {
@@ -1324,7 +1338,9 @@ impl NetSim {
         let mut net_events = Vec::new();
         let mut orphaned_infos: Vec<OrphanedPacketInfo> = Vec::new();
 
-        for (packet_id, port_name, from_location, to_location, from_index, is_orphaned) in packets_to_move {
+        for (packet_id, port_name, from_location, to_location, from_index, is_orphaned) in
+            packets_to_move
+        {
             if is_orphaned {
                 // Emit PacketOrphaned event for unconnected port
                 net_events.push(NetEvent::PacketOrphaned(
@@ -2117,7 +2133,10 @@ impl NetSim {
         }
 
         // Remove from OutsideNet
-        if let Some(packets) = self._packets_by_location.get_mut(&PacketLocation::OutsideNet) {
+        if let Some(packets) = self
+            ._packets_by_location
+            .get_mut(&PacketLocation::OutsideNet)
+        {
             packets.shift_remove(packet_id);
         }
 
@@ -2133,7 +2152,9 @@ impl NetSim {
 
         // Remove from epoch's orphaned_packets list
         if let Some(epoch) = self._epochs.get_mut(epoch_id) {
-            epoch.orphaned_packets.retain(|info| info.packet_id != *packet_id);
+            epoch
+                .orphaned_packets
+                .retain(|info| info.packet_id != *packet_id);
         }
 
         Ok(())

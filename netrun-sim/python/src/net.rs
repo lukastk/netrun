@@ -910,16 +910,21 @@ impl NetEvent {
             CoreNetSimEvent::OutputSalvoTriggered(ts, eid, cond) => {
                 NetEventKind::OutputSalvoTriggered(*ts, eid.to_string(), cond.clone())
             }
-            CoreNetSimEvent::PacketOrphaned(ts, packet_id, epoch_id, node_name, port_name, cond) => {
-                NetEventKind::PacketOrphaned(
-                    *ts,
-                    packet_id.to_string(),
-                    epoch_id.to_string(),
-                    node_name.clone(),
-                    port_name.clone(),
-                    cond.clone(),
-                )
-            }
+            CoreNetSimEvent::PacketOrphaned(
+                ts,
+                packet_id,
+                epoch_id,
+                node_name,
+                port_name,
+                cond,
+            ) => NetEventKind::PacketOrphaned(
+                *ts,
+                packet_id.to_string(),
+                epoch_id.to_string(),
+                node_name.clone(),
+                port_name.clone(),
+                cond.clone(),
+            ),
         };
         NetEvent { inner }
     }

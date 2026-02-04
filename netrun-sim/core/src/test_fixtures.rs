@@ -267,10 +267,14 @@ mod tests {
         // Verify B has an output port but no edge from it
         let node_b = graph.nodes().get("B").unwrap();
         assert!(node_b.out_ports.contains_key("out"));
-        assert!(graph.get_edge_by_tail(&PortRef {
-            node_name: "B".to_string(),
-            port_type: PortType::Output,
-            port_name: "out".to_string(),
-        }).is_none());
+        assert!(
+            graph
+                .get_edge_by_tail(&PortRef {
+                    node_name: "B".to_string(),
+                    port_type: PortType::Output,
+                    port_name: "out".to_string(),
+                })
+                .is_none()
+        );
     }
 }
