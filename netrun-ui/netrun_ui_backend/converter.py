@@ -16,6 +16,10 @@ NetConfig Format (netrun.net.config):
 - ... other net-level settings
 """
 from typing import Any
+import importlib
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def is_net_config(data: dict[str, Any]) -> bool:
@@ -94,11 +98,81 @@ def _count_subgraph_nodes(subgraph: dict[str, Any]) -> int:
     return count
 
 
-def graph_config_to_ui(graph_data: dict[str, Any]) -> tuple[list[dict], list[dict]]:
+def resolve_factory_ports(
+    factory_path: str,
+    factory_args: dict[str, Any],
+    working_dir: str | None = None,
+) -> tuple[dict[str, Any], dict[str, Any]] | None:
+    """Resolve ports from a factory by calling get_node_config.
+
+    Args:
+        factory_path: Import path to the factory module (e.g. "netrun.node_factories.function").
+        factory_args: Arguments to pass to get_node_config.
+        working_dir: Optional working directory to add to sys.path for imports.
+
+    Returns:
+        Tuple of (in_ports, out_ports) dicts, or None if resolution fails.
+    """
+    import sys
+
+    # Temporarily add working directory to sys.path for local imports
+    added_to_path = False
+    if working_dir and working_dir not in sys.path:
+        sys.path.insert(0, working_dir)
+        added_to_path = True
+
+    try:
+        module = importlib.import_module(factory_path)
+
+        if not hasattr(module, "get_node_config"):
+            logger.warning(f"Factory module '{factory_path}' has no get_node_config")
+            return None
+
+        get_node_config = getattr(module, "get_node_config")
+        node_config = get_node_config(**factory_args)
+
+        # Extract ports from the NodeConfig
+        in_ports = {}
+        for name, port in node_config.in_ports.items():
+            port_dict = {}
+            if hasattr(port, "port_type") and port.port_type is not None:
+                if isinstance(port.port_type, str):
+                    port_dict["port_type"] = port.port_type
+                elif hasattr(port.port_type, "__name__"):
+                    port_dict["port_type"] = port.port_type.__name__
+            in_ports[name] = port_dict
+
+        out_ports = {}
+        for name, port in node_config.out_ports.items():
+            port_dict = {}
+            if hasattr(port, "port_type") and port.port_type is not None:
+                if isinstance(port.port_type, str):
+                    port_dict["port_type"] = port.port_type
+                elif hasattr(port.port_type, "__name__"):
+                    port_dict["port_type"] = port.port_type.__name__
+            out_ports[name] = port_dict
+
+        return in_ports, out_ports
+
+    except Exception as e:
+        logger.warning(f"Failed to resolve factory '{factory_path}': {e}")
+        return None
+
+    finally:
+        # Clean up sys.path
+        if added_to_path and working_dir in sys.path:
+            sys.path.remove(working_dir)
+
+
+def graph_config_to_ui(
+    graph_data: dict[str, Any],
+    working_dir: str | None = None,
+) -> tuple[list[dict], list[dict]]:
     """Convert GraphConfig-style data to UI format.
 
     Args:
         graph_data: Dictionary with "nodes" and "edges" keys in GraphConfig format.
+        working_dir: Optional working directory for resolving factory imports.
 
     Returns:
         Tuple of (ui_nodes, ui_edges) ready for SvelteFlow.
@@ -166,14 +240,26 @@ def graph_config_to_ui(graph_data: dict[str, Any]) -> tuple[list[dict], list[dic
             is_factory = node.get("factory") is not None
             node_type = "factory" if is_factory else "regular"
 
-            # Convert ports
+            # Get ports from config
+            config_in_ports = node.get("in_ports", {})
+            config_out_ports = node.get("out_ports", {})
+
+            # For factory nodes without explicit ports, try to resolve from factory
+            if is_factory and not config_in_ports and not config_out_ports:
+                factory_path = node.get("factory")
+                factory_args = node.get("factory_args", {})
+                resolved = resolve_factory_ports(factory_path, factory_args, working_dir)
+                if resolved:
+                    config_in_ports, config_out_ports = resolved
+
+            # Convert ports to UI format
             in_ports = [
                 {"name": name, "type": port.get("port_type")}
-                for name, port in node.get("in_ports", {}).items()
+                for name, port in config_in_ports.items()
             ]
             out_ports = [
                 {"name": name, "type": port.get("port_type")}
-                for name, port in node.get("out_ports", {}).items()
+                for name, port in config_out_ports.items()
             ]
 
             ui_node = {

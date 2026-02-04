@@ -88,8 +88,9 @@ async def read_file(request: FileReadRequest) -> FileReadResponse:
         # Extract graph config and any extra data (pools, net-level settings)
         graph_data, extra_data = extract_graph_and_extras(data)
 
-        # Convert to UI format
-        nodes, edges = graph_config_to_ui(graph_data)
+        # Convert to UI format (pass the file's directory for factory resolution)
+        working_dir = str(path.parent)
+        nodes, edges = graph_config_to_ui(graph_data, working_dir=working_dir)
 
         # Extract graph-level meta if present
         meta = graph_data.get("meta")
@@ -326,7 +327,9 @@ async def load_subgraph(request: SubgraphLoadRequest) -> SubgraphLoadResponse:
             # Extract graph data (could be GraphConfig or NetConfig format)
             graph_data, _ = extract_graph_and_extras(data)
 
-            nodes, edges = graph_config_to_ui(graph_data)
+            # Pass working directory for factory resolution
+            working_dir = str(path.parent)
+            nodes, edges = graph_config_to_ui(graph_data, working_dir=working_dir)
             source = str(path)
             exposed_in_ports = {}
             exposed_out_ports = {}
@@ -340,7 +343,9 @@ async def load_subgraph(request: SubgraphLoadRequest) -> SubgraphLoadResponse:
             edges_data = config.get("edges", [])
 
             graph_data = {"nodes": nodes_data, "edges": edges_data}
-            nodes, edges = graph_config_to_ui(graph_data)
+            # Use base_path's directory for factory resolution if available
+            working_dir = str(Path(request.base_path).parent) if request.base_path else None
+            nodes, edges = graph_config_to_ui(graph_data, working_dir=working_dir)
 
             source = "Inline"
             exposed_in_ports = config.get("exposed_in_ports", {})
