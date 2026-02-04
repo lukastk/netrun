@@ -47,6 +47,9 @@ class _ParsedSignature:
     regular_params: list[str]
     """Ordered list of regular parameter names (input ports)."""
 
+    in_port_annotations: dict[str, Any] = field(default_factory=dict)
+    """Raw type annotations for input ports (for detecting list types)."""
+
 
 def _annotation_to_port_config(annotation: Any) -> PortConfig:
     """Convert a type annotation to a PortConfig.
@@ -130,6 +133,7 @@ def _parse_function_signature(func: Callable|str) -> _ParsedSignature:
     sig = inspect.signature(func)
 
     in_ports: dict[str, PortConfig] = {}
+    in_port_annotations: dict[str, Any] = {}
     special_params: set[str] = set()
     regular_params: list[str] = []
 
@@ -148,6 +152,7 @@ def _parse_function_signature(func: Callable|str) -> _ParsedSignature:
         # Regular parameter - becomes an input port
         annotation = param.annotation if param.annotation is not inspect.Parameter.empty else _MISSING
         in_ports[param_name] = _annotation_to_port_config(annotation)
+        in_port_annotations[param_name] = annotation
         regular_params.append(param_name)
 
     # Parse return annotation for output ports
@@ -159,6 +164,7 @@ def _parse_function_signature(func: Callable|str) -> _ParsedSignature:
         out_ports=out_ports,
         special_params=special_params,
         regular_params=regular_params,
+        in_port_annotations=in_port_annotations,
     )
 
 # %% nbs/netrun/06_node_factories/00_from_function.ipynb 7
@@ -252,17 +258,34 @@ def _create_exec_func(func: Callable, parsed_sig: _ParsedSignature) -> Callable:
     """
     is_async = asyncio.iscoroutinefunction(func)
 
-    async def exec_node_func_async(ctx, packets):
-        """Async wrapper for the user function."""
+    def _is_list_type(annotation):
+        """Check if annotation is a list type like list[T] or List[T]."""
+        if annotation is _MISSING:
+            return False
+        origin = get_origin(annotation)
+        return origin is list
+
+    def _prepare_kwargs(ctx, packets):
+        """Extract kwargs from packets and special params."""
         kwargs = {}
 
         # Extract packet values for regular parameters
         for param_name in parsed_sig.regular_params:
             if param_name in packets and packets[param_name]:
-                # Get first packet from this port and consume it
-                packet_id = packets[param_name][0]
-                value = ctx.consume_packet(packet_id)
-                kwargs[param_name] = value
+                annotation = parsed_sig.in_port_annotations.get(param_name, _MISSING)
+
+                if _is_list_type(annotation):
+                    # List type - consume ALL packets and return as list
+                    values = []
+                    for packet_id in packets[param_name]:
+                        value = ctx.consume_packet(packet_id)
+                        values.append(value)
+                    kwargs[param_name] = values
+                else:
+                    # Non-list type - consume first packet only
+                    packet_id = packets[param_name][0]
+                    value = ctx.consume_packet(packet_id)
+                    kwargs[param_name] = value
             else:
                 # Port has no packets - this shouldn't happen with proper salvo conditions
                 raise ValueError(f"No packets in port '{param_name}' for function {func.__name__}")
@@ -273,13 +296,10 @@ def _create_exec_func(func: Callable, parsed_sig: _ParsedSignature) -> Callable:
         if "print" in parsed_sig.special_params:
             kwargs["print"] = ctx.print
 
-        # Call the user function
-        if is_async:
-            result = await func(**kwargs)
-        else:
-            result = func(**kwargs)
+        return kwargs
 
-        # Route result to output ports
+    def _route_result(ctx, result):
+        """Route function result to output ports and send salvo."""
         if parsed_sig.out_ports:
             if len(parsed_sig.out_ports) == 1:
                 # Single output port - send result directly
@@ -301,19 +321,43 @@ def _create_exec_func(func: Callable, parsed_sig: _ParsedSignature) -> Callable:
             # Send the output salvo
             ctx.send_output_salvo("send")
 
-    def exec_node_func_sync(ctx, packets):
-        """Sync wrapper that runs the async wrapper."""
-        # Create event loop if needed
-        try:
-            loop = asyncio.get_event_loop()
-        except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+    if is_async:
+        # Async user function - need to handle event loop
+        def exec_node_func(ctx, packets):
+            """Wrapper for async user function."""
+            kwargs = _prepare_kwargs(ctx, packets)
 
-        return loop.run_until_complete(exec_node_func_async(ctx, packets))
+            async def _run_async():
+                result = await func(**kwargs)
+                _route_result(ctx, result)
+                return result
 
-    # Return the sync version since the Net's preprocessor calls functions synchronously
-    return exec_node_func_sync
+            # Check if we're already in a running event loop
+            try:
+                loop = asyncio.get_running_loop()
+                # We're in a running loop - can't use run_until_complete
+                # This happens when running in the main pool (SingleWorkerPool)
+                # We need to run the coroutine synchronously using asyncio.run()
+                # But that also fails in a running loop, so we need nest_asyncio
+                # or a different approach.
+                # For now, create a new event loop in a way that works
+                import concurrent.futures
+                with concurrent.futures.ThreadPoolExecutor() as executor:
+                    future = executor.submit(asyncio.run, _run_async())
+                    return future.result()
+            except RuntimeError:
+                # No running loop - create a new one
+                return asyncio.run(_run_async())
+    else:
+        # Sync user function - no event loop needed
+        def exec_node_func(ctx, packets):
+            """Wrapper for sync user function."""
+            kwargs = _prepare_kwargs(ctx, packets)
+            result = func(**kwargs)
+            _route_result(ctx, result)
+            return result
+
+    return exec_node_func
 
 # %% nbs/netrun/06_node_factories/00_from_function.ipynb 11
 def _deep_merge_dicts(base: dict, override: dict) -> dict:

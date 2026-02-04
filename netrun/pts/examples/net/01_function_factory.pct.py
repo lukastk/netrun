@@ -26,7 +26,7 @@ from nblite import nbl_export; nbl_export();
 # %% [markdown]
 # ## The Function Node Factory
 #
-# The function node factory (`netrun.node_factories.from_function`) can create
+# The function node factory (`netrun.node_factories.function`) can create
 # `NodeConfig` objects from regular Python functions. It inspects the
 # function signature to determine:
 #
@@ -35,7 +35,7 @@ from nblite import nbl_export; nbl_export();
 # - **Special parameters**: `ctx` and `print` are handled specially
 
 # %%
-from netrun.node_factories.from_function import from_function, parse_function_signature
+from netrun.node_factories.function import from_function, parse_function_signature
 
 # %% [markdown]
 # ### Example 1: Simple Function
@@ -158,7 +158,7 @@ out = {type = "all"}
 
 # Double node - uses function factory
 [[graph.nodes]]
-factory = "netrun.node_factories.from_function"
+factory = "netrun.node_factories.function"
 
 [graph.nodes.factory_args]
 func = "examples.net.function_factory_nodes.double_number"
@@ -296,7 +296,7 @@ print(f"  Output queues: {list(net_config.output_queues.keys())}")
 # %%
 # Let's demonstrate serializing a graph config with a factory node
 node_for_json = NodeConfig(
-    factory="netrun.node_factories.from_function",
+    factory="netrun.node_factories.function",
     factory_args={"func": "examples.net.function_factory_nodes.double_number"},
 )
 

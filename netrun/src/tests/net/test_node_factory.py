@@ -97,8 +97,9 @@ class TestFactoryFieldExpansion:
         assert resolved.name == "FieldNode"
         assert "task" in resolved.in_ports
         assert resolved.execution_config is not None
-        # Factory is cleared in resolved config
-        assert resolved.factory is None
+        # Factory is preserved for lazy resolution on workers (multiprocess support)
+        assert resolved.factory == FACTORY_MODULE_PATH
+        assert resolved.factory_args == {"name": "FieldNode", "threshold": 0.8}
 
     def test_factory_field_with_overrides(self):
         """Test that explicit fields override factory-generated values."""
@@ -197,33 +198,34 @@ class TestFactorySerialization:
         resolved = loaded.resolve()
         assert "task" in resolved.in_ports
 
-    def test_resolved_closure_functions_fail_to_serialize(self):
-        """Test that resolved configs with closure functions fail to serialize.
+    def test_resolved_factory_configs_can_serialize(self):
+        """Test that resolved factory configs CAN be serialized.
 
-        When factories return closures (like the sample factory does),
-        the resolved config cannot be serialized to JSON. For serializable
-        configs, factories should return string import paths for functions.
+        With lazy resolution, exec_node_func is None in resolved configs
+        (the actual function is resolved on workers). This means resolved
+        configs are now serializable.
         """
-        from pydantic import ValidationError
-
         config = NodeConfig(
             factory=FACTORY_MODULE_PATH,
-            factory_args={"name": "ClosureNode"},
+            factory_args={"name": "SerializableNode"},
         )
 
         # Before resolve: can serialize because execution_config is None
         json_str = config.model_dump_json()  # Should succeed
 
-        # After resolve: has closure functions
+        # After resolve: exec_node_func is None (lazy resolution)
         resolved = config.resolve()
         assert resolved.execution_config is not None
-        assert resolved.execution_config.exec_node_func is not None
+        assert resolved.execution_config.exec_node_func is None  # Lazy resolution
 
-        # Attempting to serialize resolved config should fail
-        with pytest.raises(Exception) as exc_info:
-            resolved.model_dump_json()
+        # Resolved config should now serialize successfully
+        resolved_json = resolved.model_dump_json()
+        assert "SerializableNode" in resolved_json
 
-        assert "closure" in str(exc_info.value).lower() or "local function" in str(exc_info.value).lower()
+        # Can roundtrip
+        loaded = NodeConfig.model_validate_json(resolved_json)
+        assert loaded.name == "SerializableNode"
+        assert loaded.factory == FACTORY_MODULE_PATH
 
 
 class TestFactoryErrors:
@@ -262,3 +264,116 @@ class TestFactoryWithNetrunSim:
         assert node.name == "SimNode"
         assert "task" in node.in_ports
         assert "result" in node.out_ports
+
+
+class TestFactoryLazyResolution:
+    """Tests for lazy factory resolution on workers (multiprocess pool support).
+
+    Factory-based nodes have their exec_node_func resolved lazily on workers
+    to enable multiprocess pools, which require picklable functions.
+    """
+
+    def test_resolved_config_has_none_exec_func(self):
+        """Test that resolved factory configs have exec_node_func=None.
+
+        This allows lazy resolution on workers instead of pickling closures.
+        """
+        config = NodeConfig(
+            factory=FACTORY_MODULE_PATH,
+            factory_args={"name": "LazyNode", "threshold": 0.5},
+        )
+
+        resolved = config.resolve()
+
+        # exec_node_func should be None - resolved lazily on workers
+        assert resolved.execution_config.exec_node_func is None
+        # Factory info preserved for lazy resolution
+        assert resolved.factory == FACTORY_MODULE_PATH
+        assert resolved.factory_args == {"name": "LazyNode", "threshold": 0.5}
+
+    def test_preprocessor_config_is_picklable(self):
+        """Test that NetFuncPreprocessorNodeConfig is picklable."""
+        import pickle
+        from netrun.net._net import NetFuncPreprocessorNodeConfig
+
+        config = NetFuncPreprocessorNodeConfig(
+            factory=FACTORY_MODULE_PATH,
+            factory_args={"name": "PickleNode", "threshold": 0.5},
+            out_ports={"result": {}},
+        )
+
+        # Should be picklable
+        pickled = pickle.dumps(config)
+        unpickled = pickle.loads(pickled)
+
+        assert unpickled.factory == FACTORY_MODULE_PATH
+        assert unpickled.factory_args == {"name": "PickleNode", "threshold": 0.5}
+
+    def test_preprocessor_is_picklable(self):
+        """Test that NetFuncPreprocessor is picklable."""
+        import pickle
+        from netrun.net._net import (
+            NetFuncPreprocessor,
+            NetFuncPreprocessorNodeConfig,
+        )
+
+        node_configs = {
+            "test_node": NetFuncPreprocessorNodeConfig(
+                factory=FACTORY_MODULE_PATH,
+                factory_args={"name": "PickleNode", "threshold": 0.5},
+                out_ports={"result": {}},
+            )
+        }
+
+        preprocessor = NetFuncPreprocessor(node_configs)
+
+        # Should be picklable
+        pickled = pickle.dumps(preprocessor)
+        unpickled = pickle.loads(pickled)
+
+        assert "test_node" in unpickled._node_configs
+        assert unpickled._node_configs["test_node"].factory == FACTORY_MODULE_PATH
+
+    def test_factory_placeholder_is_picklable(self):
+        """Test that _FactoryPlaceholder is picklable."""
+        import pickle
+        from netrun.net._net import _FactoryPlaceholder
+
+        placeholder = _FactoryPlaceholder("test_node")
+
+        # Should be picklable
+        pickled = pickle.dumps(placeholder)
+        unpickled = pickle.loads(pickled)
+
+        assert unpickled.node_name == "test_node"
+
+    def test_preprocessor_resolves_factory_lazily(self):
+        """Test that NetFuncPreprocessor resolves factory functions lazily."""
+        from netrun.net._net import (
+            NetFuncPreprocessor,
+            NetFuncPreprocessorNodeConfig,
+            _FactoryPlaceholder,
+        )
+
+        node_configs = {
+            "test_node": NetFuncPreprocessorNodeConfig(
+                factory=FACTORY_MODULE_PATH,
+                factory_args={"name": "ResolveNode", "threshold": 0.5},
+                out_ports={"result": {}},
+            )
+        }
+
+        preprocessor = NetFuncPreprocessor(node_configs)
+
+        # Initially no resolved functions
+        assert len(preprocessor._resolved_funcs) == 0
+
+        # Resolve factory
+        resolved_func = preprocessor._resolve_factory("test_node")
+
+        # Should have resolved the function
+        assert resolved_func is not None
+        assert callable(resolved_func)
+        # Should be cached
+        assert "test_node" in preprocessor._resolved_funcs
+        assert preprocessor._resolved_funcs["test_node"] is resolved_func

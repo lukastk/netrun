@@ -564,29 +564,103 @@ class DeferredActionQueue:
 
 # %%
 #|export
-def create_net_func_preprocessor(
-    node_execution_configs: dict[str, NodeExecutionConfig],
-    node_out_ports: dict[str, dict[str, PortConfig]] | None = None,
-) -> Callable:
-    """Create a func_preprocessor for Net execution.
+import importlib
 
-    The preprocessor transforms `exec_node_func(ctx, packets)` into a wrapped function
-    that:
-    1. Creates a NodeExecutionContext with input packet values
-    2. Runs the node function
-    3. Returns NodeExecutionResult with deferred actions and print buffer
+@dataclass
+class NetFuncPreprocessorNodeConfig:
+    """Picklable configuration for a node's preprocessor behavior.
 
-    Args:
-        node_execution_configs: Mapping of node names to their execution configs.
-        node_out_ports: Mapping of node names to their output port configs (for type validation).
-
-    Returns:
-        A preprocessor function.
+    This captures only the serializable parts needed for preprocessing,
+    avoiding closures that can't be pickled for multiprocess pools.
     """
-    node_out_ports = node_out_ports or {}
+    factory: str | None
+    """Factory module path for lazy resolution (None if not factory-based)."""
 
-    def preprocessor(exec_node_func: Callable) -> Callable:
-        """Transform exec_node_func(ctx, packets) -> wrapped(epoch_id, node_name, packets, packet_values, ...)"""
+    factory_args: dict[str, Any]
+    """Arguments to pass to factory's get_node_funcs()."""
+
+    out_ports: dict[str, dict[str, Any]]
+    """Output port configs (serialized as dicts for pickling)."""
+
+    # Copy of NodeExecutionConfig fields needed for context creation
+    capture_prints: bool = True
+    print_flush_interval: float = 0.1
+    print_buffer_max_size: int | None = None
+    print_echo_stdout: bool = False
+    retries: int = 0
+    retry_wait: float = 0.0
+    timeout: float | None = None
+
+    @classmethod
+    def from_node_config(
+        cls,
+        exec_config: NodeExecutionConfig,
+        out_ports: dict[str, PortConfig],
+        factory: str | None,
+        factory_args: dict[str, Any],
+    ) -> "NetFuncPreprocessorNodeConfig":
+        """Create from execution config, port configs, and factory info."""
+        return cls(
+            factory=factory,
+            factory_args=factory_args,
+            out_ports={name: port.model_dump() for name, port in out_ports.items()},
+            capture_prints=exec_config.capture_prints,
+            print_flush_interval=exec_config.print_flush_interval,
+            print_buffer_max_size=exec_config.print_buffer_max_size,
+            print_echo_stdout=exec_config.print_echo_stdout,
+            retries=exec_config.retries,
+            retry_wait=exec_config.retry_wait,
+            timeout=exec_config.timeout,
+        )
+
+
+class NetFuncPreprocessor:
+    """Picklable func_preprocessor for Net execution.
+
+    Unlike the closure-based version, this class can be pickled for multiprocess pools.
+    It resolves factory-based node functions lazily on each worker.
+    """
+
+    def __init__(
+        self,
+        node_configs: dict[str, NetFuncPreprocessorNodeConfig],
+    ):
+        """Initialize the preprocessor.
+
+        Args:
+            node_configs: Mapping of node names to their preprocessor configs.
+        """
+        self._node_configs = node_configs
+        # Worker-local cache for resolved factory functions
+        self._resolved_funcs: dict[str, Callable] = {}
+
+    def _resolve_factory(self, node_name: str) -> Callable | None:
+        """Resolve factory function on worker (lazy).
+
+        Called on first use for each node on each worker.
+        """
+        if node_name in self._resolved_funcs:
+            return self._resolved_funcs[node_name]
+
+        config = self._node_configs.get(node_name)
+        if config is None or config.factory is None:
+            return None
+
+        # Import factory module and call get_node_funcs
+        module = importlib.import_module(config.factory)
+        get_node_funcs = getattr(module, "get_node_funcs")
+        exec_func, _, _, _ = get_node_funcs(**config.factory_args)
+
+        self._resolved_funcs[node_name] = exec_func
+        return exec_func
+
+    def __call__(self, exec_node_func: Callable) -> Callable:
+        """Transform exec_node_func -> wrapped function.
+
+        If exec_node_func is a _FactoryPlaceholder, resolves the actual function
+        from the factory on this worker.
+        """
+        preprocessor_self = self  # Capture for inner function
 
         def wrapped(
             epoch_id: str,
@@ -597,8 +671,26 @@ def create_net_func_preprocessor(
             retry_timestamps: list[datetime] | None = None,
             retry_exceptions: list[Exception] | None = None,
         ) -> NodeExecutionResult:
-            config = node_execution_configs.get(node_name)
-            out_ports = node_out_ports.get(node_name, {})
+            config = preprocessor_self._node_configs.get(node_name)
+            out_ports = {}
+            if config:
+                out_ports = {
+                    name: PortConfig.model_validate(port_dict)
+                    for name, port_dict in config.out_ports.items()
+                }
+
+            # Create execution config for context (with essential fields)
+            exec_config = None
+            if config:
+                exec_config = NodeExecutionConfig(
+                    capture_prints=config.capture_prints,
+                    print_flush_interval=config.print_flush_interval,
+                    print_buffer_max_size=config.print_buffer_max_size,
+                    print_echo_stdout=config.print_echo_stdout,
+                    retries=config.retries,
+                    retry_wait=config.retry_wait,
+                    timeout=config.timeout,
+                )
 
             ctx = NodeExecutionContext(
                 epoch_id=epoch_id,
@@ -606,16 +698,27 @@ def create_net_func_preprocessor(
                 retry_count=retry_count,
                 retry_timestamps=retry_timestamps or [],
                 retry_exceptions=retry_exceptions or [],
-                _config=config,
+                _config=exec_config,
                 _input_packet_values=packet_values,
                 _out_ports=out_ports,
             )
+
+            # Determine the actual function to call
+            actual_func = exec_node_func
+            if isinstance(exec_node_func, _FactoryPlaceholder):
+                # Resolve factory function on this worker
+                resolved = preprocessor_self._resolve_factory(node_name)
+                if resolved is None:
+                    raise RuntimeError(
+                        f"Failed to resolve factory function for node '{node_name}'"
+                    )
+                actual_func = resolved
 
             func_result = None
             exception = None
 
             try:
-                func_result = exec_node_func(ctx, packets)
+                func_result = actual_func(ctx, packets)
             except EpochCancelled:
                 # Expected when ctx.cancel_epoch() is called
                 pass
@@ -631,7 +734,67 @@ def create_net_func_preprocessor(
 
         return wrapped
 
-    return preprocessor
+
+class _FactoryPlaceholder:
+    """Placeholder for factory-based node functions.
+
+    Registered with workers instead of actual functions when the node uses
+    a factory. The NetFuncPreprocessor resolves the actual function lazily.
+    """
+
+    def __init__(self, node_name: str):
+        self.node_name = node_name
+
+    def __repr__(self) -> str:
+        return f"_FactoryPlaceholder({self.node_name!r})"
+
+
+def create_net_func_preprocessor(
+    node_execution_configs: dict[str, NodeExecutionConfig],
+    node_out_ports: dict[str, dict[str, PortConfig]] | None = None,
+    node_factories: dict[str, tuple[str, dict[str, Any]]] | None = None,
+) -> NetFuncPreprocessor:
+    """Create a func_preprocessor for Net execution.
+
+    The preprocessor transforms `exec_node_func(ctx, packets)` into a wrapped function
+    that:
+    1. Creates a NodeExecutionContext with input packet values
+    2. Runs the node function (resolving factory functions lazily)
+    3. Returns NodeExecutionResult with deferred actions and print buffer
+
+    Args:
+        node_execution_configs: Mapping of node names to their execution configs.
+        node_out_ports: Mapping of node names to their output port configs (for type validation).
+        node_factories: Mapping of node names to (factory_path, factory_args) tuples for
+            factory-based nodes. Factory functions are resolved lazily on workers.
+
+    Returns:
+        A picklable NetFuncPreprocessor instance.
+    """
+    node_out_ports = node_out_ports or {}
+    node_factories = node_factories or {}
+
+    # Convert to picklable config format
+    node_configs = {}
+    for node_name, config in node_execution_configs.items():
+        out_ports = node_out_ports.get(node_name, {})
+        factory_info = node_factories.get(node_name)
+        factory = factory_info[0] if factory_info else None
+        factory_args = factory_info[1] if factory_info else {}
+        node_configs[node_name] = NetFuncPreprocessorNodeConfig.from_node_config(
+            config, out_ports, factory, factory_args
+        )
+
+    return NetFuncPreprocessor(node_configs)
+
+
+def _net_func_done_callback_noop(*args, **kwargs):
+    """No-op done callback for Net execution.
+
+    All work is done by the preprocessor wrapper, so this is a no-op.
+    Defined at module level to be picklable for multiprocess pools.
+    """
+    pass
 
 
 def create_net_func_done_callback() -> Callable:
@@ -641,13 +804,9 @@ def create_net_func_done_callback() -> Callable:
     but we provide a no-op for compatibility.
 
     Returns:
-        A no-op callback function.
+        A no-op callback function (module-level function for pickling).
     """
-    def callback(*args, **kwargs):
-        # All work is done by the preprocessor wrapper
-        pass
-
-    return callback
+    return _net_func_done_callback_noop
 
 # %% [markdown]
 # ## Net Class
@@ -703,10 +862,20 @@ class Net:
             if node_config.out_ports:
                 self._node_out_ports[node_config.name] = node_config.out_ports
 
+        # Build node factories lookup (for lazy resolution on workers)
+        self._node_factories: dict[str, tuple[str, dict[str, Any]]] = {}
+        for node_config in self._config_resolved.graph.nodes:
+            if node_config.factory:
+                self._node_factories[node_config.name] = (
+                    node_config.factory,
+                    node_config.factory_args,
+                )
+
         # Create func_preprocessor with node configs
         func_preprocessor = create_net_func_preprocessor(
             self._node_execution_configs,
             self._node_out_ports,
+            self._node_factories,
         )
         func_done_callback = create_net_func_done_callback()
 
@@ -1669,8 +1838,12 @@ class Net:
         node_name = epoch.node_name
         config = self._get_node_execution_config(node_name)
 
-        # Check if node has an execution function
-        if config is None or config.exec_node_func is None:
+        # Check if node has an execution function (either direct or via factory)
+        has_exec_func = (
+            config is not None and
+            (config.exec_node_func is not None or node_name in self._node_factories)
+        )
+        if not has_exec_func:
             # No execution function - just mark as running and finish immediately
             self._netsim.do_action(netrun_sim.NetAction.start_epoch(epoch_id))
             self._netsim.do_action(netrun_sim.NetAction.finish_epoch(epoch_id))
@@ -1938,22 +2111,31 @@ class Net:
         This sends the exec_node_func for each node to all workers in the
         configured pools, so they can be called by function key.
 
+        For factory-based nodes, registers a _FactoryPlaceholder that the
+        NetFuncPreprocessor will resolve lazily on each worker.
+
         String import paths are resolved to actual functions before registration.
         """
         for node_config in self._config_resolved.graph.nodes:
             if node_config.execution_config is None:
                 continue
 
-            exec_func = node_config.execution_config.exec_node_func
-            if exec_func is None:
-                continue
-
-            # Resolve string import path if needed
-            if isinstance(exec_func, str):
-                exec_func = self._import_from_path(exec_func)
-
             config = node_config.execution_config
             func_key = self._get_func_key(node_config.name)
+
+            # Determine what to register
+            if node_config.name in self._node_factories:
+                # Factory-based node: register placeholder for lazy resolution
+                exec_func = _FactoryPlaceholder(node_config.name)
+            elif config.exec_node_func is not None:
+                # Regular node: register the function directly
+                exec_func = config.exec_node_func
+                # Resolve string import path if needed
+                if isinstance(exec_func, str):
+                    exec_func = self._import_from_path(exec_func)
+            else:
+                # No function to register
+                continue
 
             # Register with each pool the node can use
             for pool_id in config.pools:
