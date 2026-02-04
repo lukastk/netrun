@@ -13,9 +13,44 @@
 		type PortConfig
 	} from '$lib/stores/flowStore';
 	import { api } from '$lib/api';
+	import ActionsPanel from './ActionsPanel.svelte';
+	import ProjectSettings from './ProjectSettings.svelte';
+	import ActionEditor from './ActionEditor.svelte';
+	import {
+		addProjectAction,
+		updateProjectAction,
+		removeProjectAction,
+		generateActionId,
+		type Action,
+	} from '$lib/stores/actionsStore';
 
 	// Loading state for factory preview
 	let isRefreshing = $state(false);
+
+	// Modal state for actions
+	let showProjectSettings = $state(false);
+	let showActionEditor = $state(false);
+	let editingAction = $state<Action | null>(null);
+
+	// Handle action editor save
+	function handleSaveAction(action: Action) {
+		if (editingAction) {
+			updateProjectAction(action.id, action);
+		} else {
+			addProjectAction({ ...action, id: generateActionId() });
+		}
+		showActionEditor = false;
+		editingAction = null;
+	}
+
+	// Handle action delete
+	function handleDeleteAction() {
+		if (editingAction) {
+			removeProjectAction(editingAction.id);
+		}
+		showActionEditor = false;
+		editingAction = null;
+	}
 
 	// Collapsible sections state
 	let sectionsOpen = $state({
@@ -349,6 +384,13 @@
 					{/if}
 				</section>
 			{/if}
+
+			<!-- Actions Panel (for all node types) -->
+			<ActionsPanel
+				onOpenSettings={() => showProjectSettings = true}
+				onAddAction={() => { editingAction = null; showActionEditor = true; }}
+				onEditAction={(action) => { editingAction = action; showActionEditor = true; }}
+			/>
 		{:else}
 			<!-- Net-level settings when no node is selected -->
 
@@ -493,6 +535,20 @@
 		{/if}
 	</div>
 </aside>
+
+<!-- Modals -->
+{#if showProjectSettings}
+	<ProjectSettings onClose={() => showProjectSettings = false} />
+{/if}
+
+{#if showActionEditor}
+	<ActionEditor
+		action={editingAction}
+		onSave={handleSaveAction}
+		onCancel={() => { showActionEditor = false; editingAction = null; }}
+		onDelete={editingAction ? handleDeleteAction : undefined}
+	/>
+{/if}
 
 <style>
 	.sidebar {

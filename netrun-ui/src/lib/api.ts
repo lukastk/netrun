@@ -123,6 +123,30 @@ export interface SubgraphCreateResponse {
 	internal_edges: UIEdge[];
 }
 
+// Action execution interfaces
+export interface ExecuteActionRequest {
+	command: string;
+	working_directory?: string;
+	env?: Record<string, string>;
+	node_name?: string;
+	node_id?: string;
+	net_file_path?: string;
+	project_root?: string;
+	default_cmd?: string;
+}
+
+export interface ExecuteActionResponse {
+	success: boolean;
+	exit_code: number;
+	stdout: string;
+	stderr: string;
+	resolved_command: string;
+}
+
+export interface ResolveTemplateResponse {
+	resolved: string;
+}
+
 class ApiClient {
 	private baseUrl: string;
 
@@ -300,6 +324,39 @@ class ApiClient {
 				selected_node_ids: selectedNodeIds,
 				all_nodes: allNodes,
 				all_edges: allEdges,
+			}),
+		});
+	}
+
+	/**
+	 * Execute an action command with template variable resolution
+	 */
+	async executeAction(request: ExecuteActionRequest): Promise<ExecuteActionResponse> {
+		return this.request<ExecuteActionResponse>('/actions/execute', {
+			method: 'POST',
+			body: JSON.stringify(request),
+		});
+	}
+
+	/**
+	 * Resolve template variables without executing
+	 */
+	async resolveTemplate(
+		template: string,
+		options: {
+			node_name?: string;
+			node_id?: string;
+			net_file_path?: string;
+			project_root?: string;
+			default_cmd?: string;
+			env?: Record<string, string>;
+		} = {}
+	): Promise<ResolveTemplateResponse> {
+		return this.request<ResolveTemplateResponse>('/actions/resolve', {
+			method: 'POST',
+			body: JSON.stringify({
+				template,
+				...options,
 			}),
 		});
 	}
