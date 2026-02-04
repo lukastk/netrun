@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { pushHistory } from '$lib/stores/flowStore';
+	import { pushHistory, renamePoolInAllNodes } from '$lib/stores/flowStore';
 
 	// Pool spec types
 	type PoolSpecType = 'main' | 'thread' | 'multiprocess' | 'remote';
@@ -106,6 +106,10 @@
 			}
 		}
 		onUpdate(updated as Record<string, unknown>);
+
+		// Update all nodes that reference this pool in their execution config
+		renamePoolInAllNodes(oldName, newName);
+
 		pushHistory();
 	}
 
