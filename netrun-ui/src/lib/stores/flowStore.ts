@@ -812,19 +812,21 @@ export async function saveToFile(path?: string): Promise<void> {
 }
 
 // Clear the current flow (reset active tab)
-export function clearFlow(): void {
+export function clearFlow(format: 'json' | 'toml' = 'json'): void {
 	const tab = get(activeTab);
 	if (!tab) return;
 
+	const extension = format === 'toml' ? '.netrun.toml' : '.netrun.json';
 	updateActiveTab({
 		nodes: [],
 		edges: [],
 		filePath: null,
-		fileName: 'Untitled',
+		fileName: `Untitled${extension}`,
 		isDirty: false,
 		history: { past: [], future: [] },
 		extraData: null,
 		graphMeta: null,
+		fileFormat: format,
 	});
 }
 
