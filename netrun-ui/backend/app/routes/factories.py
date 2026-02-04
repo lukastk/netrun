@@ -246,6 +246,19 @@ async def preview_factory(request: FactoryPreviewRequest) -> FactoryPreviewRespo
             # Missing required argument or wrong type
             error_msg = str(e)
             if "missing" in error_msg and "required" in error_msg:
+                # Parse Python's error message to extract argument names
+                # Format: "get_node_config() missing 1 required positional argument: 'func'"
+                # Or: "get_node_config() missing 2 required positional arguments: 'arg1' and 'arg2'"
+                import re
+                # Extract quoted argument names
+                arg_matches = re.findall(r"'([^']+)'", error_msg)
+                if arg_matches:
+                    if len(arg_matches) == 1:
+                        friendly_msg = f"Required argument '{arg_matches[0]}' is missing"
+                    else:
+                        friendly_msg = f"Required arguments are missing: {', '.join(repr(a) for a in arg_matches)}"
+                else:
+                    friendly_msg = "Required arguments are missing"
                 return FactoryPreviewResponse(
                     factory_path=request.factory_path,
                     name="",
@@ -253,7 +266,7 @@ async def preview_factory(request: FactoryPreviewRequest) -> FactoryPreviewRespo
                     out_ports=[],
                     has_in_salvo_conditions=False,
                     has_out_salvo_conditions=False,
-                    error=f"Missing required argument: {error_msg}",
+                    error=friendly_msg,
                 )
             return FactoryPreviewResponse(
                 factory_path=request.factory_path,

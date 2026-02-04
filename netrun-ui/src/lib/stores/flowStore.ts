@@ -933,8 +933,9 @@ export async function updateFactoryNodePreview(nodeId: string): Promise<void> {
 		}
 
 		// Update node with preview data
+		// Note: We deliberately don't update the label - the user controls the node name,
+		// not the factory. Factories only provide ports and other structural data.
 		updateNodeData(nodeId, {
-			label: preview.name || node.data.label,
 			inPorts: preview.in_ports.map(p => ({
 				name: p.name,
 				type: p.port_type || undefined,

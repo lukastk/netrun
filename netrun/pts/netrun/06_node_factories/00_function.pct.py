@@ -412,10 +412,7 @@ def _parse_node_config_override(override: Any) -> dict:
 
 # %%
 #|export
-def from_function(
-    func: Callable|str,
-    name: str | None = None,
-) -> NodeConfig:
+def from_function(func: Callable|str) -> NodeConfig:
     """Create a NodeConfig from a function.
 
     Parses the function signature to determine input/output ports and
@@ -423,10 +420,13 @@ def from_function(
 
     Args:
         func: The function to create a node from.
-        name: Optional node name (defaults to function name).
 
     Returns:
         A complete NodeConfig.
+
+    Note:
+        The node name is always set to func.__name__. To use a different name,
+        call NodeConfig.from_factory() with the name parameter instead.
 
     Example:
         def process(data: str, ctx) -> int:
@@ -435,6 +435,7 @@ def from_function(
 
         config = from_function(process)
         # Creates node with:
+        # - name: "process" (from func.__name__)
         # - in_ports: {"data": PortConfig(port_type=str)}
         # - out_ports: {"out": PortConfig(port_type=int)}
         # - Default salvo conditions
@@ -443,8 +444,8 @@ def from_function(
     # Parse the function signature
     parsed_sig = parse_function_signature(func)
 
-    # Generate base config
-    node_name = name or func.__name__
+    # Generate base config - always use func.__name__
+    node_name = func.__name__
 
     base_config_dict = {
         "name": node_name,
@@ -474,8 +475,16 @@ def from_function(
 
     return config
 
+def _get_func_from_import_path(func_path: str) -> Callable:
+    try:
+        module_path, func_name = func_path.rsplit(".", 1)
+        module = importlib.import_module(module_path)
+        func = getattr(module, func_name)
+        return func
+    except Exception as e:
+        raise ValueError(f"Error importing function from path: {func_path}") from e
 
-def get_node_config(func: Callable | str, name: str | None = None, **kwargs) -> NodeConfig:
+def get_node_config(func: Callable | str) -> NodeConfig:
     """Factory function to get NodeConfig from a function.
 
     This implements the factory module protocol. The `func` argument
@@ -483,44 +492,36 @@ def get_node_config(func: Callable | str, name: str | None = None, **kwargs) -> 
 
     Args:
         func: The function or its import path.
-        name: Optional node name.
-        **kwargs: Additional arguments (ignored, for factory compatibility).
 
     Returns:
         NodeConfig without execution_config (per factory protocol).
+
+    Note:
+        The node name is always derived from func.__name__. To override
+        the name, use NodeConfig.from_factory() with the name parameter.
     """
     if isinstance(func, str):
-        # Import the function from path
-        import importlib
-        module_path, func_name = func.rsplit(".", 1)
-        module = importlib.import_module(module_path)
-        func = getattr(module, func_name)
+        func = _get_func_from_import_path(func)
 
     # Get full config and strip execution_config
-    config = from_function(func, name)
+    config = from_function(func)
     config.execution_config = None
     return config
 
 
-def get_node_funcs(func: Callable | str, name: str | None = None, **kwargs) -> tuple:
+def get_node_funcs(func: Callable | str) -> tuple:
     """Factory function to get execution functions.
 
     This implements the factory module protocol.
 
     Args:
         func: The function or its import path.
-        name: Optional node name (unused, for signature compatibility).
-        **kwargs: Additional arguments (ignored, for factory compatibility).
 
     Returns:
         Tuple of (exec_func, start_func, stop_func, on_failure_func).
     """
     if isinstance(func, str):
-        # Import the function from path
-        import importlib
-        module_path, func_name = func.rsplit(".", 1)
-        module = importlib.import_module(module_path)
-        func = getattr(module, func_name)
+        func = _get_func_from_import_path(func)
 
     parsed_sig = parse_function_signature(func)
     exec_func = _create_exec_func(func, parsed_sig)
