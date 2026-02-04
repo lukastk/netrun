@@ -1,6 +1,7 @@
 <script lang="ts">
 	import {
 		selectedNode,
+		selectedNodeIds,
 		updateNodeData,
 		updateNodeDataLive,
 		updateNodeEnv,
@@ -9,6 +10,7 @@
 		updateNodeExecutionConfig,
 		getNodeExecutionConfig,
 		updateFactoryNodePreview,
+		deleteNodes,
 		pushHistory,
 		extraData,
 		graphMeta,
@@ -418,6 +420,17 @@
 							<label>ID</label>
 							<div class="readonly-value mono">{$selectedNode.id}</div>
 						</div>
+						<button
+							class="delete-node-btn"
+							onclick={() => {
+								if ($selectedNode) {
+									deleteNodes([$selectedNode.id]);
+									selectedNodeIds.set(new Set());
+								}
+							}}
+						>
+							Delete Node
+						</button>
 					</div>
 				{/if}
 			</section>
@@ -1374,5 +1387,24 @@
 	.env-value {
 		flex: 1;
 		min-width: 0;
+	}
+
+	/* Delete node button */
+	.delete-node-btn {
+		width: 100%;
+		margin-top: 12px;
+		padding: 8px;
+		font-size: 12px;
+		background: transparent;
+		border: 1px solid var(--error-color, #ef4444);
+		border-radius: 4px;
+		color: var(--error-color, #ef4444);
+		cursor: pointer;
+		transition: background-color 0.15s ease, color 0.15s ease;
+	}
+
+	.delete-node-btn:hover {
+		background: var(--error-color, #ef4444);
+		color: white;
 	}
 </style>
