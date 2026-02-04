@@ -269,6 +269,66 @@
 		}
 		return param.type ? `(${param.type})` : '';
 	}
+
+	// Validate factory arguments against required parameters
+	function validateFactoryArgs(
+		params: FactoryParameter[],
+		args: Record<string, unknown> | undefined
+	): string[] {
+		const errors: string[] = [];
+		for (const param of params) {
+			// Check if parameter is required (no default)
+			if (!param.has_default) {
+				const value = args?.[param.name];
+				// Value is missing if undefined, null, or empty string
+				if (value === undefined || value === null || value === '') {
+					errors.push(`Required argument '${param.name}' is missing`);
+				}
+			}
+		}
+		return errors;
+	}
+
+	// Run validation when factory params or args change
+	$effect(() => {
+		if (!$selectedNode || $selectedNode.data.nodeType !== 'factory') return;
+		if (factorySignatureLoading) return; // Wait for params to load
+
+		// If we have factory params, validate against current args
+		if (factoryParams.length > 0) {
+			const errors = validateFactoryArgs(factoryParams, $selectedNode.data.factoryArgs);
+
+			// Update node validation state if there are missing required args
+			if (errors.length > 0) {
+				// Only update if the validation state actually needs to change
+				const currentErrors = $selectedNode.data.validationErrors || [];
+				const newErrorSet = new Set(errors);
+				const currentErrorSet = new Set(currentErrors);
+
+				// Check if errors have changed
+				const errorsChanged = errors.length !== currentErrors.length ||
+					errors.some(e => !currentErrorSet.has(e));
+
+				if (errorsChanged || $selectedNode.data.isValid !== false) {
+					updateNodeDataLive($selectedNode.id, {
+						isValid: false,
+						validationErrors: errors,
+					});
+				}
+			} else if ($selectedNode.data.isValid === false &&
+				$selectedNode.data.validationErrors?.some(e => e.startsWith("Required argument '"))) {
+				// Clear validation errors if all required args are now filled
+				// (but only clear our own "Required argument" errors, not other validation errors)
+				const remainingErrors = ($selectedNode.data.validationErrors || [])
+					.filter(e => !e.startsWith("Required argument '"));
+
+				updateNodeDataLive($selectedNode.id, {
+					isValid: remainingErrors.length === 0,
+					validationErrors: remainingErrors.length > 0 ? remainingErrors : undefined,
+				});
+			}
+		}
+	});
 </script>
 
 <aside class="sidebar">
@@ -363,6 +423,7 @@
 													placeholder={getParamPlaceholder(param)}
 													oninput={(e) => updateFactoryArg(param.name, (e.target as HTMLInputElement).value)}
 													class:import-path={isImportPathParam(param)}
+													class:required-missing={!param.has_default && !$selectedNode.data.factoryArgs?.[param.name]}
 												/>
 											</div>
 										{/each}
@@ -989,6 +1050,16 @@
 	.factory-arg input.import-path {
 		font-family: 'SF Mono', Monaco, Consolas, monospace;
 		font-size: 12px;
+	}
+
+	.factory-arg input.required-missing {
+		border-color: var(--error-color, #ef4444);
+		background: rgba(239, 68, 68, 0.05);
+	}
+
+	.factory-arg input.required-missing:focus {
+		border-color: var(--error-color, #ef4444);
+		box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
 	}
 
 	.loading-hint {

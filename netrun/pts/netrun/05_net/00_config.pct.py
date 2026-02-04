@@ -772,6 +772,7 @@ class NodeConfig(BaseModel):
         cls,
         factory: str | ModuleType,
         args: dict[str, Any] | None = None,
+        name: str | None = None,
     ) -> "NodeConfig":
         """Create a NodeConfig from a factory module.
 
@@ -779,6 +780,8 @@ class NodeConfig(BaseModel):
             factory: Factory module or import path to module containing
                      get_node_config() and get_node_funcs().
             args: Arguments passed to both factory functions.
+            name: Optional explicit node name. If provided, overrides the
+                  factory-generated name. If None, uses the factory's default name.
 
         Returns:
             Complete NodeConfig with execution_config populated.
@@ -811,9 +814,12 @@ class NodeConfig(BaseModel):
             on_node_failure=on_failure_func,
         )
 
+        # Use explicit name if provided, otherwise use factory's default name
+        node_name = name if name is not None else base_config.name
+
         # Return complete config (don't set factory/factory_args here - that's for the field-based path)
         return cls.model_construct(
-            name=base_config.name,
+            name=node_name,
             in_ports=base_config.in_ports,
             out_ports=base_config.out_ports,
             in_salvo_conditions=base_config.in_salvo_conditions,
