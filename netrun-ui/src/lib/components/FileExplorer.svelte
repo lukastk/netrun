@@ -2,6 +2,7 @@
 	import { api, type FileEntry } from '$lib/api';
 	import { loadFromFile, recentFiles, removeRecentFile } from '$lib/stores/flowStore';
 	import { fileExplorerRefreshTrigger, setCurrentExplorerPath } from '$lib/stores/fileExplorerStore';
+	import { toasts } from '$lib/stores/toastStore';
 	import TextInputModal from './TextInputModal.svelte';
 
 	// Props
@@ -64,7 +65,7 @@
 			try {
 				await loadFromFile(entry.path);
 			} catch (e) {
-				alert(`Failed to open file: ${(e as Error).message}`);
+				toasts.error(`Failed to open file: ${(e as Error).message}`);
 			}
 		}
 	}
@@ -114,7 +115,7 @@
 					<button
 						class="file-entry netrun-file"
 						onclick={() => loadFromFile(file.path).catch(e => {
-							alert(`Failed to open: ${e.message}`);
+							toasts.error(`Failed to open: ${e.message}`);
 							removeRecentFile(file.path);
 						})}
 						title={file.path}
