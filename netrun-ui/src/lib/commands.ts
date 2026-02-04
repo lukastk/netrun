@@ -54,13 +54,15 @@ const fileCommands: Command[] = [
 					return;
 				}
 			}
-			const format = prompt('Choose format:\n1. JSON (.netrun.json)\n2. TOML (.netrun.toml)\n\nEnter 1 or 2:', '1');
-			if (format === '1') {
-				clearFlow('json');
-			} else if (format === '2') {
-				clearFlow('toml');
+			const name = prompt('Enter file name (without extension):', 'my_flow');
+			if (!name) return;
+
+			const formatChoice = prompt('Choose format:\n1. JSON (.netrun.json)\n2. TOML (.netrun.toml)\n\nEnter 1 or 2:', '1');
+			if (formatChoice === '1') {
+				clearFlow('json', name);
+			} else if (formatChoice === '2') {
+				clearFlow('toml', name);
 			}
-			// If cancelled or invalid, do nothing
 		},
 	},
 	{
@@ -74,7 +76,9 @@ const fileCommands: Command[] = [
 					return;
 				}
 			}
-			clearFlow('json');
+			const name = prompt('Enter file name (without extension):', 'my_flow');
+			if (!name) return;
+			clearFlow('json', name);
 		},
 	},
 	{
@@ -88,7 +92,9 @@ const fileCommands: Command[] = [
 					return;
 				}
 			}
-			clearFlow('toml');
+			const name = prompt('Enter file name (without extension):', 'my_flow');
+			if (!name) return;
+			clearFlow('toml', name);
 		},
 	},
 	{

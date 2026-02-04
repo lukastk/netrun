@@ -40,6 +40,8 @@ export interface TabState {
 	fileFormat: 'json' | 'toml';
 	// Subgraph context (null for root tabs)
 	subgraphContext: SubgraphContext | null;
+	// True when user has explicitly created a new file (vs initial empty state)
+	isNewFile: boolean;
 }
 
 // Generate unique tab ID
@@ -68,6 +70,7 @@ export function createEmptyTabState(filePath?: string | null): TabState {
 		graphMeta: null,
 		fileFormat: 'json',
 		subgraphContext: null,
+		isNewFile: false,
 	};
 }
 
@@ -346,6 +349,7 @@ export async function openSubgraphTab(nodeId: string, data: SubgraphNodeData): P
 				path,
 				isInline,
 			},
+			isNewFile: false,
 		};
 
 		tabs.update(t => [...t, newTab]);

@@ -8,7 +8,7 @@
 	import FlowEditor from '$lib/components/FlowEditor.svelte';
 	import FileExplorer from '$lib/components/FileExplorer.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
-	import { nodes, currentFilePath, activeTab, recentFiles, loadFromFile, clearFlow } from '$lib/stores/flowStore';
+	import { nodes, currentFilePath, activeTab, recentFiles, loadFromFile, clearFlow, isNewFile } from '$lib/stores/flowStore';
 	import { initializeCommands } from '$lib/commands';
 	import { handleKeyboardEvent } from '$lib/stores/keyboardStore';
 
@@ -71,8 +71,8 @@
 			<SvelteFlowProvider>
 				<FlowEditor />
 
-				<!-- Empty state overlay when no nodes and no file open -->
-				{#if $nodes.length === 0 && !$currentFilePath}
+				<!-- Empty state overlay when no nodes, no file open, and not a new file -->
+				{#if $nodes.length === 0 && !$currentFilePath && !$isNewFile}
 					<div class="empty-state">
 						<div class="empty-content">
 							<h2>Welcome to netrun-ui</h2>
@@ -87,11 +87,14 @@
 									Open File
 								</button>
 								<button onclick={() => {
-									const format = prompt('Choose format:\n1. JSON (.netrun.json)\n2. TOML (.netrun.toml)\n\nEnter 1 or 2:', '1');
-									if (format === '1') {
-										clearFlow('json');
-									} else if (format === '2') {
-										clearFlow('toml');
+									const name = prompt('Enter file name (without extension):', 'my_flow');
+									if (!name) return;
+
+									const formatChoice = prompt('Choose format:\n1. JSON (.netrun.json)\n2. TOML (.netrun.toml)\n\nEnter 1 or 2:', '1');
+									if (formatChoice === '1') {
+										clearFlow('json', name);
+									} else if (formatChoice === '2') {
+										clearFlow('toml', name);
 									}
 								}}>
 									New File
