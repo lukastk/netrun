@@ -69,6 +69,19 @@ export const nodeActions = derived(
 	}
 );
 
+// Derived: get node-level environment variable overrides
+export const nodeEnv = derived(
+	selectedNode,
+	($selectedNode): Record<string, string> | undefined => {
+		if (!$selectedNode) return undefined;
+		const config = $selectedNode.data._config as Record<string, unknown> | undefined;
+		const meta = config?.meta as Record<string, unknown> | undefined;
+		const ui = meta?.ui as Record<string, unknown> | undefined;
+		const env = ui?.env as Record<string, string> | undefined;
+		return env && Object.keys(env).length > 0 ? env : undefined;
+	}
+);
+
 // Derived: all actions available for the selected node
 export const availableActions = derived(
 	[projectActions, nodeActions],
@@ -149,6 +162,7 @@ export async function executeAction(action: Action): Promise<void> {
 	const node = get(selectedNode);
 	const settings = get(actionSettings);
 	const filePath = get(currentFilePath);
+	const nodeEnvVars = get(nodeEnv);
 
 	// Mark as running
 	actionExecutions.update(map => {
@@ -165,6 +179,7 @@ export async function executeAction(action: Action): Promise<void> {
 			project_root: settings.projectRoot,
 			default_cmd: settings.defaultCmd,
 			env: settings.env,
+			node_env: nodeEnvVars,
 		});
 
 		actionExecutions.update(map => {
@@ -219,6 +234,7 @@ export async function resolveCommand(command: string): Promise<string> {
 	const node = get(selectedNode);
 	const settings = get(actionSettings);
 	const filePath = get(currentFilePath);
+	const nodeEnvVars = get(nodeEnv);
 
 	try {
 		const result = await api.resolveTemplate(command, {
@@ -228,6 +244,7 @@ export async function resolveCommand(command: string): Promise<string> {
 			project_root: settings.projectRoot,
 			default_cmd: settings.defaultCmd,
 			env: settings.env,
+			node_env: nodeEnvVars,
 		});
 		return result.resolved;
 	} catch {

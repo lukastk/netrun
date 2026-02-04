@@ -3,6 +3,7 @@
 		selectedNode,
 		updateNodeData,
 		updateNodeDataLive,
+		updateNodeEnv,
 		updateFactoryNodePreview,
 		pushHistory,
 		extraData,
@@ -59,12 +60,56 @@
 		outPorts: true,
 		factory: true,
 		subgraph: true,
+		nodeVariables: false,
 		execution: false,
 		// Net-level sections
 		graphSettings: true,
 		pools: true,
 		uiSettings: false,
 	});
+
+	// Node-level env vars - extract from selected node
+	function getNodeEnvVars(): Array<{ key: string; value: string }> {
+		if (!$selectedNode) return [];
+		const config = $selectedNode.data._config as Record<string, unknown> | undefined;
+		const meta = config?.meta as Record<string, unknown> | undefined;
+		const ui = meta?.ui as Record<string, unknown> | undefined;
+		const env = ui?.env as Record<string, string> | undefined;
+		if (!env) return [];
+		return Object.entries(env).map(([key, value]) => ({ key, value }));
+	}
+
+	let nodeEnvVars = $state<Array<{ key: string; value: string }>>(getNodeEnvVars());
+
+	// Update nodeEnvVars when selected node changes
+	$effect(() => {
+		if ($selectedNode) {
+			nodeEnvVars = getNodeEnvVars();
+		} else {
+			nodeEnvVars = [];
+		}
+	});
+
+	function saveNodeEnvVars() {
+		if (!$selectedNode) return;
+		const env: Record<string, string> = {};
+		for (const { key, value } of nodeEnvVars) {
+			if (key.trim()) {
+				env[key.trim()] = value;
+			}
+		}
+		updateNodeEnv($selectedNode.id, Object.keys(env).length > 0 ? env : undefined);
+		pushHistory();
+	}
+
+	function addNodeEnvVar() {
+		nodeEnvVars = [...nodeEnvVars, { key: '', value: '' }];
+	}
+
+	function removeNodeEnvVar(index: number) {
+		nodeEnvVars = nodeEnvVars.filter((_, i) => i !== index);
+		saveNodeEnvVars();
+	}
 
 	function toggleSection(section: keyof typeof sectionsOpen) {
 		sectionsOpen[section] = !sectionsOpen[section];
@@ -384,6 +429,58 @@
 					{/if}
 				</section>
 			{/if}
+
+			<!-- Node Variables Section (for variable overrides) -->
+			<section class="section">
+				<button
+					class="section-header"
+					onclick={() => toggleSection('nodeVariables')}
+				>
+					<span class="section-title">Node Variables</span>
+					<span class="section-toggle">{sectionsOpen.nodeVariables ? '−' : '+'}</span>
+				</button>
+				{#if sectionsOpen.nodeVariables}
+					<div class="section-content">
+						<div class="node-env-list">
+							{#if nodeEnvVars.length === 0}
+								<div class="empty-hint" style="text-align: left; padding: 0 0 8px 0;">
+									Override project variables for this node
+								</div>
+							{:else}
+								{#each nodeEnvVars as envVar, index (index)}
+									<div class="env-row">
+										<input
+											type="text"
+											bind:value={envVar.key}
+											onblur={saveNodeEnvVars}
+											placeholder="VAR_NAME"
+											class="env-key"
+										/>
+										<span class="env-equals">=</span>
+										<input
+											type="text"
+											bind:value={envVar.value}
+											onblur={saveNodeEnvVars}
+											placeholder="value"
+											class="env-value"
+										/>
+										<button
+											class="remove-btn"
+											onclick={() => removeNodeEnvVar(index)}
+											title="Remove"
+										>
+											×
+										</button>
+									</div>
+								{/each}
+							{/if}
+						</div>
+						<button class="add-btn" onclick={addNodeEnvVar}>
+							+ Add Variable
+						</button>
+					</div>
+				{/if}
+			</section>
 
 			<!-- Actions Panel (for all node types) -->
 			<ActionsPanel
@@ -857,5 +954,50 @@
 		text-align: center;
 		padding: 8px;
 		margin: 0;
+	}
+
+	/* Node environment variables */
+	.node-env-list {
+		display: flex;
+		flex-direction: column;
+		gap: 6px;
+		margin-bottom: 8px;
+	}
+
+	.env-row {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+	}
+
+	.env-row input {
+		padding: 6px 8px;
+		background: var(--bg-primary, #1a1a1a);
+		border: 1px solid var(--border-color, #404040);
+		border-radius: 4px;
+		color: var(--text-primary, #fff);
+		font-size: 11px;
+		font-family: 'SF Mono', Monaco, monospace;
+	}
+
+	.env-row input:focus {
+		outline: none;
+		border-color: var(--accent-color, #3b82f6);
+	}
+
+	.env-key {
+		width: 80px;
+		flex-shrink: 0;
+	}
+
+	.env-equals {
+		color: var(--text-secondary, #666);
+		font-family: 'SF Mono', Monaco, monospace;
+		font-size: 11px;
+	}
+
+	.env-value {
+		flex: 1;
+		min-width: 0;
 	}
 </style>

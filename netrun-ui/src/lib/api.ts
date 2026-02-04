@@ -128,6 +128,7 @@ export interface ExecuteActionRequest {
 	command: string;
 	working_directory?: string;
 	env?: Record<string, string>;
+	node_env?: Record<string, string>;  // Node-level variable overrides
 	node_name?: string;
 	node_id?: string;
 	net_file_path?: string;
@@ -350,6 +351,7 @@ class ApiClient {
 			project_root?: string;
 			default_cmd?: string;
 			env?: Record<string, string>;
+			node_env?: Record<string, string>;  // Node-level variable overrides
 		} = {}
 	): Promise<ResolveTemplateResponse> {
 		return this.request<ResolveTemplateResponse>('/actions/resolve', {
