@@ -499,7 +499,7 @@ def create_rate_limited_config() -> NetConfig:
 
     return NetConfig(
         pools={
-            "main_pool": PoolConfig(id="main_pool", spec=MainPoolConfig()),
+            "main_pool": PoolConfig(spec=MainPoolConfig()),
         },
         graph=GraphConfig(
             nodes=[

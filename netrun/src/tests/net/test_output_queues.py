@@ -63,7 +63,7 @@ def test_net_config_with_output_queues():
     )
 
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
         output_queues={
             "results": OutputQueueConfig(ports=[("Sink", "out")]),
@@ -88,7 +88,7 @@ def test_net_initializes_output_queues():
     )
 
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
         output_queues={
             "results": OutputQueueConfig(ports=[("Sink", "out")]),
@@ -119,7 +119,7 @@ def test_net_list_output_queues():
     )
 
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
         output_queues={
             "results": OutputQueueConfig(ports=[("Sink", "out")]),
@@ -142,7 +142,7 @@ def test_net_has_output_empty():
     )
 
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
         output_queues={
             "results": OutputQueueConfig(ports=[("Sink", "out")]),
@@ -163,7 +163,7 @@ def test_net_output_count_empty():
     )
 
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
         output_queues={
             "results": OutputQueueConfig(ports=[("Sink", "out")]),
@@ -184,7 +184,7 @@ def test_net_try_get_output_empty():
     )
 
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
         output_queues={
             "results": OutputQueueConfig(ports=[("Sink", "out")]),
@@ -206,7 +206,7 @@ def test_net_get_all_outputs_empty():
     )
 
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
         output_queues={
             "results": OutputQueueConfig(ports=[("Sink", "out")]),
@@ -228,7 +228,7 @@ def test_net_route_orphaned_packet_to_queue():
     )
 
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
         output_queues={
             "results": OutputQueueConfig(ports=[("Sink", "out")]),
@@ -273,7 +273,7 @@ def test_net_route_orphaned_packet_to_catch_all():
     )
 
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
         output_queues={},  # No specific queues
         catch_all_output_queue="_other",
@@ -309,7 +309,7 @@ def test_net_route_orphaned_packet_discard():
     )
 
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
         output_queues={},  # No specific queues
         catch_all_output_queue=None,  # No catch-all
@@ -347,7 +347,7 @@ def test_net_route_orphaned_packet_error():
     )
 
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
         output_queues={},  # No specific queues
         catch_all_output_queue=None,  # No catch-all
@@ -379,7 +379,7 @@ def test_net_output_queue_not_found():
     )
 
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
         output_queues={},  # No queues configured
     )
@@ -409,7 +409,7 @@ def test_net_resolve_queue_name_by_node_port():
     )
 
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
         output_queues={
             "results": OutputQueueConfig(ports=[("Sink", "out")]),
@@ -431,7 +431,7 @@ def test_net_resolve_queue_name_errors():
     )
 
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
         output_queues={
             "results": OutputQueueConfig(ports=[("Sink", "out")]),
@@ -470,7 +470,7 @@ async def test_net_get_output_with_timeout():
     )
 
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
         output_queues={
             "results": OutputQueueConfig(ports=[("Sink", "out")]),
@@ -494,7 +494,7 @@ async def test_net_get_output_success():
     )
 
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
         output_queues={
             "results": OutputQueueConfig(ports=[("Sink", "out")]),
@@ -523,7 +523,7 @@ async def test_net_get_output_by_node_port():
     )
 
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
         output_queues={
             "results": OutputQueueConfig(ports=[("Sink", "out")]),
