@@ -927,24 +927,26 @@ class NodeConfig(BaseModel):
         if self.factory is not None:
             # Import module if string
             if isinstance(self.factory, str):
+                factory_path = self.factory
                 module = importlib.import_module(self.factory)
             else:
+                factory_path = self.factory.__name__
                 module = self.factory
 
-            # Get factory functions
+            # Get node config factory function
             get_node_config_fn = getattr(module, "get_node_config")
-            get_node_funcs_fn = getattr(module, "get_node_funcs")
 
-            # Call factories
+            # Call get_node_config only (NOT get_node_funcs - that's resolved lazily on workers)
+            # This avoids creating closures that can't be pickled for multiprocess pools.
             base_config = get_node_config_fn(**self.factory_args)
-            exec_func, start_func, stop_func, on_failure_func = get_node_funcs_fn(**self.factory_args)
 
-            # Build execution config from factory functions
+            # Build execution config - exec_node_func is None because it will be
+            # resolved lazily on workers using the factory info from NodeConfig
             factory_exec_config = NodeExecutionConfig(
-                exec_node_func=exec_func,
-                start_node_func=start_func,
-                stop_node_func=stop_func,
-                on_node_failure=on_failure_func,
+                exec_node_func=None,
+                start_node_func=None,
+                stop_node_func=None,
+                on_node_failure=None,
             )
 
             # Merge: base config first, then any explicit overrides from self
@@ -969,9 +971,8 @@ class NodeConfig(BaseModel):
             if self.execution_config is not None:
                 # Override factory exec_config with explicit fields
                 exec_config_dict = factory_exec_config.model_dump()
-                for field_name, value in self.execution_config.model_dump().items():
-                    if value is not None:
-                        exec_config_dict[field_name] = value
+                for field_name, value in self.execution_config.model_dump(exclude_defaults=True).items():
+                    exec_config_dict[field_name] = value
                 merged_exec_config = NodeExecutionConfig.model_validate(exec_config_dict)
             else:
                 merged_exec_config = factory_exec_config
@@ -979,6 +980,7 @@ class NodeConfig(BaseModel):
             # Merge meta: base config first, then explicit overrides from self
             merged_meta = {**base_config.meta, **self.meta}
 
+            # Keep factory and factory_args in resolved config for lazy resolution on workers
             result = NodeConfig.model_construct(
                 name=name,
                 in_ports=merged_in_ports,
@@ -987,9 +989,8 @@ class NodeConfig(BaseModel):
                 out_salvo_conditions=merged_out_salvo,
                 execution_config=merged_exec_config,
                 meta=merged_meta,
-                # Clear factory fields in resolved config
-                factory=None,
-                factory_args={},
+                factory=factory_path,
+                factory_args=self.factory_args,
             )
 
         # Resolve execution_config import paths

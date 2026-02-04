@@ -1,0 +1,80 @@
+{
+  "pools": {
+    "main": {
+      "spec": {
+        "type": "main"
+      }
+    },
+    "thread_pool": {
+      "spec": {
+        "type": "thread",
+        "num_workers": 4
+      }
+    }
+  },
+  "graph": {
+    "nodes": [
+      {
+        "name": "hash_1",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {
+          "func": "nodes.compute_hash"
+        },
+        "execution_config": {
+          "pools": ["thread_pool"]
+        }
+      },
+      {
+        "name": "hash_2",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {
+          "func": "nodes.compute_hash"
+        },
+        "execution_config": {
+          "pools": ["thread_pool"]
+        }
+      },
+      {
+        "name": "hash_3",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {
+          "func": "nodes.compute_hash"
+        },
+        "execution_config": {
+          "pools": ["thread_pool"]
+        }
+      },
+      {
+        "name": "hash_4",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {
+          "func": "nodes.compute_hash"
+        },
+        "execution_config": {
+          "pools": ["thread_pool"]
+        }
+      },
+      {
+        "name": "aggregate",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {
+          "func": "nodes.aggregate_results"
+        },
+        "execution_config": {
+          "pools": ["main"]
+        }
+      }
+    ],
+    "edges": [
+      {"source_str": "hash_1.out", "target_str": "aggregate.results"},
+      {"source_str": "hash_2.out", "target_str": "aggregate.results"},
+      {"source_str": "hash_3.out", "target_str": "aggregate.results"},
+      {"source_str": "hash_4.out", "target_str": "aggregate.results"}
+    ]
+  },
+  "output_queues": {
+    "results": {
+      "ports": [["aggregate", "out"]]
+    }
+  }
+}
