@@ -13,17 +13,17 @@
 	}
 
 	// Handle tab close (prevent event bubbling)
-	function handleTabClose(event: MouseEvent, tabId: string) {
+	async function handleTabClose(event: MouseEvent, tabId: string) {
 		event.stopPropagation();
-		closeTab(tabId);
+		await closeTab(tabId);
 	}
 
 	// Handle middle-click to close
-	function handleTabMouseDown(event: MouseEvent, tabId: string) {
+	async function handleTabMouseDown(event: MouseEvent, tabId: string) {
 		if (event.button === 1) {
 			// Middle click
 			event.preventDefault();
-			closeTab(tabId);
+			await closeTab(tabId);
 		}
 	}
 

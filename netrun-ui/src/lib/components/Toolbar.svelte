@@ -19,6 +19,7 @@
 	} from '$lib/stores/flowStore';
 	import { openCommandPalette } from '$lib/stores/commandStore';
 	import { resolveFilePath } from '$lib/stores/fileExplorerStore';
+	import { showPrompt, showAlert, showConfirm } from '$lib/stores/modalStore';
 
 	// Validation state
 	let lastValidationResult = $state<{ valid: boolean; errorCount: number } | null>(null);
@@ -34,7 +35,13 @@
 	}
 
 	async function handleAddFactoryNode() {
-		const factory = prompt('Enter factory import path:', 'netrun.node_factories.function');
+		const factory = await showPrompt({
+			title: 'Add Factory Node',
+			message: 'Enter factory import path',
+			placeholder: 'netrun.node_factories.function',
+			defaultValue: 'netrun.node_factories.function',
+			confirmText: 'Add',
+		});
 		if (factory) {
 			const newNode = createFactoryNode({ x: 200, y: 200 }, factory);
 			addNode(newNode);
@@ -51,20 +58,35 @@
 
 	async function handleCreateSubgraph() {
 		if ($selectedNodeIds.size < 2) {
-			alert('Please select at least 2 nodes to create a subgraph');
+			await showAlert({
+				title: 'Cannot Create Subgraph',
+				message: 'Please select at least 2 nodes to create a subgraph.',
+			});
 			return;
 		}
 
-		const name = prompt('Enter subgraph name:', 'MySubgraph');
+		const name = await showPrompt({
+			title: 'Create Subgraph',
+			message: 'Enter a name for the subgraph',
+			placeholder: 'MySubgraph',
+			defaultValue: 'MySubgraph',
+			confirmText: 'Create',
+		});
 		if (!name) return;
 
 		try {
 			const success = await createSubgraphFromSelection(name);
 			if (!success) {
-				alert('Failed to create subgraph');
+				await showAlert({
+					title: 'Error',
+					message: 'Failed to create subgraph.',
+				});
 			}
 		} catch (e) {
-			alert(`Error creating subgraph: ${(e as Error).message}`);
+			await showAlert({
+				title: 'Error',
+				message: `Error creating subgraph: ${(e as Error).message}`,
+			});
 		}
 	}
 
@@ -76,10 +98,16 @@
 			isLoading = true;
 			try {
 				await saveToFile();
-				alert('Subgraph changes saved to parent. Save the parent file to persist.');
+				await showAlert({
+					title: 'Saved',
+					message: 'Subgraph changes saved to parent. Save the parent file to persist.',
+				});
 			} catch (e) {
 				errorMessage = (e as Error).message;
-				alert(`Save failed: ${errorMessage}`);
+				await showAlert({
+					title: 'Error',
+					message: `Save failed: ${errorMessage}`,
+				});
 			} finally {
 				isLoading = false;
 			}
@@ -89,7 +117,13 @@
 		// If no current file, prompt for path
 		let path = $currentFilePath;
 		if (!path) {
-			path = prompt('Enter file path (e.g., /path/to/file.netrun.json):');
+			path = await showPrompt({
+				title: 'Save File',
+				message: 'Enter file path',
+				placeholder: '/path/to/file.netrun.json',
+				inputType: 'path',
+				confirmText: 'Save',
+			});
 			if (!path) return;
 		}
 
@@ -98,7 +132,10 @@
 			await saveToFile(path);
 		} catch (e) {
 			errorMessage = (e as Error).message;
-			alert(`Save failed: ${errorMessage}`);
+			await showAlert({
+				title: 'Error',
+				message: `Save failed: ${errorMessage}`,
+			});
 		} finally {
 			isLoading = false;
 		}
@@ -107,7 +144,13 @@
 	async function handleOpen() {
 		errorMessage = null;
 
-		const path = prompt('Enter file path to open:');
+		const path = await showPrompt({
+			title: 'Open File',
+			message: 'Enter file path to open',
+			placeholder: '/path/to/file.netrun.json',
+			inputType: 'path',
+			confirmText: 'Open',
+		});
 		if (!path) return;
 
 		isLoading = true;
@@ -115,7 +158,10 @@
 			await loadFromFile(path);
 		} catch (e) {
 			errorMessage = (e as Error).message;
-			alert(`Open failed: ${errorMessage}`);
+			await showAlert({
+				title: 'Error',
+				message: `Open failed: ${errorMessage}`,
+			});
 		} finally {
 			isLoading = false;
 		}
@@ -123,11 +169,22 @@
 
 	async function handleNew() {
 		if ($isDirty) {
-			if (!confirm('You have unsaved changes. Create new file anyway?')) {
-				return;
-			}
+			const confirmed = await showConfirm({
+				title: 'Unsaved Changes',
+				message: 'You have unsaved changes. Create new file anyway?',
+				confirmText: 'Create New',
+				cancelText: 'Cancel',
+			});
+			if (!confirmed) return;
 		}
-		const inputPath = prompt('Enter filename (relative to current folder) or absolute path:', 'my_flow.netrun.json');
+		const inputPath = await showPrompt({
+			title: 'Create New File',
+			message: 'Enter filename (relative to current folder) or absolute path',
+			placeholder: 'my_flow.netrun.json',
+			defaultValue: 'my_flow.netrun.json',
+			inputType: 'path',
+			confirmText: 'Create',
+		});
 		if (!inputPath) return;
 
 		const fullPath = resolveFilePath(inputPath);
@@ -140,7 +197,10 @@
 		try {
 			await saveToFile(fullPath);
 		} catch (e) {
-			alert(`Failed to create file: ${(e as Error).message}`);
+			await showAlert({
+				title: 'Error',
+				message: `Failed to create file: ${(e as Error).message}`,
+			});
 		}
 	}
 

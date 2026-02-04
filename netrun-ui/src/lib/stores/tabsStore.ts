@@ -6,6 +6,7 @@
 import { writable, derived, get } from 'svelte/store';
 import type { NetrunEdge, SubgraphNodeData, FlowNode, AnyNodeData } from './flowStore';
 import { api } from '$lib/api';
+import { showConfirm } from '$lib/stores/modalStore';
 
 // History state for undo/redo
 interface HistoryState {
@@ -152,7 +153,7 @@ export function switchToPreviousTab(): void {
 
 // Close a tab by ID
 // Returns true if tab was closed, false if user cancelled
-export function closeTab(tabId: string, confirmUnsaved: boolean = true): boolean {
+export async function closeTab(tabId: string, confirmUnsaved: boolean = true): Promise<boolean> {
 	const tabList = get(tabs);
 	const tabToClose = tabList.find(t => t.id === tabId);
 
@@ -160,7 +161,13 @@ export function closeTab(tabId: string, confirmUnsaved: boolean = true): boolean
 
 	// Check for unsaved changes
 	if (confirmUnsaved && tabToClose.isDirty) {
-		if (!confirm(`"${tabToClose.fileName}" has unsaved changes. Close anyway?`)) {
+		const confirmed = await showConfirm({
+			title: 'Unsaved Changes',
+			message: `"${tabToClose.fileName}" has unsaved changes. Close anyway?`,
+			confirmText: 'Close',
+			cancelText: 'Cancel',
+		});
+		if (!confirmed) {
 			return false;
 		}
 	}
@@ -192,10 +199,10 @@ export function closeTab(tabId: string, confirmUnsaved: boolean = true): boolean
 }
 
 // Close the active tab
-export function closeActiveTab(confirmUnsaved: boolean = true): boolean {
+export async function closeActiveTab(confirmUnsaved: boolean = true): Promise<boolean> {
 	const currentActiveId = get(activeTabId);
 	if (currentActiveId) {
-		return closeTab(currentActiveId, confirmUnsaved);
+		return await closeTab(currentActiveId, confirmUnsaved);
 	}
 	return false;
 }
