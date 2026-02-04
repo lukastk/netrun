@@ -7,7 +7,7 @@ requires-python = ">=3.11"
 dependencies = [
     "diskcache>=5.6.3",
     "nblite>=1.1.1",
-    "netrun-sim>=0.1.1",
+    "netrun-sim>=0.1.2",
     "websockets>=16.0",
     "xxhash>=3.6.0",
 ]
