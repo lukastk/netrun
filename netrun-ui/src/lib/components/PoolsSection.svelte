@@ -36,24 +36,33 @@
 	}
 
 	interface Props {
-		pools: Record<string, PoolConfig> | null | undefined;
-		onUpdate: (pools: Record<string, PoolConfig> | null) => void;
+		pools: Record<string, unknown> | null | undefined;
+		onUpdate: (pools: Record<string, unknown> | null) => void;
 	}
 
 	let { pools, onUpdate }: Props = $props();
+
+	// Type assertion helper
+	function getTypedPools(): Record<string, PoolConfig> | null {
+		if (pools === null || pools === undefined) return null;
+		return pools as Record<string, PoolConfig>;
+	}
 
 	// Determine if using defaults (pools is null/undefined)
 	let useDefaults = $derived(pools === null || pools === undefined);
 
 	// Get pool entries for display
-	let poolEntries = $derived(pools ? Object.entries(pools) : []);
+	let poolEntries = $derived.by(() => {
+		const typedPools = getTypedPools();
+		return typedPools ? Object.entries(typedPools) : [];
+	});
 
 	function toggleDefaults() {
 		if (useDefaults) {
 			// Switch to explicit: create a default "main" pool
 			onUpdate({
 				main: { spec: { type: 'main' } },
-			});
+			} as Record<string, unknown>);
 		} else {
 			// Switch to defaults
 			onUpdate(null);
@@ -62,30 +71,30 @@
 	}
 
 	function addPool() {
-		const current = pools || {};
+		const current = getTypedPools() || {};
 		const name = generateUniqueName(current, 'pool');
 		onUpdate({
 			...current,
 			[name]: { spec: { type: 'thread', num_workers: 4 } },
-		});
+		} as Record<string, unknown>);
 		pushHistory();
 	}
 
 	function removePool(name: string) {
-		const current = { ...(pools || {}) };
+		const current = { ...(getTypedPools() || {}) };
 		delete current[name];
 		// If no pools left, switch to defaults
 		if (Object.keys(current).length === 0) {
 			onUpdate(null);
 		} else {
-			onUpdate(current);
+			onUpdate(current as Record<string, unknown>);
 		}
 		pushHistory();
 	}
 
 	function updatePoolName(oldName: string, newName: string) {
 		if (oldName === newName || !newName.trim()) return;
-		const current = pools || {};
+		const current = getTypedPools() || {};
 		if (newName in current) return; // Name already exists
 
 		const updated: Record<string, PoolConfig> = {};
@@ -96,24 +105,24 @@
 				updated[name] = config;
 			}
 		}
-		onUpdate(updated);
+		onUpdate(updated as Record<string, unknown>);
 		pushHistory();
 	}
 
 	function updatePoolSpec(name: string, spec: PoolSpec) {
-		const current = pools || {};
+		const current = getTypedPools() || {};
 		onUpdate({
 			...current,
-			[name]: { ...current[name], spec },
-		});
+			[name]: { ...(current[name] || {}), spec },
+		} as Record<string, unknown>);
 	}
 
 	function updatePoolSpecLive(name: string, spec: PoolSpec) {
-		const current = pools || {};
+		const current = getTypedPools() || {};
 		onUpdate({
 			...current,
-			[name]: { ...current[name], spec },
-		});
+			[name]: { ...(current[name] || {}), spec },
+		} as Record<string, unknown>);
 	}
 
 	function changePoolType(name: string, newType: PoolSpecType) {

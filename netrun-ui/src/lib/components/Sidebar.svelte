@@ -6,6 +6,8 @@
 		updateNodeEnv,
 		updateNodeSalvoConditions,
 		getNodeSalvoConditions,
+		updateNodeExecutionConfig,
+		getNodeExecutionConfig,
 		updateFactoryNodePreview,
 		pushHistory,
 		extraData,
@@ -17,6 +19,7 @@
 	} from '$lib/stores/flowStore';
 	import SalvoConditionsSection from './SalvoConditionsSection.svelte';
 	import PoolsSection from './PoolsSection.svelte';
+	import NodeExecutionSection from './NodeExecutionSection.svelte';
 	import type { SalvoConditionConfig } from '$lib/types/salvoConditions';
 	import { parseSalvoConditionsFromJSON, salvoConditionsToJSON } from '$lib/utils/salvoSerializer';
 	import { api, type FactoryParameter } from '$lib/api';
@@ -648,6 +651,34 @@
 								onUpdateOut={(conditions) => {
 									const json = conditions ? salvoConditionsToJSON(conditions) : null;
 									updateNodeSalvoConditions($selectedNode.id, 'out', json);
+								}}
+							/>
+						</div>
+					{/if}
+				</section>
+			{/if}
+
+			<!-- Execution Section (for regular and factory nodes, not subgraph) -->
+			{#if $selectedNode.data.nodeType !== 'subgraph'}
+				<section class="section">
+					<button
+						class="section-header"
+						onclick={() => toggleSection('execution')}
+					>
+						<span class="section-title">Execution</span>
+						<span class="section-toggle">{sectionsOpen.execution ? '−' : '+'}</span>
+					</button>
+					{#if sectionsOpen.execution}
+						{@const executionConfig = getNodeExecutionConfig($selectedNode)}
+						{@const poolsData = ($extraData as Record<string, unknown>)?.pools as Record<string, unknown> | null | undefined}
+						{@const availablePools = poolsData ? Object.keys(poolsData) : ['main']}
+						<div class="section-content">
+							<NodeExecutionSection
+								{executionConfig}
+								{availablePools}
+								onUpdate={(config) => {
+									updateNodeExecutionConfig($selectedNode.id, config);
+									pushHistory();
 								}}
 							/>
 						</div>
