@@ -670,7 +670,7 @@ class NodeExecutionConfig(BaseModel):
     """Runtime configuration for a node's execution behavior."""
     model_config = {"arbitrary_types_allowed": True}
 
-    pools: list[str] = Field(default_factory=list)
+    pools: list[str] = Field(default_factory=lambda: ["main"])
     exec_node_func: NodeExecutionFunc | str | None = None
     """
     The function to execute the node with.
@@ -1572,21 +1572,26 @@ PoolSpecConfig = Annotated[
 
 class PoolConfig(BaseModel):
     """Configuration for a pool of workers."""
-    id: str
     print_flush_interval: float = 0.1
     capture_prints: bool = True
-    spec: PoolSpecConfig
+    spec: PoolSpecConfig = Field(default_factory=MainPoolConfig)
 
 # %% [markdown]
 # ## The Net configuration class
 
 # %%
 #|export
+def _default_pools() -> dict[str, "PoolConfig"]:
+    """Create default pools with a main thread pool."""
+    return {"main": PoolConfig(spec=MainPoolConfig())}
+
+
 class NetConfig(BaseModel):
     """Configuration for a Net."""
     model_config = {"arbitrary_types_allowed": True}
 
-    pools: dict[str, PoolConfig]
+    pools: dict[str, PoolConfig] | None = None
+    """Pool configurations. None = generate default on resolve(), {} = no pools."""
     graph: GraphConfig
 
     meta: dict[str, Any] = Field(default_factory=dict)
@@ -1655,6 +1660,7 @@ class NetConfig(BaseModel):
         - All node factories in the graph
         - All string import paths to callables
         - dead_letter_callback if it's a string
+        - pools if None (generates default main pool)
 
         Args:
             base_path: Base path for resolving relative file paths in subgraphs.
@@ -1663,6 +1669,10 @@ class NetConfig(BaseModel):
             A new NetConfig ready for execution by Net.
         """
         updates = {}
+
+        # Generate default pools if None
+        if self.pools is None:
+            updates["pools"] = _default_pools()
 
         # Resolve graph (includes subgraph flattening)
         resolved_graph = self.graph.resolve(base_path=base_path)

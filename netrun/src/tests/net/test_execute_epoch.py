@@ -47,7 +47,7 @@ def _create_test_net(exec_func=None) -> Net:
     )
 
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
     )
 
