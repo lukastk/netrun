@@ -6,7 +6,7 @@ from typing import Any
 import tomli
 import tomli_w
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, ValidationError
 
 from ..converter import (
     ui_to_graph_config,
@@ -14,6 +14,13 @@ from ..converter import (
     extract_graph_and_extras,
     merge_graph_with_extras,
 )
+
+# Import netrun config types for validation
+try:
+    from netrun.net.config import NetConfig, GraphConfig
+    NETRUN_AVAILABLE = True
+except ImportError:
+    NETRUN_AVAILABLE = False
 
 router = APIRouter()
 
@@ -567,3 +574,104 @@ async def create_subgraph(request: SubgraphCreateRequest) -> SubgraphCreateRespo
         remaining_edges=remaining_edges,
         internal_edges=internal_edges,
     )
+
+
+# =============================================================================
+# Validation Endpoint
+# =============================================================================
+
+
+class ValidationError_(BaseModel):
+    """A single validation error."""
+    loc: list[str | int]  # Location path in the config
+    msg: str  # Error message
+    type: str  # Error type
+
+
+class ValidateRequest(BaseModel):
+    """Request to validate a config."""
+    nodes: list[dict[str, Any]]
+    edges: list[dict[str, Any]]
+    meta: dict[str, Any] | None = None
+    extra_data: dict[str, Any] | None = None
+
+
+class ValidateResponse(BaseModel):
+    """Response with validation results."""
+    valid: bool
+    errors: list[ValidationError_]
+    netrun_available: bool  # Whether netrun package is importable
+
+
+@router.post("/validate", response_model=ValidateResponse)
+async def validate_config(request: ValidateRequest) -> ValidateResponse:
+    """Validate UI data against the actual NetConfig/GraphConfig Pydantic models.
+
+    This performs full validation using the netrun package's Pydantic models,
+    catching errors that simple client-side validation might miss.
+    """
+    if not NETRUN_AVAILABLE:
+        return ValidateResponse(
+            valid=True,  # Can't validate without netrun, assume valid
+            errors=[],
+            netrun_available=False,
+        )
+
+    try:
+        # Convert UI format to GraphConfig format
+        graph_config = ui_to_graph_config(request.nodes, request.edges)
+
+        # Add meta if provided
+        if request.meta:
+            graph_config["meta"] = request.meta
+
+        # Merge with extra data to get full config
+        full_config = merge_graph_with_extras(
+            graph_config,
+            request.extra_data or {},
+            request.meta,
+        )
+
+        # Validate using Pydantic models
+        errors: list[ValidationError_] = []
+
+        if request.extra_data:
+            # Has extra data - validate as NetConfig
+            try:
+                NetConfig.model_validate(full_config)
+            except ValidationError as e:
+                for err in e.errors():
+                    errors.append(ValidationError_(
+                        loc=[str(x) for x in err.get("loc", [])],
+                        msg=err.get("msg", "Unknown error"),
+                        type=err.get("type", "unknown"),
+                    ))
+        else:
+            # No extra data - validate graph portion as GraphConfig
+            try:
+                GraphConfig.model_validate(graph_config)
+            except ValidationError as e:
+                for err in e.errors():
+                    errors.append(ValidationError_(
+                        loc=[str(x) for x in err.get("loc", [])],
+                        msg=err.get("msg", "Unknown error"),
+                        type=err.get("type", "unknown"),
+                    ))
+
+        return ValidateResponse(
+            valid=len(errors) == 0,
+            errors=errors,
+            netrun_available=True,
+        )
+
+    except Exception as e:
+        # Unexpected error during validation
+        return ValidateResponse(
+            valid=False,
+            errors=[ValidationError_(
+                loc=["_root_"],
+                msg=str(e),
+                type="validation_error",
+            )],
+            netrun_available=True,
+        )
