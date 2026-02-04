@@ -154,12 +154,7 @@ def run_app_mode(
     height: int = 900,
 ) -> None:
     """Run in app mode: native window with pywebview."""
-    try:
-        import webview
-    except ImportError:
-        print("Error: pywebview is not installed.", file=sys.stderr)
-        print("Install it with: pip install 'netrun-ui-backend[app]'", file=sys.stderr)
-        sys.exit(1)
+    import webview
 
     frontend_dir = get_frontend_dir()
 
