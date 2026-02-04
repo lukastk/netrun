@@ -20,6 +20,7 @@ import {
 	createEmptyTabState,
 	type TabState,
 } from './tabsStore';
+import { triggerFileExplorerRefresh } from './fileExplorerStore';
 
 // Types for netrun node data
 export interface PortConfig {
@@ -810,6 +811,9 @@ export async function saveToFile(path?: string): Promise<void> {
 		fileFormat: format,
 		isDirty: false,
 	});
+
+	// Refresh file explorer to show the new/updated file
+	triggerFileExplorerRefresh();
 }
 
 // Clear the current flow (reset active tab) and create a new file

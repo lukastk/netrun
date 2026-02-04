@@ -1,6 +1,7 @@
 <script lang="ts">
 	import { api, type FileEntry } from '$lib/api';
 	import { loadFromFile, recentFiles, removeRecentFile } from '$lib/stores/flowStore';
+	import { fileExplorerRefreshTrigger } from '$lib/stores/fileExplorerStore';
 
 	// Props
 	interface Props {
@@ -38,6 +39,15 @@
 	// Initial load
 	$effect(() => {
 		loadDirectory(initialPath);
+	});
+
+	// Refresh when triggered externally (e.g., after file save)
+	$effect(() => {
+		// Subscribe to refresh trigger
+		const trigger = $fileExplorerRefreshTrigger;
+		if (trigger > 0) {
+			loadDirectory(currentPath);
+		}
 	});
 
 	// Handle clicking on an entry

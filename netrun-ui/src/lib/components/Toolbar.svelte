@@ -120,20 +120,25 @@
 		}
 	}
 
-	function handleNew() {
+	async function handleNew() {
 		if ($isDirty) {
 			if (!confirm('You have unsaved changes. Create new file anyway?')) {
 				return;
 			}
 		}
-		const name = prompt('Enter file name (without extension):', 'my_flow');
-		if (!name) return;
+		const path = prompt('Enter full file path (e.g., /path/to/my_flow.netrun.json):');
+		if (!path) return;
 
-		const formatChoice = prompt('Choose format:\n1. JSON (.netrun.json)\n2. TOML (.netrun.toml)\n\nEnter 1 or 2:', '1');
-		if (formatChoice === '1') {
-			clearFlow('json', name);
-		} else if (formatChoice === '2') {
-			clearFlow('toml', name);
+		// Determine format from extension
+		const format = path.endsWith('.toml') ? 'toml' : 'json';
+		const fileName = path.split('/').pop() || 'Untitled';
+
+		clearFlow(format, fileName);
+
+		try {
+			await saveToFile(path);
+		} catch (e) {
+			alert(`Failed to create file: ${(e as Error).message}`);
 		}
 	}
 
