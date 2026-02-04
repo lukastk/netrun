@@ -36,8 +36,22 @@ packages = ["netrun_ui_backend"]
 # Include static files if they exist
 artifacts = ["netrun_ui_backend/static"]
 
+[tool.hatch.build.targets.wheel.hooks.custom]
+path = "hatch_build.py"
+
 [tool.hatch.build.targets.sdist]
 include = [
     "netrun_ui_backend/",
     "BACKEND_README.md",
+    "hatch_build.py",
+    "package.json",
+    "package-lock.json",
+    "svelte.config.js",
+    "vite.config.ts",
+    "tsconfig.json",
+    "src/",
+    "static/",
 ]
+
+[tool.hatch.build.targets.sdist.hooks.custom]
+path = "hatch_build.py"
