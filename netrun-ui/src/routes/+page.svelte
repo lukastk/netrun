@@ -9,16 +9,58 @@
 	import FileExplorer from '$lib/components/FileExplorer.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { nodes, currentFilePath, activeTab, recentFiles, loadFromFile, clearFlow, isNewFile, saveToFile } from '$lib/stores/flowStore';
+	import { nodes, currentFilePath, activeTab, recentFiles, loadFromFile, clearFlow, isNewFile, saveToFile, selectNodeByName } from '$lib/stores/flowStore';
 	import { resolveFilePath } from '$lib/stores/fileExplorerStore';
 	import { showPrompt, showAlert } from '$lib/stores/modalStore';
 	import { initializeCommands } from '$lib/commands';
 	import { handleKeyboardEvent } from '$lib/stores/keyboardStore';
+	import type { PageData } from './$types';
 
-	// Initialize command system
+	// Page data from load function (URL query parameters)
+	let { data }: { data: PageData } = $props();
+
+	// Track if we've processed initial files to avoid re-processing on HMR
+	let initialFilesProcessed = $state(false);
+
+	// Initialize command system and process URL parameters
 	onMount(() => {
 		initializeCommands();
+
+		// Process initial files from URL query parameters
+		if (!initialFilesProcessed && data.initialFiles && data.initialFiles.length > 0) {
+			initialFilesProcessed = true;
+			processInitialFiles(data.initialFiles, data.initialNode);
+		}
 	});
+
+	// Process files passed via URL parameters
+	async function processInitialFiles(files: string[], nodeToSelect: string | null) {
+		const errors: string[] = [];
+
+		for (const filePath of files) {
+			try {
+				await loadFromFile(filePath);
+			} catch (e) {
+				errors.push(`${filePath}: ${(e as Error).message}`);
+			}
+		}
+
+		// If there were errors, show them
+		if (errors.length > 0) {
+			await showAlert({
+				title: 'Error Opening Files',
+				message: errors.join('\n'),
+			});
+		}
+
+		// If a node was specified, try to select it
+		if (nodeToSelect && errors.length < files.length) {
+			// Give the flow a moment to render
+			setTimeout(() => {
+				selectNodeByName(nodeToSelect);
+			}, 100);
+		}
+	}
 
 	// Global keyboard handler
 	function handleGlobalKeydown(event: KeyboardEvent) {
