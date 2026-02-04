@@ -8,7 +8,7 @@
 	import FlowEditor from '$lib/components/FlowEditor.svelte';
 	import FileExplorer from '$lib/components/FileExplorer.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
-	import { nodes, currentFilePath, activeTab, recentFiles, loadFromFile } from '$lib/stores/flowStore';
+	import { nodes, currentFilePath, activeTab, recentFiles, loadFromFile, clearFlow } from '$lib/stores/flowStore';
 	import { initializeCommands } from '$lib/commands';
 	import { handleKeyboardEvent } from '$lib/stores/keyboardStore';
 
@@ -87,10 +87,12 @@
 									Open File
 								</button>
 								<button onclick={() => {
-									// Just dismiss the empty state - user can start adding nodes
-									import('$lib/stores/flowStore').then(({ clearFlow }) => {
-										clearFlow();
-									});
+									const format = prompt('Choose format:\n1. JSON (.netrun.json)\n2. TOML (.netrun.toml)\n\nEnter 1 or 2:', '1');
+									if (format === '1') {
+										clearFlow('json');
+									} else if (format === '2') {
+										clearFlow('toml');
+									}
 								}}>
 									New File
 								</button>

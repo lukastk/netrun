@@ -45,7 +45,7 @@ import { get } from 'svelte/store';
 const fileCommands: Command[] = [
 	{
 		id: 'file.new',
-		label: 'New File',
+		label: 'New File...',
 		category: 'file',
 		keywords: ['clear', 'create', 'empty'],
 		action: () => {
@@ -54,7 +54,41 @@ const fileCommands: Command[] = [
 					return;
 				}
 			}
-			clearFlow();
+			const format = prompt('Choose format:\n1. JSON (.netrun.json)\n2. TOML (.netrun.toml)\n\nEnter 1 or 2:', '1');
+			if (format === '1') {
+				clearFlow('json');
+			} else if (format === '2') {
+				clearFlow('toml');
+			}
+			// If cancelled or invalid, do nothing
+		},
+	},
+	{
+		id: 'file.newJson',
+		label: 'New JSON File',
+		category: 'file',
+		keywords: ['clear', 'create', 'empty', 'json'],
+		action: () => {
+			if (get(isDirty)) {
+				if (!confirm('You have unsaved changes. Create new file anyway?')) {
+					return;
+				}
+			}
+			clearFlow('json');
+		},
+	},
+	{
+		id: 'file.newToml',
+		label: 'New TOML File',
+		category: 'file',
+		keywords: ['clear', 'create', 'empty', 'toml'],
+		action: () => {
+			if (get(isDirty)) {
+				if (!confirm('You have unsaved changes. Create new file anyway?')) {
+					return;
+				}
+			}
+			clearFlow('toml');
 		},
 	},
 	{

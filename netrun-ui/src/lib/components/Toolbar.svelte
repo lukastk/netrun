@@ -126,7 +126,12 @@
 				return;
 			}
 		}
-		clearFlow();
+		const format = prompt('Choose format:\n1. JSON (.netrun.json)\n2. TOML (.netrun.toml)\n\nEnter 1 or 2:', '1');
+		if (format === '1') {
+			clearFlow('json');
+		} else if (format === '2') {
+			clearFlow('toml');
+		}
 	}
 
 	function handleUndo() {
