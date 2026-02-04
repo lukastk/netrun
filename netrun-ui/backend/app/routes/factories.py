@@ -1,12 +1,72 @@
 """Factory inspection and preview endpoints."""
 import importlib
+import importlib.util
 import inspect
+import pkgutil
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 router = APIRouter()
+
+
+class BuiltinFactory(BaseModel):
+    """A built-in factory from netrun.node_factories."""
+    import_path: str
+    name: str
+    docstring: str | None = None
+
+
+class ListBuiltinFactoriesResponse(BaseModel):
+    """Response with list of built-in factories."""
+    factories: list[BuiltinFactory]
+
+
+@router.get("/builtin", response_model=ListBuiltinFactoriesResponse)
+async def list_builtin_factories() -> ListBuiltinFactoriesResponse:
+    """List all built-in factories from netrun.node_factories.
+
+    Returns factories that have a get_node_config function.
+    """
+    factories = []
+
+    try:
+        # Try to import the netrun.node_factories package
+        node_factories_pkg = importlib.import_module("netrun.node_factories")
+    except ImportError:
+        # Package not available
+        return ListBuiltinFactoriesResponse(factories=[])
+
+    # Get the package path
+    if not hasattr(node_factories_pkg, "__path__"):
+        return ListBuiltinFactoriesResponse(factories=[])
+
+    # Iterate over submodules
+    for importer, modname, ispkg in pkgutil.iter_modules(node_factories_pkg.__path__):
+        if modname.startswith("_"):
+            continue  # Skip private modules
+
+        full_path = f"netrun.node_factories.{modname}"
+
+        try:
+            module = importlib.import_module(full_path)
+
+            # Check if it's a factory module (has get_node_config)
+            if hasattr(module, "get_node_config"):
+                get_node_config = getattr(module, "get_node_config")
+                docstring = inspect.getdoc(get_node_config)
+
+                factories.append(BuiltinFactory(
+                    import_path=full_path,
+                    name=modname,
+                    docstring=docstring,
+                ))
+        except Exception:
+            # Skip modules that fail to import
+            continue
+
+    return ListBuiltinFactoriesResponse(factories=factories)
 
 
 class FactorySignatureRequest(BaseModel):

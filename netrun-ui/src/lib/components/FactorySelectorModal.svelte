@@ -1,16 +1,83 @@
 <script lang="ts">
+	import { api, type BuiltinFactory } from '$lib/api';
+
 	interface Props {
-		factories: string[];
+		factories: string[];  // User-defined factories from extraData
 		onSelect: (factoryPath: string) => void;
 		onCancel: () => void;
 	}
 
 	let { factories, onSelect, onCancel }: Props = $props();
 
-	let mode = $state<'select' | 'custom'>(factories.length > 0 ? 'select' : 'custom');
-	let selectedFactory = $state(factories[0] || '');
+	// Built-in factories loaded from API
+	let builtinFactories = $state<BuiltinFactory[]>([]);
+	let isLoading = $state(true);
+	let loadError = $state<string | null>(null);
+
+	// Combined factories for display
+	interface DisplayFactory {
+		path: string;
+		name: string;
+		docstring: string | null;
+		isBuiltin: boolean;
+	}
+
+	const allFactories = $derived<DisplayFactory[]>(() => {
+		const result: DisplayFactory[] = [];
+
+		// Add built-in factories first
+		for (const f of builtinFactories) {
+			result.push({
+				path: f.import_path,
+				name: f.name,
+				docstring: f.docstring,
+				isBuiltin: true,
+			});
+		}
+
+		// Add user-defined factories (skip duplicates)
+		const builtinPaths = new Set(builtinFactories.map(f => f.import_path));
+		for (const path of factories) {
+			if (!builtinPaths.has(path)) {
+				result.push({
+					path,
+					name: path.split('.').pop() || path,
+					docstring: null,
+					isBuiltin: false,
+				});
+			}
+		}
+
+		return result;
+	});
+
+	// Determine if we have any factories to show
+	const hasFactories = $derived(allFactories().length > 0);
+
+	let mode = $state<'select' | 'custom'>('select');
+	let selectedFactory = $state('');
 	let customPath = $state('');
 	let inputElement: HTMLInputElement | undefined = $state();
+
+	// Load built-in factories on mount
+	$effect(() => {
+		loadBuiltinFactories();
+	});
+
+	// Set default selection when factories load
+	$effect(() => {
+		const factories = allFactories();
+		if (factories.length > 0 && !selectedFactory) {
+			selectedFactory = factories[0].path;
+		}
+	});
+
+	// Switch to custom mode if no factories available
+	$effect(() => {
+		if (!isLoading && !hasFactories) {
+			mode = 'custom';
+		}
+	});
 
 	// Focus input when switching to custom mode
 	$effect(() => {
@@ -18,6 +85,20 @@
 			inputElement.focus();
 		}
 	});
+
+	async function loadBuiltinFactories() {
+		isLoading = true;
+		loadError = null;
+		try {
+			const response = await api.listBuiltinFactories();
+			builtinFactories = response.factories;
+		} catch (e) {
+			loadError = (e as Error).message;
+			console.warn('Failed to load built-in factories:', e);
+		} finally {
+			isLoading = false;
+		}
+	}
 
 	function handleSubmit() {
 		const path = mode === 'select' ? selectedFactory : customPath.trim();
@@ -35,12 +116,6 @@
 			handleSubmit();
 		}
 	}
-
-	function getFactoryDisplayName(path: string): string {
-		// Extract the last part of the import path for display
-		const parts = path.split('.');
-		return parts[parts.length - 1] || path;
-	}
 </script>
 
 <svelte:window onkeydown={handleKeydown} />
@@ -55,7 +130,7 @@
 		</div>
 
 		<div class="modal-body">
-			{#if factories.length > 0}
+			{#if !isLoading && hasFactories}
 				<div class="mode-tabs">
 					<button
 						class="mode-tab"
@@ -74,17 +149,29 @@
 				</div>
 			{/if}
 
-			{#if mode === 'select' && factories.length > 0}
+			{#if isLoading}
+				<div class="loading">Loading factories...</div>
+			{:else if mode === 'select' && hasFactories}
 				<div class="factory-list">
-					{#each factories as factory}
+					{#each allFactories() as factory}
 						<button
 							class="factory-option"
-							class:selected={selectedFactory === factory}
-							onclick={() => selectedFactory = factory}
+							class:selected={selectedFactory === factory.path}
+							onclick={() => selectedFactory = factory.path}
 							ondblclick={handleSubmit}
 						>
-							<span class="factory-name">{getFactoryDisplayName(factory)}</span>
-							<span class="factory-path">{factory}</span>
+							<div class="factory-header">
+								<span class="factory-name">{factory.name}</span>
+								{#if factory.isBuiltin}
+									<span class="builtin-badge">built-in</span>
+								{:else}
+									<span class="custom-badge">project</span>
+								{/if}
+							</div>
+							<span class="factory-path">{factory.path}</span>
+							{#if factory.docstring}
+								<span class="factory-doc">{factory.docstring.split('\n')[0]}</span>
+							{/if}
 						</button>
 					{/each}
 				</div>
@@ -136,7 +223,7 @@
 		background: var(--bg-secondary, #242424);
 		border: 1px solid var(--border-color, #404040);
 		border-radius: 12px;
-		width: 480px;
+		width: 520px;
 		max-width: 90vw;
 		max-height: 80vh;
 		display: flex;
@@ -181,6 +268,12 @@
 		flex: 1;
 	}
 
+	.loading {
+		text-align: center;
+		color: var(--text-secondary, #a0a0a0);
+		padding: 20px;
+	}
+
 	.mode-tabs {
 		display: flex;
 		gap: 4px;
@@ -215,7 +308,7 @@
 		display: flex;
 		flex-direction: column;
 		gap: 4px;
-		max-height: 300px;
+		max-height: 350px;
 		overflow-y: auto;
 	}
 
@@ -223,7 +316,7 @@
 		display: flex;
 		flex-direction: column;
 		align-items: flex-start;
-		gap: 2px;
+		gap: 3px;
 		padding: 10px 12px;
 		background: var(--bg-primary, #1a1a1a);
 		border: 1px solid var(--border-color, #404040);
@@ -243,16 +336,49 @@
 		background: rgba(59, 130, 246, 0.1);
 	}
 
+	.factory-header {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		width: 100%;
+	}
+
 	.factory-name {
 		font-size: 14px;
 		font-weight: 500;
 		color: var(--text-primary, #fff);
 	}
 
+	.builtin-badge {
+		font-size: 10px;
+		padding: 2px 6px;
+		background: rgba(124, 58, 237, 0.2);
+		color: #a78bfa;
+		border-radius: 4px;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+	}
+
+	.custom-badge {
+		font-size: 10px;
+		padding: 2px 6px;
+		background: rgba(59, 130, 246, 0.2);
+		color: #93c5fd;
+		border-radius: 4px;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+	}
+
 	.factory-path {
 		font-size: 11px;
 		font-family: 'SF Mono', Monaco, Consolas, monospace;
 		color: var(--text-secondary, #a0a0a0);
+	}
+
+	.factory-doc {
+		font-size: 11px;
+		color: var(--text-tertiary, #707070);
+		margin-top: 2px;
 	}
 
 	.custom-input {
