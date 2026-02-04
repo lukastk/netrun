@@ -152,10 +152,6 @@ async def get_factory_signature(request: FactorySignatureRequest) -> FactorySign
         parameters = []
 
         for name, param in sig.parameters.items():
-            # Skip *args and **kwargs
-            if param.kind in (inspect.Parameter.VAR_POSITIONAL, inspect.Parameter.VAR_KEYWORD):
-                continue
-
             # Get type annotation as string
             type_str = None
             if param.annotation != inspect.Parameter.empty:
