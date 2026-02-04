@@ -21,6 +21,7 @@ class BuiltinFactory(BaseModel):
 class ListBuiltinFactoriesResponse(BaseModel):
     """Response with list of built-in factories."""
     factories: list[BuiltinFactory]
+    errors: list[str] = []  # Any import errors encountered
 
 
 @router.get("/builtin", response_model=ListBuiltinFactoriesResponse)
@@ -29,44 +30,59 @@ async def list_builtin_factories() -> ListBuiltinFactoriesResponse:
 
     Returns factories that have a get_node_config function.
     """
+    import os
+    import sys
     factories = []
+    errors = []
 
+    # Find the netrun package location without importing it
+    netrun_path = None
+
+    # Check common locations
+    for path in sys.path:
+        candidate = os.path.join(path, "netrun", "node_factories")
+        if os.path.isdir(candidate):
+            netrun_path = candidate
+            break
+
+    if netrun_path is None:
+        return ListBuiltinFactoriesResponse(
+            factories=[],
+            errors=["netrun.node_factories package not found in Python path"]
+        )
+
+    # List Python files in the directory
     try:
-        # Try to import the netrun.node_factories package
-        node_factories_pkg = importlib.import_module("netrun.node_factories")
-    except ImportError:
-        # Package not available
-        return ListBuiltinFactoriesResponse(factories=[])
+        for entry in os.listdir(netrun_path):
+            if entry.startswith("_"):
+                continue
+            if not entry.endswith(".py"):
+                continue
 
-    # Get the package path
-    if not hasattr(node_factories_pkg, "__path__"):
-        return ListBuiltinFactoriesResponse(factories=[])
+            modname = entry[:-3]
+            full_path = f"netrun.node_factories.{modname}"
 
-    # Iterate over submodules
-    for importer, modname, ispkg in pkgutil.iter_modules(node_factories_pkg.__path__):
-        if modname.startswith("_"):
-            continue  # Skip private modules
+            try:
+                module = importlib.import_module(full_path)
 
-        full_path = f"netrun.node_factories.{modname}"
+                # Check if it's a factory module (has get_node_config)
+                if hasattr(module, "get_node_config"):
+                    get_node_config = getattr(module, "get_node_config")
+                    docstring = inspect.getdoc(get_node_config)
 
-        try:
-            module = importlib.import_module(full_path)
+                    factories.append(BuiltinFactory(
+                        import_path=full_path,
+                        name=modname,
+                        docstring=docstring,
+                    ))
+            except Exception as e:
+                error_msg = f"{full_path}: {e}"
+                errors.append(error_msg)
+                continue
+    except OSError as e:
+        errors.append(f"Could not list {netrun_path}: {e}")
 
-            # Check if it's a factory module (has get_node_config)
-            if hasattr(module, "get_node_config"):
-                get_node_config = getattr(module, "get_node_config")
-                docstring = inspect.getdoc(get_node_config)
-
-                factories.append(BuiltinFactory(
-                    import_path=full_path,
-                    name=modname,
-                    docstring=docstring,
-                ))
-        except Exception:
-            # Skip modules that fail to import
-            continue
-
-    return ListBuiltinFactoriesResponse(factories=factories)
+    return ListBuiltinFactoriesResponse(factories=factories, errors=errors)
 
 
 class FactorySignatureRequest(BaseModel):

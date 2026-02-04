@@ -91,6 +91,7 @@ export interface BuiltinFactory {
 
 export interface ListBuiltinFactoriesResponse {
 	factories: BuiltinFactory[];
+	errors: string[];
 }
 
 export interface ApiError {

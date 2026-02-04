@@ -13,6 +13,7 @@
 	let builtinFactories = $state<BuiltinFactory[]>([]);
 	let isLoading = $state(true);
 	let loadError = $state<string | null>(null);
+	let importErrors = $state<string[]>([]);
 
 	// Combined factories for display
 	interface DisplayFactory {
@@ -22,7 +23,7 @@
 		isBuiltin: boolean;
 	}
 
-	const allFactories = $derived<DisplayFactory[]>(() => {
+	const allFactories = $derived.by(() => {
 		const result: DisplayFactory[] = [];
 
 		// Add built-in factories first
@@ -52,7 +53,7 @@
 	});
 
 	// Determine if we have any factories to show
-	const hasFactories = $derived(allFactories().length > 0);
+	const hasFactories = $derived(allFactories.length > 0);
 
 	let mode = $state<'select' | 'custom'>('select');
 	let selectedFactory = $state('');
@@ -66,7 +67,7 @@
 
 	// Set default selection when factories load
 	$effect(() => {
-		const factories = allFactories();
+		const factories = allFactories;
 		if (factories.length > 0 && !selectedFactory) {
 			selectedFactory = factories[0].path;
 		}
@@ -89,9 +90,14 @@
 	async function loadBuiltinFactories() {
 		isLoading = true;
 		loadError = null;
+		importErrors = [];
 		try {
 			const response = await api.listBuiltinFactories();
 			builtinFactories = response.factories;
+			importErrors = response.errors || [];
+			if (importErrors.length > 0) {
+				console.warn('Some factories failed to import:', importErrors);
+			}
 		} catch (e) {
 			loadError = (e as Error).message;
 			console.warn('Failed to load built-in factories:', e);
@@ -151,9 +157,17 @@
 
 			{#if isLoading}
 				<div class="loading">Loading factories...</div>
+			{:else if importErrors.length > 0 && !hasFactories}
+				<div class="error-box">
+					<p class="error-title">Failed to load built-in factories:</p>
+					{#each importErrors as error}
+						<p class="error-detail">{error}</p>
+					{/each}
+					<p class="error-hint">You may need to reinstall netrun in the backend environment.</p>
+				</div>
 			{:else if mode === 'select' && hasFactories}
 				<div class="factory-list">
-					{#each allFactories() as factory}
+					{#each allFactories as factory}
 						<button
 							class="factory-option"
 							class:selected={selectedFactory === factory.path}
@@ -272,6 +286,36 @@
 		text-align: center;
 		color: var(--text-secondary, #a0a0a0);
 		padding: 20px;
+	}
+
+	.error-box {
+		background: rgba(239, 68, 68, 0.1);
+		border: 1px solid rgba(239, 68, 68, 0.3);
+		border-radius: 6px;
+		padding: 12px;
+		margin-bottom: 16px;
+	}
+
+	.error-title {
+		color: #ef4444;
+		font-weight: 500;
+		font-size: 13px;
+		margin: 0 0 8px 0;
+	}
+
+	.error-detail {
+		color: var(--text-secondary, #a0a0a0);
+		font-size: 11px;
+		font-family: 'SF Mono', Monaco, Consolas, monospace;
+		margin: 4px 0;
+		word-break: break-word;
+	}
+
+	.error-hint {
+		color: var(--text-secondary, #a0a0a0);
+		font-size: 12px;
+		margin: 8px 0 0 0;
+		font-style: italic;
 	}
 
 	.mode-tabs {
