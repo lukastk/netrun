@@ -1,6 +1,5 @@
 <script lang="ts">
 	import {
-		nodes,
 		addNode,
 		createRegularNode,
 		createFactoryNode,
@@ -14,19 +13,11 @@
 		saveToFile,
 		clearFlow,
 		updateFactoryNodePreview,
-		createTab,
-		closeActiveTab,
-		switchToTabIndex,
-		switchToNextTab,
-		switchToPreviousTab,
-		copySelectedNodes,
-		pasteNodes,
-		cutSelectedNodes,
 		selectedNodeIds,
 		validateAllNodes,
 		createSubgraphFromSelection,
 	} from '$lib/stores/flowStore';
-	import { api } from '$lib/api';
+	import { openCommandPalette } from '$lib/stores/commandStore';
 
 	// Validation state
 	let lastValidationResult = $state<{ valid: boolean; errorCount: number } | null>(null);
@@ -36,7 +27,6 @@
 	let errorMessage = $state<string | null>(null);
 
 	// Add node at center of viewport
-	// TODO: Get actual viewport center from SvelteFlow
 	function handleAddNode() {
 		const newNode = createRegularNode({ x: 200, y: 200 });
 		addNode(newNode);
@@ -85,7 +75,6 @@
 			isLoading = true;
 			try {
 				await saveToFile();
-				// Notify user that parent file needs to be saved
 				alert('Subgraph changes saved to parent. Save the parent file to persist.');
 			} catch (e) {
 				errorMessage = (e as Error).message;
@@ -102,23 +91,6 @@
 			path = prompt('Enter file path (e.g., /path/to/file.netrun.json):');
 			if (!path) return;
 		}
-
-		isLoading = true;
-		try {
-			await saveToFile(path);
-		} catch (e) {
-			errorMessage = (e as Error).message;
-			alert(`Save failed: ${errorMessage}`);
-		} finally {
-			isLoading = false;
-		}
-	}
-
-	async function handleSaveAs() {
-		errorMessage = null;
-
-		const path = prompt('Enter file path (e.g., /path/to/file.netrun.json):');
-		if (!path) return;
 
 		isLoading = true;
 		try {
@@ -149,7 +121,6 @@
 	}
 
 	function handleNew() {
-		// If there are unsaved changes, confirm
 		if ($isDirty) {
 			if (!confirm('You have unsaved changes. Create new file anyway?')) {
 				return;
@@ -165,101 +136,7 @@
 	function handleRedo() {
 		redo();
 	}
-
-	// Keyboard shortcuts
-	function handleKeydown(event: KeyboardEvent) {
-		// Cmd/Ctrl + Z for undo
-		if ((event.metaKey || event.ctrlKey) && event.key === 'z' && !event.shiftKey) {
-			event.preventDefault();
-			handleUndo();
-		}
-		// Cmd/Ctrl + Shift + Z for redo
-		if ((event.metaKey || event.ctrlKey) && event.key === 'z' && event.shiftKey) {
-			event.preventDefault();
-			handleRedo();
-		}
-		// Cmd/Ctrl + S for save
-		if ((event.metaKey || event.ctrlKey) && event.key === 's') {
-			event.preventDefault();
-			handleSave();
-		}
-		// Cmd/Ctrl + O for open
-		if ((event.metaKey || event.ctrlKey) && event.key === 'o') {
-			event.preventDefault();
-			handleOpen();
-		}
-		// Cmd/Ctrl + N for new file (clears current tab)
-		if ((event.metaKey || event.ctrlKey) && event.key === 'n' && !event.shiftKey) {
-			event.preventDefault();
-			handleNew();
-		}
-		// Cmd/Ctrl + T for new tab
-		if ((event.metaKey || event.ctrlKey) && event.key === 't') {
-			event.preventDefault();
-			createTab();
-		}
-		// Cmd/Ctrl + W for close tab
-		if ((event.metaKey || event.ctrlKey) && event.key === 'w') {
-			event.preventDefault();
-			closeActiveTab();
-		}
-		// Cmd/Ctrl + 1-9 for switching to tabs by index
-		if ((event.metaKey || event.ctrlKey) && event.key >= '1' && event.key <= '9') {
-			event.preventDefault();
-			const tabIndex = parseInt(event.key) - 1;
-			switchToTabIndex(tabIndex);
-		}
-		// Ctrl + Tab for next tab
-		if (event.ctrlKey && event.key === 'Tab' && !event.shiftKey) {
-			event.preventDefault();
-			switchToNextTab();
-		}
-		// Ctrl + Shift + Tab for previous tab
-		if (event.ctrlKey && event.key === 'Tab' && event.shiftKey) {
-			event.preventDefault();
-			switchToPreviousTab();
-		}
-		// Cmd/Ctrl + C for copy
-		if ((event.metaKey || event.ctrlKey) && event.key === 'c') {
-			// Only handle if we have selected nodes and not in an input field
-			if ($selectedNodeIds.size > 0 && !isInputFocused()) {
-				event.preventDefault();
-				copySelectedNodes();
-			}
-		}
-		// Cmd/Ctrl + V for paste
-		if ((event.metaKey || event.ctrlKey) && event.key === 'v') {
-			if (!isInputFocused()) {
-				event.preventDefault();
-				pasteNodes();
-			}
-		}
-		// Cmd/Ctrl + X for cut
-		if ((event.metaKey || event.ctrlKey) && event.key === 'x') {
-			if ($selectedNodeIds.size > 0 && !isInputFocused()) {
-				event.preventDefault();
-				cutSelectedNodes();
-			}
-		}
-		// Cmd/Ctrl + G for create subgraph
-		if ((event.metaKey || event.ctrlKey) && event.key === 'g') {
-			if ($selectedNodeIds.size >= 2 && !isInputFocused()) {
-				event.preventDefault();
-				handleCreateSubgraph();
-			}
-		}
-	}
-
-	// Check if an input element is focused (to avoid interfering with text editing)
-	function isInputFocused(): boolean {
-		const activeElement = document.activeElement;
-		return activeElement instanceof HTMLInputElement ||
-			activeElement instanceof HTMLTextAreaElement ||
-			activeElement?.getAttribute('contenteditable') === 'true';
-	}
 </script>
-
-<svelte:window onkeydown={handleKeydown} />
 
 <header class="toolbar">
 	<div class="toolbar-section left">
@@ -298,6 +175,10 @@
 	</div>
 
 	<div class="toolbar-section right">
+		<button onclick={openCommandPalette} title="Command Palette (Cmd+Shift+P)" class="command-palette">
+			<span class="icon">⌘</span>
+		</button>
+		<div class="separator"></div>
 		<button
 			onclick={() => {
 				lastValidationResult = validateAllNodes();
@@ -400,6 +281,10 @@
 
 	button.subgraph:hover:not(:disabled) {
 		background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+	}
+
+	button.command-palette {
+		padding: 6px 10px;
 	}
 
 	.icon {
