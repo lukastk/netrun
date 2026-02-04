@@ -729,6 +729,7 @@ impl NetEvent {
     }
 
     #[getter]
+    #[allow(clippy::wrong_self_convention)]
     fn from_location(&self) -> Option<PacketLocation> {
         match &self.inner {
             NetEventKind::PacketMoved(_, _, from_loc, _, _) => Some(from_loc.clone()),
@@ -746,6 +747,7 @@ impl NetEvent {
 
     /// Get the from_index (for PacketMoved events - used for undo).
     #[getter]
+    #[allow(clippy::wrong_self_convention)]
     fn from_index(&self) -> Option<usize> {
         match &self.inner {
             NetEventKind::PacketMoved(_, _, _, _, from_index) => Some(*from_index),

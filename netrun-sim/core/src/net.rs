@@ -1724,7 +1724,7 @@ impl NetSim {
             .collect();
 
         // Check if any salvo condition is satisfied
-        for (_name, cond) in &node.in_salvo_conditions {
+        for cond in node.in_salvo_conditions.values() {
             if evaluate_salvo_condition(&cond.term, &port_packet_counts, &node.in_ports) {
                 return true;
             }
