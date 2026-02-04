@@ -43,7 +43,7 @@ def _create_simple_net() -> Net:
     )
 
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
     )
 

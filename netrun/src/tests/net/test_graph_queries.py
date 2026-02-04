@@ -41,7 +41,7 @@ def _create_net_with_edges() -> Net:
     )
 
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
     )
 
@@ -142,7 +142,7 @@ def test_graph_with_multiple_edges_from_same_port():
     )
 
     config = NetConfig(
-        pools={"main": PoolConfig(id="main", spec=MainPoolConfig())},
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
     )
 
