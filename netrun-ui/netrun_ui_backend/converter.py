@@ -106,7 +106,7 @@ def resolve_factory_ports(
     """Resolve ports from a factory by calling get_node_config.
 
     Args:
-        factory_path: Import path to the factory module (e.g. "netrun.node_factories.function").
+        factory_path: Import path to the factory module (e.g. "netrun.node_factories.from_function").
         factory_args: Arguments to pass to get_node_config.
         working_dir: Optional working directory to add to sys.path for imports.
 
