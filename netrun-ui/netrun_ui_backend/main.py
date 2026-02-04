@@ -41,6 +41,19 @@ async def health_check():
     return {"status": "healthy"}
 
 
+@app.get("/api/config")
+async def get_config():
+    """Return server configuration including working directory.
+
+    The working directory is set by the CLI via NETRUN_UI_WORKING_DIR env var,
+    or falls back to the server's current working directory.
+    """
+    working_dir = os.environ.get("NETRUN_UI_WORKING_DIR") or os.getcwd()
+    return {
+        "working_dir": working_dir,
+    }
+
+
 def get_static_dir() -> Path | None:
     """Get the static files directory if it exists."""
     # Check for static files in the package directory

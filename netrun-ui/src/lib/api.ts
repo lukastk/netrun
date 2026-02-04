@@ -172,6 +172,10 @@ export interface ValidateConfigResponse {
 	netrun_available: boolean;
 }
 
+export interface ServerConfigResponse {
+	working_dir: string;
+}
+
 class ApiClient {
 	private baseUrl: string;
 
@@ -409,6 +413,19 @@ class ApiClient {
 			method: 'POST',
 			body: JSON.stringify({ nodes, edges, meta, extra_data }),
 		});
+	}
+
+	/**
+	 * Get server configuration including working directory
+	 */
+	async getServerConfig(): Promise<ServerConfigResponse> {
+		// Note: /api/config is served directly, not under /api/files etc.
+		const url = this.baseUrl.replace('/api', '') + '/api/config';
+		const response = await fetch(url);
+		if (!response.ok) {
+			throw new Error(`Failed to get server config: ${response.statusText}`);
+		}
+		return response.json();
 	}
 }
 
