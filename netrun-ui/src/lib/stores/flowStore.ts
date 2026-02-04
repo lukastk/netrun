@@ -634,10 +634,89 @@ export async function loadFromFile(path: string): Promise<void> {
 	addRecentFile(path);
 }
 
+// Save inline subgraph changes back to parent tab
+export function saveInlineSubgraphToParent(): boolean {
+	const tab = get(activeTab);
+	if (!tab || !tab.subgraphContext?.isInline) return false;
+
+	const parentTab = get(tabs).find(t => t.id === tab.subgraphContext!.parentTabId);
+	if (!parentTab) return false;
+
+	// Find the subgraph node in the parent
+	const nodeId = tab.subgraphContext.nodeId;
+	const parentNode = parentTab.nodes.find(n => n.id === nodeId);
+	if (!parentNode || parentNode.data.nodeType !== 'subgraph') return false;
+
+	// Build the updated subgraph config from current tab's nodes/edges
+	const updatedConfig = {
+		...(parentNode.data as SubgraphNodeData)._subgraphConfig,
+		nodes: tab.nodes.map(n => {
+			// Convert UI node back to config format (simplified)
+			const nodeData = n.data;
+			return {
+				type: nodeData.nodeType === 'subgraph' ? 'subgraph' : 'node',
+				name: nodeData.label,
+				in_ports: Object.fromEntries(
+					nodeData.inPorts.map(p => [p.name, { port_type: p.type || null }])
+				),
+				out_ports: Object.fromEntries(
+					nodeData.outPorts.map(p => [p.name, { port_type: p.type || null }])
+				),
+				meta: {
+					ui: {
+						id: n.id,
+						label: nodeData.label,
+						position: n.position,
+					}
+				}
+			};
+		}),
+		edges: tab.edges.map(e => ({
+			source_str: `${tab.nodes.find(n => n.id === e.source)?.data.label || e.source}.${e.sourceHandle || 'out'}`,
+			target_str: `${tab.nodes.find(n => n.id === e.target)?.data.label || e.target}.${e.targetHandle || 'in'}`,
+		})),
+	};
+
+	// Update the parent node with the new config
+	const updatedNodes = parentTab.nodes.map(n => {
+		if (n.id === nodeId) {
+			return {
+				...n,
+				data: {
+					...n.data,
+					nodeCount: tab.nodes.length,
+					_subgraphConfig: updatedConfig,
+				}
+			};
+		}
+		return n;
+	});
+
+	// Update parent tab
+	updateTab(parentTab.id, {
+		nodes: updatedNodes as FlowNode[],
+		isDirty: true,
+	});
+
+	// Mark current tab as clean
+	updateActiveTab({ isDirty: false });
+
+	return true;
+}
+
 // Save to file via API
 export async function saveToFile(path?: string): Promise<void> {
 	const tab = get(activeTab);
 	if (!tab) throw new Error('No active tab');
+
+	// Handle inline subgraphs - save to parent instead
+	if (tab.subgraphContext?.isInline) {
+		const saved = saveInlineSubgraphToParent();
+		if (saved) {
+			return; // Successfully saved to parent
+		}
+		throw new Error('Failed to save inline subgraph to parent');
+	}
 
 	const savePath = path || tab.filePath;
 	if (!savePath) {
