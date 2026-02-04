@@ -323,7 +323,8 @@ export async function openSubgraphTab(nodeId: string, data: SubgraphNodeData): P
 		const configPath = subgraphConfig?.path as string | undefined;
 		const configNodes = subgraphConfig?.nodes as unknown[] | undefined;
 		const isFileReference = configPath || (data.source && data.source !== 'Inline');
-		const isInline = !!(configNodes && configNodes.length > 0);
+		// An inline subgraph has nodes array (even if empty) or no path specified
+		const isInline = !isFileReference;
 
 		let resolvedFilePath: string | null = null;
 
@@ -340,17 +341,20 @@ export async function openSubgraphTab(nodeId: string, data: SubgraphNodeData): P
 			edges = response.edges;
 			// The API returns the resolved absolute path in response.source
 			resolvedFilePath = response.source;
-		} else if (isInline && subgraphConfig) {
-			// Load from inline config
-			const response = await api.loadSubgraph(undefined, subgraphConfig, basePath);
-			nodes = response.nodes.map(node => ({
-				id: node.id,
-				type: node.type as 'netrunNode' | 'subgraphNode',
-				position: node.position,
-				data: node.data
-			})) as FlowNode[];
-			edges = response.edges;
-			// Inline subgraphs don't have their own file
+		} else if (isInline) {
+			// Load from inline config - may be empty if subgraph has no nodes yet
+			if (subgraphConfig && (configNodes || subgraphConfig.edges)) {
+				const response = await api.loadSubgraph(undefined, subgraphConfig, basePath);
+				nodes = response.nodes.map(node => ({
+					id: node.id,
+					type: node.type as 'netrunNode' | 'subgraphNode',
+					position: node.position,
+					data: node.data
+				})) as FlowNode[];
+				edges = response.edges;
+			}
+			// If no subgraphConfig or empty, nodes/edges stay as empty arrays
+			// which is correct for an empty inline subgraph
 			resolvedFilePath = null;
 		}
 
