@@ -83,6 +83,16 @@ export interface FactoryPreviewResponse {
 	error: string | null;
 }
 
+export interface BuiltinFactory {
+	import_path: string;
+	name: string;
+	docstring: string | null;
+}
+
+export interface ListBuiltinFactoriesResponse {
+	factories: BuiltinFactory[];
+}
+
 export interface ApiError {
 	detail: string;
 }
@@ -260,6 +270,15 @@ class ApiClient {
 		return this.request('/factories/validate-import', {
 			method: 'POST',
 			body: JSON.stringify({ import_path: importPath }),
+		});
+	}
+
+	/**
+	 * List built-in factories from netrun.node_factories
+	 */
+	async listBuiltinFactories(): Promise<ListBuiltinFactoriesResponse> {
+		return this.request<ListBuiltinFactoriesResponse>('/factories/builtin', {
+			method: 'GET',
 		});
 	}
 
