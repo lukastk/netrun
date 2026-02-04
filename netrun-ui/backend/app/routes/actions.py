@@ -15,7 +15,8 @@ class ExecuteActionRequest(BaseModel):
     """Request to execute an action command."""
     command: str
     working_directory: str | None = None
-    env: dict[str, str] | None = None
+    env: dict[str, str] | None = None  # Project-level custom variables
+    node_env: dict[str, str] | None = None  # Node-level custom variables (override project)
     # Variables for template resolution
     node_name: str | None = None
     node_id: str | None = None
@@ -41,8 +42,13 @@ def resolve_template(
     project_root: str | None,
     default_cmd: str | None,
     custom_env: dict[str, str] | None,
+    node_env: dict[str, str] | None = None,
 ) -> str:
-    """Resolve template variables in a command string.
+    """Resolve template variables for PREVIEW purposes only.
+
+    This function is used to show users what their command will look like
+    after variable expansion. The actual execution uses real environment
+    variables and lets the shell handle expansion.
 
     Supported variables:
     - $NODE_NAME or ${NODE_NAME} - Node's label/name
@@ -51,7 +57,8 @@ def resolve_template(
     - $NET_FILE_DIR or ${NET_FILE_DIR} - Directory containing the net file
     - $PROJECT_ROOT or ${PROJECT_ROOT} - Configured project root
     - $DEFAULT_CMD or ${DEFAULT_CMD} - Configured default command
-    - Any custom variables from env
+    - Any custom variables from env (project-level)
+    - Any custom variables from node_env (node-level, takes precedence)
     """
     result = template
 
@@ -60,19 +67,24 @@ def resolve_template(
     if net_file_path:
         net_file_dir = str(Path(net_file_path).parent)
 
-    # Build variable mapping
-    variables = {
-        "NODE_NAME": node_name or "",
-        "NODE_ID": node_id or "",
-        "NET_FILE_PATH": net_file_path or "",
-        "NET_FILE_DIR": net_file_dir or "",
-        "PROJECT_ROOT": project_root or net_file_dir or "",
-        "DEFAULT_CMD": default_cmd or "",
-    }
+    # Build variable mapping (order matters for precedence)
+    variables: dict[str, str] = {}
 
-    # Add custom environment variables
+    # 1. Built-in variables (lowest precedence for overrides)
+    variables["NODE_NAME"] = node_name or ""
+    variables["NODE_ID"] = node_id or ""
+    variables["NET_FILE_PATH"] = net_file_path or ""
+    variables["NET_FILE_DIR"] = net_file_dir or ""
+    variables["PROJECT_ROOT"] = project_root or net_file_dir or ""
+    variables["DEFAULT_CMD"] = default_cmd or ""
+
+    # 2. Project-level custom variables
     if custom_env:
         variables.update(custom_env)
+
+    # 3. Node-level custom variables (highest precedence - can override anything)
+    if node_env:
+        variables.update(node_env)
 
     # Replace ${VAR} syntax first (more specific)
     for var_name, var_value in variables.items():
@@ -119,29 +131,19 @@ def resolve_project_root(
 
 @router.post("/execute", response_model=ExecuteActionResponse)
 async def execute_action(request: ExecuteActionRequest) -> ExecuteActionResponse:
-    """Execute a shell command with template variable resolution.
+    """Execute a shell command with environment variables set.
 
     This endpoint:
-    1. Resolves template variables in the command
-    2. Sets up the working directory and environment
-    3. Executes the command asynchronously
+    1. Sets up environment variables (built-in + project + node level)
+    2. Sets up the working directory
+    3. Executes the ORIGINAL command (shell expands $VAR references)
     4. Returns stdout, stderr, and exit code
+    5. Also returns resolved_command for preview/display purposes
     """
     # Resolve project root
     resolved_project_root = resolve_project_root(
         request.project_root,
         request.net_file_path,
-    )
-
-    # Resolve template variables
-    resolved_command = resolve_template(
-        request.command,
-        request.node_name,
-        request.node_id,
-        request.net_file_path,
-        resolved_project_root,
-        request.default_cmd,
-        request.env,
     )
 
     # Determine working directory
@@ -158,12 +160,14 @@ async def execute_action(request: ExecuteActionRequest) -> ExecuteActionResponse
             detail=f"Working directory does not exist: {working_dir}"
         )
 
-    # Build environment
+    # Build environment with proper precedence:
+    # 1. System environment (lowest)
+    # 2. Built-in variables (NODE_NAME, etc.)
+    # 3. Project-level custom variables
+    # 4. Node-level custom variables (highest - can override anything)
     env = os.environ.copy()
-    if request.env:
-        env.update(request.env)
 
-    # Add resolved variables to environment as well
+    # Built-in variables
     env["NODE_NAME"] = request.node_name or ""
     env["NODE_ID"] = request.node_id or ""
     env["NET_FILE_PATH"] = request.net_file_path or ""
@@ -171,10 +175,30 @@ async def execute_action(request: ExecuteActionRequest) -> ExecuteActionResponse
     env["PROJECT_ROOT"] = resolved_project_root or ""
     env["DEFAULT_CMD"] = request.default_cmd or ""
 
+    # Project-level custom variables
+    if request.env:
+        env.update(request.env)
+
+    # Node-level custom variables (highest precedence)
+    if request.node_env:
+        env.update(request.node_env)
+
+    # Compute resolved command for preview/display only
+    resolved_command = resolve_template(
+        request.command,
+        request.node_name,
+        request.node_id,
+        request.net_file_path,
+        resolved_project_root,
+        request.default_cmd,
+        request.env,
+        request.node_env,
+    )
+
     try:
-        # Execute the command
+        # Execute the ORIGINAL command - shell will expand $VAR references
         process = await asyncio.create_subprocess_shell(
-            resolved_command,
+            request.command,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
             cwd=working_dir,
@@ -221,7 +245,8 @@ class ResolveTemplateRequest(BaseModel):
     net_file_path: str | None = None
     project_root: str | None = None
     default_cmd: str | None = None
-    env: dict[str, str] | None = None
+    env: dict[str, str] | None = None  # Project-level custom variables
+    node_env: dict[str, str] | None = None  # Node-level custom variables
 
 
 class ResolveTemplateResponse(BaseModel):
@@ -248,6 +273,7 @@ async def resolve_action_template(request: ResolveTemplateRequest) -> ResolveTem
         resolved_project_root,
         request.default_cmd,
         request.env,
+        request.node_env,
     )
 
     return ResolveTemplateResponse(resolved=resolved)
