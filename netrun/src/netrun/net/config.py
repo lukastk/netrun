@@ -410,6 +410,81 @@ class SalvoConditionConfig(BaseModel):
         )
 
 # %% nbs/netrun/05_net/00_config.ipynb 22
+def _generate_default_in_salvo_conditions(
+    in_ports: dict[str, PortConfig]
+) -> dict[str, SalvoConditionConfig]:
+    """Generate default input salvo condition.
+
+    Default: Fires when all input ports have at least one packet.
+    Takes all packets from all ports.
+
+    Args:
+        in_ports: The input port configurations.
+
+    Returns:
+        Dict with a single "default" salvo condition.
+    """
+    if not in_ports:
+        # No input ports - use always-true condition
+        return {
+            "default": SalvoConditionConfig(
+                max_salvos=MaxSalvosFiniteConfig(max=1),
+                ports={},
+                term=SalvoConditionTermTrueConfig(),
+            )
+        }
+
+    # Build AND condition: all ports must be non-empty
+    port_terms = [
+        SalvoConditionTermPortConfig(port_name=name, state=PortStateNonEmptyConfig())
+        for name in in_ports.keys()
+    ]
+
+    if len(port_terms) == 1:
+        term = port_terms[0]
+    else:
+        term = SalvoConditionTermAndConfig(terms=port_terms)
+
+    # Include all packets from all ports
+    ports = {name: PacketCountAllConfig() for name in in_ports.keys()}
+
+    return {
+        "default": SalvoConditionConfig(
+            max_salvos=MaxSalvosFiniteConfig(max=1),
+            ports=ports,
+            term=term,
+        )
+    }
+
+
+def _generate_default_out_salvo_conditions(
+    out_ports: dict[str, PortConfig]
+) -> dict[str, SalvoConditionConfig]:
+    """Generate default output salvo condition.
+
+    Default: Fires once per epoch, sends all packets from all output ports.
+
+    Args:
+        out_ports: The output port configurations.
+
+    Returns:
+        Dict with a single "default" salvo condition, or empty dict if no output ports.
+    """
+    if not out_ports:
+        return {}
+
+    # Include all packets from all output ports
+    ports = {name: PacketCountAllConfig() for name in out_ports.keys()}
+
+    return {
+        "default": SalvoConditionConfig(
+            max_salvos=MaxSalvosFiniteConfig(max=1),
+            ports=ports,
+            term=SalvoConditionTermTrueConfig(),
+        )
+    }
+
+# %% nbs/netrun/05_net/00_config.ipynb 24
 class PortRefConfig(BaseModel):
     """Reference to a specific port on a node."""
     node_name: str
@@ -465,7 +540,7 @@ class EdgeConfig(BaseModel):
             self.get_target().to_netrun_sim(),
         )
 
-# %% nbs/netrun/05_net/00_config.ipynb 25
+# %% nbs/netrun/05_net/00_config.ipynb 27
 PacketID = NewType("PacketID", ULID)
 
 NodeExecutionFunc = Callable
@@ -501,7 +576,7 @@ Args:
     ctx: NodeFailureContext
 """;
 
-# %% nbs/netrun/05_net/00_config.ipynb 26
+# %% nbs/netrun/05_net/00_config.ipynb 28
 class NodeExecutionConfig(BaseModel):
     """Runtime configuration for a node's execution behavior."""
     model_config = {"arbitrary_types_allowed": True}
@@ -600,7 +675,7 @@ class NodeExecutionConfig(BaseModel):
             return self.model_copy(update=updates)
         return self
 
-# %% nbs/netrun/05_net/00_config.ipynb 27
+# %% nbs/netrun/05_net/00_config.ipynb 29
 class NodeConfig(BaseModel):
     """Configuration for a node's graph structure (ports and salvo conditions).
 
@@ -628,8 +703,10 @@ class NodeConfig(BaseModel):
     name: str = ""
     in_ports: dict[str, PortConfig] = Field(default_factory=dict)
     out_ports: dict[str, PortConfig] = Field(default_factory=dict)
-    in_salvo_conditions: dict[str, SalvoConditionConfig] = Field(default_factory=dict)
-    out_salvo_conditions: dict[str, SalvoConditionConfig] = Field(default_factory=dict)
+    in_salvo_conditions: dict[str, SalvoConditionConfig] | None = None
+    """Input salvo conditions. None = generate defaults on resolve(), {} = no conditions."""
+    out_salvo_conditions: dict[str, SalvoConditionConfig] | None = None
+    """Output salvo conditions. None = generate defaults on resolve(), {} = no conditions."""
 
     execution_config: NodeExecutionConfig | None = None
 
@@ -783,8 +860,17 @@ class NodeConfig(BaseModel):
             # Merge: base config first, then any explicit overrides from self
             merged_in_ports = {**base_config.in_ports, **self.in_ports}
             merged_out_ports = {**base_config.out_ports, **self.out_ports}
-            merged_in_salvo = {**base_config.in_salvo_conditions, **self.in_salvo_conditions}
-            merged_out_salvo = {**base_config.out_salvo_conditions, **self.out_salvo_conditions}
+
+            # Merge salvo conditions (None means "use factory's", {} means "override with empty")
+            if self.in_salvo_conditions is not None:
+                merged_in_salvo = {**(base_config.in_salvo_conditions or {}), **self.in_salvo_conditions}
+            else:
+                merged_in_salvo = base_config.in_salvo_conditions  # Keep None or factory value
+
+            if self.out_salvo_conditions is not None:
+                merged_out_salvo = {**(base_config.out_salvo_conditions or {}), **self.out_salvo_conditions}
+            else:
+                merged_out_salvo = base_config.out_salvo_conditions  # Keep None or factory value
 
             # Use explicit name if provided, else factory name
             name = self.name if self.name else base_config.name
@@ -822,18 +908,32 @@ class NodeConfig(BaseModel):
             if resolved_exec is not result.execution_config:
                 result = result.model_copy(update={"execution_config": resolved_exec})
 
+        # Generate default salvo conditions if None
+        updates = {}
+        if result.in_salvo_conditions is None:
+            updates["in_salvo_conditions"] = _generate_default_in_salvo_conditions(result.in_ports)
+        if result.out_salvo_conditions is None:
+            updates["out_salvo_conditions"] = _generate_default_out_salvo_conditions(result.out_ports)
+        if updates:
+            result = result.model_copy(update=updates)
+
         return result
 
     def to_netrun_sim(self) -> netrun_sim.Node:
+        # Salvo conditions should be resolved before calling to_netrun_sim
+        # but handle None gracefully by treating as empty dict
+        in_salvos = self.in_salvo_conditions or {}
+        out_salvos = self.out_salvo_conditions or {}
+
         return netrun_sim.Node(
             name=self.name,
             in_ports={name: port.to_netrun_sim() for name, port in self.in_ports.items()},
             out_ports={name: port.to_netrun_sim() for name, port in self.out_ports.items()},
-            in_salvo_conditions={name: sc.to_netrun_sim() for name, sc in self.in_salvo_conditions.items()},
-            out_salvo_conditions={name: sc.to_netrun_sim() for name, sc in self.out_salvo_conditions.items()},
+            in_salvo_conditions={name: sc.to_netrun_sim() for name, sc in in_salvos.items()},
+            out_salvo_conditions={name: sc.to_netrun_sim() for name, sc in out_salvos.items()},
         )
 
-# %% nbs/netrun/05_net/00_config.ipynb 29
+# %% nbs/netrun/05_net/00_config.ipynb 31
 class ExposedPortConfig(BaseModel):
     """Maps an exposed port to an internal node's port.
 
@@ -861,11 +961,11 @@ class ExposedPortConfig(BaseModel):
         """Get the name used for the exposed port."""
         return self.rename if self.rename is not None else self.internal_port
 
-# %% nbs/netrun/05_net/00_config.ipynb 31
+# %% nbs/netrun/05_net/00_config.ipynb 33
 from pathlib import Path
 import json
 
-# %% nbs/netrun/05_net/00_config.ipynb 32
+# %% nbs/netrun/05_net/00_config.ipynb 34
 class SubgraphConfig(BaseModel):
     """A group of nodes that acts as a single node.
 
@@ -1132,14 +1232,14 @@ class SubgraphConfig(BaseModel):
 # Need to rebuild models for forward references
 SubgraphConfig.model_rebuild()
 
-# %% nbs/netrun/05_net/00_config.ipynb 34
+# %% nbs/netrun/05_net/00_config.ipynb 36
 # Type alias for nodes that can be either regular nodes or subgraphs
 GraphNodeConfig = Annotated[
     NodeConfig | SubgraphConfig,
     Field(discriminator="type")
 ]
 
-# %% nbs/netrun/05_net/00_config.ipynb 35
+# %% nbs/netrun/05_net/00_config.ipynb 37
 class GraphConfig(BaseModel):
     """Configuration for a complete flow-based network graph.
 
@@ -1297,7 +1397,7 @@ class GraphConfig(BaseModel):
         edges = [edge.to_netrun_sim() for edge in self.edges]
         return netrun_sim.Graph(nodes, edges)
 
-# %% nbs/netrun/05_net/00_config.ipynb 38
+# %% nbs/netrun/05_net/00_config.ipynb 40
 class OutputQueueConfig(BaseModel):
     """Configuration for an output queue.
 
@@ -1309,7 +1409,7 @@ class OutputQueueConfig(BaseModel):
     ports: list[tuple[str, str]]
     """List of (node_name, port_name) tuples that feed this queue."""
 
-# %% nbs/netrun/05_net/00_config.ipynb 40
+# %% nbs/netrun/05_net/00_config.ipynb 42
 class MainPoolConfig(BaseModel):
     """Configuration for running in the main thread/event loop."""
     type: Literal["main"] = "main"
@@ -1350,7 +1450,7 @@ class PoolConfig(BaseModel):
     capture_prints: bool = True
     spec: PoolSpecConfig
 
-# %% nbs/netrun/05_net/00_config.ipynb 42
+# %% nbs/netrun/05_net/00_config.ipynb 44
 class NetConfig(BaseModel):
     """Configuration for a Net."""
     model_config = {"arbitrary_types_allowed": True}

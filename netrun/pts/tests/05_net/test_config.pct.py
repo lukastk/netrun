@@ -595,9 +595,11 @@ def test_node_graph_config_minimal():
     assert config.name == "A"
     assert config.in_ports == {}
     assert config.out_ports == {}
-    assert config.in_salvo_conditions == {}
-    assert config.out_salvo_conditions == {}
+    # None means "generate defaults on resolve()"
+    assert config.in_salvo_conditions is None
+    assert config.out_salvo_conditions is None
 
+    # to_netrun_sim() handles None gracefully (treats as empty)
     result = config.to_netrun_sim()
     assert result.name == "A"
 
@@ -655,6 +657,128 @@ def test_node_graph_config_with_salvo_conditions():
 
 # %%
 test_node_graph_config_with_salvo_conditions();
+
+# %%
+#|export
+def test_node_config_resolve_generates_default_salvo_conditions():
+    """Test that resolve() generates default salvo conditions when None."""
+    # Test with input ports
+    config = NodeConfig(
+        name="TestNode",
+        in_ports={"a": PortConfig(), "b": PortConfig()},
+        out_ports={"out": PortConfig()},
+        # in_salvo_conditions and out_salvo_conditions default to None
+    )
+    assert config.in_salvo_conditions is None
+    assert config.out_salvo_conditions is None
+
+    resolved = config.resolve()
+
+    # Should have generated "default" salvo condition
+    assert "default" in resolved.in_salvo_conditions
+    assert "default" in resolved.out_salvo_conditions
+
+    # Input condition should include both ports
+    in_cond = resolved.in_salvo_conditions["default"]
+    assert "a" in in_cond.ports
+    assert "b" in in_cond.ports
+
+    # Output condition should include the output port
+    out_cond = resolved.out_salvo_conditions["default"]
+    assert "out" in out_cond.ports
+
+# %%
+test_node_config_resolve_generates_default_salvo_conditions();
+
+# %%
+#|export
+def test_node_config_resolve_preserves_empty_dict():
+    """Test that resolve() preserves explicit empty dict (no conditions)."""
+    config = NodeConfig(
+        name="TestNode",
+        in_ports={"a": PortConfig()},
+        in_salvo_conditions={},  # Explicit empty - means "no conditions"
+        out_salvo_conditions={},  # Explicit empty
+    )
+
+    resolved = config.resolve()
+
+    # Empty dict should be preserved, not auto-generated
+    assert resolved.in_salvo_conditions == {}
+    assert resolved.out_salvo_conditions == {}
+
+# %%
+test_node_config_resolve_preserves_empty_dict();
+
+# %%
+#|export
+def test_node_config_resolve_preserves_explicit_conditions():
+    """Test that resolve() preserves explicitly provided salvo conditions."""
+    custom_condition = SalvoConditionConfig(
+        max_salvos=MaxSalvosFiniteConfig(max=1),
+        ports={"a": PacketCountAllConfig()},
+        term=SalvoConditionTermTrueConfig(),
+    )
+    config = NodeConfig(
+        name="TestNode",
+        in_ports={"a": PortConfig()},
+        in_salvo_conditions={"custom": custom_condition},
+    )
+
+    resolved = config.resolve()
+
+    # Custom condition should be preserved
+    assert "custom" in resolved.in_salvo_conditions
+    assert "default" not in resolved.in_salvo_conditions
+
+    # out_salvo_conditions was None, should get default
+    assert resolved.out_salvo_conditions == {}  # No output ports
+
+# %%
+test_node_config_resolve_preserves_explicit_conditions();
+
+# %%
+#|export
+def test_node_config_resolve_no_input_ports():
+    """Test default salvo condition for node with no input ports."""
+    config = NodeConfig(
+        name="SourceNode",
+        out_ports={"out": PortConfig()},
+    )
+
+    resolved = config.resolve()
+
+    # Should have "always true" input condition
+    assert "default" in resolved.in_salvo_conditions
+    in_cond = resolved.in_salvo_conditions["default"]
+    assert in_cond.ports == {}
+    assert isinstance(in_cond.term, SalvoConditionTermTrueConfig)
+
+    # Should have output condition
+    assert "default" in resolved.out_salvo_conditions
+
+# %%
+test_node_config_resolve_no_input_ports();
+
+# %%
+#|export
+def test_node_config_resolve_no_output_ports():
+    """Test default salvo condition for node with no output ports."""
+    config = NodeConfig(
+        name="SinkNode",
+        in_ports={"in": PortConfig()},
+    )
+
+    resolved = config.resolve()
+
+    # Should have input condition
+    assert "default" in resolved.in_salvo_conditions
+
+    # Should have empty output conditions (no output ports)
+    assert resolved.out_salvo_conditions == {}
+
+# %%
+test_node_config_resolve_no_output_ports();
 
 # %% [markdown]
 # ## Graph Config Tests
