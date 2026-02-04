@@ -18,6 +18,7 @@
 		createSubgraphFromSelection,
 	} from '$lib/stores/flowStore';
 	import { openCommandPalette } from '$lib/stores/commandStore';
+	import { resolveFilePath } from '$lib/stores/fileExplorerStore';
 
 	// Validation state
 	let lastValidationResult = $state<{ valid: boolean; errorCount: number } | null>(null);
@@ -126,17 +127,18 @@
 				return;
 			}
 		}
-		const path = prompt('Enter full file path (e.g., /path/to/my_flow.netrun.json):');
-		if (!path) return;
+		const inputPath = prompt('Enter filename (relative to current folder) or absolute path:', 'my_flow.netrun.json');
+		if (!inputPath) return;
 
+		const fullPath = resolveFilePath(inputPath);
 		// Determine format from extension
-		const format = path.endsWith('.toml') ? 'toml' : 'json';
-		const fileName = path.split('/').pop() || 'Untitled';
+		const format = fullPath.endsWith('.toml') ? 'toml' : 'json';
+		const fileName = fullPath.split('/').pop() || 'Untitled';
 
 		clearFlow(format, fileName);
 
 		try {
-			await saveToFile(path);
+			await saveToFile(fullPath);
 		} catch (e) {
 			alert(`Failed to create file: ${(e as Error).message}`);
 		}

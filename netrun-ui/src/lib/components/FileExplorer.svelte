@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { api, type FileEntry } from '$lib/api';
 	import { loadFromFile, recentFiles, removeRecentFile } from '$lib/stores/flowStore';
-	import { fileExplorerRefreshTrigger } from '$lib/stores/fileExplorerStore';
+	import { fileExplorerRefreshTrigger, setCurrentExplorerPath } from '$lib/stores/fileExplorerStore';
 
 	// Props
 	interface Props {
@@ -29,6 +29,8 @@
 			currentPath = response.path;
 			parentPath = response.parent;
 			entries = response.entries;
+			// Update global current path for relative path resolution
+			setCurrentExplorerPath(response.path);
 		} catch (e) {
 			error = (e as Error).message;
 		} finally {
