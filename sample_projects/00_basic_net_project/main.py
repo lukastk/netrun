@@ -50,11 +50,15 @@ async def main():
         for packet in results:
             print(f"  {packet.value}")
 
-        # Show captured print logs
+        # Show captured print logs from all nodes
         print()
-        print("Logs from format_result node:")
-        for timestamp, message in net.get_node_log("format_result"):
-            print(f"  [{timestamp.strftime('%H:%M:%S')}] {message}", end="")
+        print("Node Logs:")
+        for node_name in ["double", "add", "format_result"]:
+            logs = net.get_node_log(node_name)
+            if logs:
+                print(f"\n  [{node_name}]")
+                for timestamp, message in logs:
+                    print(f"    {timestamp.strftime('%H:%M:%S.%f')[:-3]} | {message}", end="")
 
 
 if __name__ == "__main__":
