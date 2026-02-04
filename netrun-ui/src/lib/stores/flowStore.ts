@@ -1007,25 +1007,46 @@ export function saveInlineSubgraphToParent(): boolean {
 	const updatedConfig = {
 		...(parentNode.data as SubgraphNodeData)._subgraphConfig,
 		nodes: tab.nodes.map(n => {
-			// Convert UI node back to config format (simplified)
+			// Convert UI node back to config format
 			const nodeData = n.data;
-			return {
-				type: nodeData.nodeType === 'subgraph' ? 'subgraph' : 'node',
-				name: nodeData.label,
-				in_ports: Object.fromEntries(
-					nodeData.inPorts.map(p => [p.name, { port_type: p.type || null }])
-				),
-				out_ports: Object.fromEntries(
-					nodeData.outPorts.map(p => [p.name, { port_type: p.type || null }])
-				),
-				meta: {
-					ui: {
-						id: n.id,
-						label: nodeData.label,
-						position: n.position,
+
+			if (nodeData.nodeType === 'subgraph') {
+				// For subgraph nodes, preserve the full _subgraphConfig to maintain nested content
+				const subgraphData = nodeData as SubgraphNodeData;
+				return {
+					type: 'subgraph',
+					name: nodeData.label,
+					// Spread the stored subgraph config (includes nodes, edges, exposed_ports, etc.)
+					...(subgraphData._subgraphConfig || {}),
+					// Update meta with current UI state
+					meta: {
+						ui: {
+							id: n.id,
+							label: nodeData.label,
+							position: n.position,
+						}
 					}
-				}
-			};
+				};
+			} else {
+				// Regular node
+				return {
+					type: 'node',
+					name: nodeData.label,
+					in_ports: Object.fromEntries(
+						nodeData.inPorts.map(p => [p.name, { port_type: p.type || null }])
+					),
+					out_ports: Object.fromEntries(
+						nodeData.outPorts.map(p => [p.name, { port_type: p.type || null }])
+					),
+					meta: {
+						ui: {
+							id: n.id,
+							label: nodeData.label,
+							position: n.position,
+						}
+					}
+				};
+			}
 		}),
 		edges: tab.edges.map(e => ({
 			source_str: `${tab.nodes.find(n => n.id === e.source)?.data.label || e.source}.${e.sourceHandle || 'out'}`,
