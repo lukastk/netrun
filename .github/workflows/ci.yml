@@ -115,7 +115,6 @@ jobs:
   netrun:
     name: netrun (${{ matrix.os }}, Python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
-    needs: [netrun-sim-python]  # netrun depends on netrun-sim
     defaults:
       run:
         working-directory: netrun
@@ -179,7 +178,6 @@ jobs:
   netrun-ui:
     name: netrun-ui (${{ matrix.os }}, Python ${{ matrix.python-version }})
     runs-on: ${{ matrix.os }}
-    needs: [netrun]  # netrun-ui depends on netrun
     defaults:
       run:
         working-directory: netrun-ui
