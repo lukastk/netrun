@@ -2,7 +2,8 @@
  * API client for netrun-ui backend
  */
 
-const API_BASE = 'http://127.0.0.1:8000/api';
+// In production, API is served from same origin. In dev, it's on port 8000.
+const API_BASE = import.meta.env.DEV ? 'http://127.0.0.1:8000/api' : '/api';
 
 export interface PortInfo {
 	name: string;
