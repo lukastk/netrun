@@ -11,14 +11,20 @@ Special parameters:
 """
 
 
-def double(x: int) -> int:
+def double(x: int, print) -> int:
     """Double the input value."""
-    return x * 2
+    print(f"Doubling {x}")
+    result = x * 2
+    print(f"Result: {result}")
+    return result
 
 
-def add(a: int, b: int) -> int:
+def add(a: int, b: int, print) -> int:
     """Add two numbers together."""
-    return a + b
+    print(f"Adding {a} + {b}")
+    result = a + b
+    print(f"Result: {result}")
+    return result
 
 
 def format_result(value: int, print) -> str:
