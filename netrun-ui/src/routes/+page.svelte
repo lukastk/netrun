@@ -8,8 +8,10 @@
 	import FlowEditor from '$lib/components/FlowEditor.svelte';
 	import FileExplorer from '$lib/components/FileExplorer.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
+	import Modal from '$lib/components/Modal.svelte';
 	import { nodes, currentFilePath, activeTab, recentFiles, loadFromFile, clearFlow, isNewFile, saveToFile } from '$lib/stores/flowStore';
 	import { resolveFilePath } from '$lib/stores/fileExplorerStore';
+	import { showPrompt, showAlert } from '$lib/stores/modalStore';
 	import { initializeCommands } from '$lib/commands';
 	import { handleKeyboardEvent } from '$lib/stores/keyboardStore';
 
@@ -44,7 +46,10 @@
 		try {
 			await loadFromFile(path);
 		} catch (e) {
-			alert(`Failed to open: ${(e as Error).message}`);
+			await showAlert({
+				title: 'Error',
+				message: `Failed to open: ${(e as Error).message}`,
+			});
 		}
 	}
 </script>
@@ -79,8 +84,14 @@
 							<h2>Welcome to netrun-ui</h2>
 							<p>Visual editor for NetConfig files</p>
 							<div class="empty-actions">
-								<button class="primary" onclick={() => {
-									const path = prompt('Enter file path to open:');
+								<button class="primary" onclick={async () => {
+									const path = await showPrompt({
+										title: 'Open File',
+										message: 'Enter file path to open',
+										placeholder: '/path/to/file.netrun.json',
+										inputType: 'path',
+										confirmText: 'Open',
+									});
 									if (path) {
 										openRecentFile(path);
 									}
@@ -88,7 +99,14 @@
 									Open File
 								</button>
 								<button onclick={async () => {
-									const inputPath = prompt('Enter filename (relative to current folder) or absolute path:', 'my_flow.netrun.json');
+									const inputPath = await showPrompt({
+										title: 'Create New File',
+										message: 'Enter filename (relative to current folder) or absolute path',
+										placeholder: 'my_flow.netrun.json',
+										defaultValue: 'my_flow.netrun.json',
+										inputType: 'path',
+										confirmText: 'Create',
+									});
 									if (!inputPath) return;
 
 									const fullPath = resolveFilePath(inputPath);
@@ -100,7 +118,10 @@
 									try {
 										await saveToFile(fullPath);
 									} catch (e) {
-										alert(`Failed to create file: ${(e as Error).message}`);
+										await showAlert({
+											title: 'Error',
+											message: `Failed to create file: ${(e as Error).message}`,
+										});
 									}
 								}}>
 									New File
@@ -137,6 +158,9 @@
 
 	<!-- Command Palette (modal overlay) -->
 	<CommandPalette />
+
+	<!-- Modal dialogs -->
+	<Modal />
 </div>
 
 <style>
