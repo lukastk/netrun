@@ -1,12 +1,36 @@
 <script lang="ts">
 	import { SvelteFlowProvider } from '@xyflow/svelte';
+	import { onMount } from 'svelte';
 	import Toolbar from '$lib/components/Toolbar.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
 	import Breadcrumb from '$lib/components/Breadcrumb.svelte';
 	import Sidebar from '$lib/components/Sidebar.svelte';
 	import FlowEditor from '$lib/components/FlowEditor.svelte';
 	import FileExplorer from '$lib/components/FileExplorer.svelte';
+	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import { nodes, currentFilePath, activeTab, recentFiles, loadFromFile } from '$lib/stores/flowStore';
+	import { initializeCommands } from '$lib/commands';
+	import { handleKeyboardEvent } from '$lib/stores/keyboardStore';
+
+	// Initialize command system
+	onMount(() => {
+		initializeCommands();
+	});
+
+	// Global keyboard handler
+	function handleGlobalKeydown(event: KeyboardEvent) {
+		// Don't handle if target is an input/textarea (except for global shortcuts)
+		const target = event.target as HTMLElement;
+		const isInput = target instanceof HTMLInputElement ||
+			target instanceof HTMLTextAreaElement ||
+			target.getAttribute('contenteditable') === 'true';
+
+		// Let the keyboard store handle the event
+		// For inputs, only handle if it's a meta/ctrl shortcut (not single keys)
+		if (!isInput || event.metaKey || event.ctrlKey) {
+			handleKeyboardEvent(event);
+		}
+	}
 
 	// Initial path for file explorer (from environment variable or default to home)
 	const initialPath = import.meta.env.VITE_INITIAL_PATH || '~';
@@ -23,6 +47,8 @@
 		}
 	}
 </script>
+
+<svelte:window onkeydown={handleGlobalKeydown} />
 
 <div class="app">
 	<Toolbar />
@@ -97,6 +123,9 @@
 		<!-- Properties Sidebar (right) -->
 		<Sidebar />
 	</div>
+
+	<!-- Command Palette (modal overlay) -->
+	<CommandPalette />
 </div>
 
 <style>
