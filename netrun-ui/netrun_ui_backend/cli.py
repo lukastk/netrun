@@ -30,8 +30,8 @@ def get_package_dir() -> Path:
 
 def get_frontend_dir() -> Path:
     """Get the frontend directory (for development mode)."""
-    # The frontend is two levels up from app/ (backend/app -> backend -> netrun-ui)
-    return get_package_dir().parent.parent
+    # The frontend is one level up from netrun_ui_backend/
+    return get_package_dir().parent
 
 
 def has_static_files() -> bool:
@@ -49,7 +49,7 @@ def has_frontend_source() -> bool:
 def start_backend_server(host: str = "127.0.0.1", port: int = 8000, log_level: str = "info") -> None:
     """Start the FastAPI backend server."""
     uvicorn.run(
-        "app.main:app",
+        "netrun_ui_backend.main:app",
         host=host,
         port=port,
         log_level=log_level,
