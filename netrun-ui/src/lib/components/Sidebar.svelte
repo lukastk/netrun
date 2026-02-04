@@ -13,7 +13,7 @@
 		type NetrunNodeData,
 		type PortConfig
 	} from '$lib/stores/flowStore';
-	import { api } from '$lib/api';
+	import { api, type FactoryParameter } from '$lib/api';
 	import ActionsPanel from './ActionsPanel.svelte';
 	import ProjectSettings from './ProjectSettings.svelte';
 	import ActionEditor from './ActionEditor.svelte';
@@ -28,6 +28,11 @@
 
 	// Loading state for factory preview
 	let isRefreshing = $state(false);
+
+	// Factory signature state
+	let factoryParams = $state<FactoryParameter[]>([]);
+	let factorySignatureLoading = $state(false);
+	let lastFactoryPath = $state<string | null>(null);
 
 	// Modal state for actions
 	let showProjectSettings = $state(false);
@@ -208,6 +213,62 @@
 			updateNodeDataLive($selectedNode.id, { factory: target.value });
 		}
 	}
+
+	// Fetch factory signature when factory path changes
+	async function loadFactorySignature(factoryPath: string) {
+		if (!factoryPath || factoryPath === lastFactoryPath) return;
+
+		factorySignatureLoading = true;
+		lastFactoryPath = factoryPath;
+
+		try {
+			const response = await api.getFactorySignature(factoryPath);
+			factoryParams = response.parameters;
+		} catch (e) {
+			console.warn('Failed to load factory signature:', e);
+			factoryParams = [];
+		} finally {
+			factorySignatureLoading = false;
+		}
+	}
+
+	// Watch for factory path changes
+	$effect(() => {
+		if ($selectedNode?.data.nodeType === 'factory' && $selectedNode.data.factory) {
+			loadFactorySignature($selectedNode.data.factory);
+		} else {
+			factoryParams = [];
+			lastFactoryPath = null;
+		}
+	});
+
+	// Determine if a parameter type represents an import path (non-primitive)
+	function isImportPathParam(param: FactoryParameter): boolean {
+		if (!param.type) return false;
+		const primitiveTypes = ['str', 'int', 'float', 'bool', 'None', 'NoneType'];
+		// Check if it's a primitive type or optional primitive
+		const typeStr = param.type.toLowerCase();
+		return !primitiveTypes.some(t => typeStr === t || typeStr === `${t} | none` || typeStr === `none | ${t}`);
+	}
+
+	// Get placeholder text for a parameter
+	function getParamPlaceholder(param: FactoryParameter): string {
+		if (isImportPathParam(param)) {
+			return 'module.path.to.object';
+		}
+		if (param.has_default && param.default !== null) {
+			return String(param.default);
+		}
+		return '';
+	}
+
+	// Get label hint for parameter type
+	function getParamTypeHint(param: FactoryParameter): string {
+		if (isImportPathParam(param)) {
+			return '(import path)';
+		}
+		return param.type ? `(${param.type})` : '';
+	}
 </script>
 
 <aside class="sidebar">
@@ -277,20 +338,31 @@
 									type="text"
 									value={$selectedNode.data.factory || ''}
 									oninput={updateFactoryPath}
+									onblur={() => { pushHistory(); refreshFactoryPreview(); }}
 									class="mono"
 								/>
 							</div>
-							{#if $selectedNode.data.factoryArgs && Object.keys($selectedNode.data.factoryArgs).length > 0}
+							{#if factorySignatureLoading}
+								<div class="loading-hint">Loading parameters...</div>
+							{:else if factoryParams.length > 0}
 								<div class="field">
 									<label>Arguments</label>
 									<div class="factory-args">
-										{#each Object.entries($selectedNode.data.factoryArgs) as [key, value]}
+										{#each factoryParams as param}
 											<div class="factory-arg">
-												<span class="arg-key">{key}:</span>
+												<div class="arg-header">
+													<span class="arg-key">{param.name}</span>
+													<span class="arg-type">{getParamTypeHint(param)}</span>
+													{#if !param.has_default}
+														<span class="arg-required">*</span>
+													{/if}
+												</div>
 												<input
 													type="text"
-													value={String(value)}
-													oninput={(e) => updateFactoryArg(key, (e.target as HTMLInputElement).value)}
+													value={String($selectedNode.data.factoryArgs?.[param.name] ?? '')}
+													placeholder={getParamPlaceholder(param)}
+													oninput={(e) => updateFactoryArg(param.name, (e.target as HTMLInputElement).value)}
+													class:import-path={isImportPathParam(param)}
 												/>
 											</div>
 										{/each}
@@ -878,24 +950,51 @@
 	.factory-args {
 		display: flex;
 		flex-direction: column;
-		gap: 8px;
+		gap: 10px;
 	}
 
 	.factory-arg {
 		display: flex;
-		gap: 8px;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.arg-header {
+		display: flex;
 		align-items: center;
+		gap: 6px;
 	}
 
 	.arg-key {
 		font-family: 'SF Mono', Monaco, Consolas, monospace;
-		font-size: 11px;
+		font-size: 12px;
+		font-weight: 500;
+		color: var(--text-primary, #fff);
+	}
+
+	.arg-type {
+		font-size: 10px;
 		color: var(--text-secondary, #a0a0a0);
-		min-width: 60px;
+	}
+
+	.arg-required {
+		color: #ef4444;
+		font-weight: bold;
 	}
 
 	.factory-arg input {
-		flex: 1;
+		width: 100%;
+	}
+
+	.factory-arg input.import-path {
+		font-family: 'SF Mono', Monaco, Consolas, monospace;
+		font-size: 12px;
+	}
+
+	.loading-hint {
+		font-size: 12px;
+		color: var(--text-secondary, #a0a0a0);
+		padding: 8px 0;
 	}
 
 	.refresh-btn {
