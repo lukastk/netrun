@@ -38,6 +38,7 @@ import {
 	isInlineSubgraph,
 	hasClipboardContent,
 } from '$lib/stores/flowStore';
+import { showFactorySelector } from '$lib/stores/factorySelectorStore';
 import { get } from 'svelte/store';
 import { resolveFilePath } from '$lib/stores/fileExplorerStore';
 import { showPrompt, showAlert, showConfirm } from '$lib/stores/modalStore';
@@ -356,13 +357,7 @@ const nodeCommands: Command[] = [
 		category: 'node',
 		keywords: ['create', 'new', 'factory'],
 		action: async () => {
-			const factory = await showPrompt({
-				title: 'Add Factory Node',
-				message: 'Enter factory import path',
-				placeholder: 'netrun.node_factories.function',
-				defaultValue: 'netrun.node_factories.function',
-				confirmText: 'Add',
-			});
+			const factory = await showFactorySelector();
 			if (factory) {
 				const newNode = createFactoryNode({ x: 200, y: 200 }, factory);
 				addNode(newNode);
