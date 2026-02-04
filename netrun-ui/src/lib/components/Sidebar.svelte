@@ -88,6 +88,37 @@
 		uiSettings: false,
 	});
 
+	// Sidebar resize state
+	const MIN_WIDTH = 200;
+	const MAX_WIDTH = 600;
+	const DEFAULT_WIDTH = 300;
+	let sidebarWidth = $state(DEFAULT_WIDTH);
+	let isResizing = $state(false);
+
+	function startResize(e: MouseEvent) {
+		e.preventDefault();
+		isResizing = true;
+		document.addEventListener('mousemove', handleResize);
+		document.addEventListener('mouseup', stopResize);
+		document.body.style.cursor = 'ew-resize';
+		document.body.style.userSelect = 'none';
+	}
+
+	function handleResize(e: MouseEvent) {
+		if (!isResizing) return;
+		// Sidebar is on the right, so width = window width - mouse X
+		const newWidth = window.innerWidth - e.clientX;
+		sidebarWidth = Math.min(MAX_WIDTH, Math.max(MIN_WIDTH, newWidth));
+	}
+
+	function stopResize() {
+		isResizing = false;
+		document.removeEventListener('mousemove', handleResize);
+		document.removeEventListener('mouseup', stopResize);
+		document.body.style.cursor = '';
+		document.body.style.userSelect = '';
+	}
+
 	// Node-level env vars - extract from selected node
 	function getNodeEnvVars(): Array<{ key: string; value: string }> {
 		if (!$selectedNode) return [];
@@ -331,7 +362,17 @@
 	});
 </script>
 
-<aside class="sidebar">
+<aside class="sidebar" style="width: {sidebarWidth}px">
+	<!-- Resize handle -->
+	<div
+		class="resize-handle"
+		class:resizing={isResizing}
+		onmousedown={startResize}
+		role="separator"
+		aria-orientation="vertical"
+		tabindex="0"
+	></div>
+
 	<div class="sidebar-header">
 		<h2>Properties</h2>
 	</div>
@@ -870,13 +911,31 @@
 
 <style>
 	.sidebar {
-		width: var(--sidebar-width, 300px);
+		position: relative;
 		height: 100%;
 		background: var(--bg-secondary, #242424);
 		border-left: 1px solid var(--border-color, #404040);
 		display: flex;
 		flex-direction: column;
 		overflow: hidden;
+		flex-shrink: 0;
+	}
+
+	.resize-handle {
+		position: absolute;
+		left: 0;
+		top: 0;
+		bottom: 0;
+		width: 4px;
+		cursor: ew-resize;
+		background: transparent;
+		z-index: 10;
+		transition: background-color 0.15s ease;
+	}
+
+	.resize-handle:hover,
+	.resize-handle.resizing {
+		background: var(--accent-color, #3b82f6);
 	}
 
 	.sidebar-header {
