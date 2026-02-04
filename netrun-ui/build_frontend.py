@@ -8,8 +8,8 @@ This script:
 3. The package can then be built with `pip install .` or `python -m build`
 
 Usage:
-    python build.py           # Build frontend and copy to package
-    python build.py --clean   # Clean build artifacts
+    python build_frontend.py           # Build frontend and copy to package
+    python build_frontend.py --clean   # Clean build artifacts
 """
 
 import argparse

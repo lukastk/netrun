@@ -40,8 +40,7 @@ netrun-ui --dev --server
 
 1. Clone the repository
 2. Install Node.js dependencies: `npm install`
-3. Build the frontend: `python build.py`
-4. Install the package: `cd backend && pip install -e .`
+3. Install the package: `pip install -e .` (this auto-builds the frontend)
 
 ## CLI Options
 
