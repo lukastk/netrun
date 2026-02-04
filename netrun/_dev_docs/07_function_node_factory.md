@@ -255,11 +255,11 @@ custom_node._node_config = {
 # Graph-level config
 
 [[graph.nodes]]
-factory = "netrun.node_factories.function"
+factory = "netrun.node_factories.from_function"
 factory_args = {func = "examples.net.function_factory_example.nodes.add_numbers"}
 
 [[graph.nodes]]
-factory = "netrun.node_factories.function"
+factory = "netrun.node_factories.from_function"
 factory_args = {func = "examples.net.function_factory_example.nodes.process_with_context"}
 
 [[graph.edges]]
