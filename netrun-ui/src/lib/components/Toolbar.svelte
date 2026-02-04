@@ -9,6 +9,7 @@
 		history,
 		currentFilePath,
 		isDirty,
+		isInlineSubgraph,
 		loadFromFile,
 		saveToFile,
 		clearFlow,
@@ -78,6 +79,22 @@
 
 	async function handleSave() {
 		errorMessage = null;
+
+		// Inline subgraphs save to their parent tab
+		if ($isInlineSubgraph) {
+			isLoading = true;
+			try {
+				await saveToFile();
+				// Notify user that parent file needs to be saved
+				alert('Subgraph changes saved to parent. Save the parent file to persist.');
+			} catch (e) {
+				errorMessage = (e as Error).message;
+				alert(`Save failed: ${errorMessage}`);
+			} finally {
+				isLoading = false;
+			}
+			return;
+		}
 
 		// If no current file, prompt for path
 		let path = $currentFilePath;

@@ -81,6 +81,7 @@ export const extraData = derived(activeTab, ($activeTab) => $activeTab?.extraDat
 export const graphMeta = derived(activeTab, ($activeTab) => $activeTab?.graphMeta || null);
 export const fileFormat = derived(activeTab, ($activeTab) => $activeTab?.fileFormat || 'json');
 export const history = derived(activeTab, ($activeTab) => $activeTab?.history || { past: [], future: [] });
+export const isInlineSubgraph = derived(activeTab, ($activeTab) => $activeTab?.subgraphContext?.isInline || false);
 
 // Selection state (not per-tab, applies to current view)
 export const selectedNodeIds = writable<Set<string>>(new Set());
