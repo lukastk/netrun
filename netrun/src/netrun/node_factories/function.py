@@ -8,6 +8,7 @@ from dataclasses import dataclass, field
 import inspect
 import asyncio
 import tomllib
+import importlib
 
 from ..net.config import (
     NodeConfig,
@@ -110,7 +111,7 @@ def _parse_return_annotation(annotation: Any) -> dict[str, PortConfig]:
     return {"out": _annotation_to_port_config(annotation)}
 
 
-def parse_function_signature(func: Callable) -> ParsedSignature:
+def parse_function_signature(func: Callable|str) -> ParsedSignature:
     """Parse a function's signature to extract port configurations.
 
     Args:
@@ -122,6 +123,12 @@ def parse_function_signature(func: Callable) -> ParsedSignature:
     Raises:
         ValueError: If the function has *args or **kwargs.
     """
+    if isinstance(func, str):
+        # Import the function from path
+        module_path, func_name = func.rsplit(".", 1)
+        module = importlib.import_module(module_path)
+        func = getattr(module, func_name)
+
     sig = inspect.signature(func)
 
     in_ports: dict[str, PortConfig] = {}
@@ -358,7 +365,7 @@ def _parse_node_config_override(override: Any) -> dict:
 
 # %% nbs/netrun/06_node_factories/00_function.ipynb 13
 def from_function(
-    func: Callable,
+    func: Callable|str,
     name: str | None = None,
 ) -> NodeConfig:
     """Create a NodeConfig from a function.
