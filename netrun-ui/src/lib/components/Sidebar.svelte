@@ -16,6 +16,7 @@
 		type PortConfig
 	} from '$lib/stores/flowStore';
 	import SalvoConditionsSection from './SalvoConditionsSection.svelte';
+	import PoolsSection from './PoolsSection.svelte';
 	import type { SalvoConditionConfig } from '$lib/types/salvoConditions';
 	import { parseSalvoConditionsFromJSON, salvoConditionsToJSON } from '$lib/utils/salvoSerializer';
 	import { api, type FactoryParameter } from '$lib/api';
@@ -43,9 +44,6 @@
 	let showProjectSettings = $state(false);
 	let showActionEditor = $state(false);
 	let editingAction = $state<Action | null>(null);
-
-	// Modal state for pool creation
-	let showAddPoolModal = $state(false);
 
 	// Modal state for factory creation
 	let showAddFactoryModal = $state(false);
@@ -133,13 +131,6 @@
 	function toggleSection(section: keyof typeof sectionsOpen) {
 		sectionsOpen[section] = !sectionsOpen[section];
 	}
-
-	// Pool types for the dropdown
-	const poolTypes = [
-		{ value: 'ThreadPool', label: 'Thread Pool' },
-		{ value: 'MultiprocessPool', label: 'Multiprocess Pool' },
-		{ value: 'RemotePoolClient', label: 'Remote Pool' },
-	];
 
 	// Update handlers - use "Live" version for typing, push history on blur
 	function updateLabel(event: Event) {
@@ -720,47 +711,13 @@
 					<span class="section-toggle">{sectionsOpen.pools ? '−' : '+'}</span>
 				</button>
 				{#if sectionsOpen.pools}
-					{@const pools = ($extraData as Record<string, unknown>)?.pools as Record<string, unknown> | undefined}
 					<div class="section-content">
-						{#if pools && Object.keys(pools).length > 0}
-							{#each Object.entries(pools) as [poolName, poolConfig]}
-								<div class="pool-item">
-									<div class="pool-header">
-										<span class="pool-name">{poolName}</span>
-										<button
-											class="remove-btn"
-											onclick={() => {
-												const currentPools = { ...pools };
-												delete currentPools[poolName];
-												updateExtraDataLive({ pools: currentPools });
-												pushHistory();
-											}}
-											title="Remove pool"
-										>
-											&times;
-										</button>
-									</div>
-									<div class="pool-details">
-										{#if typeof poolConfig === 'object' && poolConfig !== null}
-											{#each Object.entries(poolConfig as Record<string, unknown>) as [key, value]}
-												<div class="pool-field">
-													<span class="pool-key">{key}:</span>
-													<span class="pool-value">{JSON.stringify(value)}</span>
-												</div>
-											{/each}
-										{/if}
-									</div>
-								</div>
-							{/each}
-						{:else}
-							<p class="empty-hint">No pools configured</p>
-						{/if}
-						<button
-							class="add-btn"
-							onclick={() => showAddPoolModal = true}
-						>
-							+ Add Pool
-						</button>
+						<PoolsSection
+							pools={($extraData as Record<string, unknown>)?.pools as Record<string, unknown> | null | undefined}
+							onUpdate={(pools) => {
+								updateExtraDataLive({ pools });
+							}}
+						/>
 					</div>
 				{/if}
 			</section>
@@ -859,28 +816,6 @@
 		onSave={handleSaveAction}
 		onCancel={() => { showActionEditor = false; editingAction = null; }}
 		onDelete={editingAction ? handleDeleteAction : undefined}
-	/>
-{/if}
-
-{#if showAddPoolModal}
-	<TextInputModal
-		title="Add Pool"
-		label="Pool Name"
-		placeholder="my_pool"
-		submitLabel="Add"
-		onSubmit={(name) => {
-			const pools = ($extraData as Record<string, unknown>)?.pools as Record<string, unknown> | undefined;
-			const currentPools = (pools || {}) as Record<string, unknown>;
-			updateExtraDataLive({
-				pools: {
-					...currentPools,
-					[name]: { type: 'ThreadPool', num_workers: 4 }
-				}
-			});
-			pushHistory();
-			showAddPoolModal = false;
-		}}
-		onCancel={() => showAddPoolModal = false}
 	/>
 {/if}
 
