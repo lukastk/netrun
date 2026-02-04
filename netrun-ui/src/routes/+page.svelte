@@ -9,7 +9,9 @@
 	import FileExplorer from '$lib/components/FileExplorer.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import Modal from '$lib/components/Modal.svelte';
-	import { nodes, currentFilePath, activeTab, recentFiles, loadFromFile, clearFlow, isNewFile, saveToFile, selectNodeByName } from '$lib/stores/flowStore';
+	import FactorySelectorModal from '$lib/components/FactorySelectorModal.svelte';
+	import { nodes, currentFilePath, activeTab, recentFiles, loadFromFile, clearFlow, isNewFile, saveToFile, selectNodeByName, extraData } from '$lib/stores/flowStore';
+	import { factorySelectorState, closeFactorySelector } from '$lib/stores/factorySelectorStore';
 	import { resolveFilePath } from '$lib/stores/fileExplorerStore';
 	import { showPrompt, showAlert } from '$lib/stores/modalStore';
 	import { initializeCommands } from '$lib/commands';
@@ -203,6 +205,16 @@
 
 	<!-- Modal dialogs -->
 	<Modal />
+
+	<!-- Factory Selector Modal -->
+	{#if $factorySelectorState.isOpen}
+		{@const factories = (($extraData as Record<string, unknown>)?.factories as string[]) || []}
+		<FactorySelectorModal
+			{factories}
+			onSelect={(path) => closeFactorySelector(path)}
+			onCancel={() => closeFactorySelector(null)}
+		/>
+	{/if}
 </div>
 
 <style>

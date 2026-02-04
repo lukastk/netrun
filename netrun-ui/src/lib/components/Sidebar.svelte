@@ -37,6 +37,9 @@
 	// Modal state for pool creation
 	let showAddPoolModal = $state(false);
 
+	// Modal state for factory creation
+	let showAddFactoryModal = $state(false);
+
 	// Handle action editor save
 	function handleSaveAction(action: Action) {
 		if (editingAction) {
@@ -69,6 +72,7 @@
 		// Net-level sections
 		graphSettings: true,
 		pools: true,
+		factories: true,
 		uiSettings: false,
 	});
 
@@ -587,6 +591,51 @@
 				{/if}
 			</section>
 
+			<!-- Default Factories Section -->
+			<section class="section">
+				<button
+					class="section-header"
+					onclick={() => toggleSection('factories')}
+				>
+					<span class="section-title">Default Factories</span>
+					<span class="section-toggle">{sectionsOpen.factories ? '−' : '+'}</span>
+				</button>
+				{#if sectionsOpen.factories}
+					{@const factories = (($extraData as Record<string, unknown>)?.factories as string[]) || []}
+					<div class="section-content">
+						{#if factories.length > 0}
+							{#each factories as factory, index}
+								<div class="factory-item">
+									<span class="factory-path" title={factory}>
+										{factory.split('.').pop() || factory}
+									</span>
+									<span class="factory-full-path">{factory}</span>
+									<button
+										class="remove-btn"
+										onclick={() => {
+											const newFactories = factories.filter((_, i) => i !== index);
+											updateExtraDataLive({ factories: newFactories });
+											pushHistory();
+										}}
+										title="Remove factory"
+									>
+										&times;
+									</button>
+								</div>
+							{/each}
+						{:else}
+							<p class="empty-hint">No default factories configured</p>
+						{/if}
+						<button
+							class="add-btn"
+							onclick={() => showAddFactoryModal = true}
+						>
+							+ Add Factory
+						</button>
+					</div>
+				{/if}
+			</section>
+
 			<!-- UI Settings Section -->
 			<section class="section">
 				<button
@@ -658,6 +707,24 @@
 			showAddPoolModal = false;
 		}}
 		onCancel={() => showAddPoolModal = false}
+	/>
+{/if}
+
+{#if showAddFactoryModal}
+	<TextInputModal
+		title="Add Default Factory"
+		label="Factory Import Path"
+		placeholder="mymodule.factories.create_node"
+		submitLabel="Add"
+		onSubmit={(factoryPath) => {
+			const factories = (($extraData as Record<string, unknown>)?.factories as string[]) || [];
+			updateExtraDataLive({
+				factories: [...factories, factoryPath]
+			});
+			pushHistory();
+			showAddFactoryModal = false;
+		}}
+		onCancel={() => showAddFactoryModal = false}
 	/>
 {/if}
 
@@ -960,6 +1027,41 @@
 	.pool-value {
 		color: var(--text-primary, #fff);
 		font-family: 'SF Mono', Monaco, Consolas, monospace;
+	}
+
+	/* Factory item styling */
+	.factory-item {
+		display: flex;
+		flex-direction: column;
+		position: relative;
+		background: var(--bg-primary, #1a1a1a);
+		border: 1px solid var(--border-color, #404040);
+		border-radius: 4px;
+		margin-bottom: 6px;
+		padding: 8px 10px;
+		padding-right: 30px;
+	}
+
+	.factory-item .factory-path {
+		font-weight: 500;
+		font-size: 12px;
+		color: var(--text-primary, #fff);
+	}
+
+	.factory-item .factory-full-path {
+		font-size: 10px;
+		font-family: 'SF Mono', Monaco, Consolas, monospace;
+		color: var(--text-secondary, #a0a0a0);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.factory-item .remove-btn {
+		position: absolute;
+		top: 50%;
+		right: 6px;
+		transform: translateY(-50%);
 	}
 
 	.empty-hint {

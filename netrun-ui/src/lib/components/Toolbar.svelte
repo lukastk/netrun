@@ -20,6 +20,7 @@
 	import { openCommandPalette } from '$lib/stores/commandStore';
 	import { resolveFilePath } from '$lib/stores/fileExplorerStore';
 	import { showPrompt, showAlert, showConfirm } from '$lib/stores/modalStore';
+	import { showFactorySelector } from '$lib/stores/factorySelectorStore';
 
 	// Validation state
 	let lastValidationResult = $state<{ valid: boolean; errorCount: number } | null>(null);
@@ -35,15 +36,9 @@
 	}
 
 	async function handleAddFactoryNode() {
-		const factory = await showPrompt({
-			title: 'Add Factory Node',
-			message: 'Enter factory import path',
-			placeholder: 'netrun.node_factories.function',
-			defaultValue: 'netrun.node_factories.function',
-			confirmText: 'Add',
-		});
-		if (factory) {
-			const newNode = createFactoryNode({ x: 200, y: 200 }, factory);
+		const factoryPath = await showFactorySelector();
+		if (factoryPath) {
+			const newNode = createFactoryNode({ x: 200, y: 200 }, factoryPath);
 			addNode(newNode);
 
 			// Try to get preview from backend
@@ -287,6 +282,7 @@
 		</button>
 	</div>
 </header>
+
 
 <style>
 	.toolbar {
