@@ -4,11 +4,11 @@ Build script for netrun-ui.
 
 This script:
 1. Builds the Svelte frontend with npm
-2. Copies the built files to backend/app/static/
+2. Copies the built files to netrun_ui_backend/static/
 3. The package can then be built with `pip install .` or `python -m build`
 
 Usage:
-    python build.py           # Build frontend and copy to backend
+    python build.py           # Build frontend and copy to package
     python build.py --clean   # Clean build artifacts
 """
 
@@ -28,8 +28,8 @@ def clean(project_root: Path) -> None:
     """Clean build artifacts."""
     dirs_to_remove = [
         project_root / "build",
-        project_root / "backend" / "app" / "static",
-        project_root / "backend" / "dist",
+        project_root / "netrun_ui_backend" / "static",
+        project_root / "dist",
         project_root / ".svelte-kit",
     ]
 
@@ -75,10 +75,10 @@ def build_frontend(project_root: Path) -> bool:
     return True
 
 
-def copy_to_backend(project_root: Path) -> bool:
-    """Copy built frontend to backend/app/static/."""
+def copy_to_package(project_root: Path) -> bool:
+    """Copy built frontend to netrun_ui_backend/static/."""
     build_dir = project_root / "build"
-    static_dir = project_root / "backend" / "app" / "static"
+    static_dir = project_root / "netrun_ui_backend" / "static"
 
     if not build_dir.exists():
         print(f"Error: Build directory not found: {build_dir}", file=sys.stderr)
@@ -92,7 +92,7 @@ def copy_to_backend(project_root: Path) -> bool:
     print(f"Copying {build_dir} to {static_dir}")
     shutil.copytree(build_dir, static_dir)
 
-    print("Frontend copied to backend.")
+    print("Frontend copied to package.")
     return True
 
 
@@ -116,18 +116,18 @@ def main() -> None:
     if not build_frontend(project_root):
         sys.exit(1)
 
-    # Copy to backend
-    if not copy_to_backend(project_root):
+    # Copy to package
+    if not copy_to_package(project_root):
         sys.exit(1)
 
     print()
     print("Build complete!")
     print()
     print("To install locally:")
-    print("  cd backend && pip install -e .")
+    print("  pip install -e .")
     print()
     print("To build a distributable package:")
-    print("  cd backend && python -m build")
+    print("  python -m build")
 
 
 if __name__ == "__main__":

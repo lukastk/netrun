@@ -4,13 +4,13 @@ import pytest
 from pathlib import Path
 from fastapi.testclient import TestClient
 
-from app.main import app
-from app.converter import graph_config_to_ui, ui_to_graph_config
-from app.routes.files import extract_graph_and_extras
+from netrun_ui_backend.main import app
+from netrun_ui_backend.converter import graph_config_to_ui, ui_to_graph_config
+from netrun_ui_backend.routes.files import extract_graph_and_extras
 
 client = TestClient(app)
 
-TESTING_DIR = Path(__file__).parent.parent.parent / "testing"
+TESTING_DIR = Path(__file__).parent.parent / "testing"
 
 
 class TestSubgraphConverter:
@@ -284,7 +284,7 @@ class TestFullFileRoundtrip:
         # Save to a temp location (we won't actually write, just test the conversion)
         # The save would go through ui_to_graph_config
         import json
-        from app.converter import ui_to_graph_config
+        from netrun_ui_backend.converter import ui_to_graph_config
 
         result = ui_to_graph_config(data["nodes"], data["edges"])
 
