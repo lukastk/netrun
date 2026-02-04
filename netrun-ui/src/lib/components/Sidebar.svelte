@@ -20,6 +20,7 @@
 	import SalvoConditionsSection from './SalvoConditionsSection.svelte';
 	import PoolsSection from './PoolsSection.svelte';
 	import NodeExecutionSection from './NodeExecutionSection.svelte';
+	import NetSettingsSection from './NetSettingsSection.svelte';
 	import type { SalvoConditionConfig } from '$lib/types/salvoConditions';
 	import { parseSalvoConditionsFromJSON, salvoConditionsToJSON } from '$lib/utils/salvoSerializer';
 	import { api, type FactoryParameter } from '$lib/api';
@@ -84,6 +85,7 @@
 		// Net-level sections
 		graphSettings: true,
 		pools: true,
+		netSettings: false,
 		factories: true,
 		uiSettings: false,
 	});
@@ -788,6 +790,27 @@
 							pools={($extraData as Record<string, unknown>)?.pools as Record<string, unknown> | null | undefined}
 							onUpdate={(pools) => {
 								updateExtraDataLive({ pools });
+							}}
+						/>
+					</div>
+				{/if}
+			</section>
+
+			<!-- Net Settings Section -->
+			<section class="section">
+				<button
+					class="section-header"
+					onclick={() => toggleSection('netSettings')}
+				>
+					<span class="section-title">Net Settings</span>
+					<span class="section-toggle">{sectionsOpen.netSettings ? '−' : '+'}</span>
+				</button>
+				{#if sectionsOpen.netSettings}
+					<div class="section-content">
+						<NetSettingsSection
+							extraData={$extraData as Record<string, unknown> | null}
+							onUpdate={(updates) => {
+								updateExtraDataLive(updates);
 							}}
 						/>
 					</div>
