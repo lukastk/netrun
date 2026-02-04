@@ -6,7 +6,6 @@
   "graph": {
     "nodes": [
       {
-        "type": "node",
         "name": "DataSource",
         "in_ports": {},
         "out_ports": {
@@ -33,7 +32,6 @@
         "name": "InlineProcessor",
         "nodes": [
           {
-            "type": "node",
             "name": "Filter",
             "in_ports": {
               "in": {
@@ -60,7 +58,6 @@
             }
           },
           {
-            "type": "node",
             "name": "Enrich",
             "in_ports": {
               "data": {
@@ -145,7 +142,6 @@
         }
       },
       {
-        "type": "node",
         "name": "Merger",
         "in_ports": {
           "input1": {
@@ -172,7 +168,6 @@
         }
       },
       {
-        "type": "node",
         "name": "Sink",
         "in_ports": {
           "final": {

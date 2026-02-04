@@ -6,7 +6,6 @@
   "graph": {
     "nodes": [
       {
-        "type": "node",
         "name": "HTTPInput",
         "in_ports": {},
         "out_ports": {
@@ -26,7 +25,6 @@
         "name": "AuthValidator",
         "nodes": [
           {
-            "type": "node",
             "name": "ExtractToken",
             "in_ports": {
               "headers": {"port_type": "dict"}
@@ -44,7 +42,6 @@
             }
           },
           {
-            "type": "node",
             "name": "VerifyToken",
             "in_ports": {
               "token": {"port_type": "str"}
@@ -101,7 +98,6 @@
         }
       },
       {
-        "type": "node",
         "name": "BusinessLogic",
         "in_ports": {
           "user_id": {"port_type": "str"},
@@ -119,7 +115,6 @@
         }
       },
       {
-        "type": "node",
         "name": "ErrorHandler",
         "in_ports": {
           "auth_error": {"port_type": "any"},
@@ -137,7 +132,6 @@
         }
       },
       {
-        "type": "node",
         "name": "HTTPOutput",
         "in_ports": {
           "success": {"port_type": "any"},
