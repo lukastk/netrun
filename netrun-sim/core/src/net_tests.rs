@@ -1875,7 +1875,8 @@ fn test_send_output_salvo_unconnected_port() {
     net.do_action(&NetAction::StartEpoch(epoch_id.clone()));
 
     // Create an output packet inside the epoch
-    let out_packet = get_packet_id(&net.do_action(&NetAction::CreatePacket(Some(epoch_id.clone()))));
+    let out_packet =
+        get_packet_id(&net.do_action(&NetAction::CreatePacket(Some(epoch_id.clone()))));
 
     // Load packet into the unconnected output port
     net.do_action(&NetAction::LoadPacketIntoOutputPort(
@@ -1965,7 +1966,8 @@ fn test_undo_send_output_salvo_with_orphaned_packets() {
     net.do_action(&NetAction::StartEpoch(epoch_id.clone()));
 
     // Create an output packet inside the epoch
-    let out_packet = get_packet_id(&net.do_action(&NetAction::CreatePacket(Some(epoch_id.clone()))));
+    let out_packet =
+        get_packet_id(&net.do_action(&NetAction::CreatePacket(Some(epoch_id.clone()))));
 
     // Load packet into the unconnected output port
     net.do_action(&NetAction::LoadPacketIntoOutputPort(
@@ -1988,7 +1990,10 @@ fn test_undo_send_output_salvo_with_orphaned_packets() {
         net._packets.get(&out_packet).unwrap().location,
         PacketLocation::OutsideNet
     );
-    assert_eq!(net._epochs.get(&epoch_id).unwrap().orphaned_packets.len(), 1);
+    assert_eq!(
+        net._epochs.get(&epoch_id).unwrap().orphaned_packets.len(),
+        1
+    );
 
     // Undo the action
     net.undo_action(&action, &events)
@@ -2004,7 +2009,13 @@ fn test_undo_send_output_salvo_with_orphaned_packets() {
     );
 
     // Verify epoch's orphaned_packets is empty again
-    assert!(net._epochs.get(&epoch_id).unwrap().orphaned_packets.is_empty());
+    assert!(
+        net._epochs
+            .get(&epoch_id)
+            .unwrap()
+            .orphaned_packets
+            .is_empty()
+    );
 
     // Full state comparison
     let diffs = before.diff(&after);
