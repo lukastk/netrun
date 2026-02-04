@@ -48,20 +48,26 @@ const fileCommands: Command[] = [
 		label: 'New File...',
 		category: 'file',
 		keywords: ['clear', 'create', 'empty'],
-		action: () => {
+		action: async () => {
 			if (get(isDirty)) {
 				if (!confirm('You have unsaved changes. Create new file anyway?')) {
 					return;
 				}
 			}
-			const name = prompt('Enter file name (without extension):', 'my_flow');
-			if (!name) return;
+			const path = prompt('Enter full file path (e.g., /path/to/my_flow.netrun.json):');
+			if (!path) return;
 
-			const formatChoice = prompt('Choose format:\n1. JSON (.netrun.json)\n2. TOML (.netrun.toml)\n\nEnter 1 or 2:', '1');
-			if (formatChoice === '1') {
-				clearFlow('json', name);
-			} else if (formatChoice === '2') {
-				clearFlow('toml', name);
+			// Determine format from extension
+			const format = path.endsWith('.toml') ? 'toml' : 'json';
+			const fileName = path.split('/').pop() || 'Untitled';
+
+			// Create the new file and save it immediately
+			clearFlow(format, fileName);
+
+			try {
+				await saveToFile(path);
+			} catch (e) {
+				alert(`Failed to create file: ${(e as Error).message}`);
 			}
 		},
 	},
@@ -70,15 +76,23 @@ const fileCommands: Command[] = [
 		label: 'New JSON File',
 		category: 'file',
 		keywords: ['clear', 'create', 'empty', 'json'],
-		action: () => {
+		action: async () => {
 			if (get(isDirty)) {
 				if (!confirm('You have unsaved changes. Create new file anyway?')) {
 					return;
 				}
 			}
-			const name = prompt('Enter file name (without extension):', 'my_flow');
-			if (!name) return;
-			clearFlow('json', name);
+			const path = prompt('Enter full file path (e.g., /path/to/my_flow.netrun.json):');
+			if (!path) return;
+
+			const fileName = path.split('/').pop() || 'Untitled';
+			clearFlow('json', fileName);
+
+			try {
+				await saveToFile(path);
+			} catch (e) {
+				alert(`Failed to create file: ${(e as Error).message}`);
+			}
 		},
 	},
 	{
@@ -86,15 +100,23 @@ const fileCommands: Command[] = [
 		label: 'New TOML File',
 		category: 'file',
 		keywords: ['clear', 'create', 'empty', 'toml'],
-		action: () => {
+		action: async () => {
 			if (get(isDirty)) {
 				if (!confirm('You have unsaved changes. Create new file anyway?')) {
 					return;
 				}
 			}
-			const name = prompt('Enter file name (without extension):', 'my_flow');
-			if (!name) return;
-			clearFlow('toml', name);
+			const path = prompt('Enter full file path (e.g., /path/to/my_flow.netrun.toml):');
+			if (!path) return;
+
+			const fileName = path.split('/').pop() || 'Untitled';
+			clearFlow('toml', fileName);
+
+			try {
+				await saveToFile(path);
+			} catch (e) {
+				alert(`Failed to create file: ${(e as Error).message}`);
+			}
 		},
 	},
 	{

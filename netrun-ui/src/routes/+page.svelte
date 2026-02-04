@@ -86,15 +86,20 @@
 								}}>
 									Open File
 								</button>
-								<button onclick={() => {
-									const name = prompt('Enter file name (without extension):', 'my_flow');
-									if (!name) return;
+								<button onclick={async () => {
+									const path = prompt('Enter full file path (e.g., /path/to/my_flow.netrun.json):');
+									if (!path) return;
 
-									const formatChoice = prompt('Choose format:\n1. JSON (.netrun.json)\n2. TOML (.netrun.toml)\n\nEnter 1 or 2:', '1');
-									if (formatChoice === '1') {
-										clearFlow('json', name);
-									} else if (formatChoice === '2') {
-										clearFlow('toml', name);
+									const format = path.endsWith('.toml') ? 'toml' : 'json';
+									const fileName = path.split('/').pop() || 'Untitled';
+
+									clearFlow(format, fileName);
+
+									try {
+										const { saveToFile } = await import('$lib/stores/flowStore');
+										await saveToFile(path);
+									} catch (e) {
+										alert(`Failed to create file: ${(e as Error).message}`);
 									}
 								}}>
 									New File
