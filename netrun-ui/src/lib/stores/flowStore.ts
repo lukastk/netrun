@@ -376,6 +376,58 @@ export function getNodeExecutionConfig(
 	return executionConfig as Record<string, unknown>;
 }
 
+/**
+ * Rename a pool across all nodes' execution configs
+ * Updates any node that references the old pool name in its pools array
+ */
+export function renamePoolInAllNodes(oldName: string, newName: string): void {
+	if (oldName === newName) return;
+
+	const tab = get(activeTab);
+	if (!tab) return;
+
+	let hasChanges = false;
+	const updatedNodes = tab.nodes.map(node => {
+		const config = (node.data._config || {}) as Record<string, unknown>;
+		const executionConfig = config.execution_config as Record<string, unknown> | undefined;
+
+		if (!executionConfig) return node;
+
+		const pools = executionConfig.pools as string[] | undefined;
+		if (!pools || !Array.isArray(pools)) return node;
+
+		// Check if this node uses the old pool name
+		const poolIndex = pools.indexOf(oldName);
+		if (poolIndex === -1) return node;
+
+		// Replace the old pool name with the new one
+		hasChanges = true;
+		const newPools = [...pools];
+		newPools[poolIndex] = newName;
+
+		return {
+			...node,
+			data: {
+				...node.data,
+				_config: {
+					...config,
+					execution_config: {
+						...executionConfig,
+						pools: newPools,
+					},
+				},
+			},
+		};
+	});
+
+	if (hasChanges) {
+		updateActiveTab({
+			nodes: updatedNodes,
+			isDirty: true,
+		});
+	}
+}
+
 // Update node positions (called when nodes are dragged)
 export function updateNodePositions(updates: Array<{ id: string; position: { x: number; y: number } }>) {
 	const tab = get(activeTab);
