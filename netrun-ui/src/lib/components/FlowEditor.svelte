@@ -4,6 +4,7 @@
 		Background,
 		Controls,
 		MiniMap,
+		MarkerType,
 		type Edge,
 		type Node,
 		type Connection,
@@ -65,7 +66,12 @@
 				sourceHandle: connection.sourceHandle,
 				targetHandle: connection.targetHandle,
 				type: 'smoothstep',
-				animated: false
+				animated: false,
+				markerEnd: {
+					type: MarkerType.ArrowClosed,
+					width: 15,
+					height: 15,
+				}
 			};
 			addEdgeToStore(newEdge);
 		}
@@ -126,7 +132,12 @@
 		snapGrid={[15, 15]}
 		defaultEdgeOptions={{
 			type: 'smoothstep',
-			animated: false
+			animated: false,
+			markerEnd: {
+				type: MarkerType.ArrowClosed,
+				width: 15,
+				height: 15,
+			}
 		}}
 		connectionLineType={ConnectionLineType.SmoothStep}
 		deleteKey="Delete"
@@ -170,6 +181,15 @@
 
 	:global(.svelte-flow__edge.selected .svelte-flow__edge-path) {
 		stroke: var(--accent-color, #3b82f6);
+	}
+
+	/* Arrow marker styling */
+	:global(.svelte-flow__edge-path + marker path) {
+		fill: var(--border-color, #404040);
+	}
+
+	:global(.svelte-flow__edge.selected marker path) {
+		fill: var(--accent-color, #3b82f6);
 	}
 
 	:global(.svelte-flow__controls) {
