@@ -8,7 +8,8 @@
 	import FlowEditor from '$lib/components/FlowEditor.svelte';
 	import FileExplorer from '$lib/components/FileExplorer.svelte';
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
-	import { nodes, currentFilePath, activeTab, recentFiles, loadFromFile, clearFlow, isNewFile } from '$lib/stores/flowStore';
+	import { nodes, currentFilePath, activeTab, recentFiles, loadFromFile, clearFlow, isNewFile, saveToFile } from '$lib/stores/flowStore';
+	import { resolveFilePath } from '$lib/stores/fileExplorerStore';
 	import { initializeCommands } from '$lib/commands';
 	import { handleKeyboardEvent } from '$lib/stores/keyboardStore';
 
@@ -87,17 +88,17 @@
 									Open File
 								</button>
 								<button onclick={async () => {
-									const path = prompt('Enter full file path (e.g., /path/to/my_flow.netrun.json):');
-									if (!path) return;
+									const inputPath = prompt('Enter filename (relative to current folder) or absolute path:', 'my_flow.netrun.json');
+									if (!inputPath) return;
 
-									const format = path.endsWith('.toml') ? 'toml' : 'json';
-									const fileName = path.split('/').pop() || 'Untitled';
+									const fullPath = resolveFilePath(inputPath);
+									const format = fullPath.endsWith('.toml') ? 'toml' : 'json';
+									const fileName = fullPath.split('/').pop() || 'Untitled';
 
 									clearFlow(format, fileName);
 
 									try {
-										const { saveToFile } = await import('$lib/stores/flowStore');
-										await saveToFile(path);
+										await saveToFile(fullPath);
 									} catch (e) {
 										alert(`Failed to create file: ${(e as Error).message}`);
 									}

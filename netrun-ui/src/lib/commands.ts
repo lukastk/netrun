@@ -39,6 +39,7 @@ import {
 	hasClipboardContent,
 } from '$lib/stores/flowStore';
 import { get } from 'svelte/store';
+import { resolveFilePath } from '$lib/stores/fileExplorerStore';
 
 // --- File Commands ---
 
@@ -54,18 +55,19 @@ const fileCommands: Command[] = [
 					return;
 				}
 			}
-			const path = prompt('Enter full file path (e.g., /path/to/my_flow.netrun.json):');
-			if (!path) return;
+			const inputPath = prompt('Enter filename (relative to current folder) or absolute path:', 'my_flow.netrun.json');
+			if (!inputPath) return;
 
+			const fullPath = resolveFilePath(inputPath);
 			// Determine format from extension
-			const format = path.endsWith('.toml') ? 'toml' : 'json';
-			const fileName = path.split('/').pop() || 'Untitled';
+			const format = fullPath.endsWith('.toml') ? 'toml' : 'json';
+			const fileName = fullPath.split('/').pop() || 'Untitled';
 
 			// Create the new file and save it immediately
 			clearFlow(format, fileName);
 
 			try {
-				await saveToFile(path);
+				await saveToFile(fullPath);
 			} catch (e) {
 				alert(`Failed to create file: ${(e as Error).message}`);
 			}
@@ -82,14 +84,15 @@ const fileCommands: Command[] = [
 					return;
 				}
 			}
-			const path = prompt('Enter full file path (e.g., /path/to/my_flow.netrun.json):');
-			if (!path) return;
+			const inputPath = prompt('Enter filename (relative to current folder) or absolute path:', 'my_flow.netrun.json');
+			if (!inputPath) return;
 
-			const fileName = path.split('/').pop() || 'Untitled';
+			const fullPath = resolveFilePath(inputPath);
+			const fileName = fullPath.split('/').pop() || 'Untitled';
 			clearFlow('json', fileName);
 
 			try {
-				await saveToFile(path);
+				await saveToFile(fullPath);
 			} catch (e) {
 				alert(`Failed to create file: ${(e as Error).message}`);
 			}
@@ -106,14 +109,15 @@ const fileCommands: Command[] = [
 					return;
 				}
 			}
-			const path = prompt('Enter full file path (e.g., /path/to/my_flow.netrun.toml):');
-			if (!path) return;
+			const inputPath = prompt('Enter filename (relative to current folder) or absolute path:', 'my_flow.netrun.toml');
+			if (!inputPath) return;
 
-			const fileName = path.split('/').pop() || 'Untitled';
+			const fullPath = resolveFilePath(inputPath);
+			const fileName = fullPath.split('/').pop() || 'Untitled';
 			clearFlow('toml', fileName);
 
 			try {
-				await saveToFile(path);
+				await saveToFile(fullPath);
 			} catch (e) {
 				alert(`Failed to create file: ${(e as Error).message}`);
 			}
