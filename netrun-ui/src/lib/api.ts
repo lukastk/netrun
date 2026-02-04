@@ -159,6 +159,18 @@ export interface ResolveTemplateResponse {
 	resolved: string;
 }
 
+export interface ValidationError {
+	loc: (string | number)[];
+	msg: string;
+	type: string;
+}
+
+export interface ValidateConfigResponse {
+	valid: boolean;
+	errors: ValidationError[];
+	netrun_available: boolean;
+}
+
 class ApiClient {
 	private baseUrl: string;
 
@@ -380,6 +392,21 @@ class ApiClient {
 				template,
 				...options,
 			}),
+		});
+	}
+
+	/**
+	 * Validate config against NetConfig/GraphConfig Pydantic models
+	 */
+	async validateConfig(
+		nodes: UINode[],
+		edges: UIEdge[],
+		meta?: Record<string, unknown>,
+		extra_data?: Record<string, unknown>
+	): Promise<ValidateConfigResponse> {
+		return this.request<ValidateConfigResponse>('/files/validate', {
+			method: 'POST',
+			body: JSON.stringify({ nodes, edges, meta, extra_data }),
 		});
 	}
 }

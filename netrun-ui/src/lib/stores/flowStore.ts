@@ -569,7 +569,73 @@ export function validateAllNodes(): { valid: boolean; errorCount: number } {
 	const { nodes: updatedNodes, errorCount } = computeValidatedNodes(tab.nodes);
 	updateActiveTab({ nodes: updatedNodes });
 
+	// Also trigger backend validation
+	triggerBackendValidation();
+
 	return { valid: errorCount === 0, errorCount };
+}
+
+// Backend validation state
+export const backendValidationErrors = writable<{ loc: (string | number)[]; msg: string }[]>([]);
+export const backendValidationAvailable = writable<boolean>(true);
+
+// Debounce timer for backend validation
+let backendValidationTimer: ReturnType<typeof setTimeout> | null = null;
+
+/**
+ * Trigger backend validation (debounced)
+ */
+function triggerBackendValidation() {
+	if (backendValidationTimer) {
+		clearTimeout(backendValidationTimer);
+	}
+
+	backendValidationTimer = setTimeout(async () => {
+		const tab = get(activeTab);
+		if (!tab) return;
+
+		try {
+			// Convert nodes to UINode format for API
+			const apiNodes: UINode[] = tab.nodes.map(n => ({
+				id: n.id,
+				type: n.type || 'netrunNode',
+				position: n.position,
+				data: {
+					label: n.data.label,
+					nodeType: n.data.nodeType,
+					inPorts: n.data.inPorts,
+					outPorts: n.data.outPorts,
+					factory: (n.data as NetrunNodeData).factory,
+					factoryArgs: (n.data as NetrunNodeData).factoryArgs,
+					_config: (n.data as NetrunNodeData)._config,
+					_subgraphConfig: (n.data as SubgraphNodeData)._subgraphConfig,
+				},
+			}));
+
+			const apiEdges: UIEdge[] = tab.edges.map(e => ({
+				id: e.id,
+				source: e.source,
+				target: e.target,
+				sourceHandle: e.sourceHandle ?? undefined,
+				targetHandle: e.targetHandle ?? undefined,
+				type: e.type,
+			}));
+
+			const response = await api.validateConfig(
+				apiNodes,
+				apiEdges,
+				tab.graphMeta ?? undefined,
+				tab.extraData ?? undefined
+			);
+
+			backendValidationAvailable.set(response.netrun_available);
+			backendValidationErrors.set(response.errors);
+		} catch (e) {
+			// Backend not available - clear errors but note it's not available
+			backendValidationAvailable.set(false);
+			backendValidationErrors.set([]);
+		}
+	}, 500); // 500ms debounce
 }
 
 // Auto-validation: Subscribe to tab changes and validate nodes
@@ -606,6 +672,9 @@ activeTab.subscribe((tab) => {
 	if (validationChanged) {
 		updateActiveTab({ nodes: validatedNodes });
 	}
+
+	// Trigger backend validation (debounced)
+	triggerBackendValidation();
 });
 
 /**
