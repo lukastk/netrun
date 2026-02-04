@@ -1233,10 +1233,25 @@ class SubgraphConfig(BaseModel):
 SubgraphConfig.model_rebuild()
 
 # %% nbs/netrun/05_net/00_config.ipynb 36
+from pydantic import BeforeValidator
+
+def _parse_graph_node(value: Any) -> NodeConfig | SubgraphConfig:
+    """Parse a graph node, defaulting to NodeConfig when type is not specified."""
+    if isinstance(value, (NodeConfig, SubgraphConfig)):
+        return value
+    if isinstance(value, dict):
+        # Check if it's explicitly a subgraph
+        if value.get("type") == "subgraph":
+            return SubgraphConfig.model_validate(value)
+        # Default to NodeConfig (handles both "node" and missing type)
+        return NodeConfig.model_validate(value)
+    raise ValueError(f"Invalid node config: {value}")
+
 # Type alias for nodes that can be either regular nodes or subgraphs
+# Uses BeforeValidator to default to NodeConfig when type is not specified
 GraphNodeConfig = Annotated[
     NodeConfig | SubgraphConfig,
-    Field(discriminator="type")
+    BeforeValidator(_parse_graph_node)
 ]
 
 # %% nbs/netrun/05_net/00_config.ipynb 37

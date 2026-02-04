@@ -6,7 +6,6 @@
   "graph": {
     "nodes": [
       {
-        "type": "node",
         "name": "Validate",
         "in_ports": {
           "data": {
@@ -33,7 +32,6 @@
         }
       },
       {
-        "type": "node",
         "name": "Transform",
         "in_ports": {
           "input": {
@@ -57,7 +55,6 @@
         }
       },
       {
-        "type": "node",
         "name": "ErrorLog",
         "in_ports": {
           "error": {

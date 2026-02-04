@@ -6,7 +6,6 @@
   "graph": {
     "nodes": [
       {
-        "type": "node",
         "name": "Input",
         "in_ports": {},
         "out_ports": {
@@ -25,7 +24,6 @@
         "name": "Level1",
         "nodes": [
           {
-            "type": "node",
             "name": "L1_Process",
             "in_ports": {
               "in": {"port_type": "any"}
@@ -46,7 +44,6 @@
             "name": "Level2",
             "nodes": [
               {
-                "type": "node",
                 "name": "L2_Transform",
                 "in_ports": {
                   "in": {"port_type": "any"}
@@ -67,7 +64,6 @@
                 "name": "Level3",
                 "nodes": [
                   {
-                    "type": "node",
                     "name": "L3_Core",
                     "in_ports": {
                       "in": {"port_type": "any"}
@@ -136,7 +132,6 @@
         }
       },
       {
-        "type": "node",
         "name": "Output",
         "in_ports": {
           "data": {"port_type": "any"}

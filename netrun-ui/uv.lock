@@ -583,8 +583,8 @@ wheels = [
 
 [[package]]
 name = "netrun"
-version = "0.1.0"
-source = { directory = "../../netrun" }
+version = "0.2.1"
+source = { directory = "../netrun" }
 dependencies = [
     { name = "diskcache" },
     { name = "nblite" },
@@ -597,14 +597,14 @@ dependencies = [
 requires-dist = [
     { name = "diskcache", specifier = ">=5.6.3" },
     { name = "nblite", specifier = ">=1.1.1" },
-    { name = "netrun-sim", editable = "../../netrun-sim/python" },
+    { name = "netrun-sim", editable = "../netrun-sim/python" },
     { name = "websockets", specifier = ">=16.0" },
     { name = "xxhash", specifier = ">=3.6.0" },
 ]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "dev", editable = "../../netrun/src/dev" },
+    { name = "dev", editable = "../netrun/src/dev" },
     { name = "jupyterlab", specifier = ">=4.5.1" },
     { name = "mypy", specifier = ">=1.19.1" },
     { name = "nblite", specifier = ">=1.1.5" },
@@ -615,8 +615,8 @@ dev = [
 
 [[package]]
 name = "netrun-sim"
-version = "0.1.1"
-source = { editable = "../../netrun-sim/python" }
+version = "0.1.2"
+source = { editable = "../netrun-sim/python" }
 dependencies = [
     { name = "python-ulid" },
 ]
@@ -637,13 +637,14 @@ dev = [
 ]
 
 [[package]]
-name = "netrun-ui-backend"
-version = "0.1.0"
+name = "netrun-ui"
+version = "0.1.1"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "netrun" },
     { name = "pydantic" },
+    { name = "pywebview" },
     { name = "tomli" },
     { name = "tomli-w" },
     { name = "uvicorn", extra = ["standard"] },
@@ -651,9 +652,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-app = [
-    { name = "pywebview" },
-]
 dev = [
     { name = "httpx" },
     { name = "pytest" },
@@ -663,16 +661,16 @@ dev = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.109.0" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.25.0" },
-    { name = "netrun", directory = "../../netrun" },
+    { name = "netrun", directory = "../netrun" },
     { name = "pydantic", specifier = ">=2.0.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
-    { name = "pywebview", marker = "extra == 'app'", specifier = ">=5.0.0" },
+    { name = "pywebview", specifier = ">=5.0.0" },
     { name = "tomli", specifier = ">=2.0.0" },
     { name = "tomli-w", specifier = ">=1.0.0" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.27.0" },
     { name = "websockets", specifier = ">=12.0" },
 ]
-provides-extras = ["dev", "app"]
+provides-extras = ["dev"]
 
 [[package]]
 name = "notebookx-py"

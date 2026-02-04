@@ -6,7 +6,6 @@
   "graph": {
     "nodes": [
       {
-        "type": "node",
         "name": "SourceA",
         "in_ports": {},
         "out_ports": {
@@ -21,7 +20,6 @@
         }
       },
       {
-        "type": "node",
         "name": "SourceB",
         "in_ports": {},
         "out_ports": {
@@ -74,7 +72,6 @@
         }
       },
       {
-        "type": "node",
         "name": "Merger",
         "in_ports": {
           "a": {"port_type": "any"},
@@ -92,7 +89,6 @@
         }
       },
       {
-        "type": "node",
         "name": "ErrorCollector",
         "in_ports": {
           "error1": {"port_type": "any"},

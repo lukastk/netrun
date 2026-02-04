@@ -1,0 +1,42 @@
+{
+  "meta": {
+    "description": "A basic example demonstrating netrun's flow-based execution"
+  },
+  "output_queues": {
+    "results": {
+      "ports": [["format_result", "out"]]
+    }
+  },
+  "graph": {
+    "nodes": [
+      {
+        "name": "double",
+        "factory": "netrun.node_factories.function",
+        "factory_args": {"func": "nodes.double"},
+        "meta": {
+          "ui": {"position": {"x": 300, "y": 100}}
+        }
+      },
+      {
+        "name": "add",
+        "factory": "netrun.node_factories.function",
+        "factory_args": {"func": "nodes.add"},
+        "meta": {
+          "ui": {"position": {"x": 500, "y": 150}}
+        }
+      },
+      {
+        "name": "format_result",
+        "factory": "netrun.node_factories.function",
+        "factory_args": {"func": "nodes.format_result"},
+        "meta": {
+          "ui": {"position": {"x": 700, "y": 150}}
+        }
+      }
+    ],
+    "edges": [
+      {"source_str": "double.out", "target_str": "add.a"},
+      {"source_str": "add.out", "target_str": "format_result.value"}
+    ]
+  }
+}

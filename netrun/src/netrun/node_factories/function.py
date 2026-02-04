@@ -7,6 +7,7 @@ from typing import Callable, Any, get_type_hints, get_origin, get_args
 from dataclasses import dataclass, field
 import inspect
 import asyncio
+import concurrent.futures
 import tomllib
 import importlib
 
@@ -304,18 +305,28 @@ def _create_exec_func(func: Callable, parsed_sig: ParsedSignature) -> Callable:
             ctx.send_output_salvo("send")
 
     def exec_node_func_sync(ctx, packets):
-        """Sync wrapper that runs the async wrapper."""
-        # Create event loop if needed
+        """Sync wrapper that runs the async wrapper.
+
+        Handles both cases:
+        1. No event loop running - creates one and runs the coroutine
+        2. Event loop already running - runs in a separate thread to avoid nested loop issues
+        """
+        # Check if there's already a running event loop
         try:
-            loop = asyncio.get_event_loop()
+            loop = asyncio.get_running_loop()
+            # We're already in an event loop - run in a separate thread
+            def run_in_thread():
+                return asyncio.run(exec_node_func_async(ctx, packets))
+
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(run_in_thread)
+                return future.result()
         except RuntimeError:
-            loop = asyncio.new_event_loop()
-            asyncio.set_event_loop(loop)
+            # No running event loop - safe to use asyncio.run()
+            return asyncio.run(exec_node_func_async(ctx, packets))
 
-        return loop.run_until_complete(exec_node_func_async(ctx, packets))
-
-    # Return the async version directly since Net uses async execution
-    return exec_node_func_async
+    # Return the sync version since the Net's preprocessor calls functions synchronously
+    return exec_node_func_sync
 
 # %% nbs/netrun/06_node_factories/00_function.ipynb 11
 def _deep_merge_dicts(base: dict, override: dict) -> dict:

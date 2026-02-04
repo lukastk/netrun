@@ -6,7 +6,6 @@
   "graph": {
     "nodes": [
       {
-        "type": "node",
         "name": "Normalize",
         "in_ports": {
           "raw": {"port_type": "any"}
@@ -23,7 +22,6 @@
         }
       },
       {
-        "type": "node",
         "name": "Validate",
         "in_ports": {
           "input": {"port_type": "any"}
