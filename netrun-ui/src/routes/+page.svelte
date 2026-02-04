@@ -10,6 +10,7 @@
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import FactorySelectorModal from '$lib/components/FactorySelectorModal.svelte';
+	import { api } from '$lib/api';
 	import { nodes, currentFilePath, activeTab, recentFiles, loadFromFile, clearFlow, isNewFile, saveToFile, selectNodeByName, extraData } from '$lib/stores/flowStore';
 	import { factorySelectorState, closeFactorySelector } from '$lib/stores/factorySelectorStore';
 	import { resolveFilePath } from '$lib/stores/fileExplorerStore';
@@ -24,9 +25,23 @@
 	// Track if we've processed initial files to avoid re-processing on HMR
 	let initialFilesProcessed = $state(false);
 
+	// Initial path for file explorer - fetched from server, with fallback
+	let initialPath = $state('~');
+
 	// Initialize command system and process URL parameters
-	onMount(() => {
+	onMount(async () => {
 		initializeCommands();
+
+		// Fetch working directory from server
+		try {
+			const config = await api.getServerConfig();
+			if (config.working_dir) {
+				initialPath = config.working_dir;
+			}
+		} catch (e) {
+			// Fall back to VITE_INITIAL_PATH or home directory
+			initialPath = import.meta.env.VITE_INITIAL_PATH || '~';
+		}
 
 		// Process initial files from URL query parameters
 		if (!initialFilesProcessed && data.initialFiles && data.initialFiles.length > 0) {
@@ -78,9 +93,6 @@
 			handleKeyboardEvent(event);
 		}
 	}
-
-	// Initial path for file explorer (from environment variable or default to home)
-	const initialPath = import.meta.env.VITE_INITIAL_PATH || '~';
 
 	// File explorer visibility state
 	let showFileExplorer = $state(true);

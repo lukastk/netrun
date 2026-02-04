@@ -1,19 +1,20 @@
 #!/usr/bin/env bash
+set -euo pipefail
 
-REPO_FOLDER="$(dirname "$(dirname "$0")")"
-PREV_CWD=$(pwd)
-cd "$REPO_FOLDER"
+REPO_FOLDER="$(cd "$(dirname "$(dirname "$0")")" && pwd)"
 
-cd netrun-sim
+cd "$REPO_FOLDER/netrun-sim"
 cargo build -p netrun-sim
 
-cd ../netrun-sim/python
-uv run maturin develop --release
+cd "$REPO_FOLDER/netrun-sim/python"
+uvx maturin develop --release
 
-cd ..
+cd "$REPO_FOLDER/netrun-sim"
 cargo test --workspace --all-features
 
 cd "$REPO_FOLDER/netrun"
 uv run pytest
 
-cd "$PREV_CWD"
+cd "$REPO_FOLDER/netrun-ui"
+uv pip install -e ".[dev]"
+uv run pytest tests/ -v
