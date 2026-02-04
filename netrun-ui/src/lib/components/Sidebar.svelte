@@ -17,6 +17,7 @@
 	import ActionsPanel from './ActionsPanel.svelte';
 	import ProjectSettings from './ProjectSettings.svelte';
 	import ActionEditor from './ActionEditor.svelte';
+	import TextInputModal from './TextInputModal.svelte';
 	import {
 		addProjectAction,
 		updateProjectAction,
@@ -32,6 +33,9 @@
 	let showProjectSettings = $state(false);
 	let showActionEditor = $state(false);
 	let editingAction = $state<Action | null>(null);
+
+	// Modal state for pool creation
+	let showAddPoolModal = $state(false);
 
 	// Handle action editor save
 	function handleSaveAction(action: Action) {
@@ -575,19 +579,7 @@
 						{/if}
 						<button
 							class="add-btn"
-							onclick={() => {
-								const name = prompt('Pool name:');
-								if (name) {
-									const currentPools = (pools || {}) as Record<string, unknown>;
-									updateExtraDataLive({
-										pools: {
-											...currentPools,
-											[name]: { type: 'ThreadPool', num_workers: 4 }
-										}
-									});
-									pushHistory();
-								}
-							}}
+							onclick={() => showAddPoolModal = true}
 						>
 							+ Add Pool
 						</button>
@@ -644,6 +636,28 @@
 		onSave={handleSaveAction}
 		onCancel={() => { showActionEditor = false; editingAction = null; }}
 		onDelete={editingAction ? handleDeleteAction : undefined}
+	/>
+{/if}
+
+{#if showAddPoolModal}
+	<TextInputModal
+		title="Add Pool"
+		label="Pool Name"
+		placeholder="my_pool"
+		submitLabel="Add"
+		onSubmit={(name) => {
+			const pools = ($extraData as Record<string, unknown>)?.pools as Record<string, unknown> | undefined;
+			const currentPools = (pools || {}) as Record<string, unknown>;
+			updateExtraDataLive({
+				pools: {
+					...currentPools,
+					[name]: { type: 'ThreadPool', num_workers: 4 }
+				}
+			});
+			pushHistory();
+			showAddPoolModal = false;
+		}}
+		onCancel={() => showAddPoolModal = false}
 	/>
 {/if}
 

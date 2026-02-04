@@ -2,6 +2,7 @@
 	import { api, type FileEntry } from '$lib/api';
 	import { loadFromFile, recentFiles, removeRecentFile } from '$lib/stores/flowStore';
 	import { fileExplorerRefreshTrigger, setCurrentExplorerPath } from '$lib/stores/fileExplorerStore';
+	import TextInputModal from './TextInputModal.svelte';
 
 	// Props
 	interface Props {
@@ -18,6 +19,7 @@
 	let isLoading = $state(false);
 	let error = $state<string | null>(null);
 	let expandedDirs = $state<Set<string>>(new Set());
+	let showNavigateModal = $state(false);
 
 	// Load directory contents
 	async function loadDirectory(path: string) {
@@ -80,11 +82,13 @@
 	}
 
 	// Navigate to a specific path
-	async function handleNavigate() {
-		const path = prompt('Enter path:', currentPath);
-		if (path) {
-			await loadDirectory(path);
-		}
+	function handleNavigate() {
+		showNavigateModal = true;
+	}
+
+	async function navigateToPath(path: string) {
+		showNavigateModal = false;
+		await loadDirectory(path);
 	}
 </script>
 
@@ -160,6 +164,18 @@
 		{/if}
 	</div>
 </div>
+
+{#if showNavigateModal}
+	<TextInputModal
+		title="Navigate to Path"
+		label="Path"
+		placeholder="/path/to/directory"
+		initialValue={currentPath}
+		submitLabel="Go"
+		onSubmit={navigateToPath}
+		onCancel={() => showNavigateModal = false}
+	/>
+{/if}
 
 <style>
 	.file-explorer {
