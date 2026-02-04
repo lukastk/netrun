@@ -3,9 +3,11 @@
 netrun-ui CLI
 
 Usage:
-    netrun-ui                    # Open native window (default)
-    netrun-ui --server           # Start server mode (browser)
-    netrun-ui --server --port 8080  # Custom backend port
+    netrun-ui                        # Open native window (default)
+    netrun-ui --server               # Start server mode (browser)
+    netrun-ui --port 8080            # Custom backend port
+    netrun-ui --frontend-port 3000   # Custom frontend port
+    netrun-ui -C /path/to/project    # Set working directory
 """
 
 import argparse
@@ -70,16 +72,22 @@ def wait_for_server(url: str, timeout: float = 30.0) -> bool:
     return False
 
 
-def start_frontend_dev_server(frontend_dir: Path, initial_path: Optional[str] = None) -> subprocess.Popen:
+def start_frontend_dev_server(
+    frontend_dir: Path,
+    port: int = 5173,
+    initial_path: Optional[str] = None,
+) -> subprocess.Popen:
     """Start the Vite frontend dev server."""
     env = os.environ.copy()
     if initial_path:
         env["VITE_INITIAL_PATH"] = initial_path
 
-    # Try npm first, fall back to npx
+    # Pass port to Vite via -- separator
+    cmd = ["npm", "run", "dev", "--", "--port", str(port)]
+
     try:
         process = subprocess.Popen(
-            ["npm", "run", "dev"],
+            cmd,
             cwd=str(frontend_dir),
             env=env,
             stdout=subprocess.PIPE,
@@ -120,6 +128,7 @@ def run_server_mode(
     print(f"Starting frontend on http://localhost:{frontend_port}...")
     frontend_process = start_frontend_dev_server(
         frontend_dir,
+        port=frontend_port,
         initial_path=initial_path or os.getcwd(),
     )
 
@@ -164,6 +173,7 @@ def run_app_mode(
     print("Starting frontend server...")
     frontend_process = start_frontend_dev_server(
         frontend_dir,
+        port=frontend_port,
         initial_path=initial_path or os.getcwd(),
     )
 
@@ -211,9 +221,11 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  netrun-ui                    Open native window
-  netrun-ui --server           Start server for browser access
-  netrun-ui -C /path/to/project   Open with specific working directory
+  netrun-ui                        Open native window (cwd as working dir)
+  netrun-ui --server               Start server for browser access
+  netrun-ui -C /path/to/project    Set working directory
+  netrun-ui --port 8080            Use custom backend port
+  netrun-ui --frontend-port 3000   Use custom frontend port
         """,
     )
 
