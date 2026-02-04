@@ -23,6 +23,7 @@ export interface SubgraphContext {
 	parentTabId: string;
 	nodeId: string;
 	path: string[]; // Breadcrumb: ["Root", "Subgraph1", "Nested"]
+	isInline: boolean; // True for inline subgraphs, false for file-referenced
 }
 
 // Complete state for a single tab
@@ -291,7 +292,9 @@ export async function openSubgraphTab(nodeId: string, data: SubgraphNodeData): P
 		const configPath = subgraphConfig?.path as string | undefined;
 		const configNodes = subgraphConfig?.nodes as unknown[] | undefined;
 		const isFileReference = configPath || (data.source && data.source !== 'Inline');
-		const isInline = configNodes && configNodes.length > 0;
+		const isInline = !!(configNodes && configNodes.length > 0);
+
+		let resolvedFilePath: string | null = null;
 
 		if (isFileReference) {
 			// Load from file - use path from config or source
@@ -304,6 +307,8 @@ export async function openSubgraphTab(nodeId: string, data: SubgraphNodeData): P
 				data: node.data
 			})) as FlowNode[];
 			edges = response.edges;
+			// The API returns the resolved absolute path in response.source
+			resolvedFilePath = response.source;
 		} else if (isInline && subgraphConfig) {
 			// Load from inline config
 			const response = await api.loadSubgraph(undefined, subgraphConfig, basePath);
@@ -314,6 +319,8 @@ export async function openSubgraphTab(nodeId: string, data: SubgraphNodeData): P
 				data: node.data
 			})) as FlowNode[];
 			edges = response.edges;
+			// Inline subgraphs don't have their own file
+			resolvedFilePath = null;
 		}
 
 		// Build breadcrumb path
@@ -324,7 +331,7 @@ export async function openSubgraphTab(nodeId: string, data: SubgraphNodeData): P
 		const newTabId = generateTabId();
 		const newTab: TabState = {
 			id: newTabId,
-			filePath: null, // Subgraph tabs don't have their own file path
+			filePath: resolvedFilePath, // File-ref subgraphs have their own file path
 			fileName: data.label,
 			isDirty: false,
 			nodes,
@@ -337,6 +344,7 @@ export async function openSubgraphTab(nodeId: string, data: SubgraphNodeData): P
 				parentTabId: parentTab.id,
 				nodeId,
 				path,
+				isInline,
 			},
 		};
 
