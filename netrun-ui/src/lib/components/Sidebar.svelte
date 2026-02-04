@@ -4,6 +4,8 @@
 		updateNodeData,
 		updateNodeDataLive,
 		updateNodeEnv,
+		updateNodeSalvoConditions,
+		getNodeSalvoConditions,
 		updateFactoryNodePreview,
 		pushHistory,
 		extraData,
@@ -13,6 +15,9 @@
 		type NetrunNodeData,
 		type PortConfig
 	} from '$lib/stores/flowStore';
+	import SalvoConditionsSection from './SalvoConditionsSection.svelte';
+	import type { SalvoConditionConfig } from '$lib/types/salvoConditions';
+	import { parseSalvoConditionsFromJSON, salvoConditionsToJSON } from '$lib/utils/salvoSerializer';
 	import { api, type FactoryParameter } from '$lib/api';
 	import ActionsPanel from './ActionsPanel.svelte';
 	import ProjectSettings from './ProjectSettings.svelte';
@@ -73,6 +78,7 @@
 		factory: true,
 		subgraph: true,
 		nodeVariables: false,
+		salvoConditions: false,
 		execution: false,
 		// Net-level sections
 		graphSettings: true,
@@ -622,6 +628,41 @@
 					</div>
 				{/if}
 			</section>
+
+			<!-- Salvo Conditions Section (only for regular nodes, not factory or subgraph) -->
+			{#if $selectedNode.data.nodeType === 'regular'}
+				<section class="section">
+					<button
+						class="section-header"
+						onclick={() => toggleSection('salvoConditions')}
+					>
+						<span class="section-title">Salvo Conditions</span>
+						<span class="section-toggle">{sectionsOpen.salvoConditions ? '−' : '+'}</span>
+					</button>
+					{#if sectionsOpen.salvoConditions}
+						{@const inConditionsRaw = getNodeSalvoConditions($selectedNode, 'in')}
+						{@const outConditionsRaw = getNodeSalvoConditions($selectedNode, 'out')}
+						{@const inConditions = inConditionsRaw ? parseSalvoConditionsFromJSON(inConditionsRaw) : null}
+						{@const outConditions = outConditionsRaw ? parseSalvoConditionsFromJSON(outConditionsRaw) : null}
+						<div class="section-content">
+							<SalvoConditionsSection
+								{inConditions}
+								{outConditions}
+								inPortNames={$selectedNode.data.inPorts.map(p => p.name)}
+								outPortNames={$selectedNode.data.outPorts.map(p => p.name)}
+								onUpdateIn={(conditions) => {
+									const json = conditions ? salvoConditionsToJSON(conditions) : null;
+									updateNodeSalvoConditions($selectedNode.id, 'in', json);
+								}}
+								onUpdateOut={(conditions) => {
+									const json = conditions ? salvoConditionsToJSON(conditions) : null;
+									updateNodeSalvoConditions($selectedNode.id, 'out', json);
+								}}
+							/>
+						</div>
+					{/if}
+				</section>
+			{/if}
 
 			<!-- Actions Panel (for all node types) -->
 			<ActionsPanel

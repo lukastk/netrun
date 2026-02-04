@@ -271,6 +271,61 @@ export function updateNodeEnv(id: string, env: Record<string, string> | undefine
 	});
 }
 
+// Update node-level salvo conditions
+export function updateNodeSalvoConditions(
+	id: string,
+	type: 'in' | 'out',
+	conditions: Record<string, unknown> | null
+) {
+	const tab = get(activeTab);
+	if (!tab) return;
+
+	pushHistory();
+	updateActiveTab({
+		nodes: tab.nodes.map(node => {
+			if (node.id !== id) return node;
+
+			const config = (node.data._config || {}) as Record<string, unknown>;
+			const configKey = type === 'in' ? 'in_salvo_conditions' : 'out_salvo_conditions';
+
+			let newConfig: Record<string, unknown>;
+			if (conditions === null) {
+				// Remove the key to use defaults
+				const { [configKey]: _removed, ...rest } = config;
+				newConfig = rest;
+			} else {
+				// Set the conditions
+				newConfig = { ...config, [configKey]: conditions };
+			}
+
+			return {
+				...node,
+				data: {
+					...node.data,
+					_config: Object.keys(newConfig).length > 0 ? newConfig : undefined,
+				}
+			};
+		}),
+		isDirty: true,
+	});
+}
+
+// Get salvo conditions from a node's _config
+export function getNodeSalvoConditions(
+	node: FlowNode,
+	type: 'in' | 'out'
+): Record<string, unknown> | null {
+	const config = (node.data._config || {}) as Record<string, unknown>;
+	const configKey = type === 'in' ? 'in_salvo_conditions' : 'out_salvo_conditions';
+	const conditions = config[configKey];
+
+	if (conditions === undefined || conditions === null) {
+		return null; // Use defaults
+	}
+
+	return conditions as Record<string, unknown>;
+}
+
 // Update node positions (called when nodes are dragged)
 export function updateNodePositions(updates: Array<{ id: string; position: { x: number; y: number } }>) {
 	const tab = get(activeTab);
