@@ -234,6 +234,65 @@ export function updateNodeDataLive(id: string, dataUpdates: Partial<NetrunNodeDa
 	});
 }
 
+/**
+ * Rename a node: updates its id, data.label, and all edge references.
+ * Returns true if renamed successfully, false if newName is invalid/duplicate.
+ */
+export function renameNode(oldName: string, newName: string): boolean {
+	if (oldName === newName) return true;
+
+	const tab = get(activeTab);
+	if (!tab) return false;
+
+	const trimmed = newName.trim();
+	if (!trimmed) return false;
+
+	// Check for duplicates
+	if (tab.nodes.some(n => n.id !== oldName && n.data.label === trimmed)) {
+		return false;
+	}
+
+	// Update nodes: change id and label for the renamed node
+	const updatedNodes = tab.nodes.map(node => {
+		if (node.id === oldName) {
+			return { ...node, id: trimmed, data: { ...node.data, label: trimmed } };
+		}
+		return node;
+	});
+
+	// Update edges: source/target references
+	const updatedEdges = tab.edges.map(edge => {
+		let changed = false;
+		let newEdge = { ...edge };
+		if (edge.source === oldName) {
+			newEdge.source = trimmed;
+			changed = true;
+		}
+		if (edge.target === oldName) {
+			newEdge.target = trimmed;
+			changed = true;
+		}
+		return changed ? newEdge : edge;
+	});
+
+	// Update selectedNodeIds if needed
+	const currentSelected = get(selectedNodeIds);
+	if (currentSelected.has(oldName)) {
+		const newSelected = new Set(currentSelected);
+		newSelected.delete(oldName);
+		newSelected.add(trimmed);
+		selectedNodeIds.set(newSelected);
+	}
+
+	updateActiveTab({
+		nodes: updatedNodes,
+		edges: updatedEdges,
+		isDirty: true,
+	});
+
+	return true;
+}
+
 // Update node-level environment variable overrides
 export function updateNodeEnv(id: string, env: Record<string, string> | undefined) {
 	const tab = get(activeTab);
@@ -512,6 +571,9 @@ export function deleteEdges(ids: string[]) {
 // Copy/Paste functionality
 import { copyToClipboard, getClipboardNodes, hasClipboardContent } from './clipboardStore';
 export { hasClipboardContent } from './clipboardStore';
+
+// Toast notifications
+import { toasts } from './toastStore';
 
 // Recent files
 import { addRecentFile } from './recentFilesStore';
@@ -895,17 +957,25 @@ export function pasteNodes(position?: { x: number; y: number }): FlowNode[] {
 		offsetY = position.y - centerY;
 	}
 
-	// Create new nodes with new IDs and offset positions
-	const newNodes: FlowNode[] = clipboardNodes.map(node => ({
-		...node,
-		id: generateNodeId(),
-		position: {
-			x: node.position.x + offsetX,
-			y: node.position.y + offsetY,
-		},
-		data: { ...node.data },
-		selected: false,
-	}));
+	// Create new nodes with unique names as IDs
+	// We need to accumulate generated names to avoid collisions between pasted nodes
+	const allExisting = [...tab.nodes];
+	const newNodes: FlowNode[] = clipboardNodes.map(node => {
+		const uniqueName = generateUniqueNodeName(allExisting, node.data.label);
+		const newNode: FlowNode = {
+			...node,
+			id: uniqueName,
+			position: {
+				x: node.position.x + offsetX,
+				y: node.position.y + offsetY,
+			},
+			data: { ...node.data, label: uniqueName },
+			selected: false,
+		};
+		// Add to allExisting so subsequent pasted nodes see this name as taken
+		allExisting.push(newNode);
+		return newNode;
+	});
 
 	// Add new nodes
 	updateActiveTab({
@@ -930,25 +1000,35 @@ export function cutSelectedNodes(): void {
 }
 
 // Generate unique IDs
-let nodeCounter = 0;
-export function generateNodeId(): string {
-	return `node-${Date.now()}-${nodeCounter++}`;
-}
-
 let edgeCounter = 0;
 export function generateEdgeId(): string {
 	return `edge-${Date.now()}-${edgeCounter++}`;
 }
 
-// Create a new regular node
+/**
+ * Generate a unique node name given existing nodes.
+ * If `base` is not taken, returns it as-is.
+ * Otherwise appends _1, _2, etc.
+ */
+export function generateUniqueNodeName(existingNodes: FlowNode[], base: string): string {
+	const names = new Set(existingNodes.map(n => n.data.label));
+	if (!names.has(base)) return base;
+	let i = 1;
+	while (names.has(`${base}_${i}`)) i++;
+	return `${base}_${i}`;
+}
+
+// Create a new regular node (id = name)
 export function createRegularNode(position: { x: number; y: number }, name?: string): NetrunNode {
-	const id = generateNodeId();
+	const tab = get(activeTab);
+	const existingNodes = tab?.nodes || [];
+	const nodeName = generateUniqueNodeName(existingNodes, name || 'Node');
 	return {
-		id,
+		id: nodeName,
 		type: 'netrunNode',
 		position,
 		data: {
-			label: name || `Node ${id.slice(-4)}`,
+			label: nodeName,
 			nodeType: 'regular',
 			inPorts: [{ name: 'in', type: 'any' }],
 			outPorts: [{ name: 'out', type: 'any' }],
@@ -957,19 +1037,22 @@ export function createRegularNode(position: { x: number; y: number }, name?: str
 	};
 }
 
-// Create a new factory node
+// Create a new factory node (id = name)
 export function createFactoryNode(
 	position: { x: number; y: number },
 	factory: string,
 	factoryArgs: Record<string, unknown> = {}
 ): NetrunNode {
-	const id = generateNodeId();
+	const tab = get(activeTab);
+	const existingNodes = tab?.nodes || [];
+	const shortName = factory.split('.').pop() || 'Factory_Node';
+	const nodeName = generateUniqueNodeName(existingNodes, shortName);
 	return {
-		id,
+		id: nodeName,
 		type: 'netrunNode',
 		position,
 		data: {
-			label: factory.split('.').pop() || 'Factory Node',
+			label: nodeName,
 			nodeType: 'factory',
 			factory,
 			factoryArgs,
@@ -1116,11 +1199,9 @@ export function saveInlineSubgraphToParent(): boolean {
 					name: nodeData.label,
 					// Spread the stored subgraph config (includes nodes, edges, exposed_ports, etc.)
 					...(subgraphData._subgraphConfig || {}),
-					// Update meta with current UI state
+					// Update meta with current UI state (only position)
 					meta: {
 						ui: {
-							id: n.id,
-							label: nodeData.label,
 							position: n.position,
 						}
 					}
@@ -1138,8 +1219,6 @@ export function saveInlineSubgraphToParent(): boolean {
 					),
 					meta: {
 						ui: {
-							id: n.id,
-							label: nodeData.label,
 							position: n.position,
 						}
 					}
@@ -1147,8 +1226,8 @@ export function saveInlineSubgraphToParent(): boolean {
 			}
 		}),
 		edges: tab.edges.map(e => ({
-			source_str: `${tab.nodes.find(n => n.id === e.source)?.data.label || e.source}.${e.sourceHandle || 'out'}`,
-			target_str: `${tab.nodes.find(n => n.id === e.target)?.data.label || e.target}.${e.targetHandle || 'in'}`,
+			source_str: `${e.source}.${e.sourceHandle || 'out'}`,
+			target_str: `${e.target}.${e.targetHandle || 'in'}`,
 		})),
 	};
 
@@ -1191,6 +1270,18 @@ export async function saveToFile(path?: string): Promise<void> {
 			return; // Successfully saved to parent
 		}
 		throw new Error('Failed to save inline subgraph to parent');
+	}
+
+	// Check for duplicate node names before saving
+	const nameCount = new Map<string, number>();
+	for (const node of tab.nodes) {
+		const name = node.data.label.trim();
+		nameCount.set(name, (nameCount.get(name) || 0) + 1);
+	}
+	const duplicates = [...nameCount.entries()].filter(([, count]) => count > 1).map(([name]) => name);
+	if (duplicates.length > 0) {
+		toasts.error(`Cannot save: duplicate node names: ${duplicates.join(', ')}`);
+		throw new Error(`Duplicate node names: ${duplicates.join(', ')}`);
 	}
 
 	let savePath = path || tab.filePath;
