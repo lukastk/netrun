@@ -124,6 +124,20 @@ async def save_file(request: FileSaveRequest) -> FileSaveResponse:
     # Ensure directory exists
     path.parent.mkdir(parents=True, exist_ok=True)
 
+    # Check for duplicate node names
+    node_names = [n.get("data", {}).get("label", n.get("id", "")) for n in request.nodes]
+    seen: set[str] = set()
+    duplicates: list[str] = []
+    for name in node_names:
+        if name in seen:
+            duplicates.append(name)
+        seen.add(name)
+    if duplicates:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Duplicate node names: {', '.join(sorted(set(duplicates)))}"
+        )
+
     try:
         # Convert UI format to GraphConfig
         graph_config = ui_to_graph_config(request.nodes, request.edges)
@@ -507,13 +521,11 @@ async def create_subgraph(request: SubgraphCreateRequest) -> SubgraphCreateRespo
 
         node_config = {
             "type": data.get("nodeType", "node") if data.get("nodeType") != "subgraph" else "subgraph",
-            "name": data.get("label", node["id"]),
+            "name": node["id"],
             "in_ports": {p["name"]: {} for p in data.get("inPorts", [])},
             "out_ports": {p["name"]: {} for p in data.get("outPorts", [])},
             "meta": {
                 "ui": {
-                    "id": node["id"],
-                    "label": data.get("label"),
                     "position": {"x": rel_x, "y": rel_y},
                 }
             },

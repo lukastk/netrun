@@ -4,6 +4,7 @@
 		selectedNodeIds,
 		updateNodeData,
 		updateNodeDataLive,
+		renameNode,
 		updateNodeActions,
 		updateNodeSalvoConditions,
 		getNodeSalvoConditions,
@@ -164,11 +165,46 @@
 		sectionsOpen[section] = !sectionsOpen[section];
 	}
 
-	// Update handlers - use "Live" version for typing, push history on blur
+	// Local state for the name input (to avoid changing node ID on every keystroke)
+	let localNodeName = $state('');
+	let lastSyncedNodeId = $state<string | null>(null);
+
+	// Sync local name from selected node when selection changes
+	$effect(() => {
+		if ($selectedNode && $selectedNode.id !== lastSyncedNodeId) {
+			localNodeName = $selectedNode.data.label;
+			lastSyncedNodeId = $selectedNode.id;
+		} else if (!$selectedNode) {
+			localNodeName = '';
+			lastSyncedNodeId = null;
+		}
+	});
+
+	// Update handlers
 	function updateLabel(event: Event) {
 		const target = event.target as HTMLInputElement;
-		if ($selectedNode) {
-			updateNodeDataLive($selectedNode.id, { label: target.value });
+		localNodeName = target.value;
+	}
+
+	function commitNodeRename() {
+		if (!$selectedNode) return;
+		const oldName = $selectedNode.id;
+		const newName = localNodeName.trim();
+
+		if (!newName || newName === oldName) {
+			// Revert to current name if empty
+			localNodeName = $selectedNode.data.label;
+			return;
+		}
+
+		pushHistory();
+		const success = renameNode(oldName, newName);
+		if (!success) {
+			// Duplicate or invalid - revert
+			localNodeName = $selectedNode.data.label;
+		} else {
+			// Update lastSyncedNodeId to the new name so $effect doesn't overwrite
+			lastSyncedNodeId = newName;
 		}
 	}
 
@@ -408,9 +444,9 @@
 							<input
 								id="node-label"
 								type="text"
-								value={$selectedNode.data.label}
+								value={localNodeName}
 								oninput={updateLabel}
-								onblur={onFieldBlur}
+								onblur={commitNodeRename}
 							/>
 						</div>
 						<div class="field">
@@ -424,10 +460,6 @@
 									Regular Node
 								{/if}
 							</div>
-						</div>
-						<div class="field">
-							<label>ID</label>
-							<div class="readonly-value mono">{$selectedNode.id}</div>
 						</div>
 						<button
 							class="delete-node-btn"

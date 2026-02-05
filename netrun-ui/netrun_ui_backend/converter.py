@@ -216,11 +216,11 @@ def graph_config_to_ui(
             node_count = _count_subgraph_nodes(node) if not is_file_ref else None
 
             ui_node = {
-                "id": ui_meta.get("id", node_name),
+                "id": node_name,
                 "type": "subgraphNode",
                 "position": position,
                 "data": {
-                    "label": ui_meta.get("label", node_name),
+                    "label": node_name,
                     "nodeType": "subgraph",
                     "inPorts": in_ports,
                     "outPorts": out_ports,
@@ -263,11 +263,11 @@ def graph_config_to_ui(
             ]
 
             ui_node = {
-                "id": ui_meta.get("id", node_name),
+                "id": node_name,
                 "type": "netrunNode",
                 "position": position,
                 "data": {
-                    "label": ui_meta.get("label", node_name),
+                    "label": node_name,
                     "nodeType": node_type,
                     "inPorts": in_ports,
                     "outPorts": out_ports,
@@ -342,19 +342,13 @@ def ui_to_graph_config(ui_nodes: list[dict], ui_edges: list[dict]) -> dict[str, 
     config_nodes = []
     config_edges = []
 
-    # Build id -> name mapping
-    id_to_name = {}
-    for node in ui_nodes:
-        node_id = node["id"]
-        data = node.get("data", {})
-        name = data.get("label", node_id)
-        id_to_name[node_id] = name
-
     # Convert nodes
     for node in ui_nodes:
         data = node.get("data", {})
         position = node.get("position", {"x": 0, "y": 0})
         node_type = data.get("nodeType")
+        # id === name in the new format
+        node_name = node["id"]
 
         # Check if this is a subgraph node
         if node_type == "subgraph" or node.get("type") == "subgraphNode":
@@ -363,12 +357,10 @@ def ui_to_graph_config(ui_nodes: list[dict], ui_edges: list[dict]) -> dict[str, 
 
             config_node = {
                 "type": "subgraph",
-                "name": data.get("label", node["id"]),
+                "name": node_name,
                 **subgraph_config,
                 "meta": {
                     "ui": {
-                        "id": node["id"],
-                        "label": data.get("label"),
                         "position": position,
                     }
                 },
@@ -406,13 +398,11 @@ def ui_to_graph_config(ui_nodes: list[dict], ui_edges: list[dict]) -> dict[str, 
 
             config_node = {
                 "type": "node",
-                "name": data.get("label", node["id"]),
+                "name": node_name,
                 "in_ports": in_ports,
                 "out_ports": out_ports,
                 "meta": {
                     "ui": {
-                        "id": node["id"],
-                        "label": data.get("label"),
                         "position": position,
                     }
                 },
@@ -433,15 +423,12 @@ def ui_to_graph_config(ui_nodes: list[dict], ui_edges: list[dict]) -> dict[str, 
 
         config_nodes.append(config_node)
 
-    # Convert edges
+    # Convert edges (id === name, so use node id directly)
     for edge in ui_edges:
-        source_id = edge["source"]
-        target_id = edge["target"]
+        source_name = edge["source"]
+        target_name = edge["target"]
         source_handle = edge.get("sourceHandle", "out")
         target_handle = edge.get("targetHandle", "in")
-
-        source_name = id_to_name.get(source_id, source_id)
-        target_name = id_to_name.get(target_id, target_id)
 
         config_edge = {
             "source_str": f"{source_name}.{source_handle}",
