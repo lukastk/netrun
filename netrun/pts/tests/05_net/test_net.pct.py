@@ -2190,3 +2190,51 @@ def test_ctx_vars_merging():
 
 # %%
 test_ctx_vars_merging()
+
+# %% [markdown]
+# ## Net.from_file Tests
+
+# %%
+#|export
+def test_net_from_file_json(tmp_path):
+    """Test Net.from_file loads a Net from a JSON config file."""
+    import json
+    from pathlib import Path
+
+    config_data = {
+        "pools": {
+            "main_pool": {"spec": {"type": "main"}},
+        },
+        "graph": {
+            "nodes": [{"name": "Node1"}],
+        },
+    }
+
+    config_file = tmp_path / "test_config.json"
+    config_file.write_text(json.dumps(config_data))
+
+    net = Net.from_file(config_file)
+
+    assert isinstance(net, Net)
+    assert net.config is not None
+    assert net.started is False
+
+# %%
+#|export
+def test_net_from_file_not_found():
+    """Test Net.from_file raises FileNotFoundError for missing file."""
+    with pytest.raises(FileNotFoundError):
+        Net.from_file("/nonexistent/path/config.json")
+
+# %%
+test_net_from_file_not_found()
+
+# %%
+#|export
+def test_net_from_file_unsupported_format(tmp_path):
+    """Test Net.from_file raises ValueError for unsupported format."""
+    bad_file = tmp_path / "config.yaml"
+    bad_file.write_text("key: value")
+
+    with pytest.raises(ValueError, match="Unsupported"):
+        Net.from_file(bad_file)

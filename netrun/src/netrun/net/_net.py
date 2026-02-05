@@ -10,6 +10,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
+from pathlib import Path
 from typing import Any, NoReturn
 from collections.abc import Callable
 
@@ -897,6 +898,23 @@ class Net:
         if self._config.catch_all_output_queue:
             if self._config.catch_all_output_queue not in self._output_queues:
                 self._output_queues[self._config.catch_all_output_queue] = asyncio.Queue()
+
+    @classmethod
+    def from_file(cls, path: 'str | Path') -> "Net":
+        """Load a Net from a JSON or TOML configuration file.
+
+        Args:
+            path: Path to the config file (.json or .toml).
+
+        Returns:
+            A Net instance initialized from the config file.
+
+        Raises:
+            FileNotFoundError: If the file does not exist.
+            ValueError: If the file format is unsupported.
+        """
+        config = NetConfig.from_file(path)
+        return cls(config)
 
     @property
     def config(self) -> NetConfig:
