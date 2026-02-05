@@ -1,4 +1,4 @@
-def is_prime(n: int) -> bool:
+def _is_prime(n: int) -> bool:
     """Check if a number is prime."""
     if n < 2:
         return False
@@ -20,7 +20,7 @@ def find_primes(print, start: int, stop: int) -> list[int]:
     checked = 0
 
     while current < stop:
-        if is_prime(current):
+        if _is_prime(current):
             primes.append(current)
         current += 1
         checked += 1
@@ -29,3 +29,6 @@ def find_primes(print, start: int, stop: int) -> list[int]:
 
     print(f"Found {len(primes)} primes: {primes[0]}...{primes[-1]}")
     return primes
+
+def foo():
+    pass
