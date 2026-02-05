@@ -242,6 +242,20 @@
 		}
 	}
 
+	function selectDottedSegment(e: MouseEvent) {
+		if (e.detail < 2) return;
+		const input = e.target as HTMLInputElement;
+		const val = input.value;
+		if (!val.includes('.')) return;
+		const pos = input.selectionStart ?? 0;
+		let start = pos;
+		let end = pos;
+		while (start > 0 && val[start - 1] !== '.') start--;
+		while (end < val.length && val[end] !== '.') end++;
+		input.setSelectionRange(start, end);
+		e.preventDefault();
+	}
+
 	function updateFactoryPath(event: Event) {
 		const target = event.target as HTMLInputElement;
 		if ($selectedNode) {
@@ -455,6 +469,7 @@
 									value={$selectedNode.data.factory || ''}
 									oninput={updateFactoryPath}
 									onblur={() => { pushHistory(); refreshFactoryPreview(); }}
+									onmousedown={selectDottedSegment}
 									class="mono"
 								/>
 							</div>
@@ -479,6 +494,7 @@
 													placeholder={getParamPlaceholder(param)}
 													oninput={(e) => updateFactoryArg(param.name, (e.target as HTMLInputElement).value)}
 													onblur={() => { pushHistory(); refreshFactoryPreview(); }}
+													onmousedown={selectDottedSegment}
 													class:import-path={isImportPathParam(param)}
 													class:required-missing={!param.has_default && !$selectedNode.data.factoryArgs?.[param.name]}
 												/>
