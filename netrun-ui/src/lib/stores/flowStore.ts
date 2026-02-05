@@ -551,10 +551,40 @@ export function deleteNodes(ids: string[]) {
 	});
 }
 
+/**
+ * Check if a connection is valid.
+ * Prevents fan-out: multiple edges from the same output port are not allowed.
+ * Allows fan-in: multiple edges to the same input port are allowed.
+ */
+export function isValidConnection(connection: { source?: string | null; sourceHandle?: string | null }): boolean {
+	if (!connection.source || !connection.sourceHandle) return false;
+
+	const tab = get(activeTab);
+	if (!tab) return false;
+
+	// Prevent multiple edges from same output port (fan-out not allowed)
+	const existingFromSource = tab.edges.some(
+		e => e.source === connection.source && e.sourceHandle === connection.sourceHandle
+	);
+
+	return !existingFromSource;
+}
+
 export function addEdge(edge: NetrunEdge) {
-	pushHistory();
 	const tab = get(activeTab);
 	if (!tab) return;
+
+	// Validate: no multiple edges from same output port (fan-out not allowed)
+	const existingFromSource = tab.edges.some(
+		e => e.source === edge.source && e.sourceHandle === edge.sourceHandle
+	);
+
+	if (existingFromSource) {
+		console.warn('Cannot add edge: output port already has an outgoing edge');
+		return;
+	}
+
+	pushHistory();
 	updateActiveTab({ edges: [...tab.edges, edge] });
 }
 

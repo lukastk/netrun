@@ -73,7 +73,7 @@ fn test_graph_get_edge_by_tail() {
 }
 
 #[test]
-fn test_graph_get_edge_by_head() {
+fn test_graph_get_edges_by_head() {
     let graph = common::linear_graph_3();
 
     // Edge to B.in should exist
@@ -82,9 +82,9 @@ fn test_graph_get_edge_by_head() {
         port_type: PortType::Input,
         port_name: "in".to_string(),
     };
-    let edge = graph.get_edge_by_head(&port_ref);
-    assert!(edge.is_some());
-    assert_eq!(edge.unwrap().source.node_name, "A");
+    let edges = graph.get_edges_by_head(&port_ref);
+    assert_eq!(edges.len(), 1);
+    assert_eq!(edges[0].source.node_name, "A");
 
     // Non-existent edge (A has no input ports)
     let port_ref_none = PortRef {
@@ -92,7 +92,7 @@ fn test_graph_get_edge_by_head() {
         port_type: PortType::Input,
         port_name: "in".to_string(),
     };
-    assert!(graph.get_edge_by_head(&port_ref_none).is_none());
+    assert!(graph.get_edges_by_head(&port_ref_none).is_empty());
 }
 
 // ========== Graph Validation Tests ==========

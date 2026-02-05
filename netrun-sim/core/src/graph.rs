@@ -188,6 +188,9 @@ fn collect_ports_from_term(term: &SalvoConditionTerm, ports: &mut HashSet<PortNa
 /// Errors that can occur during graph validation
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum GraphValidationError {
+    /// Multiple edges from same output port (fan-out not allowed)
+    #[error("output port {output_port} has {edge_count} outgoing edges (only 1 allowed)")]
+    MultipleEdgesFromOutputPort { output_port: PortRef, edge_count: usize },
     /// Edge references a node that doesn't exist
     #[error("edge {edge_source} -> {edge_target} references non-existent node '{missing_node}'")]
     EdgeReferencesNonexistentNode {
@@ -416,7 +419,7 @@ pub struct Graph {
     nodes: HashMap<NodeName, Node>,
     edges: HashSet<Edge>,
     edges_by_tail: HashMap<PortRef, Edge>,
-    edges_by_head: HashMap<PortRef, Edge>,
+    edges_by_head: HashMap<PortRef, Vec<Edge>>,
 }
 
 impl Graph {
@@ -431,11 +434,14 @@ impl Graph {
 
         let mut edges_set: HashSet<Edge> = HashSet::new();
         let mut edges_by_tail: HashMap<PortRef, Edge> = HashMap::new();
-        let mut edges_by_head: HashMap<PortRef, Edge> = HashMap::new();
+        let mut edges_by_head: HashMap<PortRef, Vec<Edge>> = HashMap::new();
 
         for edge in edges {
             edges_by_tail.insert(edge.source.clone(), edge.clone());
-            edges_by_head.insert(edge.target.clone(), edge.clone());
+            edges_by_head
+                .entry(edge.target.clone())
+                .or_insert_with(Vec::new)
+                .push(edge.clone());
             edges_set.insert(edge);
         }
 
@@ -462,9 +468,13 @@ impl Graph {
         self.edges_by_tail.get(output_port_ref)
     }
 
-    /// Returns the edge that has the given input port as its target (head).
-    pub fn get_edge_by_head(&self, input_port_ref: &PortRef) -> Option<&Edge> {
-        self.edges_by_head.get(input_port_ref)
+    /// Returns all edges that have the given input port as their target (head).
+    /// Fan-in is allowed, so multiple edges can connect to the same input port.
+    pub fn get_edges_by_head(&self, input_port_ref: &PortRef) -> &[Edge] {
+        self.edges_by_head
+            .get(input_port_ref)
+            .map(|v| v.as_slice())
+            .unwrap_or(&[])
     }
 
     /// Validates the graph structure.
@@ -541,6 +551,20 @@ impl Graph {
                     edge_source: source.clone(),
                     edge_target: target.clone(),
                     missing_port: target.clone(),
+                });
+            }
+        }
+
+        // Check for multiple edges from same output port (fan-out not allowed)
+        let mut edges_from_source: HashMap<&PortRef, usize> = HashMap::new();
+        for edge in &self.edges {
+            *edges_from_source.entry(&edge.source).or_insert(0) += 1;
+        }
+        for (port_ref, count) in edges_from_source {
+            if count > 1 {
+                errors.push(GraphValidationError::MultipleEdgesFromOutputPort {
+                    output_port: port_ref.clone(),
+                    edge_count: count,
                 });
             }
         }
