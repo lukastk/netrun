@@ -57,6 +57,9 @@ from netrun.net.config import (
     GraphConfig,
     # Net
     NetConfig,
+    # Node variables
+    NodeVariable,
+    NodeExecutionConfig,
     # Subgraph
     ExposedPortConfig,
     SubgraphConfig,
@@ -1808,3 +1811,162 @@ def test_netconfig_resolve_preserves_file_path():
 
 # %%
 test_netconfig_resolve_preserves_file_path();
+
+# %% [markdown]
+# ## NodeVariable Tests
+
+# %%
+#|export
+def test_node_variable_resolve_str():
+    """Test NodeVariable resolves str type."""
+    var = NodeVariable(value="hello", type="str")
+    assert var.resolve_value() == "hello"
+
+    # Default type is "str"
+    var2 = NodeVariable(value="world")
+    assert var2.resolve_value() == "world"
+
+    # Empty string type also resolves as str
+    var3 = NodeVariable(value="test", type="")
+    assert var3.resolve_value() == "test"
+
+# %%
+test_node_variable_resolve_str();
+
+# %%
+#|export
+def test_node_variable_resolve_int():
+    """Test NodeVariable resolves int type."""
+    var = NodeVariable(value="42", type="int")
+    assert var.resolve_value() == 42
+    assert isinstance(var.resolve_value(), int)
+
+# %%
+test_node_variable_resolve_int();
+
+# %%
+#|export
+def test_node_variable_resolve_float():
+    """Test NodeVariable resolves float type."""
+    var = NodeVariable(value="3.14", type="float")
+    assert var.resolve_value() == 3.14
+    assert isinstance(var.resolve_value(), float)
+
+# %%
+test_node_variable_resolve_float();
+
+# %%
+#|export
+def test_node_variable_resolve_bool():
+    """Test NodeVariable resolves bool type."""
+    for true_val in ("true", "True", "TRUE", "1", "yes", "Yes"):
+        var = NodeVariable(value=true_val, type="bool")
+        assert var.resolve_value() is True, f"Expected True for '{true_val}'"
+
+    for false_val in ("false", "False", "FALSE", "0", "no", "No"):
+        var = NodeVariable(value=false_val, type="bool")
+        assert var.resolve_value() is False, f"Expected False for '{false_val}'"
+
+# %%
+test_node_variable_resolve_bool();
+
+# %%
+#|export
+def test_node_variable_resolve_json():
+    """Test NodeVariable resolves json type."""
+    var = NodeVariable(value='{"key": "value", "num": 42}', type="json")
+    result = var.resolve_value()
+    assert result == {"key": "value", "num": 42}
+    assert isinstance(result, dict)
+
+    # JSON array
+    var2 = NodeVariable(value='[1, 2, 3]', type="json")
+    assert var2.resolve_value() == [1, 2, 3]
+
+# %%
+test_node_variable_resolve_json();
+
+# %%
+#|export
+def test_node_variable_resolve_errors():
+    """Test NodeVariable raises errors for invalid values."""
+    # Invalid int
+    with pytest.raises(ValueError):
+        NodeVariable(value="not_an_int", type="int").resolve_value()
+
+    # Invalid float
+    with pytest.raises(ValueError):
+        NodeVariable(value="not_a_float", type="float").resolve_value()
+
+    # Invalid bool
+    with pytest.raises(ValueError, match="Cannot parse"):
+        NodeVariable(value="maybe", type="bool").resolve_value()
+
+    # Invalid json
+    with pytest.raises(Exception):  # json.JSONDecodeError
+        NodeVariable(value="not json", type="json").resolve_value()
+
+    # Unsupported type
+    with pytest.raises(ValueError, match="Unsupported"):
+        NodeVariable(value="test", type="unknown_type").resolve_value()
+
+# %%
+test_node_variable_resolve_errors();
+
+# %%
+#|export
+def test_node_variable_serialization_roundtrip():
+    """Test NodeVariable Pydantic model_dump / model_validate roundtrip."""
+    var = NodeVariable(value="42", type="int")
+    dumped = var.model_dump()
+    assert dumped == {"value": "42", "type": "int"}
+
+    restored = NodeVariable.model_validate(dumped)
+    assert restored.value == "42"
+    assert restored.type == "int"
+    assert restored.resolve_value() == 42
+
+    # JSON roundtrip
+    json_str = var.model_dump_json()
+    restored_json = NodeVariable.model_validate_json(json_str)
+    assert restored_json == var
+
+# %%
+test_node_variable_serialization_roundtrip();
+
+# %%
+#|export
+def test_node_execution_config_with_vars():
+    """Test NodeExecutionConfig with node_vars field."""
+    config = NodeExecutionConfig(
+        node_vars={
+            "api_key": NodeVariable(value="sk-123", type="str"),
+            "batch_size": NodeVariable(value="32", type="int"),
+        }
+    )
+    assert config.node_vars is not None
+    assert len(config.node_vars) == 2
+    assert config.node_vars["api_key"].resolve_value() == "sk-123"
+    assert config.node_vars["batch_size"].resolve_value() == 32
+
+# %%
+test_node_execution_config_with_vars();
+
+# %%
+#|export
+def test_net_config_with_vars():
+    """Test NetConfig with node_vars field."""
+    config = NetConfig(
+        graph=GraphConfig(nodes=[NodeConfig(name="A")]),
+        node_vars={
+            "env": NodeVariable(value="production", type="str"),
+            "debug": NodeVariable(value="false", type="bool"),
+        }
+    )
+    assert config.node_vars is not None
+    assert len(config.node_vars) == 2
+    assert config.node_vars["env"].resolve_value() == "production"
+    assert config.node_vars["debug"].resolve_value() is False
+
+# %%
+test_net_config_with_vars();

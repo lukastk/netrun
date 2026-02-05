@@ -39,6 +39,7 @@ from netrun.net.config import (
     GraphConfig,
     NodeConfig,
     NodeExecutionConfig,
+    NodeVariable,
     PoolConfig,
     MainPoolConfig,
     ThreadPoolConfig,
@@ -2094,3 +2095,98 @@ def test_deferred_actions_preserved_in_result():
     assert result.func_result == "done"
     assert len(result.created_packets) == 2
     assert len(result.deferred_actions.actions) == 4  # 2 creates + load + send
+
+# %% [markdown]
+# ## Node Variables Tests
+
+# %%
+#|export
+def test_ctx_vars_access():
+    """Test ctx.vars returns resolved variable values."""
+    ctx = NodeExecutionContext(
+        epoch_id="epoch_vars",
+        node_name="VarsNode",
+        _node_vars={
+            "name": NodeVariable(value="test", type="str"),
+            "count": NodeVariable(value="42", type="int"),
+            "rate": NodeVariable(value="3.14", type="float"),
+            "debug": NodeVariable(value="true", type="bool"),
+            "config": NodeVariable(value='{"key": "val"}', type="json"),
+        },
+    )
+
+    v = ctx.vars
+    assert v["name"] == "test"
+    assert v["count"] == 42
+    assert v["rate"] == 3.14
+    assert v["debug"] is True
+    assert v["config"] == {"key": "val"}
+
+# %%
+test_ctx_vars_access()
+
+# %%
+#|export
+def test_ctx_vars_empty():
+    """Test ctx.vars returns empty dict when no vars set."""
+    ctx = NodeExecutionContext(
+        epoch_id="epoch_empty_vars",
+        node_name="EmptyVarsNode",
+    )
+
+    assert ctx.vars == {}
+    assert isinstance(ctx.vars, dict)
+
+# %%
+test_ctx_vars_empty()
+
+# %%
+#|export
+def test_ctx_vars_merging():
+    """Test that node-level vars override net-level vars via preprocessor."""
+    node_configs = {
+        "MergeNode": NodeExecutionConfig(
+            node_vars={
+                "override_me": NodeVariable(value="node_value", type="str"),
+                "node_only": NodeVariable(value="42", type="int"),
+            }
+        )
+    }
+
+    net_vars = {
+        "override_me": NodeVariable(value="net_value", type="str"),
+        "net_only": NodeVariable(value="true", type="bool"),
+    }
+
+    preprocessor = create_net_func_preprocessor(
+        node_configs,
+        net_node_vars=net_vars,
+    )
+
+    captured_ctx = None
+
+    def test_func(ctx, packets):
+        nonlocal captured_ctx
+        captured_ctx = ctx
+        return "ok"
+
+    wrapped = preprocessor(test_func)
+
+    result = wrapped(
+        epoch_id="merge_test",
+        node_name="MergeNode",
+        packets={},
+        packet_values={},
+    )
+
+    assert result.func_result == "ok"
+    v = captured_ctx.vars
+    # Node-level overrides net-level
+    assert v["override_me"] == "node_value"
+    # Node-only var
+    assert v["node_only"] == 42
+    # Net-only var
+    assert v["net_only"] is True
+
+# %%
+test_ctx_vars_merging()

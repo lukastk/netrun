@@ -39,7 +39,7 @@ from netrun.pool.thread import ThreadPool
 from netrun.pool.multiprocess import MultiprocessPool
 from netrun.pool.aio import SingleWorkerPool
 from netrun.pool.remote import RemotePoolClient
-from netrun.net.config import NetConfig, NodeExecutionConfig, OutputQueueConfig, PortConfig, PortTypeConfig
+from netrun.net.config import NetConfig, NodeExecutionConfig, NodeVariable, OutputQueueConfig, PortConfig, PortTypeConfig
 from netrun.execution_manager import ExecutionManager, PoolType, RunAllocationMethod
 from netrun.rpc.base import SyncRPCChannel
 from netrun._iutils import get_timestamp_utc
@@ -157,6 +157,9 @@ class NodeExecutionContext:
 
     # Track if epoch was cancelled
     _cancelled: bool = field(default=False, repr=False)
+
+    # Node variables (merged net-level + node-level)
+    _node_vars: dict[str, "NodeVariable"] | None = field(default=None, repr=False)
 
     def create_packet(self, value: Any) -> str:
         """Create a new packet with the given value.
@@ -413,6 +416,16 @@ class NodeExecutionContext:
         # Add to buffer with timestamp
         self._print_buffer.append((timestamp, message))
 
+    @property
+    def vars(self) -> dict[str, Any]:
+        """Resolved node variables (net-level merged with node-level overrides).
+
+        Returns a dict mapping variable names to their resolved Python values.
+        """
+        if self._node_vars is None:
+            return {}
+        return {name: var.resolve_value() for name, var in self._node_vars.items()}
+
     def _get_execution_result(self) -> "NodeExecutionResult":
         """Get the execution result including deferred actions and print buffer.
 
@@ -591,6 +604,9 @@ class NetFuncPreprocessorNodeConfig:
     retry_wait: float = 0.0
     timeout: float | None = None
 
+    node_vars: dict[str, dict[str, str]] | None = None
+    """Merged node variables (serialized as dicts for pickling)."""
+
     @classmethod
     def from_node_config(
         cls,
@@ -598,6 +614,7 @@ class NetFuncPreprocessorNodeConfig:
         out_ports: dict[str, PortConfig],
         factory: str | None,
         factory_args: dict[str, Any],
+        node_vars: dict[str, dict[str, str]] | None = None,
     ) -> "NetFuncPreprocessorNodeConfig":
         """Create from execution config, port configs, and factory info."""
         return cls(
@@ -611,6 +628,7 @@ class NetFuncPreprocessorNodeConfig:
             retries=exec_config.retries,
             retry_wait=exec_config.retry_wait,
             timeout=exec_config.timeout,
+            node_vars=node_vars,
         )
 
 
@@ -692,6 +710,14 @@ class NetFuncPreprocessor:
                     timeout=config.timeout,
                 )
 
+            # Reconstruct NodeVariable objects from serialized dicts
+            _node_vars = None
+            if config and config.node_vars:
+                _node_vars = {
+                    n: NodeVariable.model_validate(v)
+                    for n, v in config.node_vars.items()
+                }
+
             ctx = NodeExecutionContext(
                 epoch_id=epoch_id,
                 node_name=node_name,
@@ -701,6 +727,7 @@ class NetFuncPreprocessor:
                 _config=exec_config,
                 _input_packet_values=packet_values,
                 _out_ports=out_ports,
+                _node_vars=_node_vars,
             )
 
             # Determine the actual function to call
@@ -753,6 +780,7 @@ def create_net_func_preprocessor(
     node_execution_configs: dict[str, NodeExecutionConfig],
     node_out_ports: dict[str, dict[str, PortConfig]] | None = None,
     node_factories: dict[str, tuple[str, dict[str, Any]]] | None = None,
+    net_node_vars: dict[str, NodeVariable] | None = None,
 ) -> NetFuncPreprocessor:
     """Create a func_preprocessor for Net execution.
 
@@ -767,6 +795,7 @@ def create_net_func_preprocessor(
         node_out_ports: Mapping of node names to their output port configs (for type validation).
         node_factories: Mapping of node names to (factory_path, factory_args) tuples for
             factory-based nodes. Factory functions are resolved lazily on workers.
+        net_node_vars: Net-level default node variables.
 
     Returns:
         A picklable NetFuncPreprocessor instance.
@@ -781,8 +810,20 @@ def create_net_func_preprocessor(
         factory_info = node_factories.get(node_name)
         factory = factory_info[0] if factory_info else None
         factory_args = factory_info[1] if factory_info else {}
+
+        # Merge net-level + node-level vars (node overrides net)
+        merged_vars = None
+        if net_node_vars or config.node_vars:
+            merged = {}
+            if net_node_vars:
+                merged.update({k: v.model_dump() for k, v in net_node_vars.items()})
+            if config.node_vars:
+                merged.update({k: v.model_dump() for k, v in config.node_vars.items()})
+            if merged:
+                merged_vars = merged
+
         node_configs[node_name] = NetFuncPreprocessorNodeConfig.from_node_config(
-            config, out_ports, factory, factory_args
+            config, out_ports, factory, factory_args, node_vars=merged_vars,
         )
 
     return NetFuncPreprocessor(node_configs)
@@ -876,6 +917,7 @@ class Net:
             self._node_execution_configs,
             self._node_out_ports,
             self._node_factories,
+            net_node_vars=self._config_resolved.node_vars,
         )
         func_done_callback = create_net_func_done_callback()
 

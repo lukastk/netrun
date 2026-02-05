@@ -41,6 +41,15 @@
 		generateActionId,
 		type Action,
 	} from '$lib/stores/actionsStore';
+	import {
+		projectNodeVars,
+		nodeNodeVars,
+		allNodesVars,
+		updateProjectNodeVars,
+		updateNodeNodeVars,
+	} from '$lib/stores/variablesStore';
+	import NodeVariablesSection from './NodeVariablesSection.svelte';
+	import AllNodeVariablesSection from './AllNodeVariablesSection.svelte';
 
 	// Loading state for factory preview
 	let isRefreshing = $state(false);
@@ -109,12 +118,15 @@
 		subgraph: true,
 		salvoConditions: false,
 		execution: false,
+		nodeVariables: false,
 		// Net-level sections
 		graphSettings: true,
 		pools: true,
 		netSettings: false,
 		factories: true,
 		uiSettings: false,
+		netNodeVariables: false,
+		allNodeVariables: false,
 	});
 
 	// Sidebar resize state
@@ -362,7 +374,7 @@
 	});
 </script>
 
-{#if $activeTab && !$isNewFile}
+{#if $activeTab}
 <aside class="sidebar" style="width: {sidebarWidth}px">
 	<!-- Resize handle -->
 	<div
@@ -690,6 +702,32 @@
 				</section>
 			{/if}
 
+			<!-- Node Variables Section (for regular and factory nodes, not subgraph) -->
+			{#if $selectedNode.data.nodeType !== 'subgraph'}
+				<section class="section">
+					<button
+						class="section-header"
+						onclick={() => toggleSection('nodeVariables')}
+					>
+						<span class="section-title">Node Variables</span>
+						<span class="section-toggle">{sectionsOpen.nodeVariables ? '−' : '+'}</span>
+					</button>
+					{#if sectionsOpen.nodeVariables}
+						<div class="section-content">
+							<NodeVariablesSection
+								variables={$nodeNodeVars}
+								inheritedVariables={$projectNodeVars}
+								level="node"
+								onUpdate={(vars) => {
+									updateNodeNodeVars($selectedNode.id, vars);
+									pushHistory();
+								}}
+							/>
+						</div>
+					{/if}
+				</section>
+			{/if}
+
 			<!-- Actions Panel (for all node types) -->
 			<ActionsPanel
 				onOpenSettings={() => showProjectSettings = true}
@@ -789,6 +827,45 @@
 								updateExtraDataLive(updates);
 							}}
 						/>
+					</div>
+				{/if}
+			</section>
+
+			<!-- Net-level Node Variables Section -->
+			<section class="section">
+				<button
+					class="section-header"
+					onclick={() => toggleSection('netNodeVariables')}
+				>
+					<span class="section-title">Global Node Variables</span>
+					<span class="section-toggle">{sectionsOpen.netNodeVariables ? '−' : '+'}</span>
+				</button>
+				{#if sectionsOpen.netNodeVariables}
+					<div class="section-content">
+						<NodeVariablesSection
+							variables={$projectNodeVars}
+							level="net"
+							onUpdate={(vars) => {
+								updateProjectNodeVars(vars);
+								pushHistory();
+							}}
+						/>
+					</div>
+				{/if}
+			</section>
+
+			<!-- All Node Variables Overview -->
+			<section class="section">
+				<button
+					class="section-header"
+					onclick={() => toggleSection('allNodeVariables')}
+				>
+					<span class="section-title">Local Node Variables</span>
+					<span class="section-toggle">{sectionsOpen.allNodeVariables ? '−' : '+'}</span>
+				</button>
+				{#if sectionsOpen.allNodeVariables}
+					<div class="section-content">
+						<AllNodeVariablesSection allNodesVars={$allNodesVars} />
 					</div>
 				{/if}
 			</section>
