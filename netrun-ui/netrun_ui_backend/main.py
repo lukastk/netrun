@@ -41,16 +41,43 @@ async def health_check():
     return {"status": "healthy"}
 
 
+def find_first_netrun_file(directory: str) -> str | None:
+    """Find the first .netrun.json or .netrun.toml file recursively.
+
+    Skips hidden folders (starting with '.').
+    Returns the absolute path to the first file found, or None.
+    """
+    root = Path(directory)
+    if not root.is_dir():
+        return None
+
+    # Walk directory tree, sorting for deterministic order
+    for dirpath, dirnames, filenames in os.walk(root):
+        # Skip hidden directories (modify in-place to prevent descent)
+        dirnames[:] = sorted([d for d in dirnames if not d.startswith('.')])
+
+        # Check for netrun files in sorted order
+        for filename in sorted(filenames):
+            if filename.endswith('.netrun.json') or filename.endswith('.netrun.toml'):
+                return str(Path(dirpath) / filename)
+
+    return None
+
+
 @app.get("/api/config")
 async def get_config():
     """Return server configuration including working directory.
 
     The working directory is set by the CLI via NETRUN_UI_WORKING_DIR env var,
     or falls back to the server's current working directory.
+
+    Also returns the first netrun file found (if any) for auto-opening.
     """
     working_dir = os.environ.get("NETRUN_UI_WORKING_DIR") or os.getcwd()
+    first_file = find_first_netrun_file(working_dir)
     return {
         "working_dir": working_dir,
+        "first_netrun_file": first_file,
     }
 
 

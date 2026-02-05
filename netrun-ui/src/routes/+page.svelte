@@ -33,11 +33,13 @@
 		initializeCommands();
 
 		// Fetch working directory from server
+		let firstNetrunFile: string | null = null;
 		try {
 			const config = await api.getServerConfig();
 			if (config.working_dir) {
 				initialPath = config.working_dir;
 			}
+			firstNetrunFile = config.first_netrun_file;
 		} catch (e) {
 			// Fall back to VITE_INITIAL_PATH or home directory
 			initialPath = import.meta.env.VITE_INITIAL_PATH || '~';
@@ -47,6 +49,13 @@
 		if (!initialFilesProcessed && data.initialFiles && data.initialFiles.length > 0) {
 			initialFilesProcessed = true;
 			processInitialFiles(data.initialFiles, data.initialNode);
+		} else if (firstNetrunFile) {
+			// Auto-open first netrun file found in working directory
+			try {
+				await loadFromFile(firstNetrunFile);
+			} catch (e) {
+				console.warn('Failed to auto-open first netrun file:', e);
+			}
 		}
 	});
 
