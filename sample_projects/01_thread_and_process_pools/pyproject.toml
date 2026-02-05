@@ -7,3 +7,7 @@ dependencies = [
     "netrun",
     "netrun-ui",
 ]
+
+[tool.uv.sources]
+netrun = { path = "../../netrun" }
+netrun-ui = { path = "../../netrun-ui" }
