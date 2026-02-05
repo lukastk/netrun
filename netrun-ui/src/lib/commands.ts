@@ -6,10 +6,13 @@
  */
 import {
 	registerCommands,
+	unregisterCommandsByPrefix,
 	type Command,
+	type CommandCategory,
 	openCommandPalette,
 } from '$lib/stores/commandStore';
 import { registerShortcuts, type ShortcutBinding } from '$lib/stores/keyboardStore';
+import { availableActions, executeAction } from '$lib/stores/actionsStore';
 import {
 	undo,
 	redo,
@@ -26,6 +29,7 @@ import {
 	copySelectedNodes,
 	pasteNodes,
 	cutSelectedNodes,
+	selectedNode,
 	selectedNodeIds,
 	nodes,
 	addNode,
@@ -39,7 +43,7 @@ import {
 	hasClipboardContent,
 } from '$lib/stores/flowStore';
 import { showFactorySelector } from '$lib/stores/factorySelectorStore';
-import { get } from 'svelte/store';
+import { get, derived } from 'svelte/store';
 import { resolveFilePath } from '$lib/stores/fileExplorerStore';
 import { showPrompt, showAlert, showConfirm } from '$lib/stores/modalStore';
 
@@ -558,6 +562,29 @@ const keyboardShortcuts: ShortcutBinding[] = [
 	{ key: '9', metaKey: true, commandId: 'tab.9' },
 ];
 
+const ACTION_CMD_PREFIX = 'action.run.';
+
+/**
+ * Derived store that produces action commands for the currently selected node.
+ * Returns empty array when no single node is selected.
+ */
+const actionCommands = derived(
+	[selectedNode, availableActions],
+	([$selectedNode, $availableActions]): Command[] => {
+		if (!$selectedNode) return [];
+
+		const nodeName = $selectedNode.data.label || $selectedNode.id;
+
+		return $availableActions.map((action) => ({
+			id: `${ACTION_CMD_PREFIX}${action.id}`,
+			label: `Run: ${action.label} on "${nodeName}"`,
+			category: 'action' as CommandCategory,
+			keywords: ['run', 'execute', 'action', action.label, nodeName],
+			action: () => executeAction(action),
+		}));
+	}
+);
+
 /**
  * Initialize all commands and shortcuts
  */
@@ -574,4 +601,12 @@ export function initializeCommands(): void {
 
 	// Register keyboard shortcuts
 	registerShortcuts(keyboardShortcuts);
+
+	// Dynamically register/unregister action commands based on selected node
+	actionCommands.subscribe((cmds) => {
+		unregisterCommandsByPrefix(ACTION_CMD_PREFIX);
+		if (cmds.length > 0) {
+			registerCommands(cmds);
+		}
+	});
 }

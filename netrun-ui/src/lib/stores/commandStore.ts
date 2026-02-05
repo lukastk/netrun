@@ -5,7 +5,7 @@
  */
 import { writable, derived, get } from 'svelte/store';
 
-export type CommandCategory = 'file' | 'edit' | 'view' | 'node' | 'subgraph' | 'tab';
+export type CommandCategory = 'file' | 'edit' | 'view' | 'node' | 'subgraph' | 'tab' | 'action';
 
 export interface Command {
 	id: string;
@@ -88,6 +88,13 @@ export function registerCommands(newCommands: Command[]): void {
  */
 export function unregisterCommand(id: string): void {
 	commands.update((cmds) => cmds.filter((c) => c.id !== id));
+}
+
+/**
+ * Unregister all commands matching a prefix
+ */
+export function unregisterCommandsByPrefix(prefix: string): void {
+	commands.update((cmds) => cmds.filter((c) => !c.id.startsWith(prefix)));
 }
 
 /**
@@ -186,7 +193,7 @@ export function getCommandsByCategory(): Map<CommandCategory, Command[]> {
 	const cmds = get(commands);
 	const grouped = new Map<CommandCategory, Command[]>();
 
-	const categoryOrder: CommandCategory[] = ['file', 'edit', 'view', 'node', 'subgraph', 'tab'];
+	const categoryOrder: CommandCategory[] = ['file', 'edit', 'view', 'node', 'subgraph', 'tab', 'action'];
 
 	for (const category of categoryOrder) {
 		grouped.set(category, []);
@@ -238,5 +245,6 @@ export const categoryLabels: Record<CommandCategory, string> = {
 	view: 'View',
 	node: 'Node',
 	subgraph: 'Subgraph',
-	tab: 'Tab'
+	tab: 'Tab',
+	action: 'Action',
 };
