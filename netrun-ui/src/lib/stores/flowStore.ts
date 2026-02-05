@@ -1193,9 +1193,14 @@ export async function saveToFile(path?: string): Promise<void> {
 		throw new Error('Failed to save inline subgraph to parent');
 	}
 
-	const savePath = path || tab.filePath;
+	let savePath = path || tab.filePath;
 	if (!savePath) {
 		throw new Error('No file path specified');
+	}
+
+	// Ensure file has a valid netrun extension
+	if (!savePath.endsWith('.netrun.json') && !savePath.endsWith('.netrun.toml')) {
+		savePath = savePath + '.netrun.json';
 	}
 
 	// Determine format from path extension or use current format

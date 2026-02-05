@@ -13,6 +13,7 @@
 		deleteNodes,
 		pushHistory,
 		activeTab,
+		isNewFile,
 		extraData,
 		graphMeta,
 		updateExtraDataLive,
@@ -361,7 +362,7 @@
 	});
 </script>
 
-{#if $activeTab}
+{#if $activeTab && !$isNewFile}
 <aside class="sidebar" style="width: {sidebarWidth}px">
 	<!-- Resize handle -->
 	<div
