@@ -174,6 +174,7 @@ export interface ValidateConfigResponse {
 
 export interface ServerConfigResponse {
 	working_dir: string;
+	first_netrun_file: string | null;
 }
 
 class ApiClient {
