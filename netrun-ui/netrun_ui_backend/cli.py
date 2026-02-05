@@ -188,6 +188,10 @@ def run_dev_server(
 
     frontend_dir = get_frontend_dir()
 
+    # Set working directory for file explorer
+    if initial_path:
+        os.environ["NETRUN_UI_WORKING_DIR"] = initial_path
+
     print("Starting netrun-ui in development mode...")
     print()
 
@@ -251,6 +255,10 @@ def run_dev_app(
         sys.exit(1)
 
     frontend_dir = get_frontend_dir()
+
+    # Set working directory for file explorer
+    if initial_path:
+        os.environ["NETRUN_UI_WORKING_DIR"] = initial_path
 
     print("Starting netrun-ui in development mode...")
 

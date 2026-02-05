@@ -682,6 +682,67 @@ function triggerBackendValidation() {
 
 			backendValidationAvailable.set(response.netrun_available);
 			backendValidationErrors.set(response.errors);
+
+			// Validate factory import paths
+			const factoryNodes = tab.nodes.filter(
+				n => n.data.nodeType === 'factory' && (n.data as NetrunNodeData).factory?.trim()
+			);
+
+			const factoryErrorMap = new Map<string, string[]>();
+
+			if (factoryNodes.length > 0) {
+				const results = await Promise.all(
+					factoryNodes.map(async (node) => {
+						const factory = (node.data as NetrunNodeData).factory!;
+						try {
+							const result = await api.validateImport(factory);
+							if (!result.valid) {
+								return { nodeId: node.id, error: `Factory import failed: ${result.error}` };
+							}
+							if (!result.is_factory) {
+								return { nodeId: node.id, error: `Module '${factory}' has no get_node_config function` };
+							}
+							return null;
+						} catch {
+							return null; // Backend unreachable, skip
+						}
+					})
+				);
+
+				for (const result of results) {
+					if (result) {
+						const existing = factoryErrorMap.get(result.nodeId) || [];
+						existing.push(result.error);
+						factoryErrorMap.set(result.nodeId, existing);
+					}
+				}
+			}
+
+			// Merge factory import errors into nodes
+			if (factoryErrorMap.size > 0) {
+				const currentTab = get(activeTab);
+				if (!currentTab) return;
+
+				// Re-compute client-side validation as a clean base, then add factory errors
+				const { nodes: validatedNodes } = computeValidatedNodes(currentTab.nodes);
+				const mergedNodes = validatedNodes.map(node => {
+					const fErrors = factoryErrorMap.get(node.id);
+					if (fErrors) {
+						const existingErrors = node.data.validationErrors || [];
+						return {
+							...node,
+							data: {
+								...node.data,
+								isValid: false,
+								validationErrors: [...existingErrors, ...fErrors],
+							},
+						};
+					}
+					return node;
+				});
+
+				updateActiveTab({ nodes: mergedNodes });
+			}
 		} catch (e) {
 			// Backend not available - clear errors but note it's not available
 			backendValidationAvailable.set(false);
