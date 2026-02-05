@@ -160,6 +160,22 @@
 		return `${base}_${i}`;
 	}
 
+	// Track pool name input values while editing (original name → current input value)
+	let editingNames: Record<string, string> = $state({});
+
+	function getPoolNameError(originalName: string): string | null {
+		const editedValue = editingNames[originalName];
+		if (editedValue === undefined) return null; // Not being edited
+		const trimmed = editedValue.trim();
+		if (trimmed === originalName) return null; // Unchanged
+		if (!trimmed) return 'Name cannot be empty';
+		const current = getTypedPools() || {};
+		if (trimmed in current && trimmed !== originalName) {
+			return `Pool "${trimmed}" already exists`;
+		}
+		return null;
+	}
+
 	// Pool type labels
 	const poolTypeLabels: Record<PoolSpecType, string> = {
 		main: 'Main Thread',
@@ -188,15 +204,31 @@
 		<div class="pools-list">
 			{#each poolEntries as [name, config]}
 				{@const spec = config.spec}
+				{@const nameError = getPoolNameError(name)}
 				<div class="pool-editor">
 					<div class="pool-header">
 						<input
 							type="text"
 							class="pool-name-input"
+							class:pool-name-error={nameError}
 							value={name}
-							onblur={(e) => updatePoolName(name, (e.target as HTMLInputElement).value)}
+							oninput={(e) => { editingNames[name] = (e.target as HTMLInputElement).value; }}
+							onblur={(e) => {
+								const val = (e.target as HTMLInputElement).value;
+								if (!getPoolNameError(name)) {
+									updatePoolName(name, val);
+								} else {
+									(e.target as HTMLInputElement).value = name;
+								}
+								delete editingNames[name];
+							}}
 							onkeydown={(e) => {
 								if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+								if (e.key === 'Escape') {
+									(e.target as HTMLInputElement).value = name;
+									delete editingNames[name];
+									(e.target as HTMLInputElement).blur();
+								}
 							}}
 						/>
 						<button
@@ -207,6 +239,9 @@
 							×
 						</button>
 					</div>
+					{#if nameError}
+						<div class="pool-name-error-msg">{nameError}</div>
+					{/if}
 
 					<div class="pool-body">
 						<div class="field">
@@ -395,6 +430,17 @@
 	.pool-name-input:focus {
 		outline: none;
 		border-color: var(--accent-color, #3b82f6);
+	}
+
+	.pool-name-input.pool-name-error {
+		border-color: var(--error-color, #ef4444);
+	}
+
+	.pool-name-error-msg {
+		font-size: 10px;
+		color: var(--error-color, #ef4444);
+		padding: 2px 8px 4px;
+		background: var(--bg-tertiary, #2d2d2d);
 	}
 
 	.remove-btn {
