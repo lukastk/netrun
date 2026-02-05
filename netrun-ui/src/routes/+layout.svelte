@@ -28,7 +28,7 @@
 <svelte:document oninput={fixSmartQuotes} />
 
 <svelte:head>
-	<title>netrun-ui</title>
+	<title>netrun-ui v{__APP_VERSION__}</title>
 	<link rel="icon" href={favicon} />
 </svelte:head>
 

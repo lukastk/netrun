@@ -361,6 +361,7 @@
 	});
 </script>
 
+{#if $activeTab}
 <aside class="sidebar" style="width: {sidebarWidth}px">
 	<!-- Resize handle -->
 	<div
@@ -945,6 +946,7 @@
 		{/if}
 	</div>
 </aside>
+{/if}
 
 <!-- Modals -->
 {#if showProjectSettings}
