@@ -151,10 +151,8 @@ def _parse_function_signature(func: Callable|str) -> _ParsedSignature:
         ValueError: If the function has *args or **kwargs.
     """
     if isinstance(func, str):
-        # Import the function from path
-        module_path, func_name = func.rsplit(".", 1)
-        module = importlib.import_module(module_path)
-        func = getattr(module, func_name)
+        # Import the function from path (supports both dotted and file-path refs)
+        func = _get_func_from_import_path(func)
 
     sig = inspect.signature(func)
 
@@ -521,11 +519,9 @@ def _from_function(func: Callable|str) -> NodeConfig:
     return config
 
 def _get_func_from_import_path(func_path: str) -> Callable:
+    from netrun.net.config import _import_from_path
     try:
-        module_path, func_name = func_path.rsplit(".", 1)
-        module = importlib.import_module(module_path)
-        func = getattr(module, func_name)
-        return func
+        return _import_from_path(func_path)
     except Exception as e:
         raise ValueError(f"Error importing function from path: {func_path}") from e
 

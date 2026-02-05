@@ -2013,3 +2013,391 @@ def test_net_config_rejects_multiple_main_pools():
 
 # %%
 test_net_config_rejects_multiple_main_pools();
+
+# %% [markdown]
+# ## File-Path Reference Tests
+
+# %%
+#|export
+from netrun.net.config import _is_file_path_ref, _import_from_file_path, _import_from_path
+
+# %%
+#|export
+def test_is_file_path_ref_dotted_paths():
+    """Test that dotted import paths are not detected as file refs."""
+    assert _is_file_path_ref("myapp.utils.func") is False
+    assert _is_file_path_ref("netrun.node_factories.from_function") is False
+    assert _is_file_path_ref("json") is False
+    assert _is_file_path_ref("") is False
+
+# %%
+test_is_file_path_ref_dotted_paths();
+
+# %%
+#|export
+def test_is_file_path_ref_file_paths():
+    """Test that file-path references are detected correctly."""
+    # Double colon
+    assert _is_file_path_ref("nodes.py::my_func") is True
+    assert _is_file_path_ref("./factory.py::get_node_config") is True
+
+    # Forward slash
+    assert _is_file_path_ref("path/to/file.py") is True
+    assert _is_file_path_ref("./nodes.py") is True
+
+    # Backslash
+    assert _is_file_path_ref("path\\to\\file.py") is True
+
+    # Dot prefix
+    assert _is_file_path_ref("./module.py") is True
+    assert _is_file_path_ref("../lib/factory.py") is True
+
+# %%
+test_is_file_path_ref_file_paths();
+
+# %%
+#|export
+def test_import_from_file_path_basic():
+    """Test importing a module from a file path."""
+    import textwrap
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        mod_file = tmp / "my_module.py"
+        mod_file.write_text(textwrap.dedent("""\
+            VALUE = 42
+            def hello():
+                return "world"
+        """))
+
+        result = _import_from_file_path(str(mod_file))
+        # Without ::, returns the module
+        assert hasattr(result, "VALUE")
+        assert result.VALUE == 42
+        assert result.hello() == "world"
+
+# %%
+test_import_from_file_path_basic();
+
+# %%
+#|export
+def test_import_from_file_path_with_attr():
+    """Test importing a specific attribute with :: syntax."""
+    import textwrap
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        mod_file = tmp / "funcs.py"
+        mod_file.write_text(textwrap.dedent("""\
+            def my_func():
+                return "result"
+            def other():
+                return "other"
+        """))
+
+        result = _import_from_file_path(f"{mod_file}::my_func")
+        assert callable(result)
+        assert result() == "result"
+
+# %%
+test_import_from_file_path_with_attr();
+
+# %%
+#|export
+def test_import_from_file_path_relative_with_project_root():
+    """Test that relative paths resolve against project_root."""
+    import textwrap
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        mod_file = tmp / "nodes.py"
+        mod_file.write_text("GREETING = 'hello'\n")
+
+        result = _import_from_file_path("./nodes.py", project_root=tmp)
+        assert hasattr(result, "GREETING")
+        assert result.GREETING == "hello"
+
+# %%
+test_import_from_file_path_relative_with_project_root();
+
+# %%
+#|export
+def test_import_from_file_path_nested_relative():
+    """Test importing from a subdirectory with relative path."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        subdir = tmp / "lib"
+        subdir.mkdir()
+        mod_file = subdir / "utils.py"
+        mod_file.write_text("X = 99\n")
+
+        result = _import_from_file_path("./lib/utils.py", project_root=tmp)
+        assert result.X == 99
+
+# %%
+test_import_from_file_path_nested_relative();
+
+# %%
+#|export
+def test_import_from_file_path_missing_file():
+    """Test that missing file raises FileNotFoundError."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        with pytest.raises(FileNotFoundError, match="Module file not found"):
+            _import_from_file_path(
+                "./nonexistent.py", project_root=Path(tmp_dir)
+            )
+
+# %%
+test_import_from_file_path_missing_file();
+
+# %%
+#|export
+def test_import_from_path_dispatches_dotted():
+    """Test that _import_from_path handles dotted imports correctly."""
+    import json as json_mod
+    result = _import_from_path("json.dumps")
+    assert result is json_mod.dumps
+
+# %%
+test_import_from_path_dispatches_dotted();
+
+# %%
+#|export
+def test_import_from_path_dispatches_file_path():
+    """Test that _import_from_path dispatches to file-path import."""
+    import textwrap
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        mod_file = tmp / "dispatch_test.py"
+        mod_file.write_text(textwrap.dedent("""\
+            def target():
+                return "dispatched"
+        """))
+
+        result = _import_from_path(
+            f"{mod_file}::target", project_root=tmp
+        )
+        assert callable(result)
+        assert result() == "dispatched"
+
+# %%
+test_import_from_path_dispatches_file_path();
+
+# %%
+#|export
+def test_node_execution_config_resolve_with_file_path():
+    """Test NodeExecutionConfig.resolve() with file-path function references."""
+    import textwrap
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        funcs_file = tmp / "node_funcs.py"
+        funcs_file.write_text(textwrap.dedent("""\
+            def my_exec(ctx):
+                pass
+            def my_start(ctx):
+                pass
+        """))
+
+        exec_config = NodeExecutionConfig(
+            exec_node_func=f"{funcs_file}::my_exec",
+            start_node_func=f"{funcs_file}::my_start",
+        )
+
+        resolved = exec_config.resolve(project_root=tmp)
+
+        assert callable(resolved.exec_node_func)
+        assert callable(resolved.start_node_func)
+        assert resolved.exec_node_func.__name__ == "my_exec"
+        assert resolved.start_node_func.__name__ == "my_start"
+
+# %%
+test_node_execution_config_resolve_with_file_path();
+
+# %%
+#|export
+def test_node_config_resolve_factory_file_path():
+    """Test NodeConfig.resolve() with a file-path factory reference."""
+    import textwrap
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        factory_file = tmp / "my_factory.py"
+        factory_file.write_text(textwrap.dedent("""\
+            from netrun.net.config import NodeConfig, PortConfig
+
+            def get_node_config(name="FileFactoryNode"):
+                return NodeConfig(
+                    name=name,
+                    in_ports={"input": PortConfig()},
+                    out_ports={"output": PortConfig()},
+                )
+        """))
+
+        config = NodeConfig(
+            name="TestNode",
+            factory=str(factory_file),
+        )
+
+        resolved = config.resolve(project_root=tmp)
+
+        assert resolved.name == "TestNode"
+        assert "input" in resolved.in_ports
+        assert "output" in resolved.out_ports
+
+# %%
+test_node_config_resolve_factory_file_path();
+
+# %%
+#|export
+def test_node_config_from_factory_file_path():
+    """Test NodeConfig.from_factory() with a file-path factory reference."""
+    import textwrap
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        factory_file = tmp / "from_factory_test.py"
+        factory_file.write_text(textwrap.dedent("""\
+            from netrun.net.config import NodeConfig, PortConfig
+
+            def get_node_config():
+                return NodeConfig(
+                    name="FromFactoryNode",
+                    in_ports={"in": PortConfig()},
+                    out_ports={"out": PortConfig()},
+                )
+
+            def get_node_funcs():
+                def exec_fn(ctx):
+                    pass
+                return exec_fn, None, None, None
+        """))
+
+        result = NodeConfig.from_factory(
+            name="OverriddenName",
+            factory=str(factory_file),
+            project_root=tmp,
+        )
+
+        assert result.name == "OverriddenName"
+        assert "in" in result.in_ports
+        assert "out" in result.out_ports
+        assert result.execution_config is not None
+        assert callable(result.execution_config.exec_node_func)
+
+# %%
+test_node_config_from_factory_file_path();
+
+# %%
+#|export
+def test_graph_config_resolve_with_project_root():
+    """Test GraphConfig.resolve() passes project_root to nodes."""
+    import textwrap
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        factory_file = tmp / "graph_factory.py"
+        factory_file.write_text(textwrap.dedent("""\
+            from netrun.net.config import NodeConfig, PortConfig
+
+            def get_node_config():
+                return NodeConfig(
+                    name="GraphFactoryNode",
+                    in_ports={"in": PortConfig()},
+                    out_ports={"out": PortConfig()},
+                )
+        """))
+
+        graph = GraphConfig(
+            nodes=[
+                NodeConfig(name="FactoryNode", factory=str(factory_file)),
+            ],
+        )
+
+        resolved = graph.resolve(project_root=tmp)
+
+        # The factory node should have been resolved
+        factory_node = next(n for n in resolved.nodes if n.name == "FactoryNode")
+        assert "in" in factory_node.in_ports
+        assert "out" in factory_node.out_ports
+
+# %%
+test_graph_config_resolve_with_project_root();
+
+# %%
+#|export
+def test_net_config_resolve_with_file_path_factory():
+    """Test that NetConfig.resolve() uses project_root_path for file-path factories."""
+    import textwrap
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        factory_file = tmp / "net_factory.py"
+        factory_file.write_text(textwrap.dedent("""\
+            from netrun.net.config import NodeConfig, PortConfig
+
+            def get_node_config():
+                return NodeConfig(
+                    name="NetFactoryNode",
+                    in_ports={"data": PortConfig()},
+                    out_ports={"result": PortConfig()},
+                )
+        """))
+
+        net = NetConfig(
+            graph=GraphConfig(
+                nodes=[
+                    NodeConfig(
+                        name="Worker",
+                        factory=str(factory_file),
+                    ),
+                ],
+            ),
+            project_root=str(tmp),
+        )
+
+        resolved = net.resolve()
+
+        worker = next(n for n in resolved.graph.nodes if n.name == "Worker")
+        assert "data" in worker.in_ports
+        assert "result" in worker.out_ports
+
+# %%
+test_net_config_resolve_with_file_path_factory();
+
+# %%
+#|export
+def test_net_config_resolve_relative_factory_path():
+    """Test NetConfig.resolve() resolves relative factory paths from project_root."""
+    import textwrap
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        # Create a net config file in a subdirectory
+        config_dir = tmp / "configs"
+        config_dir.mkdir()
+
+        # Create factory in project root
+        factory_file = tmp / "my_nodes.py"
+        factory_file.write_text(textwrap.dedent("""\
+            from netrun.net.config import NodeConfig, PortConfig
+
+            def get_node_config():
+                return NodeConfig(
+                    name="RelativeNode",
+                    in_ports={"in": PortConfig()},
+                    out_ports={"out": PortConfig()},
+                )
+        """))
+
+        net = NetConfig(
+            graph=GraphConfig(
+                nodes=[
+                    NodeConfig(
+                        name="Worker",
+                        factory="./my_nodes.py",
+                    ),
+                ],
+            ),
+            project_root=str(tmp),
+        )
+
+        resolved = net.resolve()
+
+        worker = next(n for n in resolved.graph.nodes if n.name == "Worker")
+        assert "in" in worker.in_ports
+        assert "out" in worker.out_ports
+
+# %%
+test_net_config_resolve_relative_factory_path();

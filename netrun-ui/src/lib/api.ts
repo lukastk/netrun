@@ -255,11 +255,15 @@ class ApiClient {
 	 * Get factory function signature
 	 */
 	async getFactorySignature(
-		factoryPath: string
+		factoryPath: string,
+		projectRoot?: string
 	): Promise<FactorySignatureResponse> {
 		return this.request<FactorySignatureResponse>('/factories/signature', {
 			method: 'POST',
-			body: JSON.stringify({ factory_path: factoryPath }),
+			body: JSON.stringify({
+				factory_path: factoryPath,
+				...(projectRoot ? { project_root: projectRoot } : {}),
+			}),
 		});
 	}
 
@@ -268,13 +272,15 @@ class ApiClient {
 	 */
 	async previewFactory(
 		factoryPath: string,
-		factoryArgs: Record<string, unknown> = {}
+		factoryArgs: Record<string, unknown> = {},
+		projectRoot?: string
 	): Promise<FactoryPreviewResponse> {
 		return this.request<FactoryPreviewResponse>('/factories/preview', {
 			method: 'POST',
 			body: JSON.stringify({
 				factory_path: factoryPath,
 				factory_args: factoryArgs,
+				...(projectRoot ? { project_root: projectRoot } : {}),
 			}),
 		});
 	}
@@ -283,11 +289,15 @@ class ApiClient {
 	 * Validate an import path
 	 */
 	async validateImport(
-		importPath: string
+		importPath: string,
+		projectRoot?: string
 	): Promise<{ valid: boolean; error: string | null; is_factory: boolean }> {
 		return this.request('/factories/validate-import', {
 			method: 'POST',
-			body: JSON.stringify({ import_path: importPath }),
+			body: JSON.stringify({
+				import_path: importPath,
+				...(projectRoot ? { project_root: projectRoot } : {}),
+			}),
 		});
 	}
 
