@@ -19,6 +19,8 @@ from typing import Any
 import importlib
 import logging
 
+from .import_utils import is_file_path_ref, import_module_from_ref, reload_module
+
 logger = logging.getLogger(__name__)
 
 
@@ -122,13 +124,15 @@ def resolve_factory_ports(
         added_to_path = True
 
     try:
-        module = importlib.import_module(factory_path)
+        module, attr_name = import_module_from_ref(factory_path, base_dir=working_dir)
 
-        if not hasattr(module, "get_node_config"):
+        if attr_name is not None:
+            get_node_config = getattr(module, attr_name)
+        elif hasattr(module, "get_node_config"):
+            get_node_config = getattr(module, "get_node_config")
+        else:
             logger.warning(f"Factory module '{factory_path}' has no get_node_config")
             return None
-
-        get_node_config = getattr(module, "get_node_config")
         node_config = get_node_config(**factory_args)
 
         # Extract ports from the NodeConfig

@@ -790,11 +790,12 @@ function triggerBackendValidation() {
 			const factoryErrorMap = new Map<string, string[]>();
 
 			if (factoryNodes.length > 0) {
+				const projectRoot = (tab.extraData as Record<string, unknown>)?.project_root as string | undefined;
 				const results = await Promise.all(
 					factoryNodes.map(async (node) => {
 						const factory = (node.data as NetrunNodeData).factory!;
 						try {
-							const result = await api.validateImport(factory);
+							const result = await api.validateImport(factory, projectRoot);
 							if (!result.valid) {
 								return { nodeId: node.id, error: `Factory import failed: ${result.error}` };
 							}
@@ -1045,7 +1046,10 @@ export function createFactoryNode(
 ): NetrunNode {
 	const tab = get(activeTab);
 	const existingNodes = tab?.nodes || [];
-	const shortName = factory.split('.').pop() || 'Factory_Node';
+	const isFilePath = factory.includes('/') || factory.includes('\\') || factory.startsWith('.');
+	const shortName = isFilePath
+		? (factory.split('/').pop()?.replace('.py', '') || 'Factory_Node')
+		: (factory.split('.').pop() || 'Factory_Node');
 	const nodeName = generateUniqueNodeName(existingNodes, shortName);
 	return {
 		id: nodeName,
@@ -1423,9 +1427,11 @@ export async function updateFactoryNodePreview(nodeId: string): Promise<void> {
 	}
 
 	try {
+		const projectRoot = (tab.extraData as Record<string, unknown>)?.project_root as string | undefined;
 		const preview = await api.previewFactory(
 			node.data.factory,
-			node.data.factoryArgs || {}
+			node.data.factoryArgs || {},
+			projectRoot
 		);
 
 		if (preview.error) {

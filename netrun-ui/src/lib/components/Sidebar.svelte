@@ -276,12 +276,16 @@
 		if (e.detail < 2) return;
 		const input = e.target as HTMLInputElement;
 		const val = input.value;
-		if (!val.includes('.')) return;
+		// Determine which separators are present
+		const hasPathSeps = val.includes('/') || val.includes('::');
+		const hasDots = val.includes('.');
+		if (!hasDots && !hasPathSeps) return;
+		const isSep = (ch: string) => ch === '.' || ch === '/' || (ch === ':' && val.includes('::'));
 		const pos = input.selectionStart ?? 0;
 		let start = pos;
 		let end = pos;
-		while (start > 0 && val[start - 1] !== '.') start--;
-		while (end < val.length && val[end] !== '.') end++;
+		while (start > 0 && !isSep(val[start - 1])) start--;
+		while (end < val.length && !isSep(val[end])) end++;
 		input.setSelectionRange(start, end);
 		e.preventDefault();
 	}
@@ -301,7 +305,8 @@
 		lastFactoryPath = factoryPath;
 
 		try {
-			const response = await api.getFactorySignature(factoryPath);
+			const projectRoot = ($extraData as Record<string, unknown>)?.project_root as string | undefined;
+			const response = await api.getFactorySignature(factoryPath, projectRoot);
 			factoryParams = response.parameters;
 		} catch (e) {
 			console.warn('Failed to load factory signature:', e);
@@ -497,6 +502,7 @@
 									oninput={updateFactoryPath}
 									onblur={() => { pushHistory(); refreshFactoryPreview(); }}
 									onmousedown={selectDottedSegment}
+									placeholder="module.path or ./file.py"
 									class="mono"
 								/>
 							</div>
@@ -918,7 +924,9 @@
 							{#each factories as factory, index}
 								<div class="factory-item">
 									<span class="factory-path" title={factory}>
-										{factory.split('.').pop() || factory}
+										{factory.includes('/') || factory.includes('\\')
+											? (factory.split('/').pop()?.replace('.py', '') || factory)
+											: (factory.split('.').pop() || factory)}
 									</span>
 									<span class="factory-full-path">{factory}</span>
 									<button
@@ -1076,7 +1084,7 @@
 	<TextInputModal
 		title="Add Default Factory"
 		label="Factory Import Path"
-		placeholder="mymodule.factories.create_node"
+		placeholder="module.path or ./factory.py"
 		submitLabel="Add"
 		onSubmit={(factoryPath) => {
 			const factories = (($extraData as Record<string, unknown>)?.factories as string[]) || [];

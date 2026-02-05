@@ -9,6 +9,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
+from ..import_utils import is_file_path_ref, import_module_from_ref, reload_module
+
 router = APIRouter()
 
 
@@ -36,21 +38,38 @@ def _with_working_dir_on_path():
             sys.path.remove(wd)
 
 
-def _reload_module(dotted_path: str) -> None:
-    """Remove a module (and its submodules) from sys.modules to force reimport.
+def _resolve_base_dir(project_root: str | None = None) -> str | None:
+    """Resolve the base directory for file-path imports.
 
-    Given a dotted path like ``my_pkg.my_module.my_func``, this clears
-    ``my_pkg`` and anything under it (``my_pkg.*``) from the module cache
-    so the next ``importlib.import_module()`` re-reads from disk.
+    If project_root is provided and relative, resolves it against NETRUN_UI_WORKING_DIR.
     """
-    top = dotted_path.split(".")[0]
-    to_remove = [
-        name for name in sys.modules
-        if name == top or name.startswith(top + ".")
-    ]
-    for name in to_remove:
-        del sys.modules[name]
-    importlib.invalidate_caches()
+    if project_root:
+        from pathlib import Path
+        p = Path(project_root)
+        if not p.is_absolute():
+            wd = _get_working_dir()
+            if wd:
+                return str((Path(wd) / p).resolve())
+        return str(p.resolve())
+    return _get_working_dir()
+
+
+def _import_factory_module(
+    factory_path: str,
+    base_dir: str | None = None,
+) -> Any:
+    """Import a factory module from a dotted path or file-path reference.
+
+    Returns the module. For file-path refs with '::', returns the module
+    (not the attribute).
+    """
+    module, attr_name = import_module_from_ref(factory_path, base_dir=base_dir)
+    if attr_name is not None:
+        # For factory paths, we want the module, not the attribute.
+        # The attribute (e.g., get_node_config) is looked up separately.
+        # But if someone specifies path.py::get_node_config, that's fine too.
+        pass
+    return module, attr_name
 
 
 class BuiltinFactory(BaseModel):
@@ -130,6 +149,7 @@ async def list_builtin_factories() -> ListBuiltinFactoriesResponse:
 class FactorySignatureRequest(BaseModel):
     """Request to get factory function signature."""
     factory_path: str
+    project_root: str | None = None
 
 
 class FactoryParameter(BaseModel):
@@ -151,6 +171,7 @@ class FactoryPreviewRequest(BaseModel):
     """Request to preview factory-generated config."""
     factory_path: str
     factory_args: dict[str, Any] = {}
+    project_root: str | None = None
 
 
 class PortInfo(BaseModel):
@@ -177,19 +198,22 @@ async def get_factory_signature(request: FactorySignatureRequest) -> FactorySign
     This allows the UI to know what arguments the factory accepts.
     """
     try:
-        _reload_module(request.factory_path)
+        base_dir = _resolve_base_dir(request.project_root)
+        reload_module(request.factory_path, base_dir=base_dir)
 
-        # Import the factory module
-        module = importlib.import_module(request.factory_path)
+        with _with_working_dir_on_path():
+            module, attr_name = import_module_from_ref(request.factory_path, base_dir=base_dir)
 
-        # Get the get_node_config function
-        if not hasattr(module, "get_node_config"):
+        # If attr_name is specified (e.g. path.py::get_node_config), use it directly
+        if attr_name is not None:
+            get_node_config = getattr(module, attr_name)
+        elif hasattr(module, "get_node_config"):
+            get_node_config = getattr(module, "get_node_config")
+        else:
             raise HTTPException(
                 status_code=400,
                 detail=f"Factory module '{request.factory_path}' does not have a get_node_config function"
             )
-
-        get_node_config = getattr(module, "get_node_config")
 
         # Inspect the signature
         sig = inspect.signature(get_node_config)
@@ -232,11 +256,13 @@ async def get_factory_signature(request: FactorySignatureRequest) -> FactorySign
             docstring=docstring,
         )
 
-    except ImportError as e:
+    except (ImportError, FileNotFoundError) as e:
         raise HTTPException(
             status_code=400,
             detail=f"Could not import factory module '{request.factory_path}': {e}"
         )
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(
             status_code=500,
@@ -251,24 +277,27 @@ async def preview_factory(request: FactoryPreviewRequest) -> FactoryPreviewRespo
     This allows the UI to show what ports the factory node will have.
     """
     try:
+        base_dir = _resolve_base_dir(request.project_root)
+
         # Reload the factory module and any modules referenced in args
-        _reload_module(request.factory_path)
+        reload_module(request.factory_path, base_dir=base_dir)
         for val in request.factory_args.values():
-            if isinstance(val, str) and "." in val:
-                _reload_module(val)
+            if isinstance(val, str) and ("." in val or is_file_path_ref(val)):
+                reload_module(val, base_dir=base_dir)
 
         with _with_working_dir_on_path():
-            # Import the factory module
-            module = importlib.import_module(request.factory_path)
+            module, attr_name = import_module_from_ref(request.factory_path, base_dir=base_dir)
 
             # Get the get_node_config function
-            if not hasattr(module, "get_node_config"):
+            if attr_name is not None:
+                get_node_config = getattr(module, attr_name)
+            elif hasattr(module, "get_node_config"):
+                get_node_config = getattr(module, "get_node_config")
+            else:
                 raise HTTPException(
                     status_code=400,
                     detail=f"Factory module '{request.factory_path}' does not have a get_node_config function"
                 )
-
-            get_node_config = getattr(module, "get_node_config")
 
             # Call the factory
             try:
@@ -375,7 +404,7 @@ async def preview_factory(request: FactoryPreviewRequest) -> FactoryPreviewRespo
             has_out_salvo_conditions=bool(node_config.out_salvo_conditions),
         )
 
-    except ImportError as e:
+    except (ImportError, FileNotFoundError) as e:
         raise HTTPException(
             status_code=400,
             detail=f"Could not import factory module '{request.factory_path}': {e}"
@@ -392,6 +421,7 @@ async def preview_factory(request: FactoryPreviewRequest) -> FactoryPreviewRespo
 class ValidateImportRequest(BaseModel):
     """Request to validate an import path."""
     import_path: str
+    project_root: str | None = None
 
 
 class ValidateImportResponse(BaseModel):
@@ -405,20 +435,25 @@ class ValidateImportResponse(BaseModel):
 async def validate_import(request: ValidateImportRequest) -> ValidateImportResponse:
     """Validate that an import path is valid and check if it's a factory module."""
     try:
-        _reload_module(request.import_path)
+        base_dir = _resolve_base_dir(request.project_root)
+        reload_module(request.import_path, base_dir=base_dir)
 
         with _with_working_dir_on_path():
-            module = importlib.import_module(request.import_path)
+            module, attr_name = import_module_from_ref(request.import_path, base_dir=base_dir)
 
         # Check if it's a factory module (has get_node_config)
-        is_factory = hasattr(module, "get_node_config")
+        if attr_name is not None:
+            # If attr specified, check if the attr is callable
+            is_factory = hasattr(module, attr_name) and callable(getattr(module, attr_name))
+        else:
+            is_factory = hasattr(module, "get_node_config")
 
         return ValidateImportResponse(
             valid=True,
             is_factory=is_factory,
         )
 
-    except ImportError as e:
+    except (ImportError, FileNotFoundError) as e:
         return ValidateImportResponse(
             valid=False,
             error=str(e),

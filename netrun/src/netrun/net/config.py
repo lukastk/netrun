@@ -8,8 +8,10 @@ from typing import Annotated, Literal, NewType, Any
 from types import ModuleType
 from collections.abc import Callable
 import importlib
+import importlib.util
 import json as _json_module
 import os
+import sys
 import tomllib
 from ulid import ULID
 
@@ -92,11 +94,63 @@ def _get_type_import_path(type_obj: type) -> str:
     return f"{module}.{qualname}"
 
 
-def _import_from_path(import_path: str) -> Any:
-    """Import an object from a dotted import path.
+def _is_file_path_ref(s: str) -> bool:
+    """Check if string is a file-path reference (vs dotted import path).
+
+    A string is a file-path reference if any of:
+    - Contains '::' (file path + attribute separator)
+    - Contains '/' or '\\' (path separator)
+    - Starts with '.' (relative path like './' or '../')
+    """
+    return '::' in s or '/' in s or '\\' in s or s.startswith('.')
+
+
+def _import_from_file_path(file_ref: str, project_root: 'Path | None' = None) -> Any:
+    """Import from a file-path reference.
+
+    - "path/to/file.py::attr" -> load file, getattr(module, attr)
+    - "path/to/file.py" -> load file, return module
+
+    Relative paths resolve from project_root (or cwd).
+    """
+    if '::' in file_ref:
+        file_path_str, attr_name = file_ref.split('::', 1)
+    else:
+        file_path_str = file_ref
+        attr_name = None
+
+    file_path = Path(file_path_str)
+    if not file_path.is_absolute():
+        base = project_root if project_root is not None else Path(os.getcwd())
+        file_path = (base / file_path).resolve()
+    else:
+        file_path = file_path.resolve()
+
+    if not file_path.exists():
+        raise FileNotFoundError(f"Module file not found: {file_path}")
+
+    module_name = f"_netrun_filemod_{file_path.stem}_{hash(str(file_path)) & 0xFFFFFFFF:08x}"
+
+    spec = importlib.util.spec_from_file_location(module_name, str(file_path))
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot create module spec from: {file_path}")
+
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+
+    if attr_name is not None:
+        return getattr(module, attr_name)
+    return module
+
+
+def _import_from_path(import_path: str, project_root: 'Path | None' = None) -> Any:
+    """Import an object from a dotted import path or file-path reference.
 
     Args:
-        import_path: Dotted import path (e.g., "myapp.utils.my_function").
+        import_path: Dotted import path (e.g., "myapp.utils.my_function")
+                     or file-path reference (e.g., "./nodes.py::my_func").
+        project_root: Base path for resolving relative file paths.
 
     Returns:
         The imported object.
@@ -105,6 +159,8 @@ def _import_from_path(import_path: str) -> Any:
         ImportError: If the module cannot be imported.
         AttributeError: If the object doesn't exist in the module.
     """
+    if _is_file_path_ref(import_path):
+        return _import_from_file_path(import_path, project_root=project_root)
     module_path, name = import_path.rsplit(".", 1)
     module = importlib.import_module(module_path)
     return getattr(module, name)
@@ -690,8 +746,11 @@ class NodeExecutionConfig(BaseModel):
             return func
         return _get_callable_import_path(func)
 
-    def resolve(self) -> "NodeExecutionConfig":
+    def resolve(self, project_root: 'Path | None' = None) -> "NodeExecutionConfig":
         """Return a resolved copy with string import paths converted to callables.
+
+        Args:
+            project_root: Base path for resolving relative file-path references.
 
         Returns:
             A new NodeExecutionConfig with all string function references
@@ -702,7 +761,7 @@ class NodeExecutionConfig(BaseModel):
         for field_name in ("exec_node_func", "start_node_func", "stop_node_func", "on_node_failure"):
             value = getattr(self, field_name)
             if isinstance(value, str):
-                updates[field_name] = _import_from_path(value)
+                updates[field_name] = _import_from_path(value, project_root=project_root)
 
         if updates:
             return self.model_copy(update=updates)
@@ -799,6 +858,7 @@ class NodeConfig(BaseModel):
         factory: str | ModuleType,
         args: dict[str, Any] | None = None,
         name: str | None = None,
+        project_root: 'Path | None' = None,
     ) -> "NodeConfig":
         """Create a NodeConfig from a factory module.
 
@@ -808,6 +868,7 @@ class NodeConfig(BaseModel):
             args: Arguments passed to both factory functions.
             name: Optional explicit node name. If provided, overrides the
                   factory-generated name. If None, uses the factory's default name.
+            project_root: Base path for resolving relative file-path references.
 
         Returns:
             Complete NodeConfig with execution_config populated.
@@ -820,7 +881,10 @@ class NodeConfig(BaseModel):
 
         # Import module if string
         if isinstance(factory, str):
-            module = importlib.import_module(factory)
+            if _is_file_path_ref(factory):
+                module = _import_from_file_path(factory, project_root=project_root)
+            else:
+                module = importlib.import_module(factory)
         else:
             module = factory
 
@@ -854,11 +918,14 @@ class NodeConfig(BaseModel):
             meta=base_config.meta,
         )
 
-    def resolve(self) -> "NodeConfig":
+    def resolve(self, project_root: 'Path | None' = None) -> "NodeConfig":
         """Return a resolved copy with factory expanded and imports resolved.
 
         If this node has a factory set, expands it to generate the full config.
         Also resolves any string import paths in execution_config to callables.
+
+        Args:
+            project_root: Base path for resolving relative file-path references.
 
         Returns:
             A new NodeConfig with factory expanded and functions resolved.
@@ -871,7 +938,10 @@ class NodeConfig(BaseModel):
             # Import module if string
             if isinstance(self.factory, str):
                 factory_path = self.factory
-                module = importlib.import_module(self.factory)
+                if _is_file_path_ref(self.factory):
+                    module = _import_from_file_path(self.factory, project_root=project_root)
+                else:
+                    module = importlib.import_module(self.factory)
             else:
                 factory_path = self.factory.__name__
                 module = self.factory
@@ -938,7 +1008,7 @@ class NodeConfig(BaseModel):
 
         # Resolve execution_config import paths
         if result.execution_config is not None:
-            resolved_exec = result.execution_config.resolve()
+            resolved_exec = result.execution_config.resolve(project_root=project_root)
             if resolved_exec is not result.execution_config:
                 result = result.model_copy(update={"execution_config": resolved_exec})
 
@@ -1332,7 +1402,7 @@ class GraphConfig(BaseModel):
     tool-specific data that should be preserved across serialization.
     """
 
-    def resolve(self, base_path: Path | None = None) -> "GraphConfig":
+    def resolve(self, base_path: Path | None = None, project_root: 'Path | None' = None) -> "GraphConfig":
         """Return a resolved copy with all subgraphs flattened and nodes resolved.
 
         This method:
@@ -1344,6 +1414,8 @@ class GraphConfig(BaseModel):
 
         Args:
             base_path: Base path for resolving relative file paths in subgraphs.
+            project_root: Base path for resolving relative file-path references
+                          in factories and function imports.
 
         Returns:
             A new GraphConfig with only NodeConfig (no SubgraphConfig) and all
@@ -1370,7 +1442,7 @@ class GraphConfig(BaseModel):
                 subgraph_out_mappings[node.name] = out_mapping
             else:
                 # Regular node - resolve factories
-                resolved_nodes.append(node.resolve())
+                resolved_nodes.append(node.resolve(project_root=project_root))
 
         # Second pass: rewrite edges that connect to subgraph exposed ports
         final_edges: list[EdgeConfig] = []
@@ -1672,13 +1744,14 @@ class NetConfig(BaseModel):
             updates["pools"] = _default_pools()
 
         # Resolve graph (includes subgraph flattening)
-        resolved_graph = self.graph.resolve(base_path=base_path)
+        project_root = self.project_root_path
+        resolved_graph = self.graph.resolve(base_path=base_path, project_root=project_root)
         if resolved_graph is not self.graph:
             updates["graph"] = resolved_graph
 
         # Resolve dead_letter_callback
         if isinstance(self.dead_letter_callback, str):
-            updates["dead_letter_callback"] = _import_from_path(self.dead_letter_callback)
+            updates["dead_letter_callback"] = _import_from_path(self.dead_letter_callback, project_root=project_root)
 
         if updates:
             result = self.model_copy(update=updates)
