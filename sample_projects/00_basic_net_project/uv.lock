@@ -566,7 +566,7 @@ dependencies = [
 requires-dist = [
     { name = "diskcache", specifier = ">=5.6.3" },
     { name = "nblite", specifier = ">=1.1.1" },
-    { name = "netrun-sim", editable = "../../netrun-sim/python" },
+    { name = "netrun-sim", specifier = ">=0.1.2" },
     { name = "websockets", specifier = ">=16.0" },
     { name = "xxhash", specifier = ">=3.6.0" },
 ]
@@ -585,24 +585,17 @@ dev = [
 [[package]]
 name = "netrun-sim"
 version = "0.1.2"
-source = { editable = "../../netrun-sim/python" }
+source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "python-ulid" },
 ]
-
-[package.metadata]
-requires-dist = [{ name = "python-ulid", specifier = ">=1.0" }]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "git-cliff", specifier = ">=2.11.0" },
-    { name = "jupyterlab", specifier = ">=4.3.8" },
-    { name = "maturin", specifier = ">=1.10.2" },
-    { name = "nblite", specifier = ">=1.1.1" },
-    { name = "python-ulid", specifier = ">=1.1.0" },
-    { name = "ruff", specifier = ">=0.14.11" },
-    { name = "twine", specifier = ">=6.1.0" },
-    { name = "typing-extensions", specifier = ">=4.13.2" },
+sdist = { url = "https://files.pythonhosted.org/packages/05/49/4f9ae67e73a4fabf538913d6bd366ae3968abc7921321316270ebb8b4648/netrun_sim-0.1.2.tar.gz", hash = "sha256:6c37de9e2a5bc119f7c608c9f5db4f2c753fb58c4b708d9e91e9b654038a01cb", size = 178324, upload-time = "2026-02-04T16:02:15.31Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/5d/37/08b04859af48b1178b8e372fc068be4e5d1fd20fa0460eaadcc925175fef/netrun_sim-0.1.2-cp38-abi3-macosx_10_12_x86_64.whl", hash = "sha256:2234053a2b4df1b997742a789a598e11c390783db4dfb97984d45aa33b5c2927", size = 559139, upload-time = "2026-02-04T16:02:05.016Z" },
+    { url = "https://files.pythonhosted.org/packages/c1/9a/276bf07762d3f07cfb832fd7c07c7eec5c18bf3ca7f8757133922bde0707/netrun_sim-0.1.2-cp38-abi3-macosx_11_0_arm64.whl", hash = "sha256:f52113542c313fec0143bf347e3f7fa318b4dc6a6e25822375487a7d28d69075", size = 537043, upload-time = "2026-02-04T16:02:06.508Z" },
+    { url = "https://files.pythonhosted.org/packages/1c/ba/658f05c0792541de61874e4d9f90fccc4b4211ed14bd58df7fa5dae9d5cb/netrun_sim-0.1.2-cp38-abi3-manylinux_2_17_aarch64.manylinux2014_aarch64.whl", hash = "sha256:4fd70dac5e44ca9bef0e3e97e5e2a839551b132f192a960372fb3dd57c4a8a41", size = 583883, upload-time = "2026-02-04T16:02:07.779Z" },
+    { url = "https://files.pythonhosted.org/packages/cc/65/7625829d8462ea454a99a45b6a02c611556a6582a0797ff0f8aa41a9a20c/netrun_sim-0.1.2-cp38-abi3-manylinux_2_17_x86_64.manylinux2014_x86_64.whl", hash = "sha256:ad31cbeef5192d8af6e52529e62df55ef70b523e4741541f28256bb5fd1d0422", size = 589820, upload-time = "2026-02-04T16:02:09.007Z" },
+    { url = "https://files.pythonhosted.org/packages/ef/d1/3380d308e572d71378e225feaac7e008960dabda43786adff438cd936cbd/netrun_sim-0.1.2-cp38-abi3-win_amd64.whl", hash = "sha256:6024a9c5cb6ca89726e663b7dc3060d068b5e2a4853c16b12d61aad4e8b770a2", size = 411396, upload-time = "2026-02-04T16:02:10.701Z" },
 ]
 
 [[package]]
@@ -624,7 +617,7 @@ dependencies = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.109.0" },
     { name = "httpx", marker = "extra == 'dev'", specifier = ">=0.25.0" },
-    { name = "netrun", directory = "../../netrun" },
+    { name = "netrun", specifier = ">=0.2.1" },
     { name = "pydantic", specifier = ">=2.0.0" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=7.0.0" },
     { name = "pywebview", specifier = ">=5.0.0" },
