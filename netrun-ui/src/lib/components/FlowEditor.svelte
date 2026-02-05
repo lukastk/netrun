@@ -13,6 +13,7 @@
 		ConnectionLineType
 	} from '@xyflow/svelte';
 	import '@xyflow/svelte/dist/style.css';
+	import { tick } from 'svelte';
 	import { derived, get } from 'svelte/store';
 
 	import NetrunNodeComponent from './NetrunNode.svelte';
@@ -155,6 +156,17 @@
 		// TODO: Show node context menu
 	}
 
+	// Handle double-click on node to focus name input
+	async function onNodeDoubleClick(event: { node: Node; event: MouseEvent }) {
+		if (event.node.type === 'subgraphNode') return;
+		await tick();
+		const input = document.getElementById('node-label') as HTMLInputElement | null;
+		if (input) {
+			input.focus();
+			input.select();
+		}
+	}
+
 	// Map edge style to connection line type
 	function getConnectionLineType(style: string): ConnectionLineType {
 		switch (style) {
@@ -177,6 +189,7 @@
 		onnodedragstop={onNodeDragStop}
 		onpanecontextmenu={onPaneContextMenu}
 		onnodecontextmenu={onNodeContextMenu}
+		onnodedoubleclick={onNodeDoubleClick}
 		fitView
 		snapGrid={[15, 15]}
 		defaultEdgeOptions={{
