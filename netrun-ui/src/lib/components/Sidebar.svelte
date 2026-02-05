@@ -4,7 +4,7 @@
 		selectedNodeIds,
 		updateNodeData,
 		updateNodeDataLive,
-		updateNodeEnv,
+		updateNodeActions,
 		updateNodeSalvoConditions,
 		getNodeSalvoConditions,
 		updateNodeExecutionConfig,
@@ -31,8 +31,8 @@
 	import ActionEditor from './ActionEditor.svelte';
 	import TextInputModal from './TextInputModal.svelte';
 	import {
-		actionSettings,
-		updateActionSettings,
+		projectActions,
+		nodeActions,
 		addProjectAction,
 		updateProjectAction,
 		removeProjectAction,
@@ -52,28 +52,50 @@
 	let showProjectSettings = $state(false);
 	let showActionEditor = $state(false);
 	let editingAction = $state<Action | null>(null);
+	let editingNodeAction = $state(false); // true = node-level, false = project-level
 
 	// Modal state for factory creation
 	let showAddFactoryModal = $state(false);
 
 	// Handle action editor save
 	function handleSaveAction(action: Action) {
-		if (editingAction) {
-			updateProjectAction(action.id, action);
+		if (editingNodeAction && $selectedNode) {
+			const current = [...$nodeActions];
+			if (editingAction) {
+				const idx = current.findIndex(a => a.id === editingAction!.id);
+				if (idx >= 0) current[idx] = action;
+				else current.push(action);
+			} else {
+				current.push({ ...action, id: generateActionId() });
+			}
+			updateNodeActions($selectedNode.id, current);
+			pushHistory();
 		} else {
-			addProjectAction({ ...action, id: generateActionId() });
+			if (editingAction) {
+				updateProjectAction(action.id, action);
+			} else {
+				addProjectAction({ ...action, id: generateActionId() });
+			}
 		}
 		showActionEditor = false;
 		editingAction = null;
+		editingNodeAction = false;
 	}
 
 	// Handle action delete
 	function handleDeleteAction() {
 		if (editingAction) {
-			removeProjectAction(editingAction.id);
+			if (editingNodeAction && $selectedNode) {
+				const current = $nodeActions.filter(a => a.id !== editingAction!.id);
+				updateNodeActions($selectedNode.id, current.length > 0 ? current : undefined);
+				pushHistory();
+			} else {
+				removeProjectAction(editingAction.id);
+			}
 		}
 		showActionEditor = false;
 		editingAction = null;
+		editingNodeAction = false;
 	}
 
 	// Collapsible sections state
@@ -83,14 +105,12 @@
 		outPorts: true,
 		factory: true,
 		subgraph: true,
-		nodeVariables: false,
 		salvoConditions: false,
 		execution: false,
 		// Net-level sections
 		graphSettings: true,
 		pools: true,
 		netSettings: false,
-		actions: false,
 		factories: true,
 		uiSettings: false,
 	});
@@ -124,83 +144,6 @@
 		document.removeEventListener('mouseup', stopResize);
 		document.body.style.cursor = '';
 		document.body.style.userSelect = '';
-	}
-
-	// Node-level env vars - extract from selected node
-	function getNodeEnvVars(): Array<{ key: string; value: string }> {
-		if (!$selectedNode) return [];
-		const config = $selectedNode.data._config as Record<string, unknown> | undefined;
-		const meta = config?.meta as Record<string, unknown> | undefined;
-		const ui = meta?.ui as Record<string, unknown> | undefined;
-		const env = ui?.env as Record<string, string> | undefined;
-		if (!env) return [];
-		return Object.entries(env).map(([key, value]) => ({ key, value }));
-	}
-
-	let nodeEnvVars = $state<Array<{ key: string; value: string }>>(getNodeEnvVars());
-
-	// Update nodeEnvVars when selected node changes
-	$effect(() => {
-		if ($selectedNode) {
-			nodeEnvVars = getNodeEnvVars();
-		} else {
-			nodeEnvVars = [];
-		}
-	});
-
-	function saveNodeEnvVars() {
-		if (!$selectedNode) return;
-		const env: Record<string, string> = {};
-		for (const { key, value } of nodeEnvVars) {
-			if (key.trim()) {
-				env[key.trim()] = value;
-			}
-		}
-		updateNodeEnv($selectedNode.id, Object.keys(env).length > 0 ? env : undefined);
-		pushHistory();
-	}
-
-	function addNodeEnvVar() {
-		nodeEnvVars = [...nodeEnvVars, { key: '', value: '' }];
-	}
-
-	function removeNodeEnvVar(index: number) {
-		nodeEnvVars = nodeEnvVars.filter((_, i) => i !== index);
-		saveNodeEnvVars();
-	}
-
-	// Net-level env vars (action variables)
-	function getNetEnvVars(): Array<{ key: string; value: string }> {
-		const env = $actionSettings.env;
-		if (!env) return [];
-		return Object.entries(env).map(([key, value]) => ({ key, value }));
-	}
-
-	let netEnvVars = $state<Array<{ key: string; value: string }>>(getNetEnvVars());
-
-	$effect(() => {
-		// Sync when actionSettings.env changes (e.g. tab switch, file load)
-		netEnvVars = getNetEnvVars();
-	});
-
-	function saveNetEnvVars() {
-		const env: Record<string, string> = {};
-		for (const { key, value } of netEnvVars) {
-			if (key.trim()) {
-				env[key.trim()] = value;
-			}
-		}
-		updateActionSettings({ env: Object.keys(env).length > 0 ? env : undefined });
-		pushHistory();
-	}
-
-	function addNetEnvVar() {
-		netEnvVars = [...netEnvVars, { key: '', value: '' }];
-	}
-
-	function removeNetEnvVar(index: number) {
-		netEnvVars = netEnvVars.filter((_, i) => i !== index);
-		saveNetEnvVars();
 	}
 
 	function toggleSection(section: keyof typeof sectionsOpen) {
@@ -681,58 +624,6 @@
 				</section>
 			{/if}
 
-			<!-- Node Variables Section (for variable overrides) -->
-			<section class="section">
-				<button
-					class="section-header"
-					onclick={() => toggleSection('nodeVariables')}
-				>
-					<span class="section-title">Node Action Variables</span>
-					<span class="section-toggle">{sectionsOpen.nodeVariables ? '−' : '+'}</span>
-				</button>
-				{#if sectionsOpen.nodeVariables}
-					<div class="section-content">
-						<div class="node-env-list">
-							{#if nodeEnvVars.length === 0}
-								<div class="empty-hint" style="text-align: left; padding: 0 0 8px 0;">
-									Override action variables for this node
-								</div>
-							{:else}
-								{#each nodeEnvVars as envVar, index (index)}
-									<div class="env-row">
-										<input
-											type="text"
-											bind:value={envVar.key}
-											onblur={saveNodeEnvVars}
-											placeholder="VAR_NAME"
-											class="env-key"
-										/>
-										<span class="env-equals">=</span>
-										<input
-											type="text"
-											bind:value={envVar.value}
-											onblur={saveNodeEnvVars}
-											placeholder="value"
-											class="env-value"
-										/>
-										<button
-											class="remove-btn"
-											onclick={() => removeNodeEnvVar(index)}
-											title="Remove"
-										>
-											×
-										</button>
-									</div>
-								{/each}
-							{/if}
-						</div>
-						<button class="add-btn" onclick={addNodeEnvVar}>
-							+ Add Variable
-						</button>
-					</div>
-				{/if}
-			</section>
-
 			<!-- Salvo Conditions Section (only for regular nodes, not factory or subgraph) -->
 			{#if $selectedNode.data.nodeType === 'regular'}
 				<section class="section">
@@ -799,8 +690,8 @@
 			<!-- Actions Panel (for all node types) -->
 			<ActionsPanel
 				onOpenSettings={() => showProjectSettings = true}
-				onAddAction={() => { editingAction = null; showActionEditor = true; }}
-				onEditAction={(action) => { editingAction = action; showActionEditor = true; }}
+				onAddAction={() => { editingAction = null; editingNodeAction = true; showActionEditor = true; }}
+				onEditAction={(action) => { editingAction = action; editingNodeAction = !$projectActions.some(a => a.id === action.id); showActionEditor = true; }}
 			/>
 		{:else}
 			<!-- Net-level settings when no node is selected -->
@@ -899,124 +790,7 @@
 				{/if}
 			</section>
 
-			<!-- Actions Section -->
-			<section class="section">
-				<button
-					class="section-header"
-					onclick={() => toggleSection('actions')}
-				>
-					<span class="section-title">Actions</span>
-					<span class="section-toggle">{sectionsOpen.actions ? '−' : '+'}</span>
-				</button>
-				{#if sectionsOpen.actions}
-					{@const uiMeta = (($graphMeta as Record<string, unknown>)?.ui || {}) as Record<string, unknown>}
-					<div class="section-content">
-						<div class="field">
-							<label for="default-cmd">Default Command</label>
-							<input
-								id="default-cmd"
-								type="text"
-								value={String(uiMeta.defaultCmd ?? '')}
-								oninput={(e) => {
-									const val = (e.target as HTMLInputElement).value;
-									updateGraphMetaLive({
-										ui: { ...uiMeta, defaultCmd: val || undefined }
-									});
-								}}
-								onblur={() => pushHistory()}
-								placeholder="code"
-								class="mono"
-							/>
-							<div class="field-hint">
-								Default command for <code>$DEFAULT_CMD</code>
-							</div>
-						</div>
-
-						<div class="field">
-							<label>Action Variables</label>
-							<div class="node-env-list">
-								{#if netEnvVars.length === 0}
-									<div class="empty-hint" style="text-align: left; padding: 0 0 8px 0;">
-										Variables available in action commands as <code>$VAR_NAME</code>
-									</div>
-								{:else}
-									{#each netEnvVars as envVar, index (index)}
-										<div class="env-row">
-											<input
-												type="text"
-												bind:value={envVar.key}
-												onblur={saveNetEnvVars}
-												placeholder="VAR_NAME"
-												class="env-key"
-											/>
-											<span class="env-equals">=</span>
-											<input
-												type="text"
-												bind:value={envVar.value}
-												onblur={saveNetEnvVars}
-												placeholder="value"
-												class="env-value"
-											/>
-											<button
-												class="remove-btn"
-												onclick={() => removeNetEnvVar(index)}
-												title="Remove"
-											>
-												×
-											</button>
-										</div>
-									{/each}
-								{/if}
-							</div>
-							<button class="add-btn" onclick={addNetEnvVar}>
-								+ Add Variable
-							</button>
-						</div>
-
-						<div class="field">
-							<label>Default Actions</label>
-							<div class="net-actions-list">
-								{#if ($actionSettings.actions || []).length === 0}
-									<div class="empty-hint" style="text-align: left; padding: 0 0 8px 0;">
-										Actions run commands for the selected node.
-									</div>
-								{:else}
-									{#each $actionSettings.actions || [] as action (action.id)}
-										<div class="net-action-row">
-											<div class="net-action-info">
-												<span class="net-action-label">{action.label}</span>
-												<code class="net-action-command">{action.command}</code>
-											</div>
-											<button
-												class="edit-btn"
-												onclick={() => { editingAction = action; showActionEditor = true; }}
-												title="Edit"
-											>
-												<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-													<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
-													<path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
-												</svg>
-											</button>
-											<button
-												class="remove-btn"
-												onclick={() => removeProjectAction(action.id)}
-												title="Remove"
-											>
-												×
-											</button>
-										</div>
-									{/each}
-								{/if}
-							</div>
-							<button class="add-btn" onclick={() => { editingAction = null; showActionEditor = true; }}>
-								+ Add Action
-							</button>
-						</div>
-					</div>
-				{/if}
-			</section>
-
-			<!-- Default Factories Section -->
+				<!-- Default Factories Section -->
 			<section class="section">
 				<button
 					class="section-header"
@@ -1112,6 +886,61 @@
 					</div>
 				{/if}
 			</section>
+
+			<!-- Actions bottom panel (matches node-level ActionsPanel) -->
+			<div class="actions-footer">
+				<div class="actions-footer-header">
+					<span class="actions-footer-title">Default Actions</span>
+					<button
+						class="actions-footer-gear"
+						onclick={() => showProjectSettings = true}
+						title="Action Settings"
+					>
+						<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+							<circle cx="12" cy="12" r="3"/>
+							<path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+						</svg>
+					</button>
+				</div>
+
+				<div class="actions-footer-list">
+					{#if $projectActions.length === 0}
+						<div class="actions-footer-empty">
+							No actions defined.
+							<button class="actions-footer-link" onclick={() => showProjectSettings = true}>
+								Configure in settings
+							</button>
+						</div>
+					{:else}
+						{#each $projectActions as action (action.id)}
+							<div class="actions-footer-item">
+								<span class="actions-footer-item-label">{action.label}</span>
+								<button
+									class="actions-footer-edit-btn"
+									onclick={() => { editingAction = action; editingNodeAction = false; showActionEditor = true; }}
+									title="Edit action"
+								>
+									<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+										<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+										<path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+									</svg>
+								</button>
+							</div>
+						{/each}
+					{/if}
+				</div>
+
+				<button
+					class="actions-footer-add-btn"
+					onclick={() => { editingAction = null; editingNodeAction = false; showActionEditor = true; }}
+				>
+					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<line x1="12" y1="5" x2="12" y2="19"/>
+						<line x1="5" y1="12" x2="19" y2="12"/>
+					</svg>
+					Add Action
+				</button>
+			</div>
 		{/if}
 	</div>
 </aside>
@@ -1187,6 +1016,142 @@
 		font-weight: 600;
 		color: var(--text-primary, #fff);
 		margin: 0;
+	}
+
+	/* Net-level actions footer (matches ActionsPanel) */
+	.actions-footer {
+		border-top: 1px solid var(--border-color, #404040);
+		padding: 12px;
+	}
+
+	.actions-footer-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+	}
+
+	.actions-footer-title {
+		font-size: 11px;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.5px;
+		color: var(--text-secondary, #a0a0a0);
+	}
+
+	.actions-footer-gear {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 24px;
+		height: 24px;
+		padding: 0;
+		background: transparent;
+		border: none;
+		border-radius: 4px;
+		color: var(--text-secondary, #a0a0a0);
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+
+	.actions-footer-gear:hover {
+		background: var(--bg-tertiary, #2d2d2d);
+		color: var(--text-primary, #fff);
+	}
+
+	.actions-footer-list {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		margin-top: 12px;
+	}
+
+	.actions-footer-empty {
+		font-size: 12px;
+		color: var(--text-secondary, #666);
+		text-align: center;
+		padding: 16px 8px;
+	}
+
+	.actions-footer-link {
+		background: none;
+		border: none;
+		color: var(--accent-color, #3b82f6);
+		font-size: 12px;
+		cursor: pointer;
+		text-decoration: underline;
+		padding: 0;
+		margin-top: 4px;
+		display: block;
+	}
+
+	.actions-footer-link:hover {
+		color: var(--accent-hover, #2563eb);
+	}
+
+	.actions-footer-item {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+	}
+
+	.actions-footer-item-label {
+		flex: 1;
+		padding: 8px 10px;
+		background: var(--bg-tertiary, #2d2d2d);
+		border-radius: 4px;
+		color: var(--text-primary, #fff);
+		font-size: 12px;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.actions-footer-edit-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 24px;
+		height: 24px;
+		padding: 0;
+		background: transparent;
+		border: none;
+		border-radius: 4px;
+		color: var(--text-secondary, #666);
+		cursor: pointer;
+		opacity: 0;
+		transition: all 0.15s ease;
+	}
+
+	.actions-footer-item:hover .actions-footer-edit-btn {
+		opacity: 1;
+	}
+
+	.actions-footer-edit-btn:hover {
+		background: var(--bg-tertiary, #2d2d2d);
+		color: var(--text-primary, #fff);
+	}
+
+	.actions-footer-add-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		gap: 6px;
+		width: 100%;
+		padding: 8px;
+		margin-top: 8px;
+		background: transparent;
+		border: 1px dashed var(--border-color, #404040);
+		border-radius: 4px;
+		color: var(--text-secondary, #a0a0a0);
+		font-size: 12px;
+		cursor: pointer;
+		transition: all 0.15s ease;
+	}
+
+	.actions-footer-add-btn:hover {
+		background: var(--bg-tertiary, #2d2d2d);
+		border-color: var(--accent-color, #3b82f6);
+		color: var(--accent-color, #3b82f6);
 	}
 
 	.sidebar-content {
@@ -1547,51 +1512,6 @@
 		margin: 0;
 	}
 
-	/* Node environment variables */
-	.node-env-list {
-		display: flex;
-		flex-direction: column;
-		gap: 6px;
-		margin-bottom: 8px;
-	}
-
-	.env-row {
-		display: flex;
-		align-items: center;
-		gap: 4px;
-	}
-
-	.env-row input {
-		padding: 6px 8px;
-		background: var(--bg-primary, #1a1a1a);
-		border: 1px solid var(--border-color, #404040);
-		border-radius: 4px;
-		color: var(--text-primary, #fff);
-		font-size: 11px;
-		font-family: 'SF Mono', Monaco, monospace;
-	}
-
-	.env-row input:focus {
-		outline: none;
-		border-color: var(--accent-color, #3b82f6);
-	}
-
-	.env-key {
-		width: 80px;
-		flex-shrink: 0;
-	}
-
-	.env-equals {
-		color: var(--text-secondary, #666);
-		font-family: 'SF Mono', Monaco, monospace;
-		font-size: 11px;
-	}
-
-	.env-value {
-		flex: 1;
-		min-width: 0;
-	}
-
 	/* Delete node button */
 	.delete-node-btn {
 		width: 100%;
@@ -1625,67 +1545,4 @@
 		font-size: 10px;
 	}
 
-	/* Net-level action rows */
-	.net-actions-list {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-		margin-bottom: 8px;
-	}
-
-	.net-action-row {
-		display: flex;
-		align-items: center;
-		gap: 4px;
-		padding: 6px 8px;
-		background: var(--bg-primary, #1a1a1a);
-		border: 1px solid var(--border-color, #404040);
-		border-radius: 4px;
-	}
-
-	.net-action-info {
-		flex: 1;
-		min-width: 0;
-	}
-
-	.net-action-label {
-		display: block;
-		font-size: 12px;
-		font-weight: 500;
-		color: var(--text-primary, #fff);
-	}
-
-	.net-action-command {
-		display: block;
-		font-size: 10px;
-		color: var(--text-secondary, #a0a0a0);
-		overflow: hidden;
-		text-overflow: ellipsis;
-		white-space: nowrap;
-	}
-
-	.net-action-row .edit-btn {
-		display: flex;
-		align-items: center;
-		justify-content: center;
-		width: 22px;
-		height: 22px;
-		padding: 0;
-		background: transparent;
-		border: none;
-		border-radius: 4px;
-		color: var(--text-secondary, #a0a0a0);
-		cursor: pointer;
-		opacity: 0;
-		transition: all 0.15s ease;
-	}
-
-	.net-action-row:hover .edit-btn {
-		opacity: 1;
-	}
-
-	.net-action-row .edit-btn:hover {
-		background: var(--bg-tertiary, #2d2d2d);
-		color: var(--text-primary, #fff);
-	}
 </style>

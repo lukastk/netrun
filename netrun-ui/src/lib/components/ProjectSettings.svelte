@@ -17,7 +17,6 @@
 	let { onClose }: Props = $props();
 
 	// Local state bound to settings
-	let projectRoot = $state($actionSettings.projectRoot || '');
 	let defaultCmd = $state($actionSettings.defaultCmd || '');
 
 	// Environment variables as array for editing
@@ -39,7 +38,6 @@
 		}
 
 		updateActionSettings({
-			projectRoot: projectRoot.trim() || undefined,
 			defaultCmd: defaultCmd.trim() || undefined,
 			env: Object.keys(env).length > 0 ? env : undefined,
 		});
@@ -97,27 +95,13 @@
 	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div class="modal" onclick={(e) => e.stopPropagation()}>
 		<div class="modal-header">
-			<h2>Project Settings</h2>
+			<h2>Action Settings</h2>
 			<button class="close-btn" onclick={onClose}>×</button>
 		</div>
 
 		<div class="modal-body">
 			<section class="section">
-				<h3>Paths</h3>
-
-				<div class="field">
-					<label for="project-root">Project Root</label>
-					<input
-						id="project-root"
-						type="text"
-						bind:value={projectRoot}
-						onblur={saveSettings}
-						placeholder="./ (relative to net file)"
-					/>
-					<div class="field-hint">
-						Base path for file references. Relative paths are resolved from the net file location.
-					</div>
-				</div>
+				<h3>General</h3>
 
 				<div class="field">
 					<label for="default-cmd">Default Command</label>
