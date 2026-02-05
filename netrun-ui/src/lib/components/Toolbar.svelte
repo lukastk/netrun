@@ -255,9 +255,14 @@
 			}}
 			title="Validate all nodes"
 			class:has-errors={lastValidationResult && !lastValidationResult.valid}
+			class:has-success={lastValidationResult && lastValidationResult.valid}
 		>
 			<span class="icon">✓</span>
-			<span class="label">Validate</span>
+			{#if lastValidationResult && lastValidationResult.valid}
+				<span class="label">Success</span>
+			{:else}
+				<span class="label">Validate</span>
+			{/if}
 			{#if lastValidationResult && !lastValidationResult.valid}
 				<span class="error-badge">{lastValidationResult.errorCount}</span>
 			{/if}
@@ -390,6 +395,16 @@
 	button.has-errors:hover:not(:disabled) {
 		background: #dc2626;
 		border-color: #dc2626;
+	}
+
+	button.has-success {
+		background: var(--success-color, #22c55e);
+		border-color: var(--success-color, #22c55e);
+	}
+
+	button.has-success:hover:not(:disabled) {
+		background: #16a34a;
+		border-color: #16a34a;
 	}
 
 	.error-badge {
