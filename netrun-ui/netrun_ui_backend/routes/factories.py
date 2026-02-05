@@ -3,12 +3,37 @@ import importlib
 import inspect
 import os
 import sys
+from contextlib import contextmanager
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 router = APIRouter()
+
+
+def _get_working_dir() -> str | None:
+    """Return the project working directory (if set)."""
+    return os.environ.get("NETRUN_UI_WORKING_DIR")
+
+
+@contextmanager
+def _with_working_dir_on_path():
+    """Temporarily add the project working directory to sys.path.
+
+    This allows importing local modules (e.g. ``nodes``) that live in the
+    user's project directory.
+    """
+    wd = _get_working_dir()
+    added = False
+    if wd and wd not in sys.path:
+        sys.path.insert(0, wd)
+        added = True
+    try:
+        yield
+    finally:
+        if added and wd in sys.path:
+            sys.path.remove(wd)
 
 
 def _reload_module(dotted_path: str) -> None:
@@ -232,58 +257,23 @@ async def preview_factory(request: FactoryPreviewRequest) -> FactoryPreviewRespo
             if isinstance(val, str) and "." in val:
                 _reload_module(val)
 
-        # Import the factory module
-        module = importlib.import_module(request.factory_path)
+        with _with_working_dir_on_path():
+            # Import the factory module
+            module = importlib.import_module(request.factory_path)
 
-        # Get the get_node_config function
-        if not hasattr(module, "get_node_config"):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Factory module '{request.factory_path}' does not have a get_node_config function"
-            )
+            # Get the get_node_config function
+            if not hasattr(module, "get_node_config"):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Factory module '{request.factory_path}' does not have a get_node_config function"
+                )
 
-        get_node_config = getattr(module, "get_node_config")
+            get_node_config = getattr(module, "get_node_config")
 
-        # Call the factory
-        try:
-            node_config = get_node_config(**request.factory_args)
-        except ModuleNotFoundError as e:
-            return FactoryPreviewResponse(
-                factory_path=request.factory_path,
-                name="",
-                in_ports=[],
-                out_ports=[],
-                has_in_salvo_conditions=False,
-                has_out_salvo_conditions=False,
-                error=f"Module not found: {e.name}. Check the import path.",
-            )
-        except AttributeError as e:
-            return FactoryPreviewResponse(
-                factory_path=request.factory_path,
-                name="",
-                in_ports=[],
-                out_ports=[],
-                has_in_salvo_conditions=False,
-                has_out_salvo_conditions=False,
-                error=f"Function not found: {e}",
-            )
-        except TypeError as e:
-            # Missing required argument or wrong type
-            error_msg = str(e)
-            if "missing" in error_msg and "required" in error_msg:
-                # Parse Python's error message to extract argument names
-                # Format: "get_node_config() missing 1 required positional argument: 'func'"
-                # Or: "get_node_config() missing 2 required positional arguments: 'arg1' and 'arg2'"
-                import re
-                # Extract quoted argument names
-                arg_matches = re.findall(r"'([^']+)'", error_msg)
-                if arg_matches:
-                    if len(arg_matches) == 1:
-                        friendly_msg = f"Required argument '{arg_matches[0]}' is missing"
-                    else:
-                        friendly_msg = f"Required arguments are missing: {', '.join(repr(a) for a in arg_matches)}"
-                else:
-                    friendly_msg = "Required arguments are missing"
+            # Call the factory
+            try:
+                node_config = get_node_config(**request.factory_args)
+            except ModuleNotFoundError as e:
                 return FactoryPreviewResponse(
                     factory_path=request.factory_path,
                     name="",
@@ -291,37 +281,69 @@ async def preview_factory(request: FactoryPreviewRequest) -> FactoryPreviewRespo
                     out_ports=[],
                     has_in_salvo_conditions=False,
                     has_out_salvo_conditions=False,
-                    error=friendly_msg,
+                    error=f"Module not found: {e.name}. Check the import path.",
                 )
-            return FactoryPreviewResponse(
-                factory_path=request.factory_path,
-                name="",
-                in_ports=[],
-                out_ports=[],
-                has_in_salvo_conditions=False,
-                has_out_salvo_conditions=False,
-                error=f"Type error: {e}",
-            )
-        except ValueError as e:
-            return FactoryPreviewResponse(
-                factory_path=request.factory_path,
-                name="",
-                in_ports=[],
-                out_ports=[],
-                has_in_salvo_conditions=False,
-                has_out_salvo_conditions=False,
-                error=f"Invalid value: {e}",
-            )
-        except Exception as e:
-            return FactoryPreviewResponse(
-                factory_path=request.factory_path,
-                name="",
-                in_ports=[],
-                out_ports=[],
-                has_in_salvo_conditions=False,
-                has_out_salvo_conditions=False,
-                error=f"Factory error: {e}",
-            )
+            except AttributeError as e:
+                return FactoryPreviewResponse(
+                    factory_path=request.factory_path,
+                    name="",
+                    in_ports=[],
+                    out_ports=[],
+                    has_in_salvo_conditions=False,
+                    has_out_salvo_conditions=False,
+                    error=f"Function not found: {e}",
+                )
+            except TypeError as e:
+                # Missing required argument or wrong type
+                error_msg = str(e)
+                if "missing" in error_msg and "required" in error_msg:
+                    import re
+                    arg_matches = re.findall(r"'([^']+)'", error_msg)
+                    if arg_matches:
+                        if len(arg_matches) == 1:
+                            friendly_msg = f"Required argument '{arg_matches[0]}' is missing"
+                        else:
+                            friendly_msg = f"Required arguments are missing: {', '.join(repr(a) for a in arg_matches)}"
+                    else:
+                        friendly_msg = "Required arguments are missing"
+                    return FactoryPreviewResponse(
+                        factory_path=request.factory_path,
+                        name="",
+                        in_ports=[],
+                        out_ports=[],
+                        has_in_salvo_conditions=False,
+                        has_out_salvo_conditions=False,
+                        error=friendly_msg,
+                    )
+                return FactoryPreviewResponse(
+                    factory_path=request.factory_path,
+                    name="",
+                    in_ports=[],
+                    out_ports=[],
+                    has_in_salvo_conditions=False,
+                    has_out_salvo_conditions=False,
+                    error=f"Type error: {e}",
+                )
+            except ValueError as e:
+                return FactoryPreviewResponse(
+                    factory_path=request.factory_path,
+                    name="",
+                    in_ports=[],
+                    out_ports=[],
+                    has_in_salvo_conditions=False,
+                    has_out_salvo_conditions=False,
+                    error=f"Invalid value: {e}",
+                )
+            except Exception as e:
+                return FactoryPreviewResponse(
+                    factory_path=request.factory_path,
+                    name="",
+                    in_ports=[],
+                    out_ports=[],
+                    has_in_salvo_conditions=False,
+                    has_out_salvo_conditions=False,
+                    error=f"Factory error: {e}",
+                )
 
         # Extract port information
         in_ports = []
@@ -385,7 +407,8 @@ async def validate_import(request: ValidateImportRequest) -> ValidateImportRespo
     try:
         _reload_module(request.import_path)
 
-        module = importlib.import_module(request.import_path)
+        with _with_working_dir_on_path():
+            module = importlib.import_module(request.import_path)
 
         # Check if it's a factory module (has get_node_config)
         is_factory = hasattr(module, "get_node_config")
