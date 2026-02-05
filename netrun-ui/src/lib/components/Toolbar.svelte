@@ -16,7 +16,10 @@
 		selectedNodeIds,
 		validateAllNodes,
 		createSubgraphFromSelection,
+		nodes,
+		edges,
 	} from '$lib/stores/flowStore';
+	import { tick } from 'svelte';
 	import { openCommandPalette } from '$lib/stores/commandStore';
 	import { resolveFilePath } from '$lib/stores/fileExplorerStore';
 	import { showPrompt, showAlert, showConfirm } from '$lib/stores/modalStore';
@@ -24,6 +27,16 @@
 
 	// Validation state
 	let lastValidationResult = $state<{ valid: boolean; errorCount: number } | null>(null);
+	let isValidating = false;
+
+	// Reset validation state when nodes or edges change (but not during validation itself)
+	$effect(() => {
+		$nodes;
+		$edges;
+		if (!isValidating) {
+			lastValidationResult = null;
+		}
+	});
 
 	// State for loading/saving
 	let isLoading = $state(false);
@@ -250,8 +263,11 @@
 		</button>
 		<div class="separator"></div>
 		<button
-			onclick={() => {
+			onclick={async () => {
+				isValidating = true;
 				lastValidationResult = validateAllNodes();
+				await tick();
+				isValidating = false;
 			}}
 			title="Validate all nodes"
 			class:has-errors={lastValidationResult && !lastValidationResult.valid}
