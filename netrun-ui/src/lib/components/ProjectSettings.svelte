@@ -136,7 +136,7 @@
 
 			<section class="section">
 				<div class="section-header">
-					<h3>Environment Variables</h3>
+					<h3>Action Variables</h3>
 					<button class="add-btn" onclick={addEnvVar}>+ Add</button>
 				</div>
 
@@ -176,7 +176,7 @@
 				</div>
 
 				<div class="field-hint">
-					Custom variables can be used in action commands as <code>$VAR_NAME</code>
+					Action variables are available in commands as <code>$VAR_NAME</code>
 				</div>
 			</section>
 

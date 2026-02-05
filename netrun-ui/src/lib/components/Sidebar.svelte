@@ -31,6 +31,8 @@
 	import ActionEditor from './ActionEditor.svelte';
 	import TextInputModal from './TextInputModal.svelte';
 	import {
+		actionSettings,
+		updateActionSettings,
 		addProjectAction,
 		updateProjectAction,
 		removeProjectAction,
@@ -88,6 +90,7 @@
 		graphSettings: true,
 		pools: true,
 		netSettings: false,
+		actions: false,
 		factories: true,
 		uiSettings: false,
 	});
@@ -164,6 +167,40 @@
 	function removeNodeEnvVar(index: number) {
 		nodeEnvVars = nodeEnvVars.filter((_, i) => i !== index);
 		saveNodeEnvVars();
+	}
+
+	// Net-level env vars (action variables)
+	function getNetEnvVars(): Array<{ key: string; value: string }> {
+		const env = $actionSettings.env;
+		if (!env) return [];
+		return Object.entries(env).map(([key, value]) => ({ key, value }));
+	}
+
+	let netEnvVars = $state<Array<{ key: string; value: string }>>(getNetEnvVars());
+
+	$effect(() => {
+		// Sync when actionSettings.env changes (e.g. tab switch, file load)
+		netEnvVars = getNetEnvVars();
+	});
+
+	function saveNetEnvVars() {
+		const env: Record<string, string> = {};
+		for (const { key, value } of netEnvVars) {
+			if (key.trim()) {
+				env[key.trim()] = value;
+			}
+		}
+		updateActionSettings({ env: Object.keys(env).length > 0 ? env : undefined });
+		pushHistory();
+	}
+
+	function addNetEnvVar() {
+		netEnvVars = [...netEnvVars, { key: '', value: '' }];
+	}
+
+	function removeNetEnvVar(index: number) {
+		netEnvVars = netEnvVars.filter((_, i) => i !== index);
+		saveNetEnvVars();
 	}
 
 	function toggleSection(section: keyof typeof sectionsOpen) {
@@ -650,7 +687,7 @@
 					class="section-header"
 					onclick={() => toggleSection('nodeVariables')}
 				>
-					<span class="section-title">Node Variables</span>
+					<span class="section-title">Node Action Variables</span>
 					<span class="section-toggle">{sectionsOpen.nodeVariables ? '−' : '+'}</span>
 				</button>
 				{#if sectionsOpen.nodeVariables}
@@ -658,7 +695,7 @@
 						<div class="node-env-list">
 							{#if nodeEnvVars.length === 0}
 								<div class="empty-hint" style="text-align: left; padding: 0 0 8px 0;">
-									Override project variables for this node
+									Override action variables for this node
 								</div>
 							{:else}
 								{#each nodeEnvVars as envVar, index (index)}
@@ -801,6 +838,21 @@
 								rows="3"
 							></textarea>
 						</div>
+						<div class="field">
+							<label for="project-root">Project Root</label>
+							<input
+								id="project-root"
+								type="text"
+								value={String(($extraData as Record<string, unknown>)?.project_root ?? '')}
+								oninput={(e) => updateExtraDataLive({ project_root: (e.target as HTMLInputElement).value || undefined })}
+								onblur={() => pushHistory()}
+								placeholder="./ (relative to net file)"
+								class="mono"
+							/>
+							<div class="field-hint">
+								Base path for file references. Relative paths resolve from the net file location.
+							</div>
+						</div>
 					</div>
 				{/if}
 			</section>
@@ -843,6 +895,123 @@
 								updateExtraDataLive(updates);
 							}}
 						/>
+					</div>
+				{/if}
+			</section>
+
+			<!-- Actions Section -->
+			<section class="section">
+				<button
+					class="section-header"
+					onclick={() => toggleSection('actions')}
+				>
+					<span class="section-title">Actions</span>
+					<span class="section-toggle">{sectionsOpen.actions ? '−' : '+'}</span>
+				</button>
+				{#if sectionsOpen.actions}
+					{@const uiMeta = (($graphMeta as Record<string, unknown>)?.ui || {}) as Record<string, unknown>}
+					<div class="section-content">
+						<div class="field">
+							<label for="default-cmd">Default Command</label>
+							<input
+								id="default-cmd"
+								type="text"
+								value={String(uiMeta.defaultCmd ?? '')}
+								oninput={(e) => {
+									const val = (e.target as HTMLInputElement).value;
+									updateGraphMetaLive({
+										ui: { ...uiMeta, defaultCmd: val || undefined }
+									});
+								}}
+								onblur={() => pushHistory()}
+								placeholder="code"
+								class="mono"
+							/>
+							<div class="field-hint">
+								Default command for <code>$DEFAULT_CMD</code>
+							</div>
+						</div>
+
+						<div class="field">
+							<label>Action Variables</label>
+							<div class="node-env-list">
+								{#if netEnvVars.length === 0}
+									<div class="empty-hint" style="text-align: left; padding: 0 0 8px 0;">
+										Variables available in action commands as <code>$VAR_NAME</code>
+									</div>
+								{:else}
+									{#each netEnvVars as envVar, index (index)}
+										<div class="env-row">
+											<input
+												type="text"
+												bind:value={envVar.key}
+												onblur={saveNetEnvVars}
+												placeholder="VAR_NAME"
+												class="env-key"
+											/>
+											<span class="env-equals">=</span>
+											<input
+												type="text"
+												bind:value={envVar.value}
+												onblur={saveNetEnvVars}
+												placeholder="value"
+												class="env-value"
+											/>
+											<button
+												class="remove-btn"
+												onclick={() => removeNetEnvVar(index)}
+												title="Remove"
+											>
+												×
+											</button>
+										</div>
+									{/each}
+								{/if}
+							</div>
+							<button class="add-btn" onclick={addNetEnvVar}>
+								+ Add Variable
+							</button>
+						</div>
+
+						<div class="field">
+							<label>Default Actions</label>
+							<div class="net-actions-list">
+								{#if ($actionSettings.actions || []).length === 0}
+									<div class="empty-hint" style="text-align: left; padding: 0 0 8px 0;">
+										Actions run commands for the selected node.
+									</div>
+								{:else}
+									{#each $actionSettings.actions || [] as action (action.id)}
+										<div class="net-action-row">
+											<div class="net-action-info">
+												<span class="net-action-label">{action.label}</span>
+												<code class="net-action-command">{action.command}</code>
+											</div>
+											<button
+												class="edit-btn"
+												onclick={() => { editingAction = action; showActionEditor = true; }}
+												title="Edit"
+											>
+												<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+													<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+													<path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+												</svg>
+											</button>
+											<button
+												class="remove-btn"
+												onclick={() => removeProjectAction(action.id)}
+												title="Remove"
+											>
+												×
+											</button>
+										</div>
+									{/each}
+								{/if}
+							</div>
+							<button class="add-btn" onclick={() => { editingAction = null; showActionEditor = true; }}>
+								+ Add Action
+							</button>
+						</div>
 					</div>
 				{/if}
 			</section>
@@ -1440,5 +1609,83 @@
 	.delete-node-btn:hover {
 		background: var(--error-color, #ef4444);
 		color: white;
+	}
+
+	/* Field hint for small descriptions */
+	.field-hint {
+		font-size: 10px;
+		color: var(--text-secondary, #666);
+		margin-top: 4px;
+	}
+
+	.field-hint code {
+		background: var(--bg-primary, #1a1a1a);
+		padding: 1px 3px;
+		border-radius: 2px;
+		font-size: 10px;
+	}
+
+	/* Net-level action rows */
+	.net-actions-list {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+		margin-bottom: 8px;
+	}
+
+	.net-action-row {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		padding: 6px 8px;
+		background: var(--bg-primary, #1a1a1a);
+		border: 1px solid var(--border-color, #404040);
+		border-radius: 4px;
+	}
+
+	.net-action-info {
+		flex: 1;
+		min-width: 0;
+	}
+
+	.net-action-label {
+		display: block;
+		font-size: 12px;
+		font-weight: 500;
+		color: var(--text-primary, #fff);
+	}
+
+	.net-action-command {
+		display: block;
+		font-size: 10px;
+		color: var(--text-secondary, #a0a0a0);
+		overflow: hidden;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.net-action-row .edit-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 22px;
+		height: 22px;
+		padding: 0;
+		background: transparent;
+		border: none;
+		border-radius: 4px;
+		color: var(--text-secondary, #a0a0a0);
+		cursor: pointer;
+		opacity: 0;
+		transition: all 0.15s ease;
+	}
+
+	.net-action-row:hover .edit-btn {
+		opacity: 1;
+	}
+
+	.net-action-row .edit-btn:hover {
+		background: var(--bg-tertiary, #2d2d2d);
+		color: var(--text-primary, #fff);
 	}
 </style>

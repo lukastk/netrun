@@ -17,6 +17,7 @@
 import pytest
 import tempfile
 import json
+import os
 from pathlib import Path
 from netrun.net.config import (
     # Port slot spec
@@ -54,6 +55,8 @@ from netrun.net.config import (
     NodeConfig,
     # Graph
     GraphConfig,
+    # Net
+    NetConfig,
     # Subgraph
     ExposedPortConfig,
     SubgraphConfig,
@@ -1660,3 +1663,148 @@ def test_subgraph_circular_reference():
 
 # %%
 test_subgraph_circular_reference();
+
+# %% [markdown]
+# ## NetConfig Tests
+
+# %%
+#|export
+def test_netconfig_project_root_default_cwd():
+    """Test project_root_path defaults to cwd when both project_root and _file_path are None."""
+    config = NetConfig(
+        graph=GraphConfig(nodes=[NodeConfig(name="A")]),
+    )
+    assert config.project_root is None
+    assert config._file_path is None
+    assert config.project_root_path == Path(os.getcwd())
+
+# %%
+test_netconfig_project_root_default_cwd();
+
+# %%
+#|export
+def test_netconfig_project_root_absolute():
+    """Test project_root_path with an absolute project_root."""
+    config = NetConfig(
+        project_root="/tmp/my_project",
+        graph=GraphConfig(nodes=[NodeConfig(name="A")]),
+    )
+    assert config.project_root_path == Path("/tmp/my_project")
+
+# %%
+test_netconfig_project_root_absolute();
+
+# %%
+#|export
+def test_netconfig_project_root_relative_with_file():
+    """Test project_root_path resolves relative project_root from file location."""
+    config = NetConfig(
+        project_root="../other",
+        graph=GraphConfig(nodes=[NodeConfig(name="A")]),
+    )
+    config._file_path = Path("/home/user/configs/net.json")
+    expected = (Path("/home/user/configs") / "../other").resolve()
+    assert config.project_root_path == expected
+
+# %%
+test_netconfig_project_root_relative_with_file();
+
+# %%
+#|export
+def test_netconfig_project_root_none_with_file():
+    """Test project_root_path returns file's parent when project_root is None."""
+    config = NetConfig(
+        graph=GraphConfig(nodes=[NodeConfig(name="A")]),
+    )
+    config._file_path = Path("/home/user/configs/net.json")
+    assert config.project_root_path == Path("/home/user/configs")
+
+# %%
+test_netconfig_project_root_none_with_file();
+
+# %%
+#|export
+def test_netconfig_from_file_json(tmp_path):
+    """Test NetConfig.from_file() with a JSON file."""
+    data = {
+        "project_root": "./src",
+        "graph": {
+            "nodes": [{"name": "A", "out_ports": {"out": {"slots_spec": {"type": "infinite"}}}}],
+            "edges": [],
+        },
+    }
+    file_path = tmp_path / "test.netrun.json"
+    file_path.write_text(json.dumps(data))
+
+    config = NetConfig.from_file(file_path)
+
+    assert config.project_root == "./src"
+    assert config._file_path == file_path.resolve()
+    assert len(config.graph.nodes) == 1
+
+# %%
+test_netconfig_from_file_json(Path(tempfile.mkdtemp()));
+
+# %%
+#|export
+def test_netconfig_from_file_toml(tmp_path):
+    """Test NetConfig.from_file() with a TOML file."""
+    toml_content = """
+project_root = "/absolute/path"
+
+[graph]
+nodes = []
+edges = []
+"""
+    file_path = tmp_path / "test.netrun.toml"
+    file_path.write_text(toml_content)
+
+    config = NetConfig.from_file(file_path)
+
+    assert config.project_root == "/absolute/path"
+    assert config._file_path == file_path.resolve()
+    assert len(config.graph.nodes) == 0
+
+# %%
+test_netconfig_from_file_toml(Path(tempfile.mkdtemp()));
+
+# %%
+#|export
+def test_netconfig_serialization_excludes_file_path():
+    """Test that _file_path (PrivateAttr) is not included in serialization."""
+    config = NetConfig(
+        project_root="./src",
+        graph=GraphConfig(nodes=[NodeConfig(name="A")]),
+    )
+    config._file_path = Path("/some/path/net.json")
+
+    dumped = config.model_dump()
+    assert "_file_path" not in dumped
+    assert "project_root" in dumped
+    assert dumped["project_root"] == "./src"
+
+    json_str = config.model_dump_json()
+    assert "_file_path" not in json_str
+    assert "project_root" in json_str
+
+# %%
+test_netconfig_serialization_excludes_file_path();
+
+# %%
+#|export
+def test_netconfig_resolve_preserves_file_path():
+    """Test that resolve() preserves _file_path on the returned copy."""
+    config = NetConfig(
+        graph=GraphConfig(nodes=[NodeConfig(name="A")]),
+    )
+    config._file_path = Path("/home/user/configs/net.json")
+
+    resolved = config.resolve()
+
+    # pools was None so resolve() creates a copy with default pools
+    assert resolved is not config
+    assert resolved._file_path == Path("/home/user/configs/net.json")
+    assert resolved.pools is not None
+
+# %%
+test_netconfig_resolve_preserves_file_path();
