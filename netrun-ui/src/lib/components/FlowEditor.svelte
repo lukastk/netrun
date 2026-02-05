@@ -5,6 +5,7 @@
 		Controls,
 		MiniMap,
 		MarkerType,
+		useSvelteFlow,
 		type Edge,
 		type Node,
 		type Connection,
@@ -13,9 +14,9 @@
 		ConnectionLineType
 	} from '@xyflow/svelte';
 	import '@xyflow/svelte/dist/style.css';
-	import { tick } from 'svelte';
+	import { tick, onMount } from 'svelte';
 	import { derived, get } from 'svelte/store';
-	import { isValidConnection } from '$lib/stores/flowStore';
+	import { isValidConnection, activeTabId } from '$lib/stores/flowStore';
 
 	import NetrunNodeComponent from './NetrunNode.svelte';
 	import SubgraphNodeComponent from './SubgraphNode.svelte';
@@ -177,6 +178,28 @@
 			default: return ConnectionLineType.SmoothStep;
 		}
 	}
+
+	// Get SvelteFlow instance for programmatic control
+	const { fitView } = useSvelteFlow();
+
+	// Fit view options - ensure entire graph is visible with padding
+	const fitViewOptions = {
+		padding: 0.2,
+		maxZoom: 1.5,
+		minZoom: 0.1,
+	};
+
+	// Track previous tab ID to detect tab switches
+	let previousTabId: string | null = null;
+
+	// Fit view when switching tabs or loading new content
+	$: if ($activeTabId && $activeTabId !== previousTabId) {
+		previousTabId = $activeTabId;
+		// Wait for nodes to render, then fit view
+		tick().then(() => {
+			fitView(fitViewOptions);
+		});
+	}
 </script>
 
 <div class="flow-editor">
@@ -193,6 +216,7 @@
 		onnodedoubleclick={onNodeDoubleClick}
 		{isValidConnection}
 		fitView
+		{fitViewOptions}
 		snapGrid={[15, 15]}
 		defaultEdgeOptions={{
 			type: $edgeStyle,
