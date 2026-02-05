@@ -57,6 +57,10 @@
 		return typedPools ? Object.entries(typedPools) : [];
 	});
 
+	// Validate: at most one pool may have type 'main'
+	let mainPoolCount = $derived(poolEntries.filter(([, c]) => c.spec?.type === 'main').length);
+	let hasMultipleMainPools = $derived(mainPoolCount > 1);
+
 	function toggleDefaults() {
 		if (useDefaults) {
 			// Switch to explicit: start with empty pools
@@ -302,6 +306,12 @@
 			{/each}
 		</div>
 
+		{#if hasMultipleMainPools}
+			<div class="pool-error">
+				Only one pool may have type "Main Thread". Found {mainPoolCount}.
+			</div>
+		{/if}
+
 		<button class="add-btn" onclick={addPool}>+ Add Pool</button>
 	{/if}
 </div>
@@ -452,6 +462,15 @@
 
 	.field-row .field {
 		flex: 1;
+	}
+
+	.pool-error {
+		font-size: 11px;
+		color: var(--error-color, #ef4444);
+		padding: 6px 8px;
+		background: rgba(239, 68, 68, 0.1);
+		border: 1px solid rgba(239, 68, 68, 0.3);
+		border-radius: 4px;
 	}
 
 	.add-btn {
