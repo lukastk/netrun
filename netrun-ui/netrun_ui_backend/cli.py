@@ -21,6 +21,9 @@ from pathlib import Path
 from typing import Optional
 
 import uvicorn
+from importlib.metadata import version as pkg_version
+
+APP_TITLE = f"netrun-ui v{pkg_version('netrun-ui')}"
 
 
 def get_package_dir() -> Path:
@@ -164,7 +167,7 @@ def run_production_app(
     # Open native window pointing to backend (which serves static files)
     print("Opening window...")
     window = webview.create_window(
-        "netrun-ui",
+        APP_TITLE,
         backend_url,
         width=width,
         height=height,
@@ -293,7 +296,7 @@ def run_dev_app(
     # Open native window
     print("Opening window...")
     window = webview.create_window(
-        "netrun-ui (dev)",
+        f"{APP_TITLE} (dev)",
         frontend_url,
         width=width,
         height=height,
