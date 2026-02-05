@@ -57,6 +57,10 @@ from netrun.net.config import (
     GraphConfig,
     # Net
     NetConfig,
+    # Pools
+    PoolConfig,
+    MainPoolConfig,
+    ThreadPoolConfig,
     # Node variables
     NodeVariable,
     NodeExecutionConfig,
@@ -1970,3 +1974,42 @@ def test_net_config_with_vars():
 
 # %%
 test_net_config_with_vars();
+
+# %%
+#|export
+def test_net_config_rejects_multiple_main_pools():
+    """Multiple pools with type 'main' should be rejected."""
+    graph = GraphConfig(nodes=[
+        NodeConfig(name="A", in_ports={"in": PortConfig()}, out_ports={"out": PortConfig()}),
+    ], edges=[])
+
+    # One main pool is fine
+    NetConfig(
+        graph=graph,
+        pools={
+            "main": PoolConfig(spec=MainPoolConfig()),
+            "workers": PoolConfig(spec=ThreadPoolConfig(num_workers=4)),
+        },
+    )
+
+    # Two main pools should fail
+    with pytest.raises(ValueError, match="Only one pool may have type 'main'"):
+        NetConfig(
+            graph=graph,
+            pools={
+                "main1": PoolConfig(spec=MainPoolConfig()),
+                "main2": PoolConfig(spec=MainPoolConfig()),
+            },
+        )
+
+    # Zero main pools is fine (all thread pools)
+    NetConfig(
+        graph=graph,
+        pools={
+            "workers1": PoolConfig(spec=ThreadPoolConfig(num_workers=2)),
+            "workers2": PoolConfig(spec=ThreadPoolConfig(num_workers=2)),
+        },
+    )
+
+# %%
+test_net_config_rejects_multiple_main_pools();

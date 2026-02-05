@@ -1631,6 +1631,19 @@ class NetConfig(BaseModel):
             return callback
         return _get_callable_import_path(callback)
 
+    @model_validator(mode='after')
+    def validate_single_main_pool(self) -> "NetConfig":
+        """Validate that at most one pool has type 'main'."""
+        if self.pools is None:
+            return self
+        main_pools = [name for name, cfg in self.pools.items() if cfg.spec.type == "main"]
+        if len(main_pools) > 1:
+            raise ValueError(
+                f"Only one pool may have type 'main' (main thread), "
+                f"but found {len(main_pools)}: {', '.join(repr(n) for n in main_pools)}"
+            )
+        return self
+
     def resolve(self, base_path: Path | None = None) -> "NetConfig":
         """Return a resolved copy with all factories and imports resolved.
 
