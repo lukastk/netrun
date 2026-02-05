@@ -36,26 +36,31 @@ uv sync --all-extras
 uv pip install ../../netrun --reinstall --quiet
 
 if [ "$APP_MODE" = true ]; then
-    # App mode: start frontend, then open native window
+    # App mode: start frontend, then open native window (both in background)
     echo "Starting in app mode..."
 
     # Start frontend in background
     echo "Starting frontend (Vite) on http://localhost:5173..."
     cd "$SCRIPT_DIR"
-    VITE_INITIAL_PATH="$TESTING_DIR" npm run dev &
+    VITE_INITIAL_PATH="$TESTING_DIR" npm run dev > /dev/null 2>&1 &
     FRONTEND_PID=$!
 
     # Wait for frontend to be ready
     echo "Waiting for frontend to start..."
     sleep 3
 
-    # Start backend + native window (this blocks until window closes)
+    # Start backend + native window in background
     echo "Opening native window..."
     cd "$SCRIPT_DIR/backend"
-    uv run python app_window.py --frontend-url "http://localhost:5173"
+    uv run python app_window.py --frontend-url "http://localhost:5173" &
+    APP_PID=$!
 
-    # When window closes, kill frontend
-    kill $FRONTEND_PID 2>/dev/null
+    echo ""
+    echo "App started in background!"
+    echo "  Frontend PID: $FRONTEND_PID"
+    echo "  App PID: $APP_PID"
+    echo ""
+    echo "To stop: kill $FRONTEND_PID $APP_PID"
 
 else
     # Normal mode: backend + frontend in browser
