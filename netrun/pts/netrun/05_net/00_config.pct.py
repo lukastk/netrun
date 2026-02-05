@@ -20,6 +20,7 @@ from typing import Annotated, Literal, NewType, Any
 from types import ModuleType
 from collections.abc import Callable
 import importlib
+import json as _json_module
 import os
 import tomllib
 from ulid import ULID
@@ -668,6 +669,34 @@ Args:
 
 # %%
 #|export
+class NodeVariable(BaseModel):
+    """A typed variable accessible to nodes via ctx.vars."""
+    value: str
+    type: str = "str"  # "str", "int", "float", "bool", "json"
+
+    def resolve_value(self) -> Any:
+        """Resolve the string value to the appropriate Python type."""
+        match self.type:
+            case "str" | "":
+                return self.value
+            case "int":
+                return int(self.value)
+            case "float":
+                return float(self.value)
+            case "bool":
+                l = self.value.lower().strip()
+                if l in ("true", "1", "yes"):
+                    return True
+                if l in ("false", "0", "no"):
+                    return False
+                raise ValueError(f"Cannot parse '{self.value}' as bool")
+            case "json":
+                return _json_module.loads(self.value)
+            case _:
+                raise ValueError(f"Unsupported NodeVariable type: '{self.type}'")
+
+# %%
+#|export
 class NodeExecutionConfig(BaseModel):
     """Runtime configuration for a node's execution behavior."""
     model_config = {"arbitrary_types_allowed": True}
@@ -727,6 +756,9 @@ class NodeExecutionConfig(BaseModel):
     """
     How to select a worker when node has multiple pools. None = use Net default.
     """
+
+    node_vars: dict[str, NodeVariable] | None = None
+    """Per-node variables. Override net-level vars with the same name."""
 
     @field_serializer("exec_node_func", "start_node_func", "stop_node_func", "on_node_failure", when_used='json')
     def serialize_func(self, func: Callable | str | None) -> str | None:
@@ -1681,6 +1713,9 @@ class NetConfig(BaseModel):
     """
     Default allocation method for nodes with multiple pools.
     """
+
+    node_vars: dict[str, NodeVariable] | None = None
+    """Global default node variables, accessible via ctx.vars."""
 
     dead_letter_queue: bool = True
     dead_letter_path: str | None = None
