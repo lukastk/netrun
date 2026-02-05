@@ -59,10 +59,8 @@
 
 	function toggleDefaults() {
 		if (useDefaults) {
-			// Switch to explicit: create a default "main" pool
-			onUpdate({
-				main: { spec: { type: 'main' } },
-			} as Record<string, unknown>);
+			// Switch to explicit: start with empty pools
+			onUpdate({} as Record<string, unknown>);
 		} else {
 			// Switch to defaults
 			onUpdate(null);
@@ -173,7 +171,16 @@
 		<span>Use defaults (auto-generate)</span>
 	</label>
 
-	{#if !useDefaults}
+	{#if useDefaults}
+		<div class="pools-list">
+			<div class="pool-editor default-pool">
+				<div class="pool-header">
+					<span class="pool-name-readonly">main</span>
+					<span class="pool-type-badge">Main Thread</span>
+				</div>
+			</div>
+		</div>
+	{:else}
 		<div class="pools-list">
 			{#each poolEntries as [name, config]}
 				{@const spec = config.spec}
@@ -336,6 +343,23 @@
 		border: 1px solid var(--border-color, #404040);
 		border-radius: 4px;
 		overflow: hidden;
+	}
+
+	.pool-editor.default-pool {
+		opacity: 0.6;
+	}
+
+	.pool-name-readonly {
+		font-size: 12px;
+		font-weight: 500;
+		color: var(--text-primary, #fff);
+		padding: 4px 6px;
+	}
+
+	.pool-type-badge {
+		font-size: 10px;
+		color: var(--text-secondary, #a0a0a0);
+		padding: 2px 6px;
 	}
 
 	.pool-header {
