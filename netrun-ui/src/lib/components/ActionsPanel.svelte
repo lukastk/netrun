@@ -1,6 +1,7 @@
 <script lang="ts">
 	import {
 		availableActions,
+		projectActions,
 		actionExecutions,
 		executeAction,
 		clearActionExecution,
@@ -26,6 +27,17 @@
 	function getExecution(actionId: string) {
 		return $actionExecutions.get(actionId);
 	}
+
+	// Check if action is a default (project-level) action
+	function isDefaultAction(actionId: string): boolean {
+		return $projectActions.some(a => a.id === actionId);
+	}
+
+	// Clear execution state when selected node changes
+	$effect(() => {
+		$selectedNode; // track dependency
+		actionExecutions.set(new Map());
+	});
 </script>
 
 {#if $selectedNode}
@@ -88,6 +100,9 @@
 								{/if}
 							</span>
 							<span class="action-label">{action.label}</span>
+							{#if isDefaultAction(action.id)}
+								<span class="default-badge">default</span>
+							{/if}
 						</button>
 
 						{#if onEditAction}
@@ -275,6 +290,20 @@
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	.default-badge {
+		flex-shrink: 0;
+		font-size: 9px;
+		font-weight: 500;
+		text-transform: uppercase;
+		letter-spacing: 0.3px;
+		color: var(--text-secondary, #a0a0a0);
+		background: var(--bg-primary, #1a1a1a);
+		border: 1px solid var(--border-color, #404040);
+		border-radius: 3px;
+		padding: 1px 5px;
+		line-height: 1.4;
 	}
 
 	.edit-btn {

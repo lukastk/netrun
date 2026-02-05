@@ -271,6 +271,43 @@ export function updateNodeEnv(id: string, env: Record<string, string> | undefine
 	});
 }
 
+// Update node-level actions
+export function updateNodeActions(id: string, actions: unknown[] | undefined) {
+	const tab = get(activeTab);
+	if (!tab) return;
+
+	updateActiveTab({
+		nodes: tab.nodes.map(node => {
+			if (node.id !== id) return node;
+
+			const config = (node.data._config || {}) as Record<string, unknown>;
+			const meta = (config.meta || {}) as Record<string, unknown>;
+			const ui = (meta.ui || {}) as Record<string, unknown>;
+
+			const newUi = actions && actions.length > 0
+				? { ...ui, actions }
+				: (() => { const { actions: _actions, ...rest } = ui; return rest; })();
+
+			const newMeta = Object.keys(newUi).length > 0
+				? { ...meta, ui: newUi }
+				: (() => { const { ui: _ui, ...rest } = meta; return rest; })();
+
+			const newConfig = Object.keys(newMeta).length > 0
+				? { ...config, meta: newMeta }
+				: (() => { const { meta: _meta, ...rest } = config; return rest; })();
+
+			return {
+				...node,
+				data: {
+					...node.data,
+					_config: Object.keys(newConfig).length > 0 ? newConfig : undefined,
+				}
+			};
+		}),
+		isDirty: true,
+	});
+}
+
 // Update node-level salvo conditions
 export function updateNodeSalvoConditions(
 	id: string,
