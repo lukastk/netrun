@@ -12,6 +12,7 @@
 		updateFactoryNodePreview,
 		deleteNodes,
 		pushHistory,
+		activeTab,
 		extraData,
 		graphMeta,
 		updateExtraDataLive,
@@ -693,7 +694,7 @@
 				onAddAction={() => { editingAction = null; editingNodeAction = true; showActionEditor = true; }}
 				onEditAction={(action) => { editingAction = action; editingNodeAction = !$projectActions.some(a => a.id === action.id); showActionEditor = true; }}
 			/>
-		{:else}
+		{:else if $activeTab}
 			<!-- Net-level settings when no node is selected -->
 
 			<!-- Graph Settings Section -->
