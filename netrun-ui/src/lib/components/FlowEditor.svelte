@@ -15,6 +15,7 @@
 	import '@xyflow/svelte/dist/style.css';
 	import { tick } from 'svelte';
 	import { derived, get } from 'svelte/store';
+	import { isValidConnection } from '$lib/stores/flowStore';
 
 	import NetrunNodeComponent from './NetrunNode.svelte';
 	import SubgraphNodeComponent from './SubgraphNode.svelte';
@@ -190,6 +191,7 @@
 		onpanecontextmenu={onPaneContextMenu}
 		onnodecontextmenu={onNodeContextMenu}
 		onnodedoubleclick={onNodeDoubleClick}
+		{isValidConnection}
 		fitView
 		snapGrid={[15, 15]}
 		defaultEdgeOptions={{

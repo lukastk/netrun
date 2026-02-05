@@ -921,6 +921,16 @@ impl Graph {
         Ok(list.unbind())
     }
 
+    /// Returns all edges that have the given input port as their target (head).
+    /// Fan-in is allowed, so multiple edges can connect to the same input port.
+    fn get_edges_by_head(&self, input_port_ref: PortRef) -> Vec<Edge> {
+        self.inner
+            .get_edges_by_head(&input_port_ref)
+            .iter()
+            .cloned()
+            .collect()
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "Graph(nodes={}, edges={})",
