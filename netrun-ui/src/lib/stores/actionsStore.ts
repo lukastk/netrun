@@ -6,7 +6,7 @@
  */
 import { writable, derived, get } from 'svelte/store';
 import { api } from '$lib/api';
-import { activeTab, graphMeta, updateGraphMetaLive, currentFilePath, selectedNode } from './flowStore';
+import { activeTab, graphMeta, updateGraphMetaLive, extraData, updateExtraDataLive, currentFilePath, selectedNode } from './flowStore';
 
 // Action definition
 export interface Action {
@@ -37,13 +37,16 @@ export interface ActionExecution {
 // Store for tracking action execution state
 export const actionExecutions = writable<Map<string, ActionExecution>>(new Map());
 
-// Derived: get action settings from graph meta
+// Derived: get action settings from extraData (project_root) and graph meta (rest)
 export const actionSettings = derived(
-	graphMeta,
-	($graphMeta): ActionSettings => {
+	[graphMeta, extraData],
+	([$graphMeta, $extraData]): ActionSettings => {
 		const ui = ($graphMeta as Record<string, unknown>)?.ui as Record<string, unknown> | undefined;
+		const extra = $extraData as Record<string, unknown> | null;
+		// project_root: prefer extraData.project_root, fall back to legacy graphMeta.ui.projectRoot
+		const projectRoot = (extra?.project_root as string | undefined) ?? (ui?.projectRoot as string | undefined);
 		return {
-			projectRoot: ui?.projectRoot as string | undefined,
+			projectRoot,
 			defaultCmd: ui?.defaultCmd as string | undefined,
 			env: ui?.env as Record<string, string> | undefined,
 			actions: ui?.actions as Action[] | undefined,
@@ -108,15 +111,27 @@ export function updateActionSettings(updates: Partial<ActionSettings>): void {
 	const meta = get(graphMeta) || {};
 	const ui = (meta as Record<string, unknown>).ui as Record<string, unknown> || {};
 
-	const newUi = {
+	// projectRoot is stored in extraData.project_root (top-level NetConfig field)
+	if (updates.projectRoot !== undefined) {
+		updateExtraDataLive({ project_root: updates.projectRoot || undefined });
+		// Remove legacy key from graphMeta.ui if present
+		if ('projectRoot' in ui) {
+			const { projectRoot: _, ...restUi } = ui;
+			updateGraphMetaLive({ ui: restUi });
+		}
+	}
+
+	// Other settings remain in graphMeta.ui
+	const uiUpdates: Record<string, unknown> = {
 		...ui,
-		...(updates.projectRoot !== undefined && { projectRoot: updates.projectRoot }),
 		...(updates.defaultCmd !== undefined && { defaultCmd: updates.defaultCmd }),
 		...(updates.env !== undefined && { env: updates.env }),
 		...(updates.actions !== undefined && { actions: updates.actions }),
 	};
+	// Remove legacy projectRoot from ui if it got merged in from spread
+	delete uiUpdates.projectRoot;
 
-	updateGraphMetaLive({ ui: newUi });
+	updateGraphMetaLive({ ui: uiUpdates });
 }
 
 /**

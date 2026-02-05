@@ -15,11 +15,13 @@ from nblite import nbl_export; nbl_export();
 
 # %%
 #|export
-from pydantic import BaseModel, Field, model_validator, field_serializer
+from pydantic import BaseModel, Field, PrivateAttr, model_validator, field_serializer
 from typing import Annotated, Literal, NewType, Any
 from types import ModuleType
 from collections.abc import Callable
 import importlib
+import os
+import tomllib
 from ulid import ULID
 
 import netrun_sim
@@ -1606,6 +1608,64 @@ class NetConfig(BaseModel):
     """Configuration for a Net."""
     model_config = {"arbitrary_types_allowed": True}
 
+    project_root: str | None = None
+    """Project root path. Relative paths resolve from the config file's directory."""
+
+    _file_path: Path | None = PrivateAttr(default=None)
+
+    @property
+    def project_root_path(self) -> Path:
+        """Return the resolved project root as an absolute Path.
+
+        Resolution order:
+        - If project_root is set and absolute, return it directly.
+        - If project_root is set and relative, resolve from _file_path.parent (or cwd).
+        - If project_root is None and _file_path is set, return _file_path.parent.
+        - If both are None, return cwd.
+        """
+        if self.project_root is not None:
+            p = Path(self.project_root)
+            if p.is_absolute():
+                return p
+            # Relative: resolve from config file dir or cwd
+            base = self._file_path.parent if self._file_path is not None else Path(os.getcwd())
+            return (base / p).resolve()
+        if self._file_path is not None:
+            return self._file_path.parent
+        return Path(os.getcwd())
+
+    @classmethod
+    def from_file(cls, path: str | Path) -> "NetConfig":
+        """Load a NetConfig from a JSON or TOML file.
+
+        Args:
+            path: Path to the config file (.json or .toml).
+
+        Returns:
+            A NetConfig with _file_path set to the resolved absolute path.
+
+        Raises:
+            FileNotFoundError: If the file does not exist.
+            ValueError: If the file extension is not .json or .toml.
+        """
+        path = Path(path).resolve()
+        if not path.exists():
+            raise FileNotFoundError(f"Config file not found: {path}")
+
+        content = path.read_text()
+        suffix = path.suffix.lower()
+
+        if suffix == ".json":
+            data = json.loads(content)
+        elif suffix == ".toml":
+            data = tomllib.loads(content)
+        else:
+            raise ValueError(f"Unsupported config file format: {suffix}. Use .json or .toml.")
+
+        config = cls.model_validate(data)
+        config._file_path = path
+        return config
+
     pools: dict[str, PoolConfig] | None = None
     """Pool configurations. None = generate default on resolve(), {} = no pools."""
     graph: GraphConfig
@@ -1680,10 +1740,15 @@ class NetConfig(BaseModel):
 
         Args:
             base_path: Base path for resolving relative file paths in subgraphs.
+                       If None, auto-derived from _file_path.parent when available.
 
         Returns:
             A new NetConfig ready for execution by Net.
         """
+        # Auto-derive base_path from _file_path when not provided
+        if base_path is None and self._file_path is not None:
+            base_path = self._file_path.parent
+
         updates = {}
 
         # Generate default pools if None
@@ -1700,7 +1765,10 @@ class NetConfig(BaseModel):
             updates["dead_letter_callback"] = _import_from_path(self.dead_letter_callback)
 
         if updates:
-            return self.model_copy(update=updates)
+            result = self.model_copy(update=updates)
+            # Pydantic v2 model_copy() does not copy PrivateAttr - preserve it
+            result._file_path = self._file_path
+            return result
         return self
 
 # %% [markdown]
