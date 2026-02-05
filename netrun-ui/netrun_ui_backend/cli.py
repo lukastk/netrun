@@ -3,7 +3,8 @@
 netrun-ui CLI
 
 Usage:
-    netrun-ui                        # Open native window (production)
+    netrun-ui                        # Open native window (runs in background)
+    netrun-ui --fg                   # Open native window (foreground, blocks)
     netrun-ui --server               # Start server mode (production)
     netrun-ui --dev                  # Development mode with Vite
     netrun-ui --port 8080            # Custom backend port
@@ -317,7 +318,8 @@ def main() -> None:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  netrun-ui                        Open native window
+  netrun-ui                        Open native window (runs in background)
+  netrun-ui --fg                   Open native window (blocks until closed)
   netrun-ui --server               Start server for browser access
   netrun-ui --dev                  Development mode (requires Node.js)
   netrun-ui --dev --server         Development server mode
@@ -330,6 +332,12 @@ Examples:
         "--server", "-s",
         action="store_true",
         help="Run in server mode (browser) instead of native window",
+    )
+    parser.add_argument(
+        "--fg", "--foreground",
+        action="store_true",
+        dest="foreground",
+        help="Run in foreground (blocks until window closes)",
     )
     parser.add_argument(
         "--dev", "-d",
@@ -368,6 +376,38 @@ Examples:
     args = parser.parse_args()
 
     initial_path = args.working_dir or os.getcwd()
+
+    # For app modes (not --server), run in background by default
+    if not args.server and not args.foreground:
+        # Re-exec with --fg in background
+        cmd = [sys.executable, "-m", "netrun_ui_backend.cli", "--fg"]
+        if args.dev:
+            cmd.append("--dev")
+        cmd.extend(["--port", str(args.port)])
+        cmd.extend(["--frontend-port", str(args.frontend_port)])
+        cmd.extend(["-C", initial_path])
+        cmd.extend(["--width", str(args.width)])
+        cmd.extend(["--height", str(args.height)])
+
+        # Start detached process
+        if sys.platform == "win32":
+            # Windows: use CREATE_NEW_PROCESS_GROUP
+            subprocess.Popen(
+                cmd,
+                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP | subprocess.DETACHED_PROCESS,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        else:
+            # Unix: fork and exec
+            subprocess.Popen(
+                cmd,
+                start_new_session=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+        print("netrun-ui started in background.")
+        return
 
     if args.dev:
         # Development mode
