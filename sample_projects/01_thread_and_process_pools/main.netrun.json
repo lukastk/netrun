@@ -10,71 +10,238 @@
         "type": "thread",
         "num_workers": 4
       }
+    },
+    "process_pool": {
+      "spec": {
+        "type": "multiprocess",
+        "num_workers": 4
+      }
+    }
+  },
+  "output_queues": {
+    "results": {
+      "ports": [
+        [
+          "aggregate",
+          "out"
+        ]
+      ]
     }
   },
   "graph": {
     "nodes": [
       {
+        "type": "node",
         "name": "hash_1",
+        "in_ports": {
+          "data": {
+            "port_type": "str"
+          },
+          "iterations": {
+            "port_type": "int"
+          }
+        },
+        "out_ports": {
+          "out": {
+            "port_type": "dict"
+          }
+        },
+        "meta": {
+          "ui": {
+            "id": "hash_1",
+            "label": "hash_1",
+            "position": {
+              "x": 0,
+              "y": 100
+            }
+          }
+        },
         "factory": "netrun.node_factories.from_function",
         "factory_args": {
           "func": "nodes.compute_hash"
         },
         "execution_config": {
-          "pools": ["thread_pool"]
+          "pools": [
+            "thread_pool"
+          ]
         }
       },
       {
+        "type": "node",
         "name": "hash_2",
+        "in_ports": {
+          "data": {
+            "port_type": "str"
+          },
+          "iterations": {
+            "port_type": "int"
+          }
+        },
+        "out_ports": {
+          "out": {
+            "port_type": "dict"
+          }
+        },
+        "meta": {
+          "ui": {
+            "id": "hash_2",
+            "label": "hash_2",
+            "position": {
+              "x": 200,
+              "y": 100
+            }
+          }
+        },
         "factory": "netrun.node_factories.from_function",
         "factory_args": {
           "func": "nodes.compute_hash"
         },
         "execution_config": {
-          "pools": ["thread_pool"]
+          "pools": [
+            "thread_pool"
+          ]
         }
       },
       {
+        "type": "node",
         "name": "hash_3",
+        "in_ports": {
+          "data": {
+            "port_type": "str"
+          },
+          "iterations": {
+            "port_type": "int"
+          }
+        },
+        "out_ports": {
+          "out": {
+            "port_type": "dict"
+          }
+        },
+        "meta": {
+          "ui": {
+            "id": "hash_3",
+            "label": "hash_3",
+            "position": {
+              "x": 400,
+              "y": 100
+            }
+          }
+        },
         "factory": "netrun.node_factories.from_function",
         "factory_args": {
           "func": "nodes.compute_hash"
         },
         "execution_config": {
-          "pools": ["thread_pool"]
+          "pools": [
+            "thread_pool"
+          ]
         }
       },
       {
+        "type": "node",
         "name": "hash_4",
+        "in_ports": {
+          "data": {
+            "port_type": "str"
+          },
+          "iterations": {
+            "port_type": "int"
+          }
+        },
+        "out_ports": {
+          "out": {
+            "port_type": "dict"
+          }
+        },
+        "meta": {
+          "ui": {
+            "id": "hash_4",
+            "label": "hash_4",
+            "position": {
+              "x": 600,
+              "y": 100
+            }
+          }
+        },
         "factory": "netrun.node_factories.from_function",
         "factory_args": {
           "func": "nodes.compute_hash"
         },
         "execution_config": {
-          "pools": ["thread_pool"]
+          "pools": [
+            "thread_pool"
+          ]
         }
       },
       {
+        "type": "node",
         "name": "aggregate",
+        "in_ports": {
+          "results": {
+            "port_type": "list[dict]"
+          }
+        },
+        "out_ports": {
+          "out": {
+            "port_type": "dict"
+          }
+        },
+        "meta": {
+          "ui": {
+            "id": "aggregate",
+            "label": "aggregate",
+            "position": {
+              "x": 800,
+              "y": 100
+            }
+          }
+        },
         "factory": "netrun.node_factories.from_function",
         "factory_args": {
           "func": "nodes.aggregate_results"
         },
         "execution_config": {
-          "pools": ["main"]
+          "pools": [
+            "main"
+          ]
         }
+      },
+      {
+        "type": "node",
+        "name": "from_function",
+        "in_ports": {},
+        "out_ports": {},
+        "meta": {
+          "ui": {
+            "id": "node-1770289772328-1",
+            "label": "from_function",
+            "position": {
+              "x": 195,
+              "y": 255
+            }
+          }
+        },
+        "factory": "netrun.node_factories.from_function"
       }
     ],
     "edges": [
-      {"source_str": "hash_1.out", "target_str": "aggregate.results"},
-      {"source_str": "hash_2.out", "target_str": "aggregate.results"},
-      {"source_str": "hash_3.out", "target_str": "aggregate.results"},
-      {"source_str": "hash_4.out", "target_str": "aggregate.results"}
+      {
+        "source_str": "hash_1.out",
+        "target_str": "aggregate.results"
+      },
+      {
+        "source_str": "hash_2.out",
+        "target_str": "aggregate.results"
+      },
+      {
+        "source_str": "hash_3.out",
+        "target_str": "aggregate.results"
+      },
+      {
+        "source_str": "hash_4.out",
+        "target_str": "aggregate.results"
+      }
     ]
-  },
-  "output_queues": {
-    "results": {
-      "ports": [["aggregate", "out"]]
-    }
   }
 }

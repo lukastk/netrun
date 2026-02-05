@@ -478,6 +478,7 @@
 													value={String($selectedNode.data.factoryArgs?.[param.name] ?? '')}
 													placeholder={getParamPlaceholder(param)}
 													oninput={(e) => updateFactoryArg(param.name, (e.target as HTMLInputElement).value)}
+													onblur={() => { pushHistory(); refreshFactoryPreview(); }}
 													class:import-path={isImportPathParam(param)}
 													class:required-missing={!param.has_default && !$selectedNode.data.factoryArgs?.[param.name]}
 												/>
@@ -491,7 +492,7 @@
 								onclick={refreshFactoryPreview}
 								disabled={isRefreshing || !$selectedNode.data.factory}
 							>
-								{isRefreshing ? 'Refreshing...' : 'Refresh Preview'}
+								{isRefreshing ? 'Refreshing...' : 'Refresh'}
 							</button>
 							{#if $selectedNode.data.isValid === false && $selectedNode.data.validationErrors}
 								<div class="factory-errors">

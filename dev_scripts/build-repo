@@ -1,0 +1,97 @@
+#!/usr/bin/env bash
+#
+# Build all packages in dependency order and wire local dependencies.
+#
+# Order: netrun-sim -> netrun -> netrun-ui -> sample projects
+#
+# Each package's venv is synced via `uv sync --no-dev` (installs PyPI deps),
+# then local packages are installed via `uv pip install` to override
+# the PyPI versions with the ones from this repo.
+#
+# For netrun-sim (Rust), a wheel is built once and reused across venvs
+# to avoid recompiling Rust multiple times.
+
+set -euo pipefail
+
+REPO="$(cd "$(dirname "$(dirname "$0")")" && pwd)"
+WHEELS="$REPO/.wheels"
+
+bold() { echo -e "\033[1m$*\033[0m"; }
+green() { echo -e "\033[0;32m$*\033[0m"; }
+
+rm -rf "$WHEELS"
+mkdir -p "$WHEELS"
+
+echo ""
+bold "================================================"
+bold " Building repo"
+bold "================================================"
+echo ""
+
+# ── 1. netrun-sim ────────────────────────────────────────────────────
+bold "── netrun-sim ──"
+
+cd "$REPO/netrun-sim/python"
+echo "  maturin build --release"
+uvx maturin build --release -o "$WHEELS" 2>&1 | tail -1
+
+NETRUN_SIM_WHEEL=$(ls "$WHEELS"/netrun_sim-*.whl 2>/dev/null | sort -V | tail -1)
+if [ -z "$NETRUN_SIM_WHEEL" ]; then
+    echo "ERROR: netrun-sim wheel not found in $WHEELS" >&2
+    exit 1
+fi
+echo "  Built: $(basename "$NETRUN_SIM_WHEEL")"
+echo ""
+
+# ── 2. netrun ────────────────────────────────────────────────────────
+bold "── netrun ──"
+
+cd "$REPO/netrun"
+echo "  uv sync --no-dev"
+uv sync --no-dev
+
+echo "  Installing local netrun-sim"
+uv pip install --reinstall --no-deps "$NETRUN_SIM_WHEEL"
+echo ""
+
+# ── 3. netrun-ui ─────────────────────────────────────────────────────
+bold "── netrun-ui ──"
+
+cd "$REPO/netrun-ui"
+
+echo "  uv sync --no-dev"
+uv sync --no-dev
+
+echo "  Building frontend"
+uv run python build_frontend.py
+
+echo "  Installing local netrun-sim + netrun"
+uv pip install --reinstall --no-deps "$NETRUN_SIM_WHEEL"
+uv pip install --reinstall --no-deps "$REPO/netrun"
+echo ""
+
+# ── 4. Sample projects ──────────────────────────────────────────────
+for dir in "$REPO"/sample_projects/*/; do
+    [ -f "$dir/pyproject.toml" ] || continue
+    name=$(basename "$dir")
+    bold "── sample: $name ──"
+
+    cd "$dir"
+    echo "  uv sync --no-dev"
+    uv sync --no-dev
+
+    echo "  Installing local packages"
+    uv pip install --reinstall --no-deps "$NETRUN_SIM_WHEEL"
+    uv pip install --reinstall --no-deps "$REPO/netrun"
+    uv pip install --reinstall --no-deps "$REPO/netrun-ui"
+    echo ""
+done
+
+# Clean up wheel cache
+rm -rf "$WHEELS"
+
+echo ""
+green "================================================"
+green " Build complete!"
+green "================================================"
+echo ""

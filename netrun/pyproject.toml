@@ -29,7 +29,6 @@ dev = [
 ]
 
 [tool.uv.sources]
-netrun-sim = { path = "../netrun-sim/python", editable = true }
 dev = { path = "src/dev", editable = true }
 
 [build-system]

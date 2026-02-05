@@ -1,14 +1,31 @@
 """Factory inspection and preview endpoints."""
 import importlib
-import importlib.util
 import inspect
-import pkgutil
+import os
+import sys
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 router = APIRouter()
+
+
+def _reload_module(dotted_path: str) -> None:
+    """Remove a module (and its submodules) from sys.modules to force reimport.
+
+    Given a dotted path like ``my_pkg.my_module.my_func``, this clears
+    ``my_pkg`` and anything under it (``my_pkg.*``) from the module cache
+    so the next ``importlib.import_module()`` re-reads from disk.
+    """
+    top = dotted_path.split(".")[0]
+    to_remove = [
+        name for name in sys.modules
+        if name == top or name.startswith(top + ".")
+    ]
+    for name in to_remove:
+        del sys.modules[name]
+    importlib.invalidate_caches()
 
 
 class BuiltinFactory(BaseModel):
@@ -135,6 +152,8 @@ async def get_factory_signature(request: FactorySignatureRequest) -> FactorySign
     This allows the UI to know what arguments the factory accepts.
     """
     try:
+        _reload_module(request.factory_path)
+
         # Import the factory module
         module = importlib.import_module(request.factory_path)
 
@@ -207,6 +226,12 @@ async def preview_factory(request: FactoryPreviewRequest) -> FactoryPreviewRespo
     This allows the UI to show what ports the factory node will have.
     """
     try:
+        # Reload the factory module and any modules referenced in args
+        _reload_module(request.factory_path)
+        for val in request.factory_args.values():
+            if isinstance(val, str) and "." in val:
+                _reload_module(val)
+
         # Import the factory module
         module = importlib.import_module(request.factory_path)
 
@@ -358,6 +383,8 @@ class ValidateImportResponse(BaseModel):
 async def validate_import(request: ValidateImportRequest) -> ValidateImportResponse:
     """Validate that an import path is valid and check if it's a factory module."""
     try:
+        _reload_module(request.import_path)
+
         module = importlib.import_module(request.import_path)
 
         # Check if it's a factory module (has get_node_config)
