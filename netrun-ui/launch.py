@@ -13,7 +13,8 @@ Python resolution order:
 
 Usage:
     python launch.py                    # Auto-detect Python, open in browser
-    python launch.py --app              # Auto-detect Python, open native window
+    python launch.py --app              # Native window (runs in background)
+    python launch.py --app --fg         # Native window (foreground, blocks)
     python launch.py --python /path/to/python  # Use specific Python
     python launch.py --working-dir /path/to/project  # Set working directory
 """
@@ -60,7 +61,13 @@ def main() -> None:
     parser.add_argument(
         "--app",
         action="store_true",
-        help="Open in native window instead of browser",
+        help="Open in native window (runs in background by default)",
+    )
+    parser.add_argument(
+        "--fg", "--foreground",
+        action="store_true",
+        dest="foreground",
+        help="Run in foreground (blocks until window closes, only with --app)",
     )
     parser.add_argument(
         "--python",
@@ -111,6 +118,8 @@ def main() -> None:
     cmd = [str(start_script)]
     if args.app:
         cmd.append("--app")
+    if args.foreground:
+        cmd.append("--fg")
 
     print(f"Running: {' '.join(cmd)}")
     print()
