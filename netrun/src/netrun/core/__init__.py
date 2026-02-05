@@ -14,4 +14,3 @@ from ..net import (
     PortStateNonEmptyConfig,
     OutputQueueConfig,
 )
-from ..node_factories.from_function import _from_function as from_function
