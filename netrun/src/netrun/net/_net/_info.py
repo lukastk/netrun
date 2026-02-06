@@ -79,12 +79,12 @@ class NodeInfo:
         # Get all epochs from netsim and filter by node name
         for epoch_id in self._net._netsim.get_startable_epochs():
             epoch = self._net._netsim.get_epoch(epoch_id)
-            if epoch and epoch.node_name == self._name:
+            if epoch.node_name == self._name:
                 epochs.append(epoch)
         # Also check running epochs
         for epoch_id in self._net._running_epochs:
             epoch = self._net._netsim.get_epoch(epoch_id)
-            if epoch and epoch.node_name == self._name:
+            if epoch.node_name == self._name:
                 epochs.append(epoch)
         return epochs
 
@@ -97,7 +97,7 @@ class NodeInfo:
         epochs = []
         for epoch_id in self._net._running_epochs:
             epoch = self._net._netsim.get_epoch(epoch_id)
-            if epoch and epoch.node_name == self._name:
+            if epoch.node_name == self._name:
                 epochs.append(epoch)
         return epochs
 
@@ -110,7 +110,7 @@ class NodeInfo:
         epochs = []
         for epoch_id in self._net._netsim.get_startable_epochs():
             epoch = self._net._netsim.get_epoch(epoch_id)
-            if epoch and epoch.node_name == self._name:
+            if epoch.node_name == self._name:
                 epochs.append(epoch)
         return epochs
 
@@ -135,12 +135,7 @@ class NodeInfo:
         """
         location = netrun_sim.PacketLocation.input_port(self._name, port_name)
         packet_ids = self._net._netsim.get_packets_at_location(location)
-        packets = []
-        for packet_id in packet_ids:
-            packet = self._net._netsim.get_packet(packet_id)
-            if packet:
-                packets.append(packet)
-        return packets
+        return [self._net._netsim.get_packet(pid) for pid in packet_ids]
 
     def packets_at_all_input_ports(self) -> dict[str, list]:
         """Get all packets at all input ports.
@@ -164,12 +159,7 @@ class NodeInfo:
         """
         location = netrun_sim.PacketLocation.node(epoch_id)
         packet_ids = self._net._netsim.get_packets_at_location(location)
-        packets = []
-        for packet_id in packet_ids:
-            packet = self._net._netsim.get_packet(packet_id)
-            if packet:
-                packets.append(packet)
-        return packets
+        return [self._net._netsim.get_packet(pid) for pid in packet_ids]
 
     def inject_packets(self, port_name: str, values: list[Any]) -> list[str]:
         """Inject packets with values into an input port.
@@ -349,12 +339,7 @@ class EdgeInfo:
         """
         location = netrun_sim.PacketLocation.edge(self._edge)
         packet_ids = self._net._netsim.get_packets_at_location(location)
-        packets = []
-        for packet_id in packet_ids:
-            packet = self._net._netsim.get_packet(packet_id)
-            if packet:
-                packets.append(packet)
-        return packets
+        return [self._net._netsim.get_packet(pid) for pid in packet_ids]
 
     @property
     def packet_count(self) -> int:
