@@ -538,9 +538,9 @@ class EpochRecord:
         """
         for timestamp, message in self.print_logs:
             if include_timestamps:
-                print(f"[{timestamp}] {message}", end="")
+                print(f"[{timestamp.strftime('%H:%M:%S.%f')[:-3]}] {message.strip()}")
             else:
-                print(message, end="")
+                print(message.strip())
 
 # %% nbs/netrun/05_net/01_net/00_context.ipynb 17
 @dataclass

@@ -699,7 +699,7 @@ class Net:
             return []
         return list(record.print_logs)
 
-    def get_node_log(self, node_name: str) -> list[tuple[datetime, str]]:
+    def get_node_logs(self, node_name: str) -> list[tuple[datetime, str]]:
         """Get all print output for a node (across all epochs).
 
         Args:
@@ -770,27 +770,46 @@ class Net:
         logs = self.get_epoch_log(epoch_id)
         for timestamp, message in logs:
             if include_timestamps:
-                print(f"[{timestamp.strftime('%H:%M:%S.%f')[:-3]}] {message}")
+                print(f"[{timestamp.strftime('%H:%M:%S.%f')[:-3]}] {message.strip()}")
             else:
-                print(message)
+                print(message.strip())
 
-    def print_node_logs(self, node_name: str, include_timestamps: bool = True) -> None:
-        """Print all logs for a node (across all epochs)."""
-        logs = self.get_node_log(node_name)
-        for timestamp, message in logs:
-            if include_timestamps:
-                print(f"[{timestamp.strftime('%H:%M:%S.%f')[:-3]}] {message}")
-            else:
-                print(message)
+    def print_node_logs(self, node_name: str, include_timestamps: bool = True, chronological: bool = False) -> None:
+        """Print all logs for a node, grouped by epoch or chronologically."""
+        if chronological:
+            logs = self.get_node_logs(node_name)
+            for record in self._epochs.values():
+                if record.node_name != node_name:
+                    continue
+                for timestamp, message in record.print_logs:
+                    if include_timestamps:
+                        print(f"[{timestamp.strftime('%H:%M:%S.%f')[:-3]}] [{record.id}] {message.strip()}")
+                    else:
+                        print(f"[{record.id}] {message.strip()}")
+        else:
+            for record in self._epochs.values():
+                if record.node_name != node_name or not record.print_logs:
+                    continue
+                print(f"--- Epoch {record.id} ---")
+                record.print_logs_to_stdout(include_timestamps=include_timestamps)
 
-    def print_all_logs(self, include_timestamps: bool = True) -> None:
-        """Print all logs across all epochs, sorted by timestamp."""
-        logs = self.get_all_logs_chronological()
-        for timestamp, epoch_id, node_name, message in logs:
-            if include_timestamps:
-                print(f"[{timestamp.strftime('%H:%M:%S.%f')[:-3]}] [{node_name}] {message}")
-            else:
-                print(f"[{node_name}] {message}")
+    def print_all_logs(self, include_timestamps: bool = True, chronological: bool = False) -> None:
+        """Print all logs, grouped by node/epoch or chronologically."""
+        if chronological:
+            logs = self.get_all_logs_chronological()
+            for timestamp, epoch_id, node_name, message in logs:
+                if include_timestamps:
+                    print(f"[{timestamp.strftime('%H:%M:%S.%f')[:-3]}] [{node_name}] {message.strip()}")
+                else:
+                    print(f"[{node_name}] {message.strip()}")
+        else:
+            for node_name in self.list_node_log_names():
+                print(f"=== {node_name} ===")
+                for record in self._epochs.values():
+                    if record.node_name != node_name or not record.print_logs:
+                        continue
+                    print(f"--- Epoch {record.id} ---")
+                    record.print_logs_to_stdout(include_timestamps=include_timestamps)
 
     async def start(self) -> None:
         """Start the Net.
