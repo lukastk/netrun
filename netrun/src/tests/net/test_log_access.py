@@ -156,10 +156,10 @@ def test_epochs_used_by_handle_print_buffer():
     assert len(net._epochs["epoch_1"].print_logs) == 1
     assert net._epochs["epoch_1"].print_logs[0] == (timestamp, "hello\n")
 
-    # Should also store in node log (using _epochs lookup)
-    assert "NodeA" in net._node_print_logs
-    assert len(net._node_print_logs["NodeA"]) == 1
-    assert net._node_print_logs["NodeA"][0] == (timestamp, "hello\n")
+    # Should be retrievable via get_node_log
+    node_logs = net.get_node_log("NodeA")
+    assert len(node_logs) == 1
+    assert node_logs[0] == (timestamp, "hello\n")
 
 
 def test_handle_print_buffer_unknown_epoch_skips_node_log():
@@ -170,8 +170,8 @@ def test_handle_print_buffer_unknown_epoch_skips_node_log():
     timestamp = datetime.now()
     net._handle_print_buffer("epoch_unknown", [(timestamp, "orphaned\n")])
 
-    # Should NOT store in any node log
-    assert len(net._node_print_logs) == 0
+    # Should not appear in any node log
+    assert net.list_node_log_names() == []
 
     # Epoch record doesn't exist, so no print_logs stored
     assert "epoch_unknown" not in net._epochs
@@ -193,8 +193,10 @@ def test_handle_print_buffer_multiple_nodes():
     net._handle_print_buffer("epoch_b1", [(t2, "b1\n")])
     net._handle_print_buffer("epoch_a2", [(t3, "a2\n")])
 
-    assert len(net._node_print_logs["NodeA"]) == 2
-    assert len(net._node_print_logs["NodeB"]) == 1
+    node_a_logs = net.get_node_log("NodeA")
+    node_b_logs = net.get_node_log("NodeB")
+    assert len(node_a_logs) == 2
+    assert len(node_b_logs) == 1
 
     # Also check epoch records
     assert len(net._epochs["epoch_a1"].print_logs) == 1
@@ -328,9 +330,14 @@ def test_list_node_log_names_with_logs():
     """Test list_node_log_names returns node names with logs."""
     net = _create_simple_net()
 
-    # Manually add some logs
-    net._node_print_logs["NodeA"] = [(datetime.now(), "log1")]
-    net._node_print_logs["NodeB"] = [(datetime.now(), "log2")]
+    # Add logs via epoch records
+    record_a = _mock_epoch_record("epoch_a", "NodeA")
+    record_a.print_logs = [(datetime.now(), "log1")]
+    net._epochs["epoch_a"] = record_a
+
+    record_b = _mock_epoch_record("epoch_b", "NodeB")
+    record_b.print_logs = [(datetime.now(), "log2")]
+    net._epochs["epoch_b"] = record_b
 
     result = net.list_node_log_names()
 
@@ -397,12 +404,14 @@ def test_list_epoch_log_ids_returns_copy():
 
 
 def test_list_node_log_names_returns_copy():
-    """Test list_node_log_names returns a copy, not the internal dict keys."""
+    """Test list_node_log_names returns a copy, not the internal state."""
     net = _create_simple_net()
-    net._node_print_logs["NodeA"] = [(datetime.now(), "log")]
+    record = _mock_epoch_record("epoch_1", "NodeA")
+    record.print_logs = [(datetime.now(), "log")]
+    net._epochs["epoch_1"] = record
 
     result = net.list_node_log_names()
     result.append("FakeNode")
 
     # Internal state should not be modified
-    assert "FakeNode" not in net._node_print_logs
+    assert "FakeNode" not in net.list_node_log_names()
