@@ -23,6 +23,15 @@
         "num_processes": 2,
         "threads_per_process": 2
       }
+    },
+    "remote": {
+      "spec": {
+        "type": "remote",
+        "url": "ws://127.0.0.1:18765",
+        "worker_name": "execution_manager",
+        "num_processes": 1,
+        "threads_per_process": 1
+      }
     }
   },
   "graph": {
@@ -30,24 +39,11 @@
       {
         "type": "node",
         "name": "in_main_pool",
-        "in_ports": {
-          "start": {
-            "port_type": "int"
-          },
-          "stop": {
-            "port_type": "int"
-          }
-        },
-        "out_ports": {
-          "out": {
-            "port_type": "list[int]"
-          }
-        },
         "meta": {
           "ui": {
             "position": {
-              "x": 570,
-              "y": -90
+              "x": 540,
+              "y": -75
             }
           }
         },
@@ -59,19 +55,6 @@
       {
         "type": "node",
         "name": "in_thread_pool",
-        "in_ports": {
-          "start": {
-            "port_type": "int"
-          },
-          "stop": {
-            "port_type": "int"
-          }
-        },
-        "out_ports": {
-          "out": {
-            "port_type": "list[int]"
-          }
-        },
         "meta": {
           "ui": {
             "position": {
@@ -93,19 +76,6 @@
       {
         "type": "node",
         "name": "in_process_pool",
-        "in_ports": {
-          "start": {
-            "port_type": "int"
-          },
-          "stop": {
-            "port_type": "int"
-          }
-        },
-        "out_ports": {
-          "out": {
-            "port_type": "list[int]"
-          }
-        },
         "meta": {
           "ui": {
             "position": {
@@ -126,20 +96,7 @@
       },
       {
         "type": "node",
-        "name": "in_all_pools",
-        "in_ports": {
-          "start": {
-            "port_type": "int"
-          },
-          "stop": {
-            "port_type": "int"
-          }
-        },
-        "out_ports": {
-          "out": {
-            "port_type": "list[int]"
-          }
-        },
+        "name": "in_remote_pool",
         "meta": {
           "ui": {
             "position": {
@@ -154,9 +111,31 @@
         },
         "execution_config": {
           "pools": [
+            "remote"
+          ]
+        }
+      },
+      {
+        "type": "node",
+        "name": "in_all_pools",
+        "meta": {
+          "ui": {
+            "position": {
+              "x": 540,
+              "y": 405
+            }
+          }
+        },
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {
+          "func": "nodes.find_primes"
+        },
+        "execution_config": {
+          "pools": [
             "processes",
             "main",
-            "threads"
+            "threads",
+            "remote"
           ]
         }
       }
