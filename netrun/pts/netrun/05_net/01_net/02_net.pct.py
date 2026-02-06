@@ -1301,6 +1301,11 @@ class Net:
         # Success - commit deferred actions
         self._commit_epoch_result(epoch_id, execution_result)
 
+        # Refresh fields that changed during commit (before finish removes the epoch)
+        epoch_snapshot = self._netsim.get_epoch(epoch_id)
+        self._epochs[epoch_id].out_salvos = list(epoch_snapshot.out_salvos)
+        self._epochs[epoch_id].orphaned_packets = list(epoch_snapshot.orphaned_packets)
+
         # Finish the epoch
         self._netsim.do_action(netrun_sim.NetAction.finish_epoch(epoch_id))
         self._epochs[epoch_id].ended_at = get_timestamp_utc()
