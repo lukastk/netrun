@@ -77,15 +77,23 @@ for dir in "$REPO"/sample_projects/*/; do
     bold "── sample: $name ──"
 
     cd "$dir"
-    echo "  uv sync --no-dev"
-    uv sync --no-dev
+    echo "  uv sync"
+    uv sync
 
     echo "  Installing local packages"
-    uv pip install --reinstall --no-deps "$NETRUN_SIM_WHEEL"
-    uv pip install --reinstall --no-deps "$REPO/netrun"
-    uv pip install --reinstall --no-deps "$REPO/netrun-ui"
+    uv pip install --reinstall "$NETRUN_SIM_WHEEL" "$REPO/netrun" "$REPO/netrun-ui"
     echo ""
 done
+
+echo "── .venv at repo root ──"
+
+cd "$REPO"
+if [ ! -d ".venv" ]; then
+    bold "Creating .venv at repo root"
+    uv venv .venv
+fi
+uv pip install --reinstall "$NETRUN_SIM_WHEEL" "$REPO/netrun" "$REPO/netrun-ui"
+
 
 # Clean up wheel cache
 rm -rf "$WHEELS"
