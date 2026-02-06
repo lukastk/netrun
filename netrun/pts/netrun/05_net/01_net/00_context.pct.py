@@ -116,6 +116,38 @@ class PacketTypeMismatch(Exception):
         super().__init__(msg)
 
 
+class EpochError(Exception):
+    """Wrapper for errors during epoch execution, with full context.
+
+    The original exception is chained via __cause__.
+    """
+    def __init__(self, message: str, *, node_name: str, epoch_id: str,
+                 pool_id: str | None = None, worker_id: int | None = None,
+                 retry_count: int = 0):
+        self.node_name = node_name
+        self.epoch_id = epoch_id
+        self.pool_id = pool_id
+        self.worker_id = worker_id
+        self.retry_count = retry_count
+        super().__init__(message)
+
+    def __str__(self) -> str:
+        parts = [f"Epoch failed on node '{self.node_name}'"]
+        if self.pool_id is not None:
+            parts.append(f"pool='{self.pool_id}'")
+        if self.worker_id is not None:
+            parts.append(f"worker={self.worker_id}")
+        if self.retry_count > 0:
+            parts.append(f"retries={self.retry_count}")
+        context = ", ".join(parts[1:])
+        base = parts[0]
+        if context:
+            base += f" ({context})"
+        if self.__cause__:
+            base += f": {self.__cause__}"
+        return base
+
+
 @dataclass
 class NodeExecutionContext:
     """Context object passed to node execution functions.
@@ -504,6 +536,8 @@ class NodeFailureContext:
     retry_timestamps: list[datetime] = field(default_factory=list)
     retry_exceptions: list[Exception] = field(default_factory=list)
     input_salvo: dict[str, list[str]] = field(default_factory=dict)  # port_name -> list[packet_id]
+    pool_id: str | None = None
+    worker_id: int | None = None
 
 # %% [markdown]
 # ## ConsumedOutputPacket

@@ -31,6 +31,7 @@ from netrun.net._net import (
     NodeFailureContext,
     DeferredActionQueue,
     EpochCancelled,
+    EpochError,
     EpochRecord,
     NodeInfo,
     EdgeInfo,
@@ -3247,7 +3248,7 @@ test_node_info_inject_plural_true_requires_list()
 #|export
 @pytest.mark.asyncio
 async def test_propagate_exceptions_true_raises():
-    """Test that run_until_blocked raises when propagate_exceptions=True (default)."""
+    """Test that run_until_blocked raises EpochError when propagate_exceptions=True (default)."""
     def failing_node(ctx, packets):
         for port_name, pkt_ids in packets.items():
             for pid in pkt_ids:
@@ -3276,14 +3277,17 @@ async def test_propagate_exceptions_true_raises():
 
     async with Net(config) as net:
         net.inject_data("FailNode", "in", [1])
-        with pytest.raises(ValueError, match="node failure"):
+        with pytest.raises(EpochError) as exc_info:
             await net.run_until_blocked()
+        assert exc_info.value.node_name == "FailNode"
+        assert isinstance(exc_info.value.__cause__, ValueError)
+        assert "node failure" in str(exc_info.value.__cause__)
 
 # %%
 #|export
 @pytest.mark.asyncio
 async def test_propagate_exceptions_false_queues():
-    """Test that run_until_blocked succeeds when propagate_exceptions=False, and exception is queued."""
+    """Test that run_until_blocked succeeds when propagate_exceptions=False, and EpochError is queued."""
     def failing_node(ctx, packets):
         for port_name, pkt_ids in packets.items():
             for pid in pkt_ids:
@@ -3315,14 +3319,17 @@ async def test_propagate_exceptions_false_queues():
         # Should NOT raise
         await net.run_until_blocked()
 
-        # Exception should be queued
+        # Exception should be queued as EpochError
         assert len(net.exception_queue) == 1
-        assert isinstance(net.exception_queue[0], ValueError)
-        assert "queued failure" in str(net.exception_queue[0])
+        assert isinstance(net.exception_queue[0], EpochError)
+        assert net.exception_queue[0].node_name == "FailNode"
+        assert isinstance(net.exception_queue[0].__cause__, ValueError)
+        assert "queued failure" in str(net.exception_queue[0].__cause__)
 
-        # propagate_exceptions() should raise it
-        with pytest.raises(ValueError, match="queued failure"):
+        # propagate_exceptions() should raise the EpochError
+        with pytest.raises(EpochError) as exc_info:
             net.propagate_exceptions()
+        assert isinstance(exc_info.value.__cause__, ValueError)
 
         # Queue should now be empty
         assert len(net.exception_queue) == 0
@@ -3331,7 +3338,7 @@ async def test_propagate_exceptions_false_queues():
 #|export
 @pytest.mark.asyncio
 async def test_print_exceptions_true_prints_to_stderr(capsys):
-    """Test that print_exceptions=True prints to stderr."""
+    """Test that print_exceptions=True prints to stderr with pool/worker info."""
     def failing_node(ctx, packets):
         for port_name, pkt_ids in packets.items():
             for pid in pkt_ids:
@@ -3366,6 +3373,7 @@ async def test_print_exceptions_true_prints_to_stderr(capsys):
         captured = capsys.readouterr()
         assert "stderr failure" in captured.err
         assert "FailNode" in captured.err
+        assert "pool='main'" in captured.err
 
 # %%
 #|export
@@ -3413,13 +3421,17 @@ async def test_node_level_override_propagate():
         net.inject_data("QueuingNode", "in", [1])
         await net.run_until_blocked()  # Should not raise
         assert len(net.exception_queue) == 1
-        assert "QueuingNode failed" in str(net.exception_queue[0])
+        assert isinstance(net.exception_queue[0], EpochError)
+        assert "QueuingNode failed" in str(net.exception_queue[0].__cause__)
 
-    # Test PropagatingNode: should raise
+    # Test PropagatingNode: should raise EpochError
     async with Net(config) as net:
         net.inject_data("PropagatingNode", "in", [1])
-        with pytest.raises(ValueError, match="PropagatingNode failed"):
+        with pytest.raises(EpochError) as exc_info:
             await net.run_until_blocked()
+        assert exc_info.value.node_name == "PropagatingNode"
+        assert isinstance(exc_info.value.__cause__, ValueError)
+        assert "PropagatingNode failed" in str(exc_info.value.__cause__)
 
 # %%
 #|export
@@ -3479,3 +3491,604 @@ async def test_node_level_override_print(capsys):
         # PrintingNode SHOULD print to stderr
         assert "PrintingNode" in captured.err
         assert "PrintingNode failed" in captured.err
+
+# %% [markdown]
+# ## serve_pool and _PoolServerContext Tests
+
+# %%
+#|export
+from netrun.net._net._net import _PoolServerContext
+from netrun.net.config import RemotePoolConfig
+from tests.net.workers import doubler_node, echo_node
+
+# Port counter to avoid conflicts between tests
+_serve_pool_test_port = 19500
+
+def _get_next_serve_pool_port() -> int:
+    global _serve_pool_test_port
+    _serve_pool_test_port += 1
+    return _serve_pool_test_port
+
+# %%
+#|export
+def test_serve_pool_returns_pool_server_context():
+    """Test that serve_pool returns a _PoolServerContext instance."""
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(nodes=[], edges=[]),
+    )
+    ctx = Net.serve_pool(config, "127.0.0.1", 9999)
+    assert isinstance(ctx, _PoolServerContext)
+    assert ctx._host == "127.0.0.1"
+    assert ctx._port == 9999
+    assert ctx._server is not None
+
+# %%
+test_serve_pool_returns_pool_server_context()
+
+# %%
+#|export
+def test_serve_pool_accepts_path(tmp_path):
+    """Test that serve_pool accepts a file path string."""
+    import json
+
+    config_data = {
+        "pools": {"main": {"spec": {"type": "main"}}},
+        "graph": {"nodes": [], "edges": []},
+    }
+    config_file = tmp_path / "test_config.json"
+    config_file.write_text(json.dumps(config_data))
+
+    ctx = Net.serve_pool(str(config_file), "127.0.0.1", 9999)
+    assert isinstance(ctx, _PoolServerContext)
+
+# %%
+#|export
+def test_serve_pool_accepts_pathlib_path(tmp_path):
+    """Test that serve_pool accepts a pathlib.Path."""
+    import json
+    from pathlib import Path
+
+    config_data = {
+        "pools": {"main": {"spec": {"type": "main"}}},
+        "graph": {"nodes": [], "edges": []},
+    }
+    config_file = tmp_path / "test_config.json"
+    config_file.write_text(json.dumps(config_data))
+
+    ctx = Net.serve_pool(config_file, "127.0.0.1", 9999)
+    assert isinstance(ctx, _PoolServerContext)
+
+# %%
+#|export
+def test_serve_pool_custom_worker_name():
+    """Test that serve_pool passes custom worker_name to the server."""
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(nodes=[], edges=[]),
+    )
+    ctx = Net.serve_pool(config, "127.0.0.1", 9999, worker_name="custom_worker")
+    assert isinstance(ctx, _PoolServerContext)
+
+# %%
+test_serve_pool_custom_worker_name()
+
+# %%
+#|export
+def test_serve_pool_no_log_file():
+    """Test that serve_pool without log_file does not create a done callback."""
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(nodes=[], edges=[]),
+    )
+    ctx = Net.serve_pool(config, "127.0.0.1", 9999)
+    assert ctx._log_file is None
+    assert ctx._log_fh is None
+
+# %%
+test_serve_pool_no_log_file()
+
+# %%
+#|export
+def test_serve_pool_with_log_file(tmp_path):
+    """Test that serve_pool with log_file configures logging."""
+    log_file = tmp_path / "server.log"
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(nodes=[], edges=[]),
+    )
+    ctx = Net.serve_pool(config, "127.0.0.1", 9999, log_file=str(log_file))
+    assert ctx._log_file == str(log_file)
+    # File handle not opened until __aenter__
+    assert ctx._log_fh is None
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_serve_pool_starts_and_stops_server():
+    """Test that serve_pool context manager starts and stops a working server."""
+    port = _get_next_serve_pool_port()
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(nodes=[], edges=[]),
+    )
+
+    async with Net.serve_pool(config, "127.0.0.1", port):
+        # Server should be running - verify by connecting a client
+        from netrun.pool.remote import RemotePoolClient
+        client = RemotePoolClient(
+            url=f"ws://127.0.0.1:{port}",
+            worker_name="execution_manager",
+            num_processes=1,
+            threads_per_process=1,
+        )
+        await client.connect()
+        await client.create_pool("execution_manager", num_processes=1, threads_per_process=1)
+        await client.close()
+
+    # After exiting context, server should be stopped
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_serve_pool_log_file_writes(tmp_path):
+    """Test that serve_pool writes start/stop messages to log file."""
+    log_file = tmp_path / "server.log"
+    port = _get_next_serve_pool_port()
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(nodes=[], edges=[]),
+    )
+
+    async with Net.serve_pool(config, "127.0.0.1", port, log_file=str(log_file)):
+        # Log file should exist and contain "started" message
+        content = log_file.read_text()
+        assert "Pool server started" in content
+        assert f"127.0.0.1:{port}" in content
+
+    # After exit, should also contain "stopped" message
+    content = log_file.read_text()
+    assert "Pool server stopped" in content
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_serve_pool_end_to_end_with_net():
+    """Test serve_pool with a Net that has a remote pool — full integration.
+
+    Uses doubler_node from the workers module (importable, picklable for remote).
+    """
+    port = _get_next_serve_pool_port()
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Doubler",
+                in_ports={"in": PortConfig()},
+                out_ports={"out": PortConfig()},
+                in_salvo_conditions={
+                    "default": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"in": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                out_salvo_conditions={
+                    "send": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"out": PacketCountAllConfig()},
+                        term=SalvoConditionTermTrueConfig(),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    pools=["remote"],
+                    exec_node_func=doubler_node,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    server_config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    net_config = NetConfig(
+        pools={
+            "remote": PoolConfig(
+                spec=RemotePoolConfig(
+                    url=f"ws://127.0.0.1:{port}",
+                    worker_name="execution_manager",
+                    num_processes=1,
+                    threads_per_process=1,
+                ),
+            ),
+        },
+        graph=graph_config,
+    )
+
+    async with Net.serve_pool(server_config, "127.0.0.1", port):
+        async with Net(net_config) as net:
+            net.inject_data("Doubler", "in", [5])
+            await net.run_until_blocked()
+
+            outputs = net.flush_all_output_queues()
+            # Doubler sends 5 * 2 = 10 to unconnected "out" port -> output queue
+            values = []
+            for queue_vals in outputs.values():
+                values.extend(queue_vals)
+            assert 10 in values
+
+# %%
+#|export
+def test_create_func_preprocessor_from_config():
+    """Test _create_func_preprocessor_from_config returns a callable preprocessor."""
+    def dummy_exec(ctx):
+        pass
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="TestNode",
+                    in_ports={"in": PortConfig()},
+                    out_ports={"out": PortConfig()},
+                    in_salvo_conditions={
+                        "default": SalvoConditionConfig(
+                            max_salvos=MaxSalvosFiniteConfig(max=1),
+                            ports={"in": PacketCountAllConfig()},
+                            term=SalvoConditionTermPortConfig(
+                                port_name="in",
+                                state=PortStateNonEmptyConfig(),
+                            ),
+                        ),
+                    },
+                    execution_config=NodeExecutionConfig(
+                        pools=["main"],
+                        exec_node_func=dummy_exec,
+                    ),
+                ),
+            ],
+            edges=[],
+        ),
+    )
+    config_resolved = config.resolve()
+    preprocessor = Net._create_func_preprocessor_from_config(config_resolved)
+    assert callable(preprocessor)
+
+# %%
+test_create_func_preprocessor_from_config()
+
+# %%
+#|export
+def test_create_func_preprocessor_from_config_empty():
+    """Test _create_func_preprocessor_from_config with empty graph."""
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(nodes=[], edges=[]),
+    )
+    config_resolved = config.resolve()
+    preprocessor = Net._create_func_preprocessor_from_config(config_resolved)
+    assert callable(preprocessor)
+
+# %%
+test_create_func_preprocessor_from_config_empty()
+
+# %%
+#|export
+def test_pool_server_context_log_no_file():
+    """Test _PoolServerContext._log is a no-op when no log file is open."""
+    ctx = _PoolServerContext(None, "127.0.0.1", 8080, log_file=None)
+    # Should not raise
+    ctx._log("test message")
+
+# %%
+test_pool_server_context_log_no_file()
+
+# %%
+#|export
+def test_pool_server_context_make_done_callback():
+    """Test _PoolServerContext._make_done_callback returns a callable."""
+    ctx = _PoolServerContext(None, "127.0.0.1", 8080, log_file="/tmp/test.log")
+    callback = ctx._make_done_callback()
+    assert callable(callback)
+    # Calling with no log file handle open should be a no-op
+    callback("arg0", "test_node", result=None)
+
+# %%
+test_pool_server_context_make_done_callback()
+
+# %% [markdown]
+# ## EpochError Tests
+
+# %%
+#|export
+def test_epoch_error_basic():
+    """Test EpochError fields and isinstance."""
+    err = EpochError("bad input", node_name="MyNode", epoch_id="ep-123",
+                     pool_id="main", worker_id=2, retry_count=1)
+    assert isinstance(err, Exception)
+    assert isinstance(err, EpochError)
+    assert err.node_name == "MyNode"
+    assert err.epoch_id == "ep-123"
+    assert err.pool_id == "main"
+    assert err.worker_id == 2
+    assert err.retry_count == 1
+
+# %%
+test_epoch_error_basic()
+
+# %%
+#|export
+def test_epoch_error_str():
+    """Test EpochError __str__ includes node, pool, worker, and cause."""
+    cause = ValueError("bad input")
+    err = EpochError("bad input", node_name="MyNode", epoch_id="ep-123",
+                     pool_id="main", worker_id=2, retry_count=1)
+    err.__cause__ = cause
+    s = str(err)
+    assert "MyNode" in s
+    assert "pool='main'" in s
+    assert "worker=2" in s
+    assert "retries=1" in s
+    assert "bad input" in s
+
+# %%
+test_epoch_error_str()
+
+# %%
+#|export
+def test_epoch_error_minimal():
+    """Test EpochError with only required fields and defaults."""
+    err = EpochError("fail", node_name="N", epoch_id="e1")
+    assert err.pool_id is None
+    assert err.worker_id is None
+    assert err.retry_count == 0
+    s = str(err)
+    assert "node 'N'" in s
+    # No pool/worker/retries info when defaults
+    assert "pool=" not in s
+    assert "worker=" not in s
+    assert "retries=" not in s
+
+# %%
+test_epoch_error_minimal()
+
+# %%
+#|export
+def test_epoch_error_can_be_caught():
+    """Test that EpochError can be raised and caught."""
+    with pytest.raises(EpochError):
+        raise EpochError("fail", node_name="N", epoch_id="e1")
+
+# %%
+test_epoch_error_can_be_caught()
+
+# %%
+#|export
+def test_epoch_error_chaining():
+    """Test raise ... from preserves __cause__."""
+    original = ValueError("original")
+    try:
+        raise EpochError("wrapped", node_name="N", epoch_id="e1") from original
+    except EpochError as e:
+        assert e.__cause__ is original
+        assert isinstance(e.__cause__, ValueError)
+
+# %%
+test_epoch_error_chaining()
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_propagate_exceptions_wraps_in_epoch_error():
+    """Integration: run_until_blocked raises EpochError with correct fields."""
+    def failing_node(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+        raise RuntimeError("kaboom")
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Boom",
+                in_ports={"in": PortConfig()},
+                execution_config=NodeExecutionConfig(
+                    pools=["main"],
+                    exec_node_func=failing_node,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+        propagate_exceptions=True,
+    )
+
+    async with Net(config) as net:
+        net.inject_data("Boom", "in", [42])
+        with pytest.raises(EpochError) as exc_info:
+            await net.run_until_blocked()
+        err = exc_info.value
+        assert err.node_name == "Boom"
+        assert err.pool_id == "main"
+        assert err.worker_id is not None
+        assert err.retry_count == 0
+        assert isinstance(err.__cause__, RuntimeError)
+        assert "kaboom" in str(err.__cause__)
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_exception_queue_contains_epoch_error():
+    """Integration: queued exceptions are EpochError with __cause__."""
+    def failing_node(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+        raise TypeError("bad type")
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="TypeFail",
+                in_ports={"in": PortConfig()},
+                execution_config=NodeExecutionConfig(
+                    pools=["main"],
+                    exec_node_func=failing_node,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+        propagate_exceptions=False,
+    )
+
+    async with Net(config) as net:
+        net.inject_data("TypeFail", "in", [1])
+        await net.run_until_blocked()
+        assert len(net.exception_queue) == 1
+        err = net.exception_queue[0]
+        assert isinstance(err, EpochError)
+        assert err.node_name == "TypeFail"
+        assert isinstance(err.__cause__, TypeError)
+        assert "bad type" in str(err.__cause__)
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_dead_letter_queue_has_pool_and_worker():
+    """Test dead letter queue entries include pool_id and worker_id."""
+    def always_fails(ctx, packets):
+        raise ValueError("always fails")
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="DLQ",
+                in_ports={"in": PortConfig()},
+                execution_config=NodeExecutionConfig(
+                    pools=["main"],
+                    exec_node_func=always_fails,
+                    propagate_exceptions=False,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+        propagate_exceptions=False,
+    )
+
+    async with Net(config) as net:
+        net.inject_data("DLQ", "in", [1])
+        await net.run_until_blocked()
+        assert len(net.dead_letter_queue) == 1
+        entry = net.dead_letter_queue[0]
+        assert "pool_id" in entry
+        assert "worker_id" in entry
+        assert entry["pool_id"] == "main"
+        assert entry["node_name"] == "DLQ"
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_node_failure_context_has_pool_and_worker():
+    """Test on_node_failure callback receives pool_id and worker_id."""
+    failure_log = []
+
+    def failure_callback(failure_ctx):
+        failure_log.append({
+            "pool_id": failure_ctx.pool_id,
+            "worker_id": failure_ctx.worker_id,
+            "node_name": failure_ctx.node_name,
+        })
+
+    def failing_node(ctx, packets):
+        raise ValueError("fail")
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="CBNode",
+                in_ports={"in": PortConfig()},
+                execution_config=NodeExecutionConfig(
+                    pools=["main"],
+                    exec_node_func=failing_node,
+                    on_node_failure=failure_callback,
+                    propagate_exceptions=False,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+        propagate_exceptions=False,
+    )
+
+    async with Net(config) as net:
+        net.inject_data("CBNode", "in", [1])
+        await net.run_until_blocked()
+        assert len(failure_log) == 1
+        assert failure_log[0]["pool_id"] == "main"
+        assert failure_log[0]["worker_id"] is not None
+        assert failure_log[0]["node_name"] == "CBNode"
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_print_exceptions_includes_pool_worker(capsys):
+    """Test that stderr output includes pool and worker info."""
+    def failing_node(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+        raise ValueError("print test")
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="PrintNode",
+                in_ports={"in": PortConfig()},
+                execution_config=NodeExecutionConfig(
+                    pools=["main"],
+                    exec_node_func=failing_node,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+        propagate_exceptions=False,
+        print_exceptions=True,
+    )
+
+    async with Net(config) as net:
+        net.inject_data("PrintNode", "in", [1])
+        await net.run_until_blocked()
+        captured = capsys.readouterr()
+        assert "PrintNode" in captured.err
+        assert "pool='main'" in captured.err
+        assert "print test" in captured.err

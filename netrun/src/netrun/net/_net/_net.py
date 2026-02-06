@@ -22,6 +22,7 @@ from ..._iutils import get_timestamp_utc
 from ...storage import PacketStore, PacketStoreConfig
 
 from ...net._net._context import (
+    EpochError,
     EpochRecord,
     NodeExecutionResult,
     NodeFailureContext,
@@ -33,6 +34,57 @@ from ...net._net._context import (
 from ...net._net._info import NodeInfo, EdgeInfo
 
 # %% nbs/netrun/05_net/01_net/02_net.ipynb 4
+class _PoolServerContext:
+    """Async context manager for Net.serve_pool.
+
+    Wraps RemotePoolServer.serve_background() and adds optional log file output.
+    """
+
+    def __init__(self, server, host, port, log_file=None):
+        self._server = server
+        self._host = host
+        self._port = port
+        self._log_file = log_file
+        self._log_fh = None
+        self._inner_ctx = None
+
+    def _log(self, message: str):
+        if self._log_fh:
+            self._log_fh.write(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] {message}\n")
+            self._log_fh.flush()
+
+    def _make_done_callback(self):
+        """Create a func_done_callback that logs execution results to the log file."""
+        ctx = self
+        def callback(*args, result=None, **kwargs):
+            if ctx._log_fh is None or result is None:
+                return
+            node_name = args[1] if len(args) > 1 else "unknown"
+            status = "error" if result.exception else "ok"
+            ctx._log(f"[{node_name}] execution {status}")
+            if hasattr(result, 'print_buffer') and result.print_buffer:
+                for _ts, msg in result.print_buffer:
+                    ctx._log(f"[{node_name}] {msg}")
+        return callback
+
+    async def __aenter__(self):
+        if self._log_file:
+            self._log_fh = open(self._log_file, 'a')
+        self._inner_ctx = self._server.serve_background(self._host, self._port)
+        server = await self._inner_ctx.__aenter__()
+        self._log(f"Pool server started on {self._host}:{self._port}")
+        return server
+
+    async def __aexit__(self, *exc_info):
+        try:
+            await self._inner_ctx.__aexit__(*exc_info)
+        finally:
+            self._log("Pool server stopped")
+            if self._log_fh:
+                self._log_fh.close()
+                self._log_fh = None
+
+# %% nbs/netrun/05_net/01_net/02_net.ipynb 5
 class Net:
     """Main orchestrator for flow-based network execution.
 
@@ -165,6 +217,99 @@ class Net:
         """
         config = NetConfig.from_file(path)
         return cls(config)
+
+    @staticmethod
+    def _create_func_preprocessor_from_config(config_resolved: NetConfig):
+        """Create a func_preprocessor from a resolved NetConfig.
+
+        Extracts node execution configs, output ports, and factory info from
+        the resolved config and creates a NetFuncPreprocessor.
+
+        Args:
+            config_resolved: A resolved NetConfig (after calling .resolve()).
+
+        Returns:
+            A func_preprocessor callable for use with ExecutionManager/RemotePoolServer.
+        """
+        node_execution_configs = {}
+        node_out_ports = {}
+        node_factories = {}
+
+        for node_config in config_resolved.graph.nodes:
+            if node_config.execution_config is not None:
+                node_execution_configs[node_config.name] = node_config.execution_config
+            if node_config.out_ports:
+                node_out_ports[node_config.name] = node_config.out_ports
+            if node_config.factory:
+                node_factories[node_config.name] = (
+                    node_config.factory,
+                    node_config.factory_args,
+                )
+
+        return create_net_func_preprocessor(
+            node_execution_configs,
+            node_out_ports,
+            node_factories,
+            net_node_vars=config_resolved.node_vars,
+            net_type_checking_enabled=config_resolved.type_checking_enabled,
+        )
+
+    @classmethod
+    def serve_pool(
+        cls,
+        config: 'NetConfig | str | Path',
+        host: str = "0.0.0.0",
+        port: int = 8080,
+        *,
+        log_file: 'str | Path | None' = None,
+        worker_name: str = "execution_manager",
+    ) -> _PoolServerContext:
+        """Create a remote pool server from a Net config.
+
+        The server uses the same func_preprocessor as Net, enabling factory-based
+        nodes and NodeExecutionContext on remote workers.
+
+        Returns an async context manager. Use as::
+
+            async with Net.serve_pool(config_path, host, port):
+                ...  # server is running
+
+        Or for Jupyter (non-blocking)::
+
+            pool_ctx = Net.serve_pool(config_path, host, port)
+            await pool_ctx.__aenter__()
+            # ... later ...
+            await pool_ctx.__aexit__(None, None, None)
+
+        Args:
+            config: NetConfig, or path to a .json/.toml config file.
+            host: Host to bind to.
+            port: Port to listen on.
+            log_file: Optional path to write server logs to.
+            worker_name: Worker name for the execution manager protocol.
+
+        Returns:
+            An async context manager (_PoolServerContext) that starts/stops the server.
+        """
+        from ...execution_manager import create_execution_manager_server as _create_em_server
+
+        if isinstance(config, (str, Path)):
+            config = NetConfig.from_file(config)
+        config_resolved = config.resolve()
+
+        func_preprocessor = cls._create_func_preprocessor_from_config(config_resolved)
+
+        ctx = _PoolServerContext(None, host, port, log_file)
+        done_callback = ctx._make_done_callback() if log_file else None
+
+        server = _create_em_server(
+            worker_name=worker_name,
+            func_preprocessor=func_preprocessor,
+            func_done_callback=done_callback,
+        )
+        ctx._server = server
+
+        return ctx
 
     @property
     def config(self) -> NetConfig:
@@ -1349,6 +1494,8 @@ class Net:
                 retry_count=retry_count,
                 retry_timestamps=retry_timestamps,
                 retry_exceptions=retry_exceptions,
+                pool_id=job_result.pool_id,
+                worker_id=job_result.worker_id,
             )
 
         if execution_result.cancelled:
@@ -1386,6 +1533,8 @@ class Net:
         retry_count: int,
         retry_timestamps: list[datetime],
         retry_exceptions: list[Exception],
+        pool_id: str | None = None,
+        worker_id: int | None = None,
     ) -> NodeExecutionResult | None:
         """Handle a failed epoch execution with retry logic.
 
@@ -1399,12 +1548,14 @@ class Net:
             retry_count: Current retry count.
             retry_timestamps: Timestamps of previous retry attempts.
             retry_exceptions: Exceptions from previous retry attempts.
+            pool_id: The pool that ran the epoch.
+            worker_id: The worker that ran the epoch.
 
         Returns:
             NodeExecutionResult if retry succeeds, None if max retries exceeded.
 
         Raises:
-            Exception: If on_error is "raise" and max retries exceeded.
+            EpochError: If propagate_exceptions is True and max retries exceeded.
         """
         # Update retry tracking
         new_retry_timestamps = retry_timestamps + [get_timestamp_utc()]
@@ -1420,6 +1571,8 @@ class Net:
                 retry_timestamps=new_retry_timestamps,
                 retry_exceptions=new_retry_exceptions,
                 input_salvo=packets,
+                pool_id=pool_id,
+                worker_id=worker_id,
             )
             await self._call_failure_callback(config.on_node_failure, failure_ctx)
 
@@ -1457,6 +1610,8 @@ class Net:
                 "retry_timestamps": new_retry_timestamps,
                 "retry_exceptions": new_retry_exceptions,
                 "packets": packets,
+                "pool_id": pool_id,
+                "worker_id": worker_id,
             })
 
             # Resolve effective exception config
@@ -1465,13 +1620,23 @@ class Net:
             if print_exc:
                 import sys
                 import traceback
-                print(f"Exception in epoch {epoch_id} (node '{node_name}'):", file=sys.stderr)
+                pool_info = f", pool='{pool_id}'" if pool_id is not None else ""
+                worker_info = f", worker={worker_id}" if worker_id is not None else ""
+                print(f"Exception in epoch {epoch_id} (node '{node_name}'{pool_info}{worker_info}):", file=sys.stderr)
                 traceback.print_exception(type(error), error, error.__traceback__, file=sys.stderr)
 
+            # Wrap the error in EpochError with full context
+            epoch_error = EpochError(
+                str(error), node_name=node_name, epoch_id=epoch_id,
+                pool_id=pool_id, worker_id=worker_id,
+                retry_count=retry_count,
+            )
+            epoch_error.__cause__ = error
+
             if propagate:
-                raise error
+                raise epoch_error from error
             else:
-                self._exception_queue.append(error)
+                self._exception_queue.append(epoch_error)
                 return None
 
     async def _call_failure_callback(
