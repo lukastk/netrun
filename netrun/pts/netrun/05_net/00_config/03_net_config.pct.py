@@ -254,6 +254,16 @@ class NetConfig(BaseModel):
     - "error": Raise an error (original behavior)
     """
 
+    type_checking_enabled: bool = True
+    """
+    Enable runtime type checking for packet values.
+
+    When True, packets loaded into output ports are validated against the
+    port's declared type. When False, type checking is skipped for performance.
+
+    This can be overridden per-node via NodeExecutionConfig.type_checking_enabled.
+    """
+
     @field_serializer("dead_letter_callback", when_used='json')
     def serialize_dead_letter_callback(self, callback: Callable | str | None) -> str | None:
         """Serialize dead_letter_callback to import path for JSON.

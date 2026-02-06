@@ -122,6 +122,9 @@ class NodeExecutionContext:
     # Node variables (merged net-level + node-level)
     _node_vars: dict[str, "NodeVariable"] | None = field(default=None, repr=False)
 
+    # Type checking flag
+    _type_checking_enabled: bool = field(default=True, repr=False)
+
     def create_packet(self, value: Any) -> str:
         """Create a new packet with the given value.
 
@@ -252,6 +255,10 @@ class NodeExecutionContext:
         Raises:
             PacketTypeMismatch: If validation fails.
         """
+        # Skip validation if type checking is disabled
+        if not self._type_checking_enabled:
+            return
+
         expected, matches = self._check_type(port_type, value)
 
         if not matches:
@@ -536,6 +543,9 @@ class NetFuncPreprocessorNodeConfig:
     node_vars: dict[str, dict[str, str]] | None = None
     """Merged node variables (serialized as dicts for pickling)."""
 
+    type_checking_enabled: bool = True
+    """Whether type checking is enabled for this node."""
+
     @classmethod
     def from_node_config(
         cls,
@@ -544,6 +554,7 @@ class NetFuncPreprocessorNodeConfig:
         factory: str | None,
         factory_args: dict[str, Any],
         node_vars: dict[str, dict[str, str]] | None = None,
+        type_checking_enabled: bool = True,
     ) -> "NetFuncPreprocessorNodeConfig":
         """Create from execution config, port configs, and factory info."""
         return cls(
@@ -558,6 +569,7 @@ class NetFuncPreprocessorNodeConfig:
             retry_wait=exec_config.retry_wait,
             timeout=exec_config.timeout,
             node_vars=node_vars,
+            type_checking_enabled=type_checking_enabled,
         )
 
 
@@ -647,6 +659,9 @@ class NetFuncPreprocessor:
                     for n, v in config.node_vars.items()
                 }
 
+            # Get type checking enabled flag (default True if no config)
+            type_checking_enabled = config.type_checking_enabled if config else True
+
             ctx = NodeExecutionContext(
                 epoch_id=epoch_id,
                 node_name=node_name,
@@ -657,6 +672,7 @@ class NetFuncPreprocessor:
                 _input_packet_values=packet_values,
                 _out_ports=out_ports,
                 _node_vars=_node_vars,
+                _type_checking_enabled=type_checking_enabled,
             )
 
             # Determine the actual function to call
@@ -710,6 +726,7 @@ def create_net_func_preprocessor(
     node_out_ports: dict[str, dict[str, PortConfig]] | None = None,
     node_factories: dict[str, tuple[str, dict[str, Any]]] | None = None,
     net_node_vars: dict[str, NodeVariable] | None = None,
+    net_type_checking_enabled: bool = True,
 ) -> NetFuncPreprocessor:
     """Create a func_preprocessor for Net execution.
 
@@ -725,6 +742,7 @@ def create_net_func_preprocessor(
         node_factories: Mapping of node names to (factory_path, factory_args) tuples for
             factory-based nodes. Factory functions are resolved lazily on workers.
         net_node_vars: Net-level default node variables.
+        net_type_checking_enabled: Net-level default for type checking (can be overridden per-node).
 
     Returns:
         A picklable NetFuncPreprocessor instance.
@@ -751,8 +769,16 @@ def create_net_func_preprocessor(
             if merged:
                 merged_vars = merged
 
+        # Determine type checking: node-level overrides net-level
+        if config.type_checking_enabled is not None:
+            type_checking_enabled = config.type_checking_enabled
+        else:
+            type_checking_enabled = net_type_checking_enabled
+
         node_configs[node_name] = NetFuncPreprocessorNodeConfig.from_node_config(
-            config, out_ports, factory, factory_args, node_vars=merged_vars,
+            config, out_ports, factory, factory_args,
+            node_vars=merged_vars,
+            type_checking_enabled=type_checking_enabled,
         )
 
     return NetFuncPreprocessor(node_configs)
