@@ -8,7 +8,7 @@ from ._context import (
     NodeExecutionContext,
     NodeExecutionResult,
     NodeFailureContext,
-    OutputPacket,
+    ConsumedOutputPacket,
     DeferredActionQueue,
     NetFuncPreprocessorNodeConfig,
     NetFuncPreprocessor,
