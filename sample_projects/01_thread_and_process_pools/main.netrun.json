@@ -1,235 +1,166 @@
 {
+  "recipes": {
+    "add_node": {
+      "path": "./recipes/add_node.py",
+      "description": "Add a new node to the graph"
+    }
+  },
   "pools": {
     "main": {
       "spec": {
         "type": "main"
       }
     },
-    "thread_pool": {
+    "threads": {
       "spec": {
         "type": "thread",
         "num_workers": 4
       }
     },
-    "process_pool": {
+    "processes": {
       "spec": {
         "type": "multiprocess",
-        "num_workers": 4
+        "num_processes": 2,
+        "threads_per_process": 2
       }
-    }
-  },
-  "output_queues": {
-    "results": {
-      "ports": [
-        [
-          "aggregate",
-          "out"
-        ]
-      ]
     }
   },
   "graph": {
     "nodes": [
       {
         "type": "node",
-        "name": "hash_1",
+        "name": "in_main_pool",
         "in_ports": {
-          "data": {
-            "port_type": "str"
+          "start": {
+            "port_type": "int"
           },
-          "iterations": {
+          "stop": {
             "port_type": "int"
           }
         },
         "out_ports": {
           "out": {
-            "port_type": "dict"
+            "port_type": "list[int]"
           }
         },
         "meta": {
           "ui": {
             "position": {
-              "x": 0,
-              "y": 100
+              "x": 570,
+              "y": -90
             }
           }
         },
         "factory": "netrun.node_factories.from_function",
         "factory_args": {
-          "func": "nodes.compute_hash"
-        },
-        "execution_config": {
-          "pools": [
-            "thread_pool"
-          ]
+          "func": "nodes.find_primes"
         }
       },
       {
         "type": "node",
-        "name": "hash_2",
+        "name": "in_thread_pool",
         "in_ports": {
-          "data": {
-            "port_type": "str"
+          "start": {
+            "port_type": "int"
           },
-          "iterations": {
+          "stop": {
             "port_type": "int"
           }
         },
         "out_ports": {
           "out": {
-            "port_type": "dict"
+            "port_type": "list[int]"
           }
         },
         "meta": {
           "ui": {
             "position": {
-              "x": 200,
-              "y": 100
+              "x": 540,
+              "y": 45
             }
           }
         },
         "factory": "netrun.node_factories.from_function",
         "factory_args": {
-          "func": "nodes.compute_hash"
+          "func": "nodes.find_primes"
         },
         "execution_config": {
           "pools": [
-            "thread_pool"
+            "threads"
           ]
         }
       },
       {
         "type": "node",
-        "name": "hash_3",
+        "name": "in_process_pool",
         "in_ports": {
-          "data": {
-            "port_type": "str"
+          "start": {
+            "port_type": "int"
           },
-          "iterations": {
+          "stop": {
             "port_type": "int"
           }
         },
         "out_ports": {
           "out": {
-            "port_type": "dict"
+            "port_type": "list[int]"
           }
         },
         "meta": {
           "ui": {
             "position": {
-              "x": 405,
-              "y": 90
+              "x": 540,
+              "y": 165
             }
           }
         },
         "factory": "netrun.node_factories.from_function",
         "factory_args": {
-          "func": "nodes.compute_hash"
+          "func": "nodes.find_primes"
         },
         "execution_config": {
           "pools": [
-            "thread_pool"
+            "processes"
           ]
         }
       },
       {
         "type": "node",
-        "name": "hash_4",
+        "name": "in_all_pools",
         "in_ports": {
-          "data": {
-            "port_type": "str"
+          "start": {
+            "port_type": "int"
           },
-          "iterations": {
+          "stop": {
             "port_type": "int"
           }
         },
         "out_ports": {
           "out": {
-            "port_type": "dict"
+            "port_type": "list[int]"
           }
         },
         "meta": {
           "ui": {
             "position": {
-              "x": 600,
-              "y": 100
+              "x": 540,
+              "y": 285
             }
           }
         },
         "factory": "netrun.node_factories.from_function",
         "factory_args": {
-          "func": "nodes.compute_hash"
+          "func": "nodes.find_primes"
         },
         "execution_config": {
           "pools": [
-            "thread_pool"
+            "processes",
+            "main",
+            "threads"
           ]
         }
-      },
-      {
-        "type": "node",
-        "name": "aggregate",
-        "in_ports": {
-          "results": {
-            "port_type": "list[dict]"
-          }
-        },
-        "out_ports": {
-          "out": {
-            "port_type": "dict"
-          }
-        },
-        "meta": {
-          "ui": {
-            "position": {
-              "x": 800,
-              "y": 100
-            }
-          }
-        },
-        "factory": "netrun.node_factories.from_function",
-        "factory_args": {
-          "func": "nodes.aggregate_results"
-        },
-        "execution_config": {
-          "pools": [
-            "main"
-          ]
-        }
-      },
-      {
-        "type": "node",
-        "name": "from_function",
-        "in_ports": {},
-        "out_ports": {},
-        "meta": {
-          "ui": {
-            "position": {
-              "x": 195,
-              "y": 255
-            }
-          }
-        },
-        "factory": "netrun.node_factories.from_function"
       }
     ],
-    "edges": [
-      {
-        "source_str": "hash_1.out",
-        "target_str": "aggregate.results"
-      },
-      {
-        "source_str": "hash_2.out",
-        "target_str": "aggregate.results"
-      },
-      {
-        "source_str": "hash_3.out",
-        "target_str": "aggregate.results"
-      },
-      {
-        "source_str": "hash_4.out",
-        "target_str": "aggregate.results"
-      }
-    ]
+    "edges": []
   }
 }

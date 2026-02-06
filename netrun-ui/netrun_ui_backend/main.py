@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
-from .routes import files, factories, actions
+from .routes import files, factories, actions, recipes
 
 app = FastAPI(
     title="netrun-ui API",
@@ -33,6 +33,7 @@ app.add_middleware(
 app.include_router(files.router, prefix="/api/files", tags=["files"])
 app.include_router(factories.router, prefix="/api/factories", tags=["factories"])
 app.include_router(actions.router, prefix="/api/actions", tags=["actions"])
+app.include_router(recipes.router, prefix="/api/recipes", tags=["recipes"])
 
 
 @app.get("/health")

@@ -10,9 +10,11 @@
 	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import Modal from '$lib/components/Modal.svelte';
 	import FactorySelectorModal from '$lib/components/FactorySelectorModal.svelte';
+	import RecipeModal from '$lib/components/RecipeModal.svelte';
 	import { api } from '$lib/api';
 	import { nodes, currentFilePath, activeTab, recentFiles, loadFromFile, clearFlow, isNewFile, saveToFile, selectNodeByName, extraData } from '$lib/stores/flowStore';
 	import { factorySelectorState, closeFactorySelector } from '$lib/stores/factorySelectorStore';
+	import { recipeModalState } from '$lib/stores/recipeStore';
 	import { resolveFilePath } from '$lib/stores/fileExplorerStore';
 	import { showPrompt, showAlert } from '$lib/stores/modalStore';
 	import { initializeCommands } from '$lib/commands';
@@ -234,6 +236,17 @@
 			{factories}
 			onSelect={(path) => closeFactorySelector(path)}
 			onCancel={() => closeFactorySelector(null)}
+		/>
+	{/if}
+
+	<!-- Recipe Modal -->
+	{#if $recipeModalState.show}
+		<RecipeModal
+			recipeName={$recipeModalState.recipeName}
+			prompts={$recipeModalState.prompts}
+			show={$recipeModalState.show}
+			onsubmit={(inputs) => $recipeModalState.onSubmit(inputs)}
+			oncancel={() => $recipeModalState.onCancel()}
 		/>
 	{/if}
 </div>
