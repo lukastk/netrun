@@ -24,7 +24,7 @@ from nblite import nbl_export; nbl_export();
 import asyncio
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, NoReturn, get_origin
 from collections.abc import Callable
@@ -541,6 +541,60 @@ class ConsumedOutputPacket:
 
     epoch_id: str
     """The epoch that produced this packet."""
+
+# %% [markdown]
+# ## EpochRecord
+#
+# Wraps epoch data with lifecycle tracking (timestamps, cancellation, logs).
+
+# %%
+#|export
+@dataclass
+class EpochRecord:
+    """Record of an epoch's full lifecycle."""
+    id: str
+    node_name: str
+    in_salvo: Any
+    out_salvos: list
+    state: Any           # EpochState — updated at each transition
+    orphaned_packets: list
+    created_at: datetime
+    print_logs: list[tuple[datetime, str]] = field(default_factory=list)
+    was_cancelled: bool = False
+    started_at: datetime | None = None
+    ended_at: datetime | None = None
+    destroyed_packets: list[str] = field(default_factory=list)
+
+    @classmethod
+    def from_epoch(cls, epoch) -> "EpochRecord":
+        """Create an EpochRecord from a netrun_sim.Epoch object."""
+        created_at = datetime.fromtimestamp(epoch.start_time() / 1000, tz=timezone.utc)
+        return cls(
+            id=epoch.id, node_name=epoch.node_name,
+            in_salvo=epoch.in_salvo, out_salvos=list(epoch.out_salvos),
+            state=epoch.state, orphaned_packets=list(epoch.orphaned_packets),
+            created_at=created_at,
+        )
+
+    def start_time(self) -> int:
+        """Creation timestamp in ms (compat with netrun_sim.Epoch)."""
+        return int(self.created_at.timestamp() * 1000)
+
+    def get_logs(self) -> list[tuple[datetime, str]]:
+        """Return a copy of the print logs."""
+        return list(self.print_logs)
+
+    def print_logs_to_stdout(self, include_timestamps: bool = True) -> None:
+        """Print the logs to stdout.
+
+        Args:
+            include_timestamps: If True (default), prefix each line with its timestamp.
+        """
+        for timestamp, message in self.print_logs:
+            if include_timestamps:
+                print(f"[{timestamp}] {message}", end="")
+            else:
+                print(message, end="")
 
 # %% [markdown]
 # ## Deferred Action Queue

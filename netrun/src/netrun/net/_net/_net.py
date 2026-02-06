@@ -22,6 +22,7 @@ from ..._iutils import get_timestamp_utc
 from ...storage import PacketStore, PacketStoreConfig
 
 from ...net._net._context import (
+    EpochRecord,
     NodeExecutionResult,
     NodeFailureContext,
     ConsumedOutputPacket,
@@ -57,7 +58,6 @@ class Net:
         self._packet_store = PacketStore(PacketStoreConfig())
 
         # Print log storage
-        self._epoch_print_logs: dict[str, list[tuple[datetime, str]]] = {}
         self._node_print_logs: dict[str, list[tuple[datetime, str]]] = {}
 
         # Rate limiting tracking
@@ -66,8 +66,8 @@ class Net:
         # Running epoch tracking
         self._running_epochs: set[str] = set()
 
-        # Epoch snapshots (persists after epoch finishes in netsim)
-        self._epochs: dict = {}  # epoch_id -> netrun_sim.Epoch
+        # Epoch records (persists after epoch finishes in netsim)
+        self._epochs: dict[str, EpochRecord] = {}  # epoch_id -> EpochRecord
 
         # Dead letter queue for failed epochs
         self._dead_letter_queue: list[dict[str, Any]] = []
@@ -224,6 +224,14 @@ class Net:
         - packets: The input packets for the epoch
         """
         return list(self._dead_letter_queue)
+
+    @property
+    def epochs(self) -> dict[str, EpochRecord]:
+        """Get all epoch records (including completed and cancelled).
+
+        Returns a shallow copy of the internal epochs dict.
+        """
+        return dict(self._epochs)
 
     def clear_dead_letter_queue(self) -> list[dict[str, Any]]:
         """Clear the dead letter queue and return its contents.
@@ -674,20 +682,17 @@ class Net:
             buffer: List of (timestamp, message) tuples. Timestamps are captured
                     at the time ctx.print() was called in the worker.
         """
-        # Store by epoch
-        if epoch_id not in self._epoch_print_logs:
-            self._epoch_print_logs[epoch_id] = []
-        for timestamp, line in buffer:
-            self._epoch_print_logs[epoch_id].append((timestamp, line))
+        # Store on epoch record
+        record = self._epochs.get(epoch_id)
+        if record is not None:
+            record.print_logs.extend(buffer)
 
         # Also store by node
-        epoch = self._epochs.get(epoch_id)
-        node_name = epoch.node_name if epoch is not None else None
+        node_name = record.node_name if record is not None else None
         if node_name is not None:
             if node_name not in self._node_print_logs:
                 self._node_print_logs[node_name] = []
-            for timestamp, line in buffer:
-                self._node_print_logs[node_name].append((timestamp, line))
+            self._node_print_logs[node_name].extend(buffer)
 
     def get_epoch_log(self, epoch_id: str) -> list[tuple[datetime, str]]:
         """Get print output for a specific epoch.
@@ -698,7 +703,10 @@ class Net:
         Returns:
             List of (timestamp, message) tuples.
         """
-        return list(self._epoch_print_logs.get(epoch_id, []))
+        record = self._epochs.get(epoch_id)
+        if record is None:
+            return []
+        return list(record.print_logs)
 
     def get_node_log(self, node_name: str) -> list[tuple[datetime, str]]:
         """Get all print output for a node (across all epochs).
@@ -711,32 +719,16 @@ class Net:
         """
         return list(self._node_print_logs.get(node_name, []))
 
-    def list_epoch_log_ids(self) -> list[str]:
-        """Get all epoch IDs that have print logs.
-
-        Returns:
-            List of epoch IDs with logs.
-        """
-        return list(self._epoch_print_logs.keys())
-
-    def list_node_log_names(self) -> list[str]:
-        """Get all node names that have print logs.
-
-        Returns:
-            List of node names with logs.
-        """
-        return list(self._node_print_logs.keys())
-
     def get_all_logs(self) -> dict[str, dict[str, list[tuple[datetime, str]]]]:
         """Get all print logs across all epochs and nodes.
 
         Returns:
-            Dictionary of (epoch_id, node_name) -> list of (timestamp, message) tuples.
+            Dictionary mapping node_name -> epoch_id -> list of (timestamp, message) tuples.
         """
         logs = {}
-        for epoch_id, epoch_logs in self._epoch_print_logs.items():
-            epoch = self._epochs[epoch_id]
-            logs.setdefault(epoch.node_name, {})[epoch_id] = epoch_logs
+        for epoch_id, record in self._epochs.items():
+            if record.print_logs:
+                logs.setdefault(record.node_name, {})[epoch_id] = list(record.print_logs)
         return logs
 
     def get_all_logs_chronological(self) -> list[tuple[datetime, str, str, str]]:
@@ -748,14 +740,38 @@ class Net:
         """
         all_logs = []
 
-        for epoch_id, logs in self._epoch_print_logs.items():
-            epoch = self._epochs[epoch_id]
-            for timestamp, message in logs:
-                all_logs.append((timestamp, epoch_id, epoch.node_name, message))
+        for epoch_id, record in self._epochs.items():
+            for timestamp, message in record.print_logs:
+                all_logs.append((timestamp, epoch_id, record.node_name, message))
 
         # Sort by timestamp
         all_logs.sort(key=lambda x: x[0])
         return all_logs
+
+    def list_epoch_log_ids(self) -> list[str]:
+        """Get all epoch IDs that have print logs.
+
+        Returns:
+            List of epoch IDs with logs.
+        """
+        return [eid for eid, r in self._epochs.items() if r.print_logs]
+
+    def list_node_log_names(self) -> list[str]:
+        """Get all node names that have print logs.
+
+        Returns:
+            List of node names with logs.
+        """
+        return list(self._node_print_logs.keys())
+
+    def print_epoch_logs(self, epoch_id: str, include_timestamps: bool = True) -> None:
+        """Print the logs for a specific epoch."""
+        logs = self.get_epoch_log(epoch_id)
+        for timestamp, message in logs:
+            if include_timestamps:
+                print(f"[{timestamp.strftime('%H:%M:%S.%f')[:-3]}] {message}")
+            else:
+                print(message)
 
     async def start(self) -> None:
         """Start the Net.
@@ -1137,7 +1153,7 @@ class Net:
         """
         epoch = self._netsim.get_epoch(epoch_id)
         node_name = epoch.node_name
-        self._epochs[epoch_id] = epoch
+        self._epochs[epoch_id] = EpochRecord.from_epoch(epoch)
         config = self._get_node_execution_config(node_name)
 
         # Check if node has an execution function (either direct or via factory)
@@ -1148,7 +1164,10 @@ class Net:
         if not has_exec_func:
             # No execution function - just mark as running and finish immediately
             self._netsim.do_action(netrun_sim.NetAction.start_epoch(epoch_id))
+            self._epochs[epoch_id].started_at = get_timestamp_utc()
             self._netsim.do_action(netrun_sim.NetAction.finish_epoch(epoch_id))
+            self._epochs[epoch_id].ended_at = get_timestamp_utc()
+            self._epochs[epoch_id].state = netrun_sim.EpochState.Finished
             return None
 
         # Check rate limiting
@@ -1160,6 +1179,8 @@ class Net:
 
         # Transition epoch to Running
         self._netsim.do_action(netrun_sim.NetAction.start_epoch(epoch_id))
+        self._epochs[epoch_id].started_at = get_timestamp_utc()
+        self._epochs[epoch_id].state = netrun_sim.EpochState.Running
         self._running_epochs.add(epoch_id)
 
         try:
@@ -1248,7 +1269,11 @@ class Net:
 
         if execution_result.cancelled:
             # Epoch was cancelled via ctx.cancel_epoch()
-            self._netsim.do_action(netrun_sim.NetAction.cancel_epoch(epoch_id))
+            response, _ = self._netsim.do_action(netrun_sim.NetAction.cancel_epoch(epoch_id))
+            record = self._epochs[epoch_id]
+            record.was_cancelled = True
+            record.ended_at = get_timestamp_utc()
+            record.destroyed_packets = list(response.destroyed_packets)
             return execution_result
 
         # Success - commit deferred actions
@@ -1256,6 +1281,8 @@ class Net:
 
         # Finish the epoch
         self._netsim.do_action(netrun_sim.NetAction.finish_epoch(epoch_id))
+        self._epochs[epoch_id].ended_at = get_timestamp_utc()
+        self._epochs[epoch_id].state = netrun_sim.EpochState.Finished
 
         return execution_result
 
@@ -1326,7 +1353,11 @@ class Net:
             )
         else:
             # Max retries exceeded - cancel the epoch
-            self._netsim.do_action(netrun_sim.NetAction.cancel_epoch(epoch_id))
+            response, _ = self._netsim.do_action(netrun_sim.NetAction.cancel_epoch(epoch_id))
+            record = self._epochs[epoch_id]
+            record.was_cancelled = True
+            record.ended_at = get_timestamp_utc()
+            record.destroyed_packets = list(response.destroyed_packets)
 
             # Store in dead letter queue
             self._dead_letter_queue.append({

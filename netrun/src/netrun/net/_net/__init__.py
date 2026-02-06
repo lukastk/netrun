@@ -9,6 +9,7 @@ from ._context import (
     NodeExecutionResult,
     NodeFailureContext,
     ConsumedOutputPacket,
+    EpochRecord,
     DeferredActionQueue,
     NetFuncPreprocessorNodeConfig,
     NetFuncPreprocessor,
