@@ -284,28 +284,32 @@ class TestTypeCheckMethod:
     def test_check_type_string_match(self):
         """Test _check_type with matching string."""
         ctx = self.create_context()
-        expected, matches = ctx._check_type("str", "hello")
+        expected, matches, mode = ctx._check_type("str", "hello")
         assert expected == "str"
         assert matches is True
+        assert mode == "string"
 
     def test_check_type_string_no_match(self):
         """Test _check_type with non-matching string."""
         ctx = self.create_context()
-        expected, matches = ctx._check_type("int", "hello")
+        expected, matches, mode = ctx._check_type("int", "hello")
         assert expected == "int"
         assert matches is False
+        assert mode == "string"
 
     def test_check_type_type_isinstance(self):
-        """Test _check_type with type uses isinstance."""
+        """Test _check_type with type uses beartype."""
         ctx = self.create_context()
-        expected, matches = ctx._check_type(dict, {"a": 1})
+        expected, matches, mode = ctx._check_type(dict, {"a": 1})
         assert expected == "dict"
         assert matches is True
+        assert mode == "beartype"
 
     def test_check_type_type_config(self):
         """Test _check_type with PortTypeConfig."""
         ctx = self.create_context()
         config = PortTypeConfig(name="list")
-        expected, matches = ctx._check_type(config, [1, 2])
+        expected, matches, mode = ctx._check_type(config, [1, 2])
         assert expected == "list"
         assert matches is True
+        assert mode == "string"

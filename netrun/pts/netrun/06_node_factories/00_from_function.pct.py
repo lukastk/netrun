@@ -103,6 +103,10 @@ def _annotation_to_port_config(annotation: Any, include_type: bool = True) -> Po
         # Type object - use for isinstance checking
         return PortConfig(port_type=annotation)
 
+    if get_origin(annotation) is not None:
+        # Generic type (e.g., list[int], dict[str, int]) - store as-is for beartype checking
+        return PortConfig(port_type=annotation)
+
     if isinstance(annotation, str):
         # String type name
         return PortConfig(port_type=annotation)
@@ -111,7 +115,7 @@ def _annotation_to_port_config(annotation: Any, include_type: bool = True) -> Po
         # PortTypeConfig - wrap in PortConfig
         return PortConfig(port_type=annotation)
 
-    # For other annotations (e.g., typing generics), use the string representation
+    # For other annotations, use the string representation
     return PortConfig(port_type=str(annotation))
 
 

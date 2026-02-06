@@ -573,22 +573,26 @@ def test_check_type_string_simple():
     ctx = NodeExecutionContext(epoch_id="test", node_name="Test")
 
     # Simple type names use __name__ matching
-    name, matches = ctx._check_type("int", 42)
+    name, matches, mode = ctx._check_type("int", 42)
     assert name == "int"
     assert matches is True
+    assert mode == "string"
 
-    name, matches = ctx._check_type("str", "hello")
+    name, matches, mode = ctx._check_type("str", "hello")
     assert name == "str"
     assert matches is True
+    assert mode == "string"
 
-    name, matches = ctx._check_type("list", [1, 2, 3])
+    name, matches, mode = ctx._check_type("list", [1, 2, 3])
     assert name == "list"
     assert matches is True
+    assert mode == "string"
 
     # Mismatches
-    name, matches = ctx._check_type("int", "not an int")
+    name, matches, mode = ctx._check_type("int", "not an int")
     assert name == "int"
     assert matches is False
+    assert mode == "string"
 
 # %%
 test_check_type_string_simple()
@@ -604,9 +608,10 @@ def test_check_type_string_generic_fails():
     ctx = NodeExecutionContext(epoch_id="test", node_name="Test")
 
     # String "list[int]" will NOT match because type([1,2,3]).__name__ is "list"
-    name, matches = ctx._check_type("list[int]", [1, 2, 3])
+    name, matches, mode = ctx._check_type("list[int]", [1, 2, 3])
     assert name == "list[int]"
     assert matches is False  # Expected! __name__ is "list", not "list[int]"
+    assert mode == "string"
 
 # %%
 test_check_type_string_generic_fails()
@@ -618,22 +623,26 @@ def test_check_type_type_object_simple():
     ctx = NodeExecutionContext(epoch_id="test", node_name="Test")
 
     # Type objects use beartype's is_bearable
-    name, matches = ctx._check_type(int, 42)
+    name, matches, mode = ctx._check_type(int, 42)
     assert name == "int"
     assert matches is True
+    assert mode == "beartype"
 
-    name, matches = ctx._check_type(str, "hello")
+    name, matches, mode = ctx._check_type(str, "hello")
     assert name == "str"
     assert matches is True
+    assert mode == "beartype"
 
-    name, matches = ctx._check_type(list, [1, 2, 3])
+    name, matches, mode = ctx._check_type(list, [1, 2, 3])
     assert name == "list"
     assert matches is True
+    assert mode == "beartype"
 
     # Mismatches
-    name, matches = ctx._check_type(int, "not an int")
+    name, matches, mode = ctx._check_type(int, "not an int")
     assert name == "int"
     assert matches is False
+    assert mode == "beartype"
 
 # %%
 test_check_type_type_object_simple()
@@ -648,21 +657,25 @@ def test_check_type_type_object_generic():
     ctx = NodeExecutionContext(epoch_id="test", node_name="Test")
 
     # Generic type objects use beartype
-    name, matches = ctx._check_type(list[int], [1, 2, 3])
+    name, matches, mode = ctx._check_type(list[int], [1, 2, 3])
     assert name == "list"  # __name__ of generic is base type
     assert matches is True
+    assert mode == "beartype"
 
-    name, matches = ctx._check_type(list[str], ["a", "b", "c"])
+    name, matches, mode = ctx._check_type(list[str], ["a", "b", "c"])
     assert name == "list"
     assert matches is True
+    assert mode == "beartype"
 
-    name, matches = ctx._check_type(dict[str, int], {"a": 1, "b": 2})
+    name, matches, mode = ctx._check_type(dict[str, int], {"a": 1, "b": 2})
     assert name == "dict"
     assert matches is True
+    assert mode == "beartype"
 
     # Empty containers match generic types
-    name, matches = ctx._check_type(list[int], [])
+    name, matches, mode = ctx._check_type(list[int], [])
     assert matches is True
+    assert mode == "beartype"
 
 # %%
 test_check_type_type_object_generic()
@@ -678,11 +691,13 @@ def test_check_type_type_object_generic_mismatch():
     ctx = NodeExecutionContext(epoch_id="test", node_name="Test")
 
     # Wrong base type
-    name, matches = ctx._check_type(list[int], "not a list")
+    name, matches, mode = ctx._check_type(list[int], "not a list")
     assert matches is False
+    assert mode == "beartype"
 
-    name, matches = ctx._check_type(dict[str, int], [1, 2, 3])
+    name, matches, mode = ctx._check_type(dict[str, int], [1, 2, 3])
     assert matches is False
+    assert mode == "beartype"
 
 # %%
 test_check_type_type_object_generic_mismatch()
@@ -694,20 +709,24 @@ def test_check_type_distinguishes_modes():
     ctx = NodeExecutionContext(epoch_id="test", node_name="Test")
 
     # String "list" matches via __name__
-    name1, matches1 = ctx._check_type("list", [1, 2, 3])
+    name1, matches1, mode1 = ctx._check_type("list", [1, 2, 3])
     assert matches1 is True
+    assert mode1 == "string"
 
     # Type object list matches via beartype
-    name2, matches2 = ctx._check_type(list, [1, 2, 3])
+    name2, matches2, mode2 = ctx._check_type(list, [1, 2, 3])
     assert matches2 is True
+    assert mode2 == "beartype"
 
     # String "list[int]" fails (no such __name__)
-    name3, matches3 = ctx._check_type("list[int]", [1, 2, 3])
+    name3, matches3, mode3 = ctx._check_type("list[int]", [1, 2, 3])
     assert matches3 is False
+    assert mode3 == "string"
 
     # Type object list[int] succeeds via beartype
-    name4, matches4 = ctx._check_type(list[int], [1, 2, 3])
+    name4, matches4, mode4 = ctx._check_type(list[int], [1, 2, 3])
     assert matches4 is True
+    assert mode4 == "beartype"
 
 # %%
 test_check_type_distinguishes_modes()
