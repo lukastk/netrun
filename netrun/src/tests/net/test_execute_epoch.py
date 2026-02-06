@@ -80,7 +80,7 @@ async def test_execute_epoch_no_exec_func():
     async with net:
         # Inject data to create an epoch
         net.inject_data("TestNode", "in", [{"data": "test"}])
-        await net.run_until_blocked()
+        await net.run_until_blocked(auto_start_epochs=False)
 
         startable = net.get_startable_epochs()
         assert len(startable) == 1
@@ -106,7 +106,7 @@ async def test_execute_epoch_with_exec_func():
     async with net:
         # Inject data
         net.inject_data("TestNode", "in", [{"data": "test"}])
-        await net.run_until_blocked()
+        await net.run_until_blocked(auto_start_epochs=False)
 
         startable = net.get_startable_epochs()
         assert len(startable) == 1
@@ -133,7 +133,7 @@ async def test_execute_epoch_returns_result():
 
     async with net:
         net.inject_data("TestNode", "in", [{"data": "test"}])
-        await net.run_until_blocked()
+        await net.run_until_blocked(auto_start_epochs=False)
 
         epoch_id = net.get_startable_epochs()[0]
         result = await net.execute_epoch(epoch_id)
