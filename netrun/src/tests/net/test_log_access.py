@@ -89,7 +89,7 @@ def test_epoch_record_print_log(capsys):
     t = datetime.now(tz=timezone.utc)
     record.logs = [(t, "line1\n"), (t, "line2\n")]
 
-    record.print_log(include_timestamps=False)
+    record.print_logs(include_timestamps=False)
     captured = capsys.readouterr()
     assert captured.out == "line1\nline2\n"
 
@@ -100,7 +100,7 @@ def test_epoch_record_print_log_with_timestamps(capsys):
     t = datetime(2025, 6, 15, 10, 30, 0, tzinfo=timezone.utc)
     record.logs = [(t, "msg\n")]
 
-    record.print_log(include_timestamps=True)
+    record.print_logs(include_timestamps=True)
     captured = capsys.readouterr()
     assert "[10:30:00.000]" in captured.out
     assert "msg" in captured.out

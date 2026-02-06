@@ -269,7 +269,7 @@ class NodeInfo:
         record = self._net._epochs.get(epoch_id)
         if record is None or record.node_name != self._name:
             return
-        record.print_log(include_timestamps=include_timestamps)
+        record.print_logs(include_timestamps=include_timestamps)
 
     def print_all_logs(self, include_timestamps: bool = True, chronological: bool = False) -> None:
         """Print all logs for this node, grouped by epoch or chronologically."""

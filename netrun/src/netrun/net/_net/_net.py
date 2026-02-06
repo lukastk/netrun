@@ -791,7 +791,7 @@ class Net:
                 if record.node_name != node_name or not record.logs:
                     continue
                 print(f"--- Epoch {record.id} ---")
-                record.print_log(include_timestamps=include_timestamps)
+                record.print_logs(include_timestamps=include_timestamps)
 
     def print_all_logs(self, include_timestamps: bool = True, chronological: bool = False) -> None:
         """Print all logs, grouped by node/epoch or chronologically."""
@@ -809,7 +809,7 @@ class Net:
                     if record.node_name != node_name or not record.logs:
                         continue
                     print(f"--- Epoch {record.id} ---")
-                    record.print_log(include_timestamps=include_timestamps)
+                    record.print_logs(include_timestamps=include_timestamps)
 
     async def start(self) -> None:
         """Start the Net.
