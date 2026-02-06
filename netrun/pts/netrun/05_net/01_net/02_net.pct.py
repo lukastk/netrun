@@ -79,9 +79,6 @@ class Net:
         # Packet value storage
         self._packet_store = PacketStore(PacketStoreConfig())
 
-        # Print log storage
-        self._node_print_logs: dict[str, list[tuple[datetime, str]]] = {}
-
         # Rate limiting tracking
         self._epoch_start_times: dict[str, list[float]] = {}  # node_name -> list of timestamps
 
@@ -709,12 +706,6 @@ class Net:
         if record is not None:
             record.print_logs.extend(buffer)
 
-        # Also store by node
-        node_name = record.node_name if record is not None else None
-        if node_name is not None:
-            if node_name not in self._node_print_logs:
-                self._node_print_logs[node_name] = []
-            self._node_print_logs[node_name].extend(buffer)
 
     def get_epoch_log(self, epoch_id: str) -> list[tuple[datetime, str]]:
         """Get print output for a specific epoch.
@@ -739,7 +730,11 @@ class Net:
         Returns:
             List of (timestamp, message) tuples.
         """
-        return list(self._node_print_logs.get(node_name, []))
+        logs = []
+        for record in self._epochs.values():
+            if record.node_name == node_name:
+                logs.extend(record.print_logs)
+        return logs
 
     def get_all_logs(self) -> dict[str, dict[str, list[tuple[datetime, str]]]]:
         """Get all print logs across all epochs and nodes.
@@ -784,7 +779,13 @@ class Net:
         Returns:
             List of node names with logs.
         """
-        return list(self._node_print_logs.keys())
+        names = []
+        seen = set()
+        for record in self._epochs.values():
+            if record.print_logs and record.node_name not in seen:
+                seen.add(record.node_name)
+                names.append(record.node_name)
+        return names
 
     def print_epoch_logs(self, epoch_id: str, include_timestamps: bool = True) -> None:
         """Print the logs for a specific epoch."""
