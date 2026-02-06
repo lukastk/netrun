@@ -69,6 +69,9 @@ class Net:
         # Dead letter queue for failed epochs
         self._dead_letter_queue: list[dict[str, Any]] = []
 
+        # Exception queue for non-propagating epoch failures
+        self._exception_queue: list[Exception] = []
+
         # Build node execution configs lookup (using resolved config for runtime)
         self._node_execution_configs: dict[str, NodeExecutionConfig] = {}
         for node_config in self._config_resolved.graph.nodes:
@@ -239,6 +242,47 @@ class Net:
         items = self._dead_letter_queue.copy()
         self._dead_letter_queue.clear()
         return items
+
+    @property
+    def exception_queue(self) -> list[Exception]:
+        """Get queued exceptions (from nodes with propagate_exceptions=False).
+
+        Returns a copy of the internal exception queue.
+        """
+        return list(self._exception_queue)
+
+    def propagate_exceptions(self) -> None:
+        """Raise all queued exceptions, clearing the queue.
+
+        Raises:
+            ExceptionGroup: If multiple exceptions are queued.
+            Exception: If exactly one exception is queued.
+        """
+        if not self._exception_queue:
+            return
+        exceptions = self._exception_queue.copy()
+        self._exception_queue.clear()
+        if len(exceptions) == 1:
+            raise exceptions[0]
+        raise ExceptionGroup("Multiple epoch failures", exceptions)
+
+    def _get_effective_exception_config(self, config: 'NodeExecutionConfig | None') -> tuple[bool, bool]:
+        """Resolve effective (propagate_exceptions, print_exceptions) for a node.
+
+        Args:
+            config: The node's execution config, or None.
+
+        Returns:
+            Tuple of (propagate_exceptions, print_exceptions).
+        """
+        propagate = self._config_resolved.propagate_exceptions
+        print_exc = self._config_resolved.print_exceptions
+        if config is not None:
+            if config.propagate_exceptions is not None:
+                propagate = config.propagate_exceptions
+            if config.print_exceptions is not None:
+                print_exc = config.print_exceptions
+        return propagate, print_exc
 
     def _route_orphaned_packet(
         self,
@@ -1001,12 +1045,14 @@ class Net:
                 ]
                 if tasks:
                     results = await asyncio.gather(*tasks, return_exceptions=True)
-                    # Log any exceptions
-                    for epoch_id, exec_result in zip(startable, results):
-                        if isinstance(exec_result, Exception):
-                            import sys
-                            print(f"Error executing epoch {epoch_id}: {exec_result}", file=sys.stderr)
+                    # Collect exceptions that propagated (propagate_exceptions=True nodes)
+                    exceptions = [r for r in results if isinstance(r, Exception)]
                     made_progress = True
+
+                    if exceptions:
+                        if len(exceptions) == 1:
+                            raise exceptions[0]
+                        raise ExceptionGroup("Multiple epoch failures", exceptions)
 
         return (made_progress, events)
 
@@ -1413,8 +1459,20 @@ class Net:
                 "packets": packets,
             })
 
-            # Re-raise the error
-            raise error
+            # Resolve effective exception config
+            propagate, print_exc = self._get_effective_exception_config(config)
+
+            if print_exc:
+                import sys
+                import traceback
+                print(f"Exception in epoch {epoch_id} (node '{node_name}'):", file=sys.stderr)
+                traceback.print_exception(type(error), error, error.__traceback__, file=sys.stderr)
+
+            if propagate:
+                raise error
+            else:
+                self._exception_queue.append(error)
+                return None
 
     async def _call_failure_callback(
         self,

@@ -415,3 +415,93 @@ def test_list_node_log_names_returns_copy():
 
     # Internal state should not be modified
     assert "FakeNode" not in net.list_node_log_names()
+
+
+# --- Exception Queue ---
+
+
+def test_exception_queue_initially_empty():
+    """Test that exception_queue starts empty."""
+    net = _create_simple_net()
+    assert net.exception_queue == []
+
+
+def test_propagate_exceptions_empty_noop():
+    """Test that propagate_exceptions() with empty queue doesn't raise."""
+    net = _create_simple_net()
+    net.propagate_exceptions()  # Should not raise
+
+
+def test_propagate_exceptions_single():
+    """Test propagate_exceptions() raises a single queued exception."""
+    net = _create_simple_net()
+    exc = ValueError("test error")
+    net._exception_queue.append(exc)
+
+    with pytest.raises(ValueError, match="test error"):
+        net.propagate_exceptions()
+
+    # Queue should be cleared
+    assert net.exception_queue == []
+
+
+def test_propagate_exceptions_multiple():
+    """Test propagate_exceptions() raises ExceptionGroup for multiple exceptions."""
+    net = _create_simple_net()
+    exc1 = ValueError("error 1")
+    exc2 = RuntimeError("error 2")
+    net._exception_queue.extend([exc1, exc2])
+
+    with pytest.raises(ExceptionGroup) as exc_info:
+        net.propagate_exceptions()
+
+    assert len(exc_info.value.exceptions) == 2
+    assert net.exception_queue == []
+
+
+def test_exception_queue_returns_copy():
+    """Test that exception_queue returns a copy, not the internal list."""
+    net = _create_simple_net()
+    exc = ValueError("test")
+    net._exception_queue.append(exc)
+
+    queue_copy = net.exception_queue
+    queue_copy.append(RuntimeError("extra"))
+
+    # Internal queue should not be modified
+    assert len(net._exception_queue) == 1
+
+
+def test_get_effective_exception_config_defaults():
+    """Test _get_effective_exception_config with default NetConfig."""
+    net = _create_simple_net()
+    # Default: propagate=True, print=False
+    propagate, print_exc = net._get_effective_exception_config(None)
+    assert propagate is True
+    assert print_exc is False
+
+
+def test_get_effective_exception_config_node_override():
+    """Test _get_effective_exception_config with node-level overrides."""
+    from netrun.net.config import NodeExecutionConfig
+
+    net = _create_simple_net()
+
+    # Node overrides propagate to False
+    config = NodeExecutionConfig(propagate_exceptions=False, print_exceptions=True)
+    propagate, print_exc = net._get_effective_exception_config(config)
+    assert propagate is False
+    assert print_exc is True
+
+
+def test_get_effective_exception_config_node_none_inherits():
+    """Test _get_effective_exception_config inherits when node values are None."""
+    from netrun.net.config import NodeExecutionConfig
+
+    net = _create_simple_net()
+
+    # Node leaves both as None -> inherit from NetConfig
+    config = NodeExecutionConfig(propagate_exceptions=None, print_exceptions=None)
+    propagate, print_exc = net._get_effective_exception_config(config)
+    assert propagate is True  # NetConfig default
+    assert print_exc is False  # NetConfig default
