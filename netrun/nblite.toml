@@ -1,12 +1,12 @@
 export_pipeline = """
 nbs -> pts
-nbs -> lib
+pts -> lib
 
 nbs_tests -> pts_tests
-nbs_tests -> lib_tests
+pts_tests -> lib_tests
 
 nbs_dev -> pts_dev
-nbs_dev -> lib_dev
+pts_dev -> lib_dev
 
 nbs_examples -> pts_examples
 """
