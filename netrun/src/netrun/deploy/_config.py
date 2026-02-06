@@ -24,23 +24,30 @@ class RepoConfig(BaseModel):
     """Repository configuration for deployment target."""
     git_url: str | None = None
     local_repo_path: str | None = None
+    local_folder_path: str | None = None
+    """Path to a local folder to upload directly (no git required)."""
     branch: str | None = None
     remote_dir: str
     ssh_keyscan: bool = True
 
     @model_validator(mode='after')
     def validate_git_source(self) -> "RepoConfig":
-        """Exactly one of git_url or local_repo_path must be set."""
-        has_url = self.git_url is not None
-        has_local = self.local_repo_path is not None
-        if has_url and has_local:
-            raise ValueError("Cannot specify both 'git_url' and 'local_repo_path'. Choose one.")
-        if not has_url and not has_local:
-            raise ValueError("Must specify either 'git_url' or 'local_repo_path'.")
+        """Exactly one of git_url, local_repo_path, or local_folder_path must be set."""
+        sources = [self.git_url, self.local_repo_path, self.local_folder_path]
+        set_count = sum(1 for s in sources if s is not None)
+        if set_count != 1:
+            raise ValueError(
+                "Must specify exactly one of 'git_url', 'local_repo_path', or 'local_folder_path'."
+            )
         return self
 
-    def resolve_git_url(self) -> str:
-        """Return the git URL, inferring from local_repo_path if needed."""
+    def resolve_git_url(self) -> str | None:
+        """Return the git URL, inferring from local_repo_path if needed.
+
+        Returns None when local_folder_path is set (no git URL to resolve).
+        """
+        if self.local_folder_path is not None:
+            return None
         if self.git_url is not None:
             return self.git_url
         result = subprocess.run(

@@ -158,28 +158,36 @@ def _run_deploy_operations(config: DeployConfig, state, dry_run: bool) -> None:
     from pyinfra.operations import git, files, server
 
     repo = config.repo
-    git_url = repo.resolve_git_url()
 
     # Pre-deploy commands
     for cmd in config.pre_deploy_commands:
         server.shell(commands=[cmd])
 
-    # SSH keyscan
-    if repo.ssh_keyscan and git_url.startswith("git@"):
-        git_host = git_url.split("@")[1].split(":")[0]
-        server.shell(
-            commands=[f"ssh-keyscan -H {git_host} >> ~/.ssh/known_hosts 2>/dev/null || true"],
+    if repo.local_folder_path is not None:
+        # Upload local folder directly (no git)
+        files.sync(
+            src=repo.local_folder_path,
+            dest=repo.remote_dir,
         )
+    else:
+        # Clone/pull git repo (existing logic)
+        git_url = repo.resolve_git_url()
 
-    # Clone or pull repo
-    branch_kwargs = {}
-    if repo.branch:
-        branch_kwargs["branch"] = repo.branch
-    git.repo(
-        src=git_url,
-        dest=repo.remote_dir,
-        **branch_kwargs,
-    )
+        # SSH keyscan
+        if repo.ssh_keyscan and git_url.startswith("git@"):
+            git_host = git_url.split("@")[1].split(":")[0]
+            server.shell(
+                commands=[f"ssh-keyscan -H {git_host} >> ~/.ssh/known_hosts 2>/dev/null || true"],
+            )
+
+        branch_kwargs = {}
+        if repo.branch:
+            branch_kwargs["branch"] = repo.branch
+        git.repo(
+            src=git_url,
+            dest=repo.remote_dir,
+            **branch_kwargs,
+        )
 
     # Upload additional files
     for upload in config.file_uploads:

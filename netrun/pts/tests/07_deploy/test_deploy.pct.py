@@ -54,6 +54,41 @@ from netrun.net.config._graph import GraphConfig
 from netrun.net.config._nodes import NodeConfig
 
 # %% [markdown]
+# ## RepoConfig local_folder_path Tests
+
+# %%
+#|export
+def test_repo_config_local_folder_path():
+    """Test RepoConfig accepts local_folder_path as sole source."""
+    cfg = RepoConfig(local_folder_path="/tmp/my_project", remote_dir="/opt/app")
+    assert cfg.local_folder_path == "/tmp/my_project"
+    assert cfg.git_url is None
+    assert cfg.local_repo_path is None
+
+# %%
+test_repo_config_local_folder_path();
+
+# %%
+#|export
+def test_repo_config_folder_exclusive():
+    """Test RepoConfig rejects local_folder_path combined with git_url."""
+    with pytest.raises(ValueError, match="exactly one"):
+        RepoConfig(local_folder_path="/tmp/proj", git_url="git@github.com:u/r.git", remote_dir="/opt/app")
+
+# %%
+test_repo_config_folder_exclusive();
+
+# %%
+#|export
+def test_repo_config_resolve_git_url_folder():
+    """Test resolve_git_url returns None for folder mode."""
+    cfg = RepoConfig(local_folder_path="/tmp/my_project", remote_dir="/opt/app")
+    assert cfg.resolve_git_url() is None
+
+# %%
+test_repo_config_resolve_git_url_folder();
+
+# %% [markdown]
 # ## _build_serve_script Tests
 
 # %%
