@@ -1576,6 +1576,35 @@ def _default_pools() -> dict[str, "PoolConfig"]:
     return {"main": PoolConfig(spec=MainPoolConfig())}
 
 
+def _generate_default_output_queues(graph: "GraphConfig") -> dict[str, "OutputQueueConfig"]:
+    """Generate output queues for all unconnected output ports.
+
+    Creates one queue per unconnected output port with the naming convention
+    "NODE_NAME::PORT_NAME".
+
+    Args:
+        graph: The resolved graph configuration.
+
+    Returns:
+        Dict mapping queue names to OutputQueueConfig objects.
+    """
+    # Collect all connected output ports (source of edges)
+    connected_ports: set[tuple[str, str]] = set()
+    for edge in graph.edges:
+        source = edge.get_source()
+        connected_ports.add((source.node_name, source.port_name))
+
+    # Generate queues for unconnected output ports
+    queues: dict[str, OutputQueueConfig] = {}
+    for node in graph.nodes:
+        for port_name in node.out_ports:
+            if (node.name, port_name) not in connected_ports:
+                queue_name = f"{node.name}::{port_name}"
+                queues[queue_name] = OutputQueueConfig(ports=[(node.name, port_name)])
+
+    return queues
+
+
 class NetConfig(BaseModel):
     """Configuration for a Net."""
     model_config = {"arbitrary_types_allowed": True}
@@ -1662,9 +1691,14 @@ class NetConfig(BaseModel):
     dead_letter_callback: Callable | str | None = None
 
     # Output queue configuration
-    output_queues: dict[str, OutputQueueConfig] = {}
+    output_queues: dict[str, OutputQueueConfig] | None = None
     """
     Map of queue_name -> OutputQueueConfig.
+
+    If None (default), automatically generates output queues for all unconnected
+    output ports using the naming convention "NODE_NAME::PORT_NAME".
+
+    If set to an empty dict {}, no output queues are created.
 
     Example:
         output_queues={
@@ -1748,6 +1782,10 @@ class NetConfig(BaseModel):
         resolved_graph = self.graph.resolve(base_path=base_path, project_root=project_root)
         if resolved_graph is not self.graph:
             updates["graph"] = resolved_graph
+
+        # Generate default output queues for unconnected output ports
+        if self.output_queues is None:
+            updates["output_queues"] = _generate_default_output_queues(resolved_graph)
 
         # Resolve dead_letter_callback
         if isinstance(self.dead_letter_callback, str):

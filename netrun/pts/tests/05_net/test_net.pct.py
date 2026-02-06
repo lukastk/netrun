@@ -2718,7 +2718,7 @@ test_edge_info_repr()
 # %%
 #|export
 def test_node_info_inject():
-    """Test NodeInfo.inject injects packets to multiple ports."""
+    """Test NodeInfo.inject injects packets to multiple ports with plural=True."""
     config = NetConfig(
         pools={},
         graph=GraphConfig(nodes=[NodeConfig(
@@ -2732,7 +2732,7 @@ def test_node_info_inject():
     result = node_info.inject({
         "in1": [1, 2, 3],
         "in2": ["a", "b"],
-    })
+    }, plural=True)
 
     # Check return value
     assert "in1" in result
@@ -2766,3 +2766,48 @@ def test_node_info_inject_packet_single():
 
 # %%
 test_node_info_inject_packet_single()
+
+# %%
+#|export
+def test_node_info_inject_default():
+    """Test NodeInfo.inject default (plural=False) treats each value as single packet."""
+    config = NetConfig(
+        pools={},
+        graph=GraphConfig(nodes=[NodeConfig(
+            name="TestNode",
+            in_ports={"in1": PortConfig(), "in2": PortConfig()},
+        )]),
+    )
+    net = Net(config)
+
+    node_info = net.nodes["TestNode"]
+    result = node_info.inject({
+        "in1": [1, 2, 3],  # This list becomes a single packet value
+        "in2": "hello",    # Single string value
+    })  # plural=False is default
+
+    # Each port should have exactly 1 packet
+    assert len(result["in1"]) == 1
+    assert len(result["in2"]) == 1
+    assert len(node_info.packets_at_input_port("in1")) == 1
+    assert len(node_info.packets_at_input_port("in2")) == 1
+
+# %%
+test_node_info_inject_default()
+
+# %%
+#|export
+def test_node_info_inject_plural_true_requires_list():
+    """Test NodeInfo.inject with plural=True requires list values."""
+    config = NetConfig(
+        pools={},
+        graph=GraphConfig(nodes=[NodeConfig(name="TestNode", in_ports={"in": PortConfig()})]),
+    )
+    net = Net(config)
+
+    node_info = net.nodes["TestNode"]
+    with pytest.raises(ValueError, match="must be a list"):
+        node_info.inject({"in": "not a list"}, plural=True)
+
+# %%
+test_node_info_inject_plural_true_requires_list()
