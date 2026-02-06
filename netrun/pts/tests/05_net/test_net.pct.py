@@ -2125,6 +2125,147 @@ async def test_epoch_execution_with_output():
         await net.run_until_blocked()
         # Infrastructure test - verifies Net can be created and run
 
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_epoch_record_out_salvos_populated():
+    """Test EpochRecord.out_salvos is populated after epoch execution."""
+    def producer_node(ctx, packets):
+        # Consume the input packet
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+        # Create and send an output packet
+        out_id = ctx.create_packet(42)
+        ctx.load_output_port("out", out_id)
+        ctx.send_output_salvo("send")
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Producer",
+                in_ports={"in": PortConfig()},
+                out_ports={"out": PortConfig()},
+                out_salvo_conditions={
+                    "send": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"out": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="out",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="Producer",
+                    pools=["main"],
+                    exec_node_func=producer_node,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        net.inject_data("Producer", "in", [1])
+        await net.run_until_blocked()
+
+        # Check EpochRecord was created and out_salvos populated
+        assert len(net._epochs) == 1
+        record = list(net._epochs.values())[0]
+        assert record.node_name == "Producer"
+        assert len(record.out_salvos) == 1  # One salvo sent
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_epoch_record_lifecycle_timestamps():
+    """Test EpochRecord lifecycle timestamps are set after execution."""
+    def simple_node(ctx, packets):
+        # Consume all input packets
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+        ctx.print("running")
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Node",
+                in_ports={"in": PortConfig()},
+                execution_config=NodeExecutionConfig(
+                    node_name="Node",
+                    pools=["main"],
+                    exec_node_func=simple_node,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        net.inject_data("Node", "in", [1])
+        await net.run_until_blocked()
+
+        assert len(net._epochs) == 1
+        record = list(net._epochs.values())[0]
+        assert record.created_at is not None
+        assert record.started_at is not None
+        assert record.ended_at is not None
+        assert record.started_at >= record.created_at
+        assert record.ended_at >= record.started_at
+        assert record.was_cancelled is False
+        import netrun_sim
+        assert record.state == netrun_sim.EpochState.Finished
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_epoch_record_cancellation_lifecycle():
+    """Test EpochRecord tracks cancellation."""
+    def cancelling_node(ctx, packets):
+        ctx.cancel_epoch()
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Canceller",
+                in_ports={"in": PortConfig()},
+                execution_config=NodeExecutionConfig(
+                    node_name="Canceller",
+                    pools=["main"],
+                    exec_node_func=cancelling_node,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        net.inject_data("Canceller", "in", [1])
+        await net.run_until_blocked()
+
+        assert len(net._epochs) == 1
+        record = list(net._epochs.values())[0]
+        assert record.was_cancelled is True
+        assert record.ended_at is not None
+        assert record.started_at is not None
+
 # %% [markdown]
 # ## Retry Behavior Tests
 
