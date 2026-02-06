@@ -440,7 +440,7 @@ impl Graph {
             edges_by_tail.insert(edge.source.clone(), edge.clone());
             edges_by_head
                 .entry(edge.target.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(edge.clone());
             edges_set.insert(edge);
         }
