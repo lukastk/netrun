@@ -584,7 +584,7 @@ class EpochRecord:
         """Return a copy of the print logs."""
         return list(self.logs)
 
-    def print_log(self, include_timestamps: bool = True) -> None:
+    def print_logs(self, include_timestamps: bool = True) -> None:
         """Print the logs to stdout.
 
         Args:
