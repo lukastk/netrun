@@ -733,21 +733,17 @@ class Net:
         """
         return list(self._node_print_logs.get(node_name, []))
 
-    def list_epoch_log_ids(self) -> list[str]:
-        """Get all epoch IDs that have print logs.
+    def get_all_logs(self) -> dict[str, dict[str, list[tuple[datetime, str]]]]:
+        """Get all print logs across all epochs and nodes.
 
         Returns:
-            List of epoch IDs with logs.
+            Dictionary of (epoch_id, node_name) -> list of (timestamp, message) tuples.
         """
-        return list(self._epoch_print_logs.keys())
-
-    def list_node_log_names(self) -> list[str]:
-        """Get all node names that have print logs.
-
-        Returns:
-            List of node names with logs.
-        """
-        return list(self._node_print_logs.keys())
+        logs = {}
+        for epoch_id, epoch_logs in self._epoch_print_logs.items():
+            epoch = self._epochs[epoch_id]
+            logs.setdefault(epoch.node_name, {})[epoch_id] = epoch_logs
+        return logs
 
     def get_all_logs_chronological(self) -> list[tuple[datetime, str, str, str]]:
         """Get all print logs across all epochs, sorted by timestamp.
@@ -759,15 +755,22 @@ class Net:
         all_logs = []
 
         for epoch_id, logs in self._epoch_print_logs.items():
-            epoch = self._epochs.get(epoch_id)
-            node_name = epoch.node_name if epoch is not None else "unknown"
-
+            epoch = self._epochs[epoch_id]
             for timestamp, message in logs:
-                all_logs.append((timestamp, epoch_id, node_name, message))
+                all_logs.append((timestamp, epoch_id, epoch.node_name, message))
 
         # Sort by timestamp
         all_logs.sort(key=lambda x: x[0])
         return all_logs
+
+    def print_epoch_logs(self, epoch_id: str, include_timestamps: bool = True) -> None:
+        """Print the logs for a specific epoch."""
+        logs = self.get_epoch_log(epoch_id)
+        for timestamp, message in logs:
+            if include_timestamps:
+                print(f"[{timestamp.strftime('%H:%M:%S.%f')[:-3]}] {message}")
+            else:
+                print(message)
 
     async def start(self) -> None:
         """Start the Net.

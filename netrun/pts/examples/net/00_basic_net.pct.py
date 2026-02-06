@@ -399,7 +399,6 @@ print(f"Net stopped: {not net.started}")
 # 2. Run simulation to trigger epochs automatically
 # 3. Execute epochs using `execute_epoch()` (public method)
 # 4. Collect results from the output queue using `flush_output_queue()`
-# 5. View captured print logs using `list_epoch_log_ids()`
 
 # %%
 import asyncio
@@ -476,13 +475,6 @@ async def run_full_network():
         print("CAPTURED PRINT LOGS")
         print("=" * 70)
 
-        # Display logs using the public list_epoch_log_ids() method
-        for epoch_id in net.list_epoch_log_ids():
-            epoch_log = net.get_epoch_log(epoch_id)
-            print(f"\n--- Epoch {str(epoch_id)[:12]}... ({len(epoch_log)} lines) ---")
-            for timestamp, line in epoch_log:
-                print(f"  [{timestamp.strftime('%H:%M:%S.%f')[:-3]}] {line.strip()}")
-
         return net
 
 # Run the network
@@ -549,7 +541,6 @@ print(f"6th and 7th blocked: {not any(results[5:])}")
 # 5. **Helper Methods**:
 #    - `inject_data()` - Create and inject packets in one call
 #    - `execute_epoch()` - Public method to execute epochs
-#    - `list_epoch_log_ids()` - List epochs with captured logs
 #    - `has_downstream_connection()` / `get_edges_from_port()` - Query graph topology
 # 6. **Net Lifecycle**: Using `start()`, `stop()`, `pause()`, `resume()`, context manager
 # 7. **Simulation**: Using `run_step()` and `run_until_blocked()`
