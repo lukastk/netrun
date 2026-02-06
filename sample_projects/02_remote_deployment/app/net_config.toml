@@ -1,0 +1,13 @@
+[pools.main]
+
+[pools.main.spec]
+type = "main"
+
+[[graph.nodes]]
+factory = "netrun.node_factories.from_function"
+
+[graph.nodes.factory_args]
+func = "nodes.find_primes"
+
+[graph.nodes.execution_config]
+pools = ["main"]

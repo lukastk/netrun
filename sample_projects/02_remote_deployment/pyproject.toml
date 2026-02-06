@@ -1,0 +1,13 @@
+[project]
+name = "remote-deployment-example"
+version = "0.1.0"
+description = "Example: deploy netrun to a Hetzner Cloud server"
+requires-python = ">=3.11"
+dependencies = [
+    "ipykernel>=7.1.0",
+    "netrun",
+    "pyinfra>=2.9",
+]
+
+[tool.uv.sources]
+netrun = { path = "../../netrun" }
