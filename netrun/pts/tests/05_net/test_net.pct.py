@@ -4092,3 +4092,154 @@ async def test_print_exceptions_includes_pool_worker(capsys):
         assert "PrintNode" in captured.err
         assert "pool='main'" in captured.err
         assert "print test" in captured.err
+
+# %% [markdown]
+# ## Pool Server Start/Stop API Tests
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_pool_server_context_start_stop():
+    """Test _PoolServerContext.start() and stop() work without context manager."""
+    port = _get_next_serve_pool_port()
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(nodes=[], edges=[]),
+    )
+
+    pool_ctx = Net.serve_pool(config, "127.0.0.1", port)
+    await pool_ctx.start()
+
+    # Server should be running — verify by connecting a client
+    from netrun.pool.remote import RemotePoolClient
+    client = RemotePoolClient(
+        url=f"ws://127.0.0.1:{port}",
+        worker_name="execution_manager",
+        num_processes=1,
+        threads_per_process=1,
+    )
+    await client.connect()
+    await client.create_pool("execution_manager", num_processes=1, threads_per_process=1)
+    await client.close()
+
+    await pool_ctx.stop()
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_pool_server_context_as_context_manager_still_works():
+    """Test _PoolServerContext still works as async context manager."""
+    port = _get_next_serve_pool_port()
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(nodes=[], edges=[]),
+    )
+
+    async with Net.serve_pool(config, "127.0.0.1", port):
+        from netrun.pool.remote import RemotePoolClient
+        client = RemotePoolClient(
+            url=f"ws://127.0.0.1:{port}",
+            worker_name="execution_manager",
+            num_processes=1,
+            threads_per_process=1,
+        )
+        await client.connect()
+        await client.create_pool("execution_manager", num_processes=1, threads_per_process=1)
+        await client.close()
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_request_pool_shutdown_end_to_end():
+    """Test that Net.request_pool_shutdown signals the server to stop."""
+    port = _get_next_serve_pool_port()
+
+    graph_config = GraphConfig(nodes=[], edges=[])
+
+    server_config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    net_config = NetConfig(
+        pools={
+            "remote": PoolConfig(
+                spec=RemotePoolConfig(
+                    url=f"ws://127.0.0.1:{port}",
+                    worker_name="execution_manager",
+                    num_processes=1,
+                    threads_per_process=1,
+                ),
+            ),
+        },
+        graph=graph_config,
+    )
+
+    pool_ctx = Net.serve_pool(server_config, "127.0.0.1", port)
+    await pool_ctx.start()
+
+    async with Net(net_config) as net:
+        # Request shutdown
+        await net.request_pool_shutdown("remote")
+
+    # wait_until_stopped should resolve immediately since shutdown was requested
+    # (use a timeout to avoid hanging if the test fails)
+    await asyncio.wait_for(pool_ctx.wait_until_stopped(), timeout=5.0)
+
+    await pool_ctx.stop()
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_request_pool_shutdown_non_remote_raises():
+    """Test request_pool_shutdown raises TypeError for non-remote pools."""
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(nodes=[], edges=[]),
+    )
+
+    async with Net(config) as net:
+        with pytest.raises(TypeError, match="not a RemotePoolClient"):
+            await net.request_pool_shutdown("main")
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_execution_manager_get_pool():
+    """Test ExecutionManager.get_pool returns the pool instance."""
+    from netrun.execution_manager import ExecutionManager
+    from netrun.pool.thread import ThreadPool
+
+    manager = ExecutionManager({
+        "workers": (ThreadPool, {"num_workers": 1}),
+    })
+
+    async with manager:
+        pool = manager.get_pool("workers")
+        assert isinstance(pool, ThreadPool)
+
+        with pytest.raises(KeyError, match="not found"):
+            manager.get_pool("nonexistent")
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_pool_server_context_start_stop_with_log_file(tmp_path):
+    """Test start/stop writes log messages to file."""
+    log_file = tmp_path / "server.log"
+    port = _get_next_serve_pool_port()
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(nodes=[], edges=[]),
+    )
+
+    pool_ctx = Net.serve_pool(config, "127.0.0.1", port, log_file=str(log_file))
+    await pool_ctx.start()
+
+    content = log_file.read_text()
+    assert "Pool server started" in content
+
+    await pool_ctx.stop()
+
+    content = log_file.read_text()
+    assert "Pool server stopped" in content

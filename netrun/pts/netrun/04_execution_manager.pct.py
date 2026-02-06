@@ -748,6 +748,22 @@ class ExecutionManager:
         """Get list of pool IDs."""
         return [(k, type(v)) for k, v in self._pools.items()]
 
+    def get_pool(self, pool_id: str) -> PoolType:
+        """Get a pool instance by ID.
+
+        Args:
+            pool_id: The ID of the pool.
+
+        Returns:
+            The pool instance.
+
+        Raises:
+            KeyError: If the pool ID is not found.
+        """
+        if pool_id not in self._pools:
+            raise KeyError(f"Pool '{pool_id}' not found")
+        return self._pools[pool_id]
+
     def get_num_workers(self, pool_id: str) -> int:
         """Get the number of workers in a pool."""
         return self._pools[pool_id].num_workers

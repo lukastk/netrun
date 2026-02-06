@@ -120,6 +120,11 @@ RP_DOWN_CLOSE = "__pool-rp-down:close"
 
 # %%
 #|export
+RP_DOWN_REQUEST_SHUTDOWN = "__pool-rp-down:request_shutdown"
+"""Client requests the server to shut down."""
+
+# %%
+#|export
 RP_DOWN_FLUSH_STDOUT = "__pool-rp-down:flush_stdout"
 """Client requests stdout buffer from a process. Data: {process_idx}"""
 
@@ -151,6 +156,11 @@ RP_UP_ERROR_POOL_FAILED = "__pool-rp-up:error-pool_failed"
 
 # %%
 #|export
+RP_UP_SHUTDOWN_ACK = "__pool-rp-up:shutdown_ack"
+"""Server acknowledges shutdown request."""
+
+# %%
+#|export
 RP_UP_STDOUT_BUFFER = "__pool-rp-up:stdout_buffer"
 """Server sends stdout buffer. Data: {process_idx, buffer} or {buffers}"""
 
@@ -170,6 +180,7 @@ class RemotePoolServer:
         """Create a remote pool server."""
         self._workers: dict[str, WorkerFn] = {}
         self._running = False
+        self._shutdown_event: asyncio.Event = asyncio.Event()
 
     def register_worker(self, name: str, worker_fn: WorkerFn) -> None:
         """Register a worker function by name.
@@ -184,6 +195,10 @@ class RemotePoolServer:
     def registered_workers(self) -> list[str]:
         """List of registered worker names."""
         return list(self._workers.keys())
+
+    async def wait_for_shutdown(self) -> None:
+        """Wait until a client sends a shutdown request."""
+        await self._shutdown_event.wait()
 
     async def serve(self, host: str = "0.0.0.0", port: int = 8080) -> None:
         """Start the server and handle connections.
@@ -325,6 +340,10 @@ class RemotePoolServer:
                         "buffers": serializable_buffers,
                     })
 
+                elif key == RP_DOWN_REQUEST_SHUTDOWN:
+                    self._shutdown_event.set()
+                    await channel.send(RP_UP_SHUTDOWN_ACK, None)
+
                 elif key == RP_DOWN_CLOSE:
                     break
 
@@ -428,6 +447,7 @@ class RemotePoolClient:
         self._recv_queue: asyncio.Queue = asyncio.Queue()
         self._stdout_queue: asyncio.Queue = asyncio.Queue()
         self._recv_task: asyncio.Task | None = None
+        self._shutdown_ack_event: asyncio.Event = asyncio.Event()
 
     @property
     def num_workers(self) -> int:
@@ -540,6 +560,8 @@ class RemotePoolClient:
                     elif key == RP_UP_ERROR_POOL_FAILED:
                         # Queue pool failure error
                         await self._recv_queue.put(("pool_error", data))
+                    elif key == RP_UP_SHUTDOWN_ACK:
+                        self._shutdown_ack_event.set()
                     elif key == RP_UP_STDOUT_BUFFER:
                         # Queue stdout buffer for flush methods
                         await self._stdout_queue.put(data)
@@ -571,6 +593,24 @@ class RemotePoolClient:
             await self._channel.close()
 
         self._channel = None
+
+    async def request_shutdown(self, timeout: float = 10.0) -> None:
+        """Request the remote server to shut down and wait for acknowledgement.
+
+        Args:
+            timeout: Timeout in seconds for waiting for the acknowledgement.
+
+        Raises:
+            PoolNotStarted: If the pool is not running.
+            RecvTimeout: If the acknowledgement times out.
+        """
+        if not self._running or self._channel is None:
+            raise PoolNotStarted("Pool not created")
+        await self._channel.send(RP_DOWN_REQUEST_SHUTDOWN, None)
+        try:
+            await asyncio.wait_for(self._shutdown_ack_event.wait(), timeout=timeout)
+        except TimeoutError:
+            raise RecvTimeout(f"Shutdown ack timed out after {timeout}s")
 
     async def send(self, worker_id: WorkerId, key: str, data: Any) -> None:
         """Send a message to a specific worker on the server."""
