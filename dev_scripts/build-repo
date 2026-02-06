@@ -92,7 +92,8 @@ if [ ! -d ".venv" ]; then
     bold "Creating .venv at repo root"
     uv venv .venv
 fi
-uv pip install --reinstall "$NETRUN_SIM_WHEEL" "$REPO/netrun" "$REPO/netrun-ui"
+uv pip install jupyterlab
+uv pip install --reinstall -e netrun netrun-ui netrun-sim/python
 
 
 # Clean up wheel cache
