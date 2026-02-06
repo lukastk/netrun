@@ -53,7 +53,7 @@ def test_epoch_record_fields():
     record = _mock_epoch_record("e1", "NodeA")
     assert record.id == "e1"
     assert record.node_name == "NodeA"
-    assert record.print_logs == []
+    assert record.logs == []
     assert record.was_cancelled is False
     assert record.started_at is None
     assert record.ended_at is None
@@ -75,32 +75,32 @@ def test_epoch_record_get_logs_returns_copy():
     """Test EpochRecord.get_logs returns a copy of print_logs."""
     record = _mock_epoch_record("e1", "NodeA")
     t = datetime.now(tz=timezone.utc)
-    record.print_logs.append((t, "hello\n"))
+    record.logs.append((t, "hello\n"))
 
     logs = record.get_logs()
     assert len(logs) == 1
     logs.append((t, "extra\n"))
-    assert len(record.print_logs) == 1  # original not modified
+    assert len(record.logs) == 1  # original not modified
 
 
-def test_epoch_record_print_logs_to_stdout(capsys):
-    """Test EpochRecord.print_logs_to_stdout outputs correctly."""
+def test_epoch_record_print_log(capsys):
+    """Test EpochRecord.print_log outputs correctly."""
     record = _mock_epoch_record("e1", "NodeA")
     t = datetime.now(tz=timezone.utc)
-    record.print_logs = [(t, "line1\n"), (t, "line2\n")]
+    record.logs = [(t, "line1\n"), (t, "line2\n")]
 
-    record.print_logs_to_stdout(include_timestamps=False)
+    record.print_log(include_timestamps=False)
     captured = capsys.readouterr()
     assert captured.out == "line1\nline2\n"
 
 
-def test_epoch_record_print_logs_to_stdout_with_timestamps(capsys):
-    """Test EpochRecord.print_logs_to_stdout with timestamps."""
+def test_epoch_record_print_log_with_timestamps(capsys):
+    """Test EpochRecord.print_log with timestamps."""
     record = _mock_epoch_record("e1", "NodeA")
     t = datetime(2025, 6, 15, 10, 30, 0, tzinfo=timezone.utc)
-    record.print_logs = [(t, "msg\n")]
+    record.logs = [(t, "msg\n")]
 
-    record.print_logs_to_stdout(include_timestamps=True)
+    record.print_log(include_timestamps=True)
     captured = capsys.readouterr()
     assert "[10:30:00.000]" in captured.out
     assert "msg" in captured.out
@@ -153,8 +153,8 @@ def test_epochs_used_by_handle_print_buffer():
     net._handle_print_buffer("epoch_1", [(timestamp, "hello\n")])
 
     # Should store on epoch record's print_logs
-    assert len(net._epochs["epoch_1"].print_logs) == 1
-    assert net._epochs["epoch_1"].print_logs[0] == (timestamp, "hello\n")
+    assert len(net._epochs["epoch_1"].logs) == 1
+    assert net._epochs["epoch_1"].logs[0] == (timestamp, "hello\n")
 
     # Should be retrievable via get_node_log
     node_logs = net.get_node_logs("NodeA")
@@ -199,20 +199,20 @@ def test_handle_print_buffer_multiple_nodes():
     assert len(node_b_logs) == 1
 
     # Also check epoch records
-    assert len(net._epochs["epoch_a1"].print_logs) == 1
-    assert len(net._epochs["epoch_a2"].print_logs) == 1
-    assert len(net._epochs["epoch_b1"].print_logs) == 1
+    assert len(net._epochs["epoch_a1"].logs) == 1
+    assert len(net._epochs["epoch_a2"].logs) == 1
+    assert len(net._epochs["epoch_b1"].logs) == 1
 
 
 # --- get_epoch_log ---
 
 
 def test_get_epoch_log_from_record():
-    """Test get_epoch_log reads from EpochRecord.print_logs."""
+    """Test get_epoch_log reads from EpochRecord.logs."""
     net = _create_simple_net()
     record = _mock_epoch_record("e1", "NodeA")
     t = datetime.now()
-    record.print_logs = [(t, "msg\n")]
+    record.logs = [(t, "msg\n")]
     net._epochs["e1"] = record
 
     result = net.get_epoch_log("e1")
@@ -237,11 +237,11 @@ def test_get_all_logs_chronological_uses_epochs():
     t2 = t1 + timedelta(seconds=1)
 
     record1 = _mock_epoch_record("epoch_1", "NodeA")
-    record1.print_logs = [(t1, "from A")]
+    record1.logs = [(t1, "from A")]
     net._epochs["epoch_1"] = record1
 
     record2 = _mock_epoch_record("epoch_2", "NodeB")
-    record2.print_logs = [(t2, "from B")]
+    record2.logs = [(t2, "from B")]
     net._epochs["epoch_2"] = record2
 
     result = net.get_all_logs_chronological()
@@ -257,7 +257,7 @@ def test_get_all_logs_chronological_format():
 
     timestamp = datetime.now()
     record = _mock_epoch_record("epoch_123", "NodeA")
-    record.print_logs = [(timestamp, "test message")]
+    record.logs = [(timestamp, "test message")]
     net._epochs["epoch_123"] = record
 
     result = net.get_all_logs_chronological()
@@ -288,11 +288,11 @@ def test_list_epoch_log_ids_with_logs():
     net = _create_simple_net()
 
     record1 = _mock_epoch_record("epoch_1", "NodeA")
-    record1.print_logs = [(datetime.now(), "log1")]
+    record1.logs = [(datetime.now(), "log1")]
     net._epochs["epoch_1"] = record1
 
     record2 = _mock_epoch_record("epoch_2", "NodeB")
-    record2.print_logs = [(datetime.now(), "log2")]
+    record2.logs = [(datetime.now(), "log2")]
     net._epochs["epoch_2"] = record2
 
     result = net.list_epoch_log_ids()
@@ -307,7 +307,7 @@ def test_list_epoch_log_ids_excludes_empty():
     net = _create_simple_net()
 
     record1 = _mock_epoch_record("epoch_1", "NodeA")
-    record1.print_logs = [(datetime.now(), "log1")]
+    record1.logs = [(datetime.now(), "log1")]
     net._epochs["epoch_1"] = record1
 
     # epoch_2 has no logs
@@ -332,11 +332,11 @@ def test_list_node_log_names_with_logs():
 
     # Add logs via epoch records
     record_a = _mock_epoch_record("epoch_a", "NodeA")
-    record_a.print_logs = [(datetime.now(), "log1")]
+    record_a.logs = [(datetime.now(), "log1")]
     net._epochs["epoch_a"] = record_a
 
     record_b = _mock_epoch_record("epoch_b", "NodeB")
-    record_b.print_logs = [(datetime.now(), "log2")]
+    record_b.logs = [(datetime.now(), "log2")]
     net._epochs["epoch_b"] = record_b
 
     result = net.list_node_log_names()
@@ -368,11 +368,11 @@ def test_get_all_logs_chronological_sorted():
     t3 = t1 + timedelta(seconds=2)
 
     record1 = _mock_epoch_record("epoch_1", "NodeA")
-    record1.print_logs = [(t2, "middle")]
+    record1.logs = [(t2, "middle")]
     net._epochs["epoch_1"] = record1
 
     record2 = _mock_epoch_record("epoch_2", "NodeB")
-    record2.print_logs = [(t1, "first"), (t3, "last")]
+    record2.logs = [(t1, "first"), (t3, "last")]
     net._epochs["epoch_2"] = record2
 
     result = net.get_all_logs_chronological()
@@ -393,7 +393,7 @@ def test_list_epoch_log_ids_returns_copy():
     """Test list_epoch_log_ids returns a copy, not the internal state."""
     net = _create_simple_net()
     record = _mock_epoch_record("epoch_1", "NodeA")
-    record.print_logs = [(datetime.now(), "log")]
+    record.logs = [(datetime.now(), "log")]
     net._epochs["epoch_1"] = record
 
     result = net.list_epoch_log_ids()
@@ -407,7 +407,7 @@ def test_list_node_log_names_returns_copy():
     """Test list_node_log_names returns a copy, not the internal state."""
     net = _create_simple_net()
     record = _mock_epoch_record("epoch_1", "NodeA")
-    record.print_logs = [(datetime.now(), "log")]
+    record.logs = [(datetime.now(), "log")]
     net._epochs["epoch_1"] = record
 
     result = net.list_node_log_names()

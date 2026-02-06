@@ -704,7 +704,7 @@ class Net:
         # Store on epoch record
         record = self._epochs.get(epoch_id)
         if record is not None:
-            record.print_logs.extend(buffer)
+            record.logs.extend(buffer)
 
 
     def get_epoch_log(self, epoch_id: str) -> list[tuple[datetime, str]]:
@@ -719,7 +719,7 @@ class Net:
         record = self._epochs.get(epoch_id)
         if record is None:
             return []
-        return list(record.print_logs)
+        return list(record.logs)
 
     def get_node_logs(self, node_name: str) -> list[tuple[datetime, str]]:
         """Get all print output for a node (across all epochs).
@@ -733,7 +733,7 @@ class Net:
         logs = []
         for record in self._epochs.values():
             if record.node_name == node_name:
-                logs.extend(record.print_logs)
+                logs.extend(record.logs)
         return logs
 
     def get_all_logs(self) -> dict[str, dict[str, list[tuple[datetime, str]]]]:
@@ -744,8 +744,8 @@ class Net:
         """
         logs = {}
         for epoch_id, record in self._epochs.items():
-            if record.print_logs:
-                logs.setdefault(record.node_name, {})[epoch_id] = list(record.print_logs)
+            if record.logs:
+                logs.setdefault(record.node_name, {})[epoch_id] = list(record.logs)
         return logs
 
     def get_all_logs_chronological(self) -> list[tuple[datetime, str, str, str]]:
@@ -758,7 +758,7 @@ class Net:
         all_logs = []
 
         for epoch_id, record in self._epochs.items():
-            for timestamp, message in record.print_logs:
+            for timestamp, message in record.logs:
                 all_logs.append((timestamp, epoch_id, record.node_name, message))
 
         # Sort by timestamp
@@ -771,7 +771,7 @@ class Net:
         Returns:
             List of epoch IDs with logs.
         """
-        return [eid for eid, r in self._epochs.items() if r.print_logs]
+        return [eid for eid, r in self._epochs.items() if r.logs]
 
     def list_node_log_names(self) -> list[str]:
         """Get all node names that have print logs.
@@ -782,7 +782,7 @@ class Net:
         names = []
         seen = set()
         for record in self._epochs.values():
-            if record.print_logs and record.node_name not in seen:
+            if record.logs and record.node_name not in seen:
                 seen.add(record.node_name)
                 names.append(record.node_name)
         return names
@@ -803,17 +803,17 @@ class Net:
             for record in self._epochs.values():
                 if record.node_name != node_name:
                     continue
-                for timestamp, message in record.print_logs:
+                for timestamp, message in record.logs:
                     if include_timestamps:
                         print(f"[{timestamp.strftime('%H:%M:%S.%f')[:-3]}] [{record.id}] {message.strip()}")
                     else:
                         print(f"[{record.id}] {message.strip()}")
         else:
             for record in self._epochs.values():
-                if record.node_name != node_name or not record.print_logs:
+                if record.node_name != node_name or not record.logs:
                     continue
                 print(f"--- Epoch {record.id} ---")
-                record.print_logs_to_stdout(include_timestamps=include_timestamps)
+                record.print_log(include_timestamps=include_timestamps)
 
     def print_all_logs(self, include_timestamps: bool = True, chronological: bool = False) -> None:
         """Print all logs, grouped by node/epoch or chronologically."""
@@ -828,10 +828,10 @@ class Net:
             for node_name in self.list_node_log_names():
                 print(f"=== {node_name} ===")
                 for record in self._epochs.values():
-                    if record.node_name != node_name or not record.print_logs:
+                    if record.node_name != node_name or not record.logs:
                         continue
                     print(f"--- Epoch {record.id} ---")
-                    record.print_logs_to_stdout(include_timestamps=include_timestamps)
+                    record.print_log(include_timestamps=include_timestamps)
 
     async def start(self) -> None:
         """Start the Net.
