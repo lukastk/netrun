@@ -196,8 +196,8 @@ def test_net_try_get_output_empty():
     assert result is None
 
 
-def test_net_get_all_outputs_empty():
-    """Test get_all_outputs returns empty list for empty queue."""
+def test_net_drain_queue_empty():
+    """Test drain_queue returns empty list for empty queue."""
     graph_config = GraphConfig(
         nodes=[
             NodeConfig(name="Sink", out_ports={"out": PortConfig()}),
@@ -214,7 +214,7 @@ def test_net_get_all_outputs_empty():
     )
 
     net = Net(config)
-    result = net.get_all_outputs("results")
+    result = net.drain_queue("results")
     assert result == []
 
 
@@ -396,7 +396,7 @@ def test_net_output_queue_not_found():
         net.try_get_output("unknown")
 
     with pytest.raises(KeyError, match="not found"):
-        net.get_all_outputs("unknown")
+        net.drain_queue("unknown")
 
 
 def test_net_resolve_queue_name_by_node_port():

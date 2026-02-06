@@ -267,7 +267,7 @@ def create_graph_config() -> GraphConfig:
 #
 # **Output Queues** collect packets from unconnected output ports:
 # - Packets sent from configured ports go into named queues
-# - Use `get_output()`, `try_get_output()`, or `get_all_outputs()` to retrieve them
+# - Use `get_output()`, `try_get_output()`, `drain_queue()`, or `get_all_outputs()` to retrieve them
 
 # %%
 def create_net_config() -> NetConfig:
@@ -397,7 +397,7 @@ print(f"Net stopped: {not net.started}")
 # 1. Inject data using `inject_data()` helper (creates packets and transports them)
 # 2. Run simulation to trigger epochs automatically
 # 3. Execute epochs using `execute_epoch()` (public method)
-# 4. Collect results from the output queue using `get_all_outputs()`
+# 4. Collect results from the output queue using `drain_queue()`
 # 5. View captured print logs using `list_epoch_log_ids()`
 
 # %%
@@ -465,7 +465,7 @@ async def run_full_network():
         print("=" * 70)
 
         # Collect results from output queue
-        results = net.get_all_outputs("results")
+        results = net.drain_queue("results")
         print(f"\nCollected {len(results)} results from 'results' queue:")
         for result in results:
             print(f"  - {result.value} (from {result.from_node}.{result.from_port})")

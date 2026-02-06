@@ -1542,14 +1542,14 @@ class Net:
         except asyncio.QueueEmpty:
             return None
 
-    def get_all_outputs(
+    def drain_queue(
         self,
         queue_name: str | None = None,
         *,
         node: str | None = None,
         port: str | None = None,
     ) -> list[OutputPacket]:
-        """Get all currently available packets from a queue.
+        """Get all currently available packets from a single queue.
 
         Non-blocking - returns whatever is currently in the queue.
 
@@ -1573,6 +1573,21 @@ class Net:
             except asyncio.QueueEmpty:
                 break
         return packets
+
+    def get_all_outputs(self) -> dict[str, list[OutputPacket]]:
+        """Get all currently available packets from all queues.
+
+        Non-blocking - drains all queues and returns their contents.
+
+        Returns:
+            Dict mapping queue_name -> list of OutputPackets.
+        """
+        result = {}
+        for queue_name in list(self._output_queues.keys()):
+            packets = self.drain_queue(queue_name)
+            if packets:  # Only include non-empty queues
+                result[queue_name] = packets
+        return result
 
     def has_output(
         self,
