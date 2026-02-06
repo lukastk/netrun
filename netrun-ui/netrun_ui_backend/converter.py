@@ -133,7 +133,13 @@ def resolve_factory_ports(
         else:
             logger.warning(f"Factory module '{factory_path}' has no get_node_config")
             return None
-        node_config = get_node_config(**factory_args)
+
+        # Filter out empty string values so factory defaults are used
+        filtered_args = {
+            k: v for k, v in factory_args.items()
+            if v != "" and v is not None
+        }
+        node_config = get_node_config(**filtered_args)
 
         # Extract ports from the NodeConfig
         in_ports = {}
@@ -417,7 +423,13 @@ def ui_to_graph_config(ui_nodes: list[dict], ui_edges: list[dict]) -> dict[str, 
                 if data.get("factory"):
                     config_node["factory"] = data["factory"]
                 if data.get("factoryArgs"):
-                    config_node["factory_args"] = data["factoryArgs"]
+                    # Filter out empty string and None values so factory defaults are used
+                    filtered_args = {
+                        k: v for k, v in data["factoryArgs"].items()
+                        if v != "" and v is not None
+                    }
+                    if filtered_args:
+                        config_node["factory_args"] = filtered_args
 
             # Restore any extra config data
             extra_config = data.get("_config", {})

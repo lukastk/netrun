@@ -586,17 +586,19 @@
 													{/if}
 												</div>
 												{#if isBoolParam(param)}
+													{@const storedValue = $selectedNode.data.factoryArgs?.[param.name]}
+													{@const effectiveValue = storedValue !== undefined ? storedValue === true : param.default === true}
 													<label class="checkbox-label">
 														<input
 															type="checkbox"
-															checked={$selectedNode.data.factoryArgs?.[param.name] === true}
+															checked={effectiveValue}
 															onchange={(e) => {
 																updateFactoryArg(param.name, (e.target as HTMLInputElement).checked);
 																pushHistory();
 																refreshFactoryPreview();
 															}}
 														/>
-														<span class="checkbox-text">{$selectedNode.data.factoryArgs?.[param.name] === true ? 'True' : 'False'}</span>
+														<span class="checkbox-text">{effectiveValue ? 'True' : 'False'}{storedValue === undefined ? ' (default)' : ''}</span>
 													</label>
 												{:else if isIntParam(param) || isFloatParam(param)}
 													<input
