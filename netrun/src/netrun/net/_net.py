@@ -960,6 +960,8 @@ class NodeInfo:
         Returns:
             List of created packet IDs.
         """
+        if not isinstance(values, list):
+            raise ValueError("values must be a list")
         return self._net.inject_data(self._name, port_name, values)
 
     def inject_packet(self, port_name: str, value: Any) -> str:
@@ -974,11 +976,12 @@ class NodeInfo:
         """
         return self.inject_packets(port_name, [value])[0]
 
-    def inject(self, ports: dict[str, list[Any]]) -> dict[str, list[str]]:
+    def inject(self, ports: dict[str, list[Any]|Any], plural: bool = False) -> dict[str, list[str]]:
         """Inject packets into multiple input ports.
 
         Args:
             ports: Dict mapping port_name -> list of values to inject.
+            plural: If False, inject a single packet for each value.
 
         Returns:
             Dict mapping port_name -> list of created packet IDs.
@@ -991,6 +994,10 @@ class NodeInfo:
         """
         result = {}
         for port_name, values in ports.items():
+            if plural and not isinstance(values, list):
+                raise ValueError(f"values for port {port_name} must be a list, as plural is True.")
+            if not plural:
+                values = [values]
             result[port_name] = self.inject_packets(port_name, values)
         return result
 
