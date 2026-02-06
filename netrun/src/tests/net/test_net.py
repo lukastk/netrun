@@ -912,8 +912,9 @@ async def test_net_run_until_blocked():
     config = create_simple_net_config()
 
     async with Net(config) as net:
-        # run_until_blocked should return all events
-        events = await net.run_until_blocked()
+        # run_until_blocked should return (made_progress, events)
+        made_progress, events = await net.run_until_blocked()
+        assert isinstance(made_progress, bool)
         assert isinstance(events, list)
 
 # %% nbs/tests/05_net/test_net.ipynb 96

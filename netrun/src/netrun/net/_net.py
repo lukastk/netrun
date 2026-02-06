@@ -976,12 +976,11 @@ class NodeInfo:
         """
         return self.inject_packets(port_name, [value])[0]
 
-    def inject(self, ports: dict[str, list[Any]|Any], plural: bool = False) -> dict[str, list[str]]:
+    def inject(self, ports: dict[str, list[Any]]) -> dict[str, list[str]]:
         """Inject packets into multiple input ports.
 
         Args:
             ports: Dict mapping port_name -> list of values to inject.
-            plural: If False, inject a single packet for each value.
 
         Returns:
             Dict mapping port_name -> list of created packet IDs.
@@ -994,10 +993,6 @@ class NodeInfo:
         """
         result = {}
         for port_name, values in ports.items():
-            if plural and not isinstance(values, list):
-                raise ValueError(f"values for port {port_name} must be a list, as plural is True.")
-            if not plural:
-                values = [values]
             result[port_name] = self.inject_packets(port_name, values)
         return result
 
@@ -2012,19 +2007,24 @@ class Net:
         events = list(result) if not isinstance(result, list) else result
         return (len(events) > 0, events)
 
-    async def run_until_blocked(self) -> list:
+    async def run_until_blocked(self) -> tuple[bool, list]:
         """Run the simulation until no more progress can be made.
 
         Returns:
-            All NetEvents that occurred.
+            Tuple of (made_progress, events) where:
+            - made_progress: True if any run_step made progress
+            - events: All NetEvents that occurred
         """
         all_events = []
+        any_progress = False
         while True:
             made_progress, events = await self.run_step()
             all_events.extend(events)
+            if made_progress:
+                any_progress = True
             if not made_progress:
                 break
-        return all_events
+        return (any_progress, all_events)
 
     def get_startable_epochs(self) -> list[str]:
         """Get list of epoch IDs that are ready to start."""
