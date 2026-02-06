@@ -727,6 +727,18 @@ class Net:
         """
         return list(self._node_print_logs.keys())
 
+    def get_all_logs(self) -> dict[str, dict[str, list[tuple[datetime, str]]]]:
+        """Get all print logs across all epochs and nodes.
+
+        Returns:
+            Dictionary of (epoch_id, node_name) -> list of (timestamp, message) tuples.
+        """
+        logs = {}
+        for epoch_id, epoch_logs in self._epoch_print_logs.items():
+            epoch = self._epochs[epoch_id]
+            logs.setdefault(epoch.node_name, {})[epoch_id] = epoch_logs
+        return logs
+
     def get_all_logs_chronological(self) -> list[tuple[datetime, str, str, str]]:
         """Get all print logs across all epochs, sorted by timestamp.
 
@@ -737,11 +749,9 @@ class Net:
         all_logs = []
 
         for epoch_id, logs in self._epoch_print_logs.items():
-            epoch = self._epochs.get(epoch_id)
-            node_name = epoch.node_name if epoch is not None else "unknown"
-
+            epoch = self._epochs[epoch_id]
             for timestamp, message in logs:
-                all_logs.append((timestamp, epoch_id, node_name, message))
+                all_logs.append((timestamp, epoch_id, epoch.node_name, message))
 
         # Sort by timestamp
         all_logs.sort(key=lambda x: x[0])
