@@ -177,6 +177,23 @@ export interface ServerConfigResponse {
 	first_netrun_file: string | null;
 }
 
+// Recipe interfaces
+export interface RecipePrompt {
+	name: string;
+	label: string;
+	type: 'text' | 'number' | 'select' | 'checkbox';
+	default?: unknown;
+	options?: string[];  // For select type
+}
+
+export interface GetRecipePromptsResponse {
+	prompts: RecipePrompt[];
+}
+
+export interface ExecuteRecipeResponse {
+	config: Record<string, unknown>;
+}
+
 class ApiClient {
 	private baseUrl: string;
 
@@ -437,6 +454,33 @@ class ApiClient {
 			throw new Error(`Failed to get server config: ${response.statusText}`);
 		}
 		return response.json();
+	}
+
+	/**
+	 * Get prompts for a recipe
+	 */
+	async getRecipePrompts(
+		recipePath: string,
+		config: Record<string, unknown>
+	): Promise<GetRecipePromptsResponse> {
+		return this.request<GetRecipePromptsResponse>('/recipes/get-prompts', {
+			method: 'POST',
+			body: JSON.stringify({ recipe_path: recipePath, config }),
+		});
+	}
+
+	/**
+	 * Execute a recipe with inputs
+	 */
+	async executeRecipe(
+		recipePath: string,
+		config: Record<string, unknown>,
+		inputs: Record<string, unknown>
+	): Promise<ExecuteRecipeResponse> {
+		return this.request<ExecuteRecipeResponse>('/recipes/execute', {
+			method: 'POST',
+			body: JSON.stringify({ recipe_path: recipePath, config, inputs }),
+		});
 	}
 }
 

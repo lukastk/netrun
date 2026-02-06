@@ -5,7 +5,7 @@
  */
 import { writable, derived, get } from 'svelte/store';
 
-export type CommandCategory = 'file' | 'edit' | 'view' | 'node' | 'subgraph' | 'tab' | 'action';
+export type CommandCategory = 'file' | 'edit' | 'view' | 'node' | 'subgraph' | 'tab' | 'action' | 'recipe';
 
 export interface Command {
 	id: string;
@@ -193,7 +193,7 @@ export function getCommandsByCategory(): Map<CommandCategory, Command[]> {
 	const cmds = get(commands);
 	const grouped = new Map<CommandCategory, Command[]>();
 
-	const categoryOrder: CommandCategory[] = ['file', 'edit', 'view', 'node', 'subgraph', 'tab', 'action'];
+	const categoryOrder: CommandCategory[] = ['file', 'edit', 'view', 'node', 'subgraph', 'tab', 'action', 'recipe'];
 
 	for (const category of categoryOrder) {
 		grouped.set(category, []);
@@ -247,4 +247,5 @@ export const categoryLabels: Record<CommandCategory, string> = {
 	subgraph: 'Subgraph',
 	tab: 'Tab',
 	action: 'Action',
+	recipe: 'Recipe',
 };

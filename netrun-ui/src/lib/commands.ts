@@ -11,6 +11,13 @@ import {
 	type CommandCategory,
 	openCommandPalette,
 } from '$lib/stores/commandStore';
+import {
+	recipes,
+	getRecipePrompts,
+	executeRecipe,
+	showRecipeModal,
+} from '$lib/stores/recipeStore';
+import { getCurrentConfig, applyConfig } from '$lib/stores/flowStore';
 import { registerShortcuts, type ShortcutBinding } from '$lib/stores/keyboardStore';
 import { availableActions, executeAction } from '$lib/stores/actionsStore';
 import {
@@ -563,6 +570,7 @@ const keyboardShortcuts: ShortcutBinding[] = [
 ];
 
 const ACTION_CMD_PREFIX = 'action.run.';
+const RECIPE_CMD_PREFIX = 'recipe.run.';
 
 /**
  * Derived store that produces action commands for the currently selected node.
@@ -581,6 +589,51 @@ const actionCommands = derived(
 			category: 'action' as CommandCategory,
 			keywords: ['run', 'execute', 'action', action.label, nodeName],
 			action: () => executeAction(action),
+		}));
+	}
+);
+
+/**
+ * Run a recipe by name and path.
+ * Fetches prompts, shows modal if needed, then executes.
+ */
+async function runRecipe(name: string, path: string): Promise<void> {
+	try {
+		const config = getCurrentConfig();
+		const prompts = await getRecipePrompts(path, config);
+
+		if (prompts.length === 0) {
+			// No prompts - execute immediately
+			const newConfig = await executeRecipe(path, config, {});
+			applyConfig(newConfig);
+		} else {
+			// Show modal for input collection
+			showRecipeModal(name, prompts, async (inputs) => {
+				try {
+					const newConfig = await executeRecipe(path, config, inputs);
+					applyConfig(newConfig);
+				} catch (e) {
+					// Error already shown by executeRecipe
+				}
+			});
+		}
+	} catch (e) {
+		// Error already shown by getRecipePrompts/executeRecipe
+	}
+}
+
+/**
+ * Derived store that produces recipe commands from the current file's extraData.
+ */
+const recipeCommands = derived(
+	recipes,
+	($recipes): Command[] => {
+		return Object.entries($recipes).map(([name, def]) => ({
+			id: `${RECIPE_CMD_PREFIX}${name}`,
+			label: `Recipe: ${name}`,
+			category: 'recipe' as CommandCategory,
+			keywords: ['recipe', 'transform', name, ...(def.description ? [def.description] : [])],
+			action: () => runRecipe(name, def.path),
 		}));
 	}
 );
@@ -605,6 +658,14 @@ export function initializeCommands(): void {
 	// Dynamically register/unregister action commands based on selected node
 	actionCommands.subscribe((cmds) => {
 		unregisterCommandsByPrefix(ACTION_CMD_PREFIX);
+		if (cmds.length > 0) {
+			registerCommands(cmds);
+		}
+	});
+
+	// Dynamically register/unregister recipe commands based on current file's extraData
+	recipeCommands.subscribe((cmds) => {
+		unregisterCommandsByPrefix(RECIPE_CMD_PREFIX);
 		if (cmds.length > 0) {
 			registerCommands(cmds);
 		}

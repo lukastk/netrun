@@ -1692,3 +1692,99 @@ export async function createSubgraphFromSelection(subgraphName: string): Promise
 		return false;
 	}
 }
+
+/**
+ * Get the current config as a serializable object for recipes.
+ * This captures the full state that a recipe might want to transform.
+ */
+export function getCurrentConfig(): Record<string, unknown> {
+	const tab = get(activeTab);
+	if (!tab) return { nodes: [], edges: [], meta: {}, extraData: {} };
+
+	return {
+		nodes: tab.nodes.map(n => ({
+			id: n.id,
+			type: n.type,
+			position: n.position,
+			data: n.data
+		})),
+		edges: tab.edges.map(e => ({
+			id: e.id,
+			source: e.source,
+			target: e.target,
+			sourceHandle: e.sourceHandle,
+			targetHandle: e.targetHandle
+		})),
+		meta: tab.graphMeta || {},
+		extraData: tab.extraData || {}
+	};
+}
+
+/**
+ * Apply a new config from a recipe transformation.
+ * This replaces nodes and edges with the recipe's output.
+ */
+export function applyConfig(config: Record<string, unknown>): void {
+	const tab = get(activeTab);
+	if (!tab) return;
+
+	pushHistory();
+
+	const configNodes = (config.nodes as unknown[]) ?? [];
+	const configEdges = (config.edges as unknown[]) ?? [];
+
+	// Convert to internal node format
+	const newNodes: FlowNode[] = configNodes.map((n: unknown) => {
+		const node = n as Record<string, unknown>;
+		const data = (node.data ?? {}) as Record<string, unknown>;
+		const nodeType = (data.nodeType as string) || 'regular';
+
+		return {
+			id: node.id as string,
+			type: (node.type as string) ?? (nodeType === 'subgraph' ? 'subgraphNode' : 'netrunNode'),
+			position: (node.position as { x: number; y: number }) ?? { x: 0, y: 0 },
+			data: {
+				label: (data.label as string) ?? (node.id as string),
+				nodeType: nodeType as 'regular' | 'factory' | 'subgraph',
+				inPorts: (data.inPorts as PortConfig[]) ?? [],
+				outPorts: (data.outPorts as PortConfig[]) ?? [],
+				factory: data.factory as string | undefined,
+				factoryArgs: data.factoryArgs as Record<string, unknown> | undefined,
+				isValid: true,
+				_config: data._config as Record<string, unknown> | undefined,
+				_subgraphConfig: data._subgraphConfig as Record<string, unknown> | undefined,
+			}
+		} as FlowNode;
+	});
+
+	// Convert to internal edge format
+	const newEdges: NetrunEdge[] = configEdges.map((e: unknown) => {
+		const edge = e as Record<string, unknown>;
+		return {
+			id: edge.id as string,
+			source: edge.source as string,
+			target: edge.target as string,
+			sourceHandle: edge.sourceHandle as string | undefined,
+			targetHandle: edge.targetHandle as string | undefined,
+			type: (edge.type as string) || 'smoothstep',
+		};
+	});
+
+	updateActiveTab({
+		nodes: newNodes,
+		edges: newEdges,
+		isDirty: true,
+	});
+
+	// Update meta and extraData if provided
+	if (config.meta) {
+		updateActiveTab({
+			graphMeta: config.meta as Record<string, unknown>,
+		});
+	}
+	if (config.extraData) {
+		updateActiveTab({
+			extraData: config.extraData as Record<string, unknown>,
+		});
+	}
+}
