@@ -30,5 +30,5 @@ def find_primes(print, start: int, stop: int) -> list[int]:
     print(f"Found {len(primes)} primes: {primes[0]}...{primes[-1]}")
     return primes
 
-def foo():
+def aggregate_primes(print, primes: list[int]) -> int:
     pass
