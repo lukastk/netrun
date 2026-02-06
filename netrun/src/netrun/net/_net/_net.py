@@ -774,6 +774,24 @@ class Net:
             else:
                 print(message)
 
+    def print_node_logs(self, node_name: str, include_timestamps: bool = True) -> None:
+        """Print all logs for a node (across all epochs)."""
+        logs = self.get_node_log(node_name)
+        for timestamp, message in logs:
+            if include_timestamps:
+                print(f"[{timestamp.strftime('%H:%M:%S.%f')[:-3]}] {message}")
+            else:
+                print(message)
+
+    def print_all_logs(self, include_timestamps: bool = True) -> None:
+        """Print all logs across all epochs, sorted by timestamp."""
+        logs = self.get_all_logs_chronological()
+        for timestamp, epoch_id, node_name, message in logs:
+            if include_timestamps:
+                print(f"[{timestamp.strftime('%H:%M:%S.%f')[:-3]}] [{node_name}] {message}")
+            else:
+                print(f"[{node_name}] {message}")
+
     async def start(self) -> None:
         """Start the Net.
 

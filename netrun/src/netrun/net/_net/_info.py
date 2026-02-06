@@ -246,6 +246,17 @@ class NodeInfo:
             return []
         return list(config.pools) if config.pools else []
 
+    def print_epoch_logs(self, epoch_id: str, include_timestamps: bool = True) -> None:
+        """Print the logs for a specific epoch of this node."""
+        record = self._net._epochs.get(epoch_id)
+        if record is None or record.node_name != self._name:
+            return
+        record.print_logs_to_stdout(include_timestamps=include_timestamps)
+
+    def print_all_logs(self, include_timestamps: bool = True) -> None:
+        """Print all logs for this node (across all epochs)."""
+        self._net.print_node_logs(self._name, include_timestamps=include_timestamps)
+
     def __repr__(self) -> str:
         return f"NodeInfo(name={self._name!r})"
 
