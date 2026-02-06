@@ -158,14 +158,34 @@
 		// TODO: Show node context menu
 	}
 
-	// Handle double-click on node to focus name input
-	async function onNodeDoubleClick(event: { node: Node; event: MouseEvent }) {
-		if (event.node.type === 'subgraphNode') return;
-		await tick();
-		const input = document.getElementById('node-label') as HTMLInputElement | null;
-		if (input) {
-			input.focus();
-			input.select();
+	// Double-click detection for nodes
+	let lastClickTime = 0;
+	let lastClickedNodeId: string | null = null;
+	const DOUBLE_CLICK_THRESHOLD = 300; // ms
+
+	// Handle click on node (with double-click detection)
+	async function onNodeClick(event: { node: Node; event: MouseEvent | TouchEvent }) {
+		const now = Date.now();
+		const nodeId = event.node.id;
+
+		// Check for double-click
+		if (lastClickedNodeId === nodeId && (now - lastClickTime) < DOUBLE_CLICK_THRESHOLD) {
+			// Double-click detected - focus name input
+			if (event.node.type !== 'subgraphNode') {
+				await tick();
+				const input = document.getElementById('node-label') as HTMLInputElement | null;
+				if (input) {
+					input.focus();
+					input.select();
+				}
+			}
+			// Reset to prevent triple-click triggering again
+			lastClickedNodeId = null;
+			lastClickTime = 0;
+		} else {
+			// Single click - record for potential double-click
+			lastClickedNodeId = nodeId;
+			lastClickTime = now;
 		}
 	}
 
@@ -213,7 +233,7 @@
 		onnodedragstop={onNodeDragStop}
 		onpanecontextmenu={onPaneContextMenu}
 		onnodecontextmenu={onNodeContextMenu}
-		onnodedoubleclick={onNodeDoubleClick}
+		onnodeclick={onNodeClick}
 		{isValidConnection}
 		fitView
 		{fitViewOptions}
