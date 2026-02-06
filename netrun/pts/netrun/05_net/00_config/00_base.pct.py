@@ -15,8 +15,8 @@ from nblite import nbl_export; nbl_export();
 
 # %%
 #|export
-from pydantic import BaseModel, Field, PrivateAttr, model_validator, field_serializer
-from typing import Annotated, Literal, NewType, Any
+from pydantic import BaseModel, Field, PrivateAttr, model_validator, field_serializer, field_validator
+from typing import Annotated, Literal, NewType, Any, get_origin
 from types import ModuleType
 from collections.abc import Callable
 import importlib
@@ -254,25 +254,43 @@ class PortConfig(BaseModel):
 
     slots_spec: PortSlotSpecConfig = Field(default_factory=PortSlotSpecInfiniteConfig)
 
-    port_type: str | type | PortTypeConfig | None = None
+    port_type: Any = None
     """Expected type for packets on this port.
 
     - None: No validation (default)
     - str: Match type(value).__name__ exactly
-    - type: Use isinstance(value, port_type)
+    - type: Use isinstance(value, port_type) or beartype for generics
     - PortTypeConfig: Detailed configuration
+
+    Generic types like list[int], dict[str, int] are supported and use
+    beartype for proper validation.
 
     Example:
         PortConfig(port_type="DataFrame")  # Match by name
         PortConfig(port_type=pd.DataFrame)  # Match with isinstance
+        PortConfig(port_type=list[int])     # Match with beartype
     """
 
+    @field_validator("port_type")
+    @classmethod
+    def validate_port_type(cls, v):
+        if v is None:
+            return v
+        if isinstance(v, (str, type, PortTypeConfig)):
+            return v
+        if get_origin(v) is not None:
+            return v  # Generic alias like list[int], dict[str, int]
+        raise ValueError(
+            f"port_type must be str, type, generic type, PortTypeConfig, or None, got {type(v).__name__}"
+        )
+
     @field_serializer("port_type", when_used='json')
-    def serialize_port_type(self, port_type: str | type | PortTypeConfig | None) -> str | dict | None:
+    def serialize_port_type(self, port_type: Any) -> str | dict | None:
         """Serialize port_type to import path for JSON roundtrip.
 
         Type objects are serialized to their full import path (e.g., "pandas.DataFrame")
         to preserve isinstance capability after deserialization.
+        Generic types are serialized to their string representation (e.g., "list[int]").
 
         Note: Only called during JSON serialization (model_dump_json).
 
@@ -287,6 +305,8 @@ class PortConfig(BaseModel):
             return _get_type_import_path(port_type)
         if isinstance(port_type, PortTypeConfig):
             return port_type.model_dump()
+        if get_origin(port_type) is not None:
+            return str(port_type)  # e.g., "list[int]"
         return None
 
     def to_netrun_sim(self) -> netrun_sim.Port:
