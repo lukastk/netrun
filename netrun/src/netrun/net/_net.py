@@ -976,24 +976,39 @@ class NodeInfo:
         """
         return self.inject_packets(port_name, [value])[0]
 
-    def inject(self, ports: dict[str, list[Any]]) -> dict[str, list[str]]:
+    def inject(self, ports: dict[str, list[Any] | Any], plural: bool = False) -> dict[str, list[str]]:
         """Inject packets into multiple input ports.
 
         Args:
-            ports: Dict mapping port_name -> list of values to inject.
+            ports: Dict mapping port_name -> value(s) to inject.
+            plural: If False (default), each value is treated as a single
+                    packet value (even if it's a list). If True, values must
+                    be lists and each element becomes a separate packet.
 
         Returns:
             Dict mapping port_name -> list of created packet IDs.
 
         Example:
+            # plural=False (default): each value is one packet
             packet_ids = node.inject({
-                "in1": [1, 2, 3],
-                "in2": ["a", "b"],
+                "in1": [1, 2, 3],  # 1 packet with value [1, 2, 3]
+                "in2": "hello",    # 1 packet with value "hello"
             })
+
+            # plural=True: each list element is a packet
+            packet_ids = node.inject({
+                "in1": [1, 2, 3],  # 3 packets
+                "in2": ["a", "b"],  # 2 packets
+            }, plural=True)
         """
         result = {}
         for port_name, values in ports.items():
-            result[port_name] = self.inject_packets(port_name, values)
+            if plural:
+                if not isinstance(values, list):
+                    raise ValueError(f"Values for port '{port_name}' must be a list when plural=True")
+                result[port_name] = self.inject_packets(port_name, values)
+            else:
+                result[port_name] = [self.inject_packet(port_name, values)]
         return result
 
     @property
@@ -1240,16 +1255,17 @@ class Net:
         self._output_queues: dict[str, asyncio.Queue[OutputPacket]] = {}
         self._port_to_queue: dict[tuple[str, str], str] = {}  # (node_name, port_name) -> queue_name
 
-        # Initialize queues from config
-        for queue_name, queue_config in self._config.output_queues.items():
+        # Initialize queues from resolved config (includes auto-generated queues)
+        resolved_output_queues = self._config_resolved.output_queues or {}
+        for queue_name, queue_config in resolved_output_queues.items():
             self._output_queues[queue_name] = asyncio.Queue()
             for node_name, port_name in queue_config.ports:
                 self._port_to_queue[(node_name, port_name)] = queue_name
 
         # Initialize catch-all queue if configured
-        if self._config.catch_all_output_queue:
-            if self._config.catch_all_output_queue not in self._output_queues:
-                self._output_queues[self._config.catch_all_output_queue] = asyncio.Queue()
+        if self._config_resolved.catch_all_output_queue:
+            if self._config_resolved.catch_all_output_queue not in self._output_queues:
+                self._output_queues[self._config_resolved.catch_all_output_queue] = asyncio.Queue()
 
     @classmethod
     def from_file(cls, path: 'str | Path') -> "Net":

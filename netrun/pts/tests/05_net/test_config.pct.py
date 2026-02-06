@@ -67,6 +67,8 @@ from netrun.net.config import (
     # Subgraph
     ExposedPortConfig,
     SubgraphConfig,
+    # Output queues
+    OutputQueueConfig,
 )
 import netrun_sim
 
@@ -2401,3 +2403,89 @@ def test_net_config_resolve_relative_factory_path():
 
 # %%
 test_net_config_resolve_relative_factory_path();
+
+# %% [markdown]
+# ## Output Queue Tests
+
+# %%
+#|export
+def test_net_config_default_output_queues():
+    """Test that output_queues=None generates queues for unconnected ports."""
+    config = NetConfig(
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(name="Source", out_ports={"out": PortConfig()}),
+                NodeConfig(name="Middle", in_ports={"in": PortConfig()}, out_ports={"out1": PortConfig(), "out2": PortConfig()}),
+                NodeConfig(name="Sink", in_ports={"in": PortConfig()}, out_ports={"result": PortConfig()}),
+            ],
+            edges=[
+                EdgeConfig(source_str="Source.out", target_str="Middle.in"),
+                EdgeConfig(source_str="Middle.out1", target_str="Sink.in"),
+                # Middle.out2 and Sink.result are unconnected
+            ],
+        ),
+        # output_queues is None by default
+    )
+
+    resolved = config.resolve()
+
+    # Should have auto-generated queues for unconnected output ports
+    assert resolved.output_queues is not None
+    assert "Middle::out2" in resolved.output_queues
+    assert "Sink::result" in resolved.output_queues
+
+    # Connected ports should NOT have queues
+    assert "Source::out" not in resolved.output_queues
+    assert "Middle::out1" not in resolved.output_queues
+
+    # Check queue configs are correct
+    assert resolved.output_queues["Middle::out2"].ports == [("Middle", "out2")]
+    assert resolved.output_queues["Sink::result"].ports == [("Sink", "result")]
+
+# %%
+test_net_config_default_output_queues()
+
+# %%
+#|export
+def test_net_config_explicit_output_queues_preserved():
+    """Test that explicit output_queues={} is preserved (no auto-generation)."""
+    config = NetConfig(
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(name="Source", out_ports={"out": PortConfig()}),
+            ],
+        ),
+        output_queues={},  # Explicitly empty
+    )
+
+    resolved = config.resolve()
+
+    # Empty dict should be preserved, not replaced with auto-generated
+    assert resolved.output_queues == {}
+
+# %%
+test_net_config_explicit_output_queues_preserved()
+
+# %%
+#|export
+def test_net_config_custom_output_queues_preserved():
+    """Test that custom output_queues config is preserved."""
+    config = NetConfig(
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(name="Sink", out_ports={"out": PortConfig()}),
+            ],
+        ),
+        output_queues={
+            "my_results": OutputQueueConfig(ports=[("Sink", "out")]),
+        },
+    )
+
+    resolved = config.resolve()
+
+    # Custom config should be preserved
+    assert "my_results" in resolved.output_queues
+    assert resolved.output_queues["my_results"].ports == [("Sink", "out")]
+
+# %%
+test_net_config_custom_output_queues_preserved()
