@@ -252,10 +252,24 @@
 		updateNodeData($selectedNode.id, { [portType]: ports });
 	}
 
-	function updateFactoryArg(key: string, value: string) {
+	function updateFactoryArg(key: string, value: string | boolean) {
 		if (!$selectedNode) return;
 		const factoryArgs: Record<string, unknown> = { ...($selectedNode.data.factoryArgs || {}) };
-		factoryArgs[key] = value;
+
+		// Find the parameter definition to determine type conversion
+		const param = factoryParams.find(p => p.name === key);
+		if (param) {
+			const converted = convertFactoryArgValue(param, value);
+			if (converted === undefined) {
+				delete factoryArgs[key];
+			} else {
+				factoryArgs[key] = converted;
+			}
+		} else {
+			// No param info, store as-is
+			factoryArgs[key] = value;
+		}
+
 		updateNodeDataLive($selectedNode.id, { factoryArgs });
 	}
 
@@ -333,6 +347,56 @@
 		// Check if it's a primitive type or optional primitive
 		const typeStr = param.type.toLowerCase();
 		return !primitiveTypes.some(t => typeStr === t || typeStr === `${t} | none` || typeStr === `none | ${t}`);
+	}
+
+	// Check if parameter is a boolean type
+	function isBoolParam(param: FactoryParameter): boolean {
+		if (!param.type) return false;
+		const typeStr = param.type.toLowerCase();
+		return typeStr === 'bool' || typeStr === 'bool | none' || typeStr === 'none | bool';
+	}
+
+	// Check if parameter is an integer type
+	function isIntParam(param: FactoryParameter): boolean {
+		if (!param.type) return false;
+		const typeStr = param.type.toLowerCase();
+		return typeStr === 'int' || typeStr === 'int | none' || typeStr === 'none | int';
+	}
+
+	// Check if parameter is a float type
+	function isFloatParam(param: FactoryParameter): boolean {
+		if (!param.type) return false;
+		const typeStr = param.type.toLowerCase();
+		return typeStr === 'float' || typeStr === 'float | none' || typeStr === 'none | float';
+	}
+
+	// Convert a string value to the appropriate type based on parameter type
+	function convertFactoryArgValue(param: FactoryParameter, value: string | boolean): unknown {
+		// If it's already a boolean (from checkbox), return as-is
+		if (typeof value === 'boolean') return value;
+
+		const strValue = value.trim();
+
+		// Handle empty string - return undefined to clear the value
+		if (strValue === '') return undefined;
+
+		if (isBoolParam(param)) {
+			// Convert string to boolean
+			return strValue.toLowerCase() === 'true' || strValue === '1';
+		}
+
+		if (isIntParam(param)) {
+			const parsed = parseInt(strValue, 10);
+			return isNaN(parsed) ? strValue : parsed;
+		}
+
+		if (isFloatParam(param)) {
+			const parsed = parseFloat(strValue);
+			return isNaN(parsed) ? strValue : parsed;
+		}
+
+		// For strings and other types, keep as string
+		return strValue;
 	}
 
 	// Get placeholder text for a parameter
@@ -521,16 +585,41 @@
 														<span class="arg-required">*</span>
 													{/if}
 												</div>
-												<input
-													type="text"
-													value={String($selectedNode.data.factoryArgs?.[param.name] ?? '')}
-													placeholder={getParamPlaceholder(param)}
-													oninput={(e) => updateFactoryArg(param.name, (e.target as HTMLInputElement).value)}
-													onblur={() => { pushHistory(); refreshFactoryPreview(); }}
-													onmousedown={selectDottedSegment}
-													class:import-path={isImportPathParam(param)}
-													class:required-missing={!param.has_default && !$selectedNode.data.factoryArgs?.[param.name]}
-												/>
+												{#if isBoolParam(param)}
+													<label class="checkbox-label">
+														<input
+															type="checkbox"
+															checked={$selectedNode.data.factoryArgs?.[param.name] === true}
+															onchange={(e) => {
+																updateFactoryArg(param.name, (e.target as HTMLInputElement).checked);
+																pushHistory();
+																refreshFactoryPreview();
+															}}
+														/>
+														<span class="checkbox-text">{$selectedNode.data.factoryArgs?.[param.name] === true ? 'True' : 'False'}</span>
+													</label>
+												{:else if isIntParam(param) || isFloatParam(param)}
+													<input
+														type="number"
+														step={isIntParam(param) ? '1' : 'any'}
+														value={$selectedNode.data.factoryArgs?.[param.name] ?? ''}
+														placeholder={getParamPlaceholder(param)}
+														oninput={(e) => updateFactoryArg(param.name, (e.target as HTMLInputElement).value)}
+														onblur={() => { pushHistory(); refreshFactoryPreview(); }}
+														class:required-missing={!param.has_default && $selectedNode.data.factoryArgs?.[param.name] === undefined}
+													/>
+												{:else}
+													<input
+														type="text"
+														value={String($selectedNode.data.factoryArgs?.[param.name] ?? '')}
+														placeholder={getParamPlaceholder(param)}
+														oninput={(e) => updateFactoryArg(param.name, (e.target as HTMLInputElement).value)}
+														onblur={() => { pushHistory(); refreshFactoryPreview(); }}
+														onmousedown={selectDottedSegment}
+														class:import-path={isImportPathParam(param)}
+														class:required-missing={!param.has_default && !$selectedNode.data.factoryArgs?.[param.name]}
+													/>
+												{/if}
 											</div>
 										{/each}
 									</div>
@@ -1451,6 +1540,32 @@
 	.factory-arg input.required-missing:focus {
 		border-color: var(--error-color, #ef4444);
 		box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
+	}
+
+	.factory-arg .checkbox-label {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 6px 0;
+		cursor: pointer;
+	}
+
+	.factory-arg .checkbox-label input[type="checkbox"] {
+		width: 16px;
+		height: 16px;
+		margin: 0;
+		cursor: pointer;
+		accent-color: var(--accent-color, #3b82f6);
+	}
+
+	.factory-arg .checkbox-text {
+		font-size: 12px;
+		color: var(--text-secondary, #a0a0a0);
+	}
+
+	.factory-arg input[type="number"] {
+		font-family: 'SF Mono', Monaco, Consolas, monospace;
+		font-size: 12px;
 	}
 
 	.loading-hint {
