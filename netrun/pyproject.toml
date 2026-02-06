@@ -5,6 +5,7 @@ description = "A flow-based development (FBD) runtime system."
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
+    "beartype>=0.22.9",
     "diskcache>=5.6.3",
     "nblite>=1.1.1",
     "netrun-sim>=0.1.2",

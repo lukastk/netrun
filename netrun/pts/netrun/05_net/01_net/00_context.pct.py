@@ -26,9 +26,11 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum
-from typing import Any, NoReturn
+from typing import Any, NoReturn, get_origin
 from collections.abc import Callable
 import importlib
+
+from beartype.door import is_bearable
 
 from netrun.net.config import NodeExecutionConfig, NodeVariable, PortConfig, PortTypeConfig
 from netrun._iutils import get_timestamp_utc
@@ -295,20 +297,21 @@ class NodeExecutionContext:
     def _check_type(self, port_type: "str | type | PortTypeConfig", value: Any) -> tuple[str, bool]:
         """Check if value matches port type.
 
+        Two modes of type checking:
+        1. String types: Use __name__ matching (loose, for serialization)
+        2. Type objects: Use beartype for proper type checking (strict, for generics)
+
         Args:
             port_type: The type specification.
             value: The value to check.
 
         Returns:
             Tuple of (expected_type_name, matches).
-
-        Note:
-            String import paths (containing ".") are imported and used for isinstance checks.
-            This preserves isinstance capability after serialization roundtrips.
         """
+        # MODE 1: String-based - use __name__ matching
         if isinstance(port_type, str):
             if "." in port_type:
-                # Full import path - import the type and use isinstance
+                # Full import path - try to import and use isinstance
                 try:
                     type_obj = self._import_type(port_type)
                     type_name = port_type.rsplit(".", 1)[-1]
@@ -321,12 +324,13 @@ class NodeExecutionContext:
                 # Simple name - do name match
                 return (port_type, type(value).__name__ == port_type)
 
-        if isinstance(port_type, type):
-            # Type object: use isinstance
-            return (port_type.__name__, isinstance(value, port_type))
+        # MODE 2: Type object (including generics like list[int]) - use beartype
+        if isinstance(port_type, type) or get_origin(port_type) is not None:
+            type_name = getattr(port_type, '__name__', repr(port_type))
+            return (type_name, is_bearable(value, port_type))
 
+        # PortTypeConfig - delegate based on content
         if isinstance(port_type, PortTypeConfig):
-            # Config object - check isinstance_check flag
             if port_type.isinstance_check and "." in port_type.name:
                 try:
                     type_obj = self._import_type(port_type.name)

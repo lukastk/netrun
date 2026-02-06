@@ -560,6 +560,159 @@ def test_context_full_workflow():
 test_context_full_workflow()
 
 # %% [markdown]
+# ## Type Checking Tests
+#
+# Tests for the `_check_type` method which has two modes:
+# 1. String mode: Uses `__name__` matching
+# 2. Type mode: Uses beartype for proper generic checking
+
+# %%
+#|export
+def test_check_type_string_simple():
+    """Test string-based type checking with simple type names."""
+    ctx = NodeExecutionContext(epoch_id="test", node_name="Test")
+
+    # Simple type names use __name__ matching
+    name, matches = ctx._check_type("int", 42)
+    assert name == "int"
+    assert matches is True
+
+    name, matches = ctx._check_type("str", "hello")
+    assert name == "str"
+    assert matches is True
+
+    name, matches = ctx._check_type("list", [1, 2, 3])
+    assert name == "list"
+    assert matches is True
+
+    # Mismatches
+    name, matches = ctx._check_type("int", "not an int")
+    assert name == "int"
+    assert matches is False
+
+# %%
+test_check_type_string_simple()
+
+# %%
+#|export
+def test_check_type_string_generic_fails():
+    """Test that string generic types like 'list[int]' fail with __name__ matching.
+
+    This is expected behavior - string mode uses __name__ which is just 'list',
+    not 'list[int]'. For proper generic checking, use actual type objects.
+    """
+    ctx = NodeExecutionContext(epoch_id="test", node_name="Test")
+
+    # String "list[int]" will NOT match because type([1,2,3]).__name__ is "list"
+    name, matches = ctx._check_type("list[int]", [1, 2, 3])
+    assert name == "list[int]"
+    assert matches is False  # Expected! __name__ is "list", not "list[int]"
+
+# %%
+test_check_type_string_generic_fails()
+
+# %%
+#|export
+def test_check_type_type_object_simple():
+    """Test type-based checking with simple type objects."""
+    ctx = NodeExecutionContext(epoch_id="test", node_name="Test")
+
+    # Type objects use beartype's is_bearable
+    name, matches = ctx._check_type(int, 42)
+    assert name == "int"
+    assert matches is True
+
+    name, matches = ctx._check_type(str, "hello")
+    assert name == "str"
+    assert matches is True
+
+    name, matches = ctx._check_type(list, [1, 2, 3])
+    assert name == "list"
+    assert matches is True
+
+    # Mismatches
+    name, matches = ctx._check_type(int, "not an int")
+    assert name == "int"
+    assert matches is False
+
+# %%
+test_check_type_type_object_simple()
+
+# %%
+#|export
+def test_check_type_type_object_generic():
+    """Test type-based checking with generic types like list[int].
+
+    This uses beartype's is_bearable which properly handles generics.
+    """
+    ctx = NodeExecutionContext(epoch_id="test", node_name="Test")
+
+    # Generic type objects use beartype
+    name, matches = ctx._check_type(list[int], [1, 2, 3])
+    assert name == "list"  # __name__ of generic is base type
+    assert matches is True
+
+    name, matches = ctx._check_type(list[str], ["a", "b", "c"])
+    assert name == "list"
+    assert matches is True
+
+    name, matches = ctx._check_type(dict[str, int], {"a": 1, "b": 2})
+    assert name == "dict"
+    assert matches is True
+
+    # Empty containers match generic types
+    name, matches = ctx._check_type(list[int], [])
+    assert matches is True
+
+# %%
+test_check_type_type_object_generic()
+
+# %%
+#|export
+def test_check_type_type_object_generic_mismatch():
+    """Test that generic type mismatches are detected by beartype.
+
+    Note: beartype uses O(1) probabilistic sampling, so it may not catch
+    every element mismatch in large collections. But it catches type mismatches.
+    """
+    ctx = NodeExecutionContext(epoch_id="test", node_name="Test")
+
+    # Wrong base type
+    name, matches = ctx._check_type(list[int], "not a list")
+    assert matches is False
+
+    name, matches = ctx._check_type(dict[str, int], [1, 2, 3])
+    assert matches is False
+
+# %%
+test_check_type_type_object_generic_mismatch()
+
+# %%
+#|export
+def test_check_type_distinguishes_modes():
+    """Test that string vs type object triggers different checking modes."""
+    ctx = NodeExecutionContext(epoch_id="test", node_name="Test")
+
+    # String "list" matches via __name__
+    name1, matches1 = ctx._check_type("list", [1, 2, 3])
+    assert matches1 is True
+
+    # Type object list matches via beartype
+    name2, matches2 = ctx._check_type(list, [1, 2, 3])
+    assert matches2 is True
+
+    # String "list[int]" fails (no such __name__)
+    name3, matches3 = ctx._check_type("list[int]", [1, 2, 3])
+    assert matches3 is False
+
+    # Type object list[int] succeeds via beartype
+    name4, matches4 = ctx._check_type(list[int], [1, 2, 3])
+    assert matches4 is True
+
+# %%
+test_check_type_distinguishes_modes()
+
+# %% [markdown]
 # ## NodeFailureContext Tests
 
 # %%
