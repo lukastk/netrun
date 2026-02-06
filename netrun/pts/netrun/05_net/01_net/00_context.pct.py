@@ -303,7 +303,7 @@ class NodeExecutionContext:
             if match_mode == "string":
                 hint = (
                     " (Note: type was specified as a string, so only __name__ matching was used. "
-                    "For proper generic type checking like list[int], use actual Python types in factory definitions.)"
+                    "For proper generic type checking like list[int], use actual Python types.)"
                 )
             raise PacketTypeMismatch(
                 port_name=port_name,
