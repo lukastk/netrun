@@ -26,9 +26,6 @@ def find_primes(print, start: int, stop: int) -> list[int]:
         checked += 1
         if checked % 10000 == 0:
             print(f"Checked {checked} numbers, found {len(primes)} primes")
-
+    raise Exception("test")
     print(f"Found {len(primes)} primes: {primes[0]}...{primes[-1]}")
     return primes
-
-def aggregate_primes(print, primes: list[int]) -> int:
-    pass
