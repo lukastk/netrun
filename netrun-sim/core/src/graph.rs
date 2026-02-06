@@ -190,7 +190,10 @@ fn collect_ports_from_term(term: &SalvoConditionTerm, ports: &mut HashSet<PortNa
 pub enum GraphValidationError {
     /// Multiple edges from same output port (fan-out not allowed)
     #[error("output port {output_port} has {edge_count} outgoing edges (only 1 allowed)")]
-    MultipleEdgesFromOutputPort { output_port: PortRef, edge_count: usize },
+    MultipleEdgesFromOutputPort {
+        output_port: PortRef,
+        edge_count: usize,
+    },
     /// Edge references a node that doesn't exist
     #[error("edge {edge_source} -> {edge_target} references non-existent node '{missing_node}'")]
     EdgeReferencesNonexistentNode {

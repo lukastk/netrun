@@ -370,14 +370,15 @@ fn test_multiple_edges_to_same_input_port_is_valid() {
         simple_node("B", vec![], vec!["out"]),
         simple_node("C", vec!["in"], vec![]),
     ];
-    let edges = vec![
-        edge("A", "out", "C", "in"),
-        edge("B", "out", "C", "in"),
-    ];
+    let edges = vec![edge("A", "out", "C", "in"), edge("B", "out", "C", "in")];
     let graph = Graph::new(nodes, edges);
 
     let errors = graph.validate();
-    assert!(errors.is_empty(), "Fan-in should be valid, got: {:?}", errors);
+    assert!(
+        errors.is_empty(),
+        "Fan-in should be valid, got: {:?}",
+        errors
+    );
 
     // Verify get_edges_by_head returns both edges
     let c_in_ref = PortRef {
@@ -397,16 +398,16 @@ fn test_multiple_edges_from_same_output_port_is_invalid() {
         simple_node("B", vec!["in"], vec![]),
         simple_node("C", vec!["in"], vec![]),
     ];
-    let edges = vec![
-        edge("A", "out", "B", "in"),
-        edge("A", "out", "C", "in"),
-    ];
+    let edges = vec![edge("A", "out", "B", "in"), edge("A", "out", "C", "in")];
     let graph = Graph::new(nodes, edges);
 
     let errors = graph.validate();
     assert_eq!(errors.len(), 1, "Should have exactly one error");
     match &errors[0] {
-        GraphValidationError::MultipleEdgesFromOutputPort { output_port, edge_count } => {
+        GraphValidationError::MultipleEdgesFromOutputPort {
+            output_port,
+            edge_count,
+        } => {
             assert_eq!(output_port.node_name, "A");
             assert_eq!(output_port.port_name, "out");
             assert_eq!(*edge_count, 2);
@@ -440,7 +441,10 @@ fn test_get_edges_by_head_returns_all_incoming_edges() {
     assert_eq!(incoming_edges.len(), 3, "Should have 3 incoming edges");
 
     // Verify all sources are present
-    let sources: Vec<&str> = incoming_edges.iter().map(|e| e.source.node_name.as_str()).collect();
+    let sources: Vec<&str> = incoming_edges
+        .iter()
+        .map(|e| e.source.node_name.as_str())
+        .collect();
     assert!(sources.contains(&"A"));
     assert!(sources.contains(&"B"));
     assert!(sources.contains(&"C"));
@@ -448,9 +452,7 @@ fn test_get_edges_by_head_returns_all_incoming_edges() {
 
 #[test]
 fn test_get_edges_by_head_returns_empty_for_unconnected_port() {
-    let nodes = vec![
-        simple_node("A", vec!["in"], vec!["out"]),
-    ];
+    let nodes = vec![simple_node("A", vec!["in"], vec!["out"])];
     let graph = Graph::new(nodes, vec![]);
 
     let a_in_ref = PortRef {
@@ -459,5 +461,8 @@ fn test_get_edges_by_head_returns_empty_for_unconnected_port() {
         port_name: "in".to_string(),
     };
     let incoming_edges = graph.get_edges_by_head(&a_in_ref);
-    assert!(incoming_edges.is_empty(), "Unconnected port should have no incoming edges");
+    assert!(
+        incoming_edges.is_empty(),
+        "Unconnected port should have no incoming edges"
+    );
 }
