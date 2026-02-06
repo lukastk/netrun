@@ -286,6 +286,14 @@
 		}
 	}
 
+	async function resetFactoryArgsToDefaults() {
+		if (!$selectedNode) return;
+		pushHistory();
+		// Clear all factory args so defaults are used
+		updateNodeData($selectedNode.id, { factoryArgs: {} });
+		await refreshFactoryPreview();
+	}
+
 	function selectDottedSegment(e: MouseEvent) {
 		if (e.detail < 2) return;
 		const input = e.target as HTMLInputElement;
@@ -627,13 +635,24 @@
 									</div>
 								</div>
 							{/if}
-							<button
-								class="refresh-btn"
-								onclick={refreshFactoryPreview}
-								disabled={isRefreshing || !$selectedNode.data.factory}
-							>
-								{isRefreshing ? 'Refreshing...' : 'Refresh'}
-							</button>
+							<div class="factory-buttons">
+								{#if factoryParams.length > 0}
+									<button
+										class="reset-defaults-btn"
+										onclick={resetFactoryArgsToDefaults}
+										disabled={isRefreshing || !$selectedNode.data.factory}
+									>
+										Reset to Defaults
+									</button>
+								{/if}
+								<button
+									class="refresh-btn"
+									onclick={refreshFactoryPreview}
+									disabled={isRefreshing || !$selectedNode.data.factory}
+								>
+									{isRefreshing ? 'Refreshing...' : 'Refresh'}
+								</button>
+							</div>
 							{#if $selectedNode.data.isValid === false && $selectedNode.data.validationErrors}
 								<div class="factory-errors">
 									{#each $selectedNode.data.validationErrors as error}
@@ -1576,15 +1595,39 @@
 		padding: 8px 0;
 	}
 
-	.refresh-btn {
-		width: 100%;
+	.factory-buttons {
+		display: flex;
+		gap: 8px;
 		margin-top: 12px;
+	}
+
+	.factory-buttons button {
+		flex: 1;
 		padding: 8px;
 		font-size: 12px;
-		background: var(--accent-color, #3b82f6);
-		color: white;
 		border: none;
 		border-radius: 4px;
+		cursor: pointer;
+	}
+
+	.reset-defaults-btn {
+		background: var(--bg-tertiary, #2d2d2d);
+		color: var(--text-secondary, #a0a0a0);
+	}
+
+	.reset-defaults-btn:hover:not(:disabled) {
+		background: var(--bg-hover, #3d3d3d);
+		color: var(--text-primary, #fff);
+	}
+
+	.reset-defaults-btn:disabled {
+		opacity: 0.5;
+		cursor: not-allowed;
+	}
+
+	.refresh-btn {
+		background: var(--accent-color, #3b82f6);
+		color: white;
 	}
 
 	.refresh-btn:hover:not(:disabled) {
