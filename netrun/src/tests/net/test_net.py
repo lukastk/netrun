@@ -18,6 +18,7 @@ from netrun.net._net import (
     NodeFailureContext,
     DeferredActionQueue,
     EpochCancelled,
+    EpochRecord,
     NodeInfo,
     EdgeInfo,
     create_net_func_preprocessor,
@@ -1192,8 +1193,15 @@ def test_net_get_node_log_empty():
 # %% nbs/tests/05_net/test_net.ipynb 123
 def test_net_handle_print_buffer():
     """Test Net._handle_print_buffer stores prints correctly."""
+    from datetime import timezone
     config = create_simple_net_config()
     net = Net(config)
+
+    # Register an epoch record (as _execute_epoch would)
+    net._epochs["epoch_123"] = EpochRecord(
+        id="epoch_123", node_name="Source", in_salvo=None, out_salvos=[],
+        state=None, orphaned_packets=[], created_at=datetime.now(tz=timezone.utc),
+    )
 
     # Create timestamped print buffer (as would come from ctx.print())
     ts1 = datetime.now()
@@ -2221,7 +2229,6 @@ async def test_node_info_inject_packets():
     # Run step to trigger salvo (without auto-starting epochs)
     await net.run_step(auto_start_epochs=False)
     # Packets should be in a startable epoch now
-    assert node_info.epoch_count == 1
     assert len(node_info.startable_epochs) == 1
 
 # %% nbs/tests/05_net/test_net.ipynb 215

@@ -89,22 +89,11 @@ class NodeInfo:
 
     @property
     def epochs(self) -> list:
-        """All epochs (running + startable) for this node.
+        """All epochs for this node (including completed and cancelled).
 
-        Returns list of Epoch objects from netrun-sim.
+        Returns list of EpochRecord objects.
         """
-        epochs = []
-        # Get all epochs from netsim and filter by node name
-        for epoch_id in self._net._netsim.get_startable_epochs():
-            epoch = self._net._netsim.get_epoch(epoch_id)
-            if epoch.node_name == self._name:
-                epochs.append(epoch)
-        # Also check running epochs
-        for epoch_id in self._net._running_epochs:
-            epoch = self._net._netsim.get_epoch(epoch_id)
-            if epoch.node_name == self._name:
-                epochs.append(epoch)
-        return epochs
+        return [r for r in self._net._epochs.values() if r.node_name == self._name]
 
     @property
     def running_epochs(self) -> list:
@@ -134,7 +123,7 @@ class NodeInfo:
 
     @property
     def epoch_count(self) -> int:
-        """Total number of epochs (running + startable)."""
+        """Total number of epochs (including completed and cancelled)."""
         return len(self.epochs)
 
     @property
