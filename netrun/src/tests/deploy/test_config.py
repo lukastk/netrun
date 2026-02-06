@@ -74,7 +74,7 @@ def test_repo_config_with_local_repo_path():
 # %% pts/tests/07_deploy/test_config.pct.py 13
 def test_repo_config_both_set_raises():
     """Test RepoConfig rejects both git_url and local_repo_path."""
-    with pytest.raises(ValueError, match="Cannot specify both"):
+    with pytest.raises(ValueError, match="exactly one"):
         RepoConfig(
             git_url="git@github.com:user/repo.git",
             local_repo_path="/home/user/project",
@@ -84,7 +84,7 @@ def test_repo_config_both_set_raises():
 # %% pts/tests/07_deploy/test_config.pct.py 15
 def test_repo_config_neither_set_raises():
     """Test RepoConfig rejects neither git_url nor local_repo_path."""
-    with pytest.raises(ValueError, match="Must specify either"):
+    with pytest.raises(ValueError, match="exactly one"):
         RepoConfig(remote_dir="/opt/app")
 
 # %% pts/tests/07_deploy/test_config.pct.py 17
