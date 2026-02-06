@@ -48,6 +48,8 @@ import {
 	currentFilePath,
 	isInlineSubgraph,
 	hasClipboardContent,
+	extraData,
+	updateExtraData,
 } from '$lib/stores/flowStore';
 import { showFactorySelector } from '$lib/stores/factorySelectorStore';
 import { get, derived } from 'svelte/store';
@@ -449,6 +451,83 @@ const subgraphCommands: Command[] = [
 	},
 ];
 
+// --- Recipe Commands ---
+
+const recipeStaticCommands: Command[] = [
+	{
+		id: 'recipe.add',
+		label: 'Add Recipe',
+		category: 'recipe',
+		keywords: ['create', 'new', 'recipe', 'script'],
+		action: async () => {
+			// Prompt for recipe name
+			const name = await showPrompt({
+				title: 'Add Recipe',
+				message: 'Enter a name for the recipe (used as identifier)',
+				placeholder: 'my_recipe',
+				confirmText: 'Next',
+			});
+			if (!name) return;
+
+			// Validate name (alphanumeric + underscore)
+			if (!/^[a-zA-Z_][a-zA-Z0-9_]*$/.test(name)) {
+				await showAlert({
+					title: 'Invalid Name',
+					message: 'Recipe name must start with a letter or underscore, and contain only letters, numbers, and underscores.',
+				});
+				return;
+			}
+
+			// Check if recipe already exists
+			const currentExtra = get(extraData) as Record<string, unknown> | null;
+			const existingRecipes = (currentExtra?.recipes as Record<string, unknown>) ?? {};
+			if (name in existingRecipes) {
+				await showAlert({
+					title: 'Recipe Exists',
+					message: `A recipe named "${name}" already exists.`,
+				});
+				return;
+			}
+
+			// Prompt for path
+			const path = await showPrompt({
+				title: 'Recipe Path',
+				message: 'Enter the path to the recipe Python file (relative to netrun file)',
+				placeholder: './recipes/my_recipe.py',
+				defaultValue: `./recipes/${name}.py`,
+				inputType: 'path',
+				confirmText: 'Next',
+			});
+			if (!path) return;
+
+			// Prompt for description (optional)
+			const description = await showPrompt({
+				title: 'Recipe Description',
+				message: 'Enter a description (optional, shown in command palette)',
+				placeholder: 'Transforms the graph by...',
+				confirmText: 'Add Recipe',
+			});
+
+			// Add recipe to extraData
+			updateExtraData({
+				recipes: {
+					...existingRecipes,
+					[name]: {
+						path,
+						...(description ? { description } : {}),
+					},
+				},
+			});
+
+			await showAlert({
+				title: 'Recipe Added',
+				message: `Recipe "${name}" added. Create the Python file at: ${path}`,
+			});
+		},
+		enabled: () => get(currentFilePath) !== null,
+	},
+];
+
 // --- Tab Commands ---
 
 const tabCommands: Command[] = [
@@ -649,6 +728,7 @@ export function initializeCommands(): void {
 		...viewCommands,
 		...nodeCommands,
 		...subgraphCommands,
+		...recipeStaticCommands,
 		...tabCommands,
 	]);
 
