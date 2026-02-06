@@ -2376,8 +2376,8 @@ async def test_node_info_inject_packets():
     packet_ids = node_info.inject_packets("in", [1, 2, 3])
 
     assert len(packet_ids) == 3
-    # Run step to trigger salvo
-    await net.run_step()
+    # Run step to trigger salvo (without auto-starting epochs)
+    await net.run_step(auto_start_epochs=False)
     # Packets should be in a startable epoch now
     assert node_info.epoch_count == 1
     assert len(node_info.startable_epochs) == 1
@@ -2451,8 +2451,8 @@ async def test_node_info_packets_in_epoch():
     node_info = net.nodes["TestNode"]
     node_info.inject_packets("in", [1, 2, 3])
 
-    # Trigger salvo
-    await net.run_step()
+    # Trigger salvo (without auto-starting epochs)
+    await net.run_step(auto_start_epochs=False)
 
     # Get the startable epoch
     epochs = node_info.startable_epochs

@@ -2010,9 +2010,8 @@ class Net:
 
         This loop:
         1. Checks if we should stop or pause
-        2. Runs simulation steps to move packets
-        3. Executes any startable epochs
-        4. Yields to allow other tasks to run
+        2. Runs simulation steps (which moves packets and executes epochs)
+        3. Yields to allow other tasks to run
         """
         try:
             while not self._stopping and not self._sigint_received:
@@ -2021,28 +2020,11 @@ class Net:
                     await asyncio.sleep(0.01)
                     continue
 
-                # Run simulation step
+                # Run simulation step (auto-starts epochs by default)
                 made_progress, _ = await self.run_step()
 
-                # Execute any startable epochs
-                startable = self.get_startable_epochs()
-                if startable:
-                    # Execute epochs concurrently
-                    tasks = [
-                        asyncio.create_task(self._execute_epoch(epoch_id))
-                        for epoch_id in startable
-                    ]
-                    if tasks:
-                        # Wait for all epoch executions to complete
-                        results = await asyncio.gather(*tasks, return_exceptions=True)
-                        # Log any exceptions
-                        for epoch_id, result in zip(startable, results):
-                            if isinstance(result, Exception):
-                                import sys
-                                print(f"Error executing epoch {epoch_id}: {result}", file=sys.stderr)
-
                 # Small yield to allow other tasks
-                if not made_progress and not startable:
+                if not made_progress:
                     # If nothing happened, sleep a bit to avoid busy-waiting
                     await asyncio.sleep(0.001)
                 else:
@@ -2093,27 +2075,59 @@ class Net:
         # without actually running the step
         return not self._netsim.can_make_progress() if hasattr(self._netsim, 'can_make_progress') else True
 
-    async def run_step(self) -> tuple[bool, list]:
+    async def run_step(self, *, auto_start_epochs: bool = True) -> tuple[bool, list]:
         """Run one simulation step.
 
-        This moves packets through the network and checks for startable epochs.
+        This moves packets through the network and optionally executes
+        any startable epochs.
+
+        Args:
+            auto_start_epochs: If True (default), automatically execute any
+                startable epochs after moving packets. Set to False to only
+                move packets without executing epochs.
 
         Returns:
             Tuple of (made_progress, events) where:
-            - made_progress: True if any packets were moved
+            - made_progress: True if any packets were moved or epochs executed
             - events: List of NetEvents that occurred during the step
         """
         result = self._netsim.run_step()
         # netrun-sim returns (bool, events)
         if isinstance(result, tuple):
             made_progress, events = result
-            return (made_progress, list(events) if not isinstance(events, list) else events)
-        # Fallback for direct list return
-        events = list(result) if not isinstance(result, list) else result
-        return (len(events) > 0, events)
+            events = list(events) if not isinstance(events, list) else events
+        else:
+            # Fallback for direct list return
+            events = list(result) if not isinstance(result, list) else result
+            made_progress = len(events) > 0
 
-    async def run_until_blocked(self) -> tuple[bool, list]:
+        # Auto-start epochs if enabled
+        if auto_start_epochs:
+            startable = self.get_startable_epochs()
+            if startable:
+                # Execute epochs concurrently
+                tasks = [
+                    asyncio.create_task(self._execute_epoch(epoch_id))
+                    for epoch_id in startable
+                ]
+                if tasks:
+                    results = await asyncio.gather(*tasks, return_exceptions=True)
+                    # Log any exceptions
+                    for epoch_id, exec_result in zip(startable, results):
+                        if isinstance(exec_result, Exception):
+                            import sys
+                            print(f"Error executing epoch {epoch_id}: {exec_result}", file=sys.stderr)
+                    made_progress = True
+
+        return (made_progress, events)
+
+    async def run_until_blocked(self, *, auto_start_epochs: bool = True) -> tuple[bool, list]:
         """Run the simulation until no more progress can be made.
+
+        Args:
+            auto_start_epochs: If True (default), automatically execute any
+                startable epochs after moving packets. Set to False to only
+                move packets without executing epochs.
 
         Returns:
             Tuple of (made_progress, events) where:
@@ -2123,7 +2137,7 @@ class Net:
         all_events = []
         any_progress = False
         while True:
-            made_progress, events = await self.run_step()
+            made_progress, events = await self.run_step(auto_start_epochs=auto_start_epochs)
             all_events.extend(events)
             if made_progress:
                 any_progress = True
