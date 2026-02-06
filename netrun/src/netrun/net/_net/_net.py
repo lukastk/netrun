@@ -67,7 +67,8 @@ class _PoolServerContext:
                     ctx._log(f"[{node_name}] {msg}")
         return callback
 
-    async def __aenter__(self):
+    async def start(self):
+        """Start the pool server."""
         if self._log_file:
             self._log_fh = open(self._log_file, 'a')
         self._inner_ctx = self._server.serve_background(self._host, self._port)
@@ -75,14 +76,26 @@ class _PoolServerContext:
         self._log(f"Pool server started on {self._host}:{self._port}")
         return server
 
-    async def __aexit__(self, *exc_info):
+    async def stop(self):
+        """Stop the pool server."""
         try:
-            await self._inner_ctx.__aexit__(*exc_info)
+            if self._inner_ctx is not None:
+                await self._inner_ctx.__aexit__(None, None, None)
         finally:
             self._log("Pool server stopped")
             if self._log_fh:
                 self._log_fh.close()
                 self._log_fh = None
+
+    async def wait_until_stopped(self) -> None:
+        """Wait until a client requests shutdown via Net.request_pool_shutdown()."""
+        await self._server.wait_for_shutdown()
+
+    async def __aenter__(self):
+        return await self.start()
+
+    async def __aexit__(self, *exc_info):
+        await self.stop()
 
 # %% pts/netrun/05_net/01_net/02_net.pct.py 5
 class Net:
@@ -277,9 +290,16 @@ class Net:
         Or for Jupyter (non-blocking)::
 
             pool_ctx = Net.serve_pool(config_path, host, port)
-            await pool_ctx.__aenter__()
+            await pool_ctx.start()
             # ... later ...
-            await pool_ctx.__aexit__(None, None, None)
+            await pool_ctx.stop()
+
+        Or wait for a client to request shutdown::
+
+            pool_ctx = Net.serve_pool(config_path, host, port)
+            await pool_ctx.start()
+            await pool_ctx.wait_until_stopped()
+            await pool_ctx.stop()
 
         Args:
             config: NetConfig, or path to a .json/.toml config file.
@@ -1041,6 +1061,25 @@ class Net:
         await self._execution_manager.close()
         self._started = False
         self._stopping = False
+
+    async def request_pool_shutdown(self, pool_id: str, timeout: float = 10.0) -> None:
+        """Request a remote pool server to shut down.
+
+        Sends a shutdown request to the remote server and waits for acknowledgement.
+        The server-side ``_PoolServerContext.wait_until_stopped()`` will resolve
+        once this request is received.
+
+        Args:
+            pool_id: The ID of the remote pool.
+            timeout: Timeout in seconds for waiting for the acknowledgement.
+
+        Raises:
+            TypeError: If the pool is not a RemotePoolClient.
+        """
+        pool = self._execution_manager.get_pool(pool_id)
+        if not isinstance(pool, RemotePoolClient):
+            raise TypeError(f"Pool '{pool_id}' is not a RemotePoolClient")
+        await pool.request_shutdown(timeout=timeout)
 
     def stop_sync(self) -> None:
         """Stop the Net synchronously.
