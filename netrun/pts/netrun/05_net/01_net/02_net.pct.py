@@ -88,6 +88,9 @@ class Net:
         # Running epoch tracking
         self._running_epochs: set[str] = set()
 
+        # Epoch snapshots (persists after epoch finishes in netsim)
+        self._epochs: dict = {}  # epoch_id -> netrun_sim.Epoch
+
         # Dead letter queue for failed epochs
         self._dead_letter_queue: list[dict[str, Any]] = []
 
@@ -699,18 +702,14 @@ class Net:
         for timestamp, line in buffer:
             self._epoch_print_logs[epoch_id].append((timestamp, line))
 
-        # Also store by node (get node_name from epoch)
-        try:
-            epoch = self._netsim.get_epoch(epoch_id)
-            if epoch is not None:
-                node_name = epoch.node_name
-                if node_name not in self._node_print_logs:
-                    self._node_print_logs[node_name] = []
-                for timestamp, line in buffer:
-                    self._node_print_logs[node_name].append((timestamp, line))
-        except (ValueError, KeyError):
-            # Epoch not found or invalid ID - skip node-level logging
-            pass
+        # Also store by node
+        epoch = self._epochs.get(epoch_id)
+        node_name = epoch.node_name if epoch is not None else None
+        if node_name is not None:
+            if node_name not in self._node_print_logs:
+                self._node_print_logs[node_name] = []
+            for timestamp, line in buffer:
+                self._node_print_logs[node_name].append((timestamp, line))
 
     def get_epoch_log(self, epoch_id: str) -> list[tuple[datetime, str]]:
         """Get print output for a specific epoch.
@@ -760,12 +759,8 @@ class Net:
         all_logs = []
 
         for epoch_id, logs in self._epoch_print_logs.items():
-            # Get node_name for this epoch
-            try:
-                epoch = self._netsim.get_epoch(epoch_id)
-                node_name = epoch.node_name if epoch else "unknown"
-            except (ValueError, KeyError):
-                node_name = "unknown"
+            epoch = self._epochs.get(epoch_id)
+            node_name = epoch.node_name if epoch is not None else "unknown"
 
             for timestamp, message in logs:
                 all_logs.append((timestamp, epoch_id, node_name, message))
@@ -1154,6 +1149,7 @@ class Net:
         """
         epoch = self._netsim.get_epoch(epoch_id)
         node_name = epoch.node_name
+        self._epochs[epoch_id] = epoch
         config = self._get_node_execution_config(node_name)
 
         # Check if node has an execution function (either direct or via factory)
