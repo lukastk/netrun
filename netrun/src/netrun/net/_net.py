@@ -972,7 +972,27 @@ class NodeInfo:
         Returns:
             The packet ID of the injected packet.
         """
-        return self.inject_packets(port_name, [value])
+        return self.inject_packets(port_name, [value])[0]
+
+    def inject(self, ports: dict[str, list[Any]]) -> dict[str, list[str]]:
+        """Inject packets into multiple input ports.
+
+        Args:
+            ports: Dict mapping port_name -> list of values to inject.
+
+        Returns:
+            Dict mapping port_name -> list of created packet IDs.
+
+        Example:
+            packet_ids = node.inject({
+                "in1": [1, 2, 3],
+                "in2": ["a", "b"],
+            })
+        """
+        result = {}
+        for port_name, values in ports.items():
+            result[port_name] = self.inject_packets(port_name, values)
+        return result
 
     @property
     def incoming_edges(self) -> list["EdgeInfo"]:

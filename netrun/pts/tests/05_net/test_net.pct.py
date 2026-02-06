@@ -2713,3 +2713,55 @@ def test_edge_info_repr():
 
 # %%
 test_edge_info_repr()
+
+# %%
+#|export
+def test_node_info_inject():
+    """Test NodeInfo.inject injects packets to multiple ports."""
+    config = NetConfig(
+        pools={},
+        graph=GraphConfig(nodes=[NodeConfig(
+            name="TestNode",
+            in_ports={"in1": PortConfig(), "in2": PortConfig()},
+        )]),
+    )
+    net = Net(config)
+
+    node_info = net.nodes["TestNode"]
+    result = node_info.inject({
+        "in1": [1, 2, 3],
+        "in2": ["a", "b"],
+    })
+
+    # Check return value
+    assert "in1" in result
+    assert "in2" in result
+    assert len(result["in1"]) == 3
+    assert len(result["in2"]) == 2
+
+    # Verify packets are at ports
+    assert len(node_info.packets_at_input_port("in1")) == 3
+    assert len(node_info.packets_at_input_port("in2")) == 2
+
+# %%
+test_node_info_inject()
+
+# %%
+#|export
+def test_node_info_inject_packet_single():
+    """Test NodeInfo.inject_packet returns single packet ID."""
+    config = NetConfig(
+        pools={},
+        graph=GraphConfig(nodes=[NodeConfig(name="TestNode", in_ports={"in": PortConfig()})]),
+    )
+    net = Net(config)
+
+    node_info = net.nodes["TestNode"]
+    packet_id = node_info.inject_packet("in", {"value": 42})
+
+    # Should return a string, not a list
+    assert isinstance(packet_id, str)
+    assert len(node_info.packets_at_input_port("in")) == 1
+
+# %%
+test_node_info_inject_packet_single()
