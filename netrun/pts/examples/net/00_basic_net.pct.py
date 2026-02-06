@@ -267,7 +267,8 @@ def create_graph_config() -> GraphConfig:
 #
 # **Output Queues** collect packets from unconnected output ports:
 # - Packets sent from configured ports go into named queues
-# - Use `get_output()`, `try_get_output()`, `flush_output_queue()`, or `flush_all_output_queues()` to retrieve them
+# - Use `get_output()`, `try_get_output()`, `flush_output_queue()`, or `flush_all_output_queues()` to retrieve values
+# - Pass `include_metadata=True` to get `ConsumedOutputPacket` objects with full metadata
 
 # %%
 def create_net_config() -> NetConfig:
@@ -464,8 +465,8 @@ async def run_full_network():
         print("OUTPUT QUEUE RESULTS")
         print("=" * 70)
 
-        # Collect results from output queue
-        results = net.flush_output_queue("results")
+        # Collect results from output queue (with metadata for detailed info)
+        results = net.flush_output_queue("results", include_metadata=True)
         print(f"\nCollected {len(results)} results from 'results' queue:")
         for result in results:
             print(f"  - {result.value} (from {result.from_node}.{result.from_port})")

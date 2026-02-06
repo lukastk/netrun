@@ -24,7 +24,7 @@ from ...storage import PacketStore, PacketStoreConfig
 from ...net._net._context import (
     NodeExecutionResult,
     NodeFailureContext,
-    OutputPacket,
+    ConsumedOutputPacket,
     create_net_func_preprocessor,
     create_net_func_done_callback,
     _FactoryPlaceholder,
@@ -131,7 +131,7 @@ class Net:
         self._original_sigint_handler = None
 
         # Output queues for collecting packets from unconnected output ports
-        self._output_queues: dict[str, asyncio.Queue[OutputPacket]] = {}
+        self._output_queues: dict[str, asyncio.Queue[ConsumedOutputPacket]] = {}
         self._port_to_queue: dict[tuple[str, str], str] = {}  # (node_name, port_name) -> queue_name
 
         # Initialize queues from resolved config (includes auto-generated queues)
@@ -266,9 +266,9 @@ class Net:
                 self._packet_store.consume(packet_id)
                 return
 
-        # Get value and create OutputPacket
+        # Get value and create ConsumedOutputPacket
         value = self._packet_store.consume(packet_id)
-        output_packet = OutputPacket(
+        output_packet = ConsumedOutputPacket(
             packet_id=packet_id,
             value=value,
             from_node=from_node,
@@ -290,17 +290,20 @@ class Net:
         node: str | None = None,
         port: str | None = None,
         timeout: float | None = None,
-    ) -> OutputPacket:
-        """Get the next packet from an output queue.
+        include_metadata: bool = False,
+    ) -> Any:
+        """Get the next output value from an output queue.
 
         Args:
             queue_name: Name of the output queue. Mutually exclusive with node/port.
             node: Node name (keyword-only). Must be used with port.
             port: Port name (keyword-only). Must be used with node.
             timeout: Max seconds to wait. None = wait forever.
+            include_metadata: If True, return a ConsumedOutputPacket with full
+                metadata. If False (default), return just the value.
 
         Returns:
-            The next OutputPacket from the queue.
+            The packet value (default), or ConsumedOutputPacket if include_metadata=True.
 
         Raises:
             ValueError: If neither queue_name nor node/port specified.
@@ -314,9 +317,10 @@ class Net:
             raise KeyError(f"Output queue '{queue_name}' not found")
 
         if timeout is not None:
-            return await asyncio.wait_for(queue.get(), timeout=timeout)
+            packet = await asyncio.wait_for(queue.get(), timeout=timeout)
         else:
-            return await queue.get()
+            packet = await queue.get()
+        return packet if include_metadata else packet.value
 
     def try_get_output(
         self,
@@ -324,8 +328,9 @@ class Net:
         *,
         node: str | None = None,
         port: str | None = None,
-    ) -> OutputPacket | None:
-        """Get a packet if available, otherwise return None.
+        include_metadata: bool = False,
+    ) -> Any:
+        """Get an output value if available, otherwise return None.
 
         Non-blocking - returns immediately.
 
@@ -333,9 +338,12 @@ class Net:
             queue_name: Name of the output queue. Mutually exclusive with node/port.
             node: Node name (keyword-only). Must be used with port.
             port: Port name (keyword-only). Must be used with node.
+            include_metadata: If True, return a ConsumedOutputPacket with full
+                metadata. If False (default), return just the value.
 
         Returns:
-            The next OutputPacket from the queue, or None if empty.
+            The packet value (default), ConsumedOutputPacket if include_metadata=True,
+            or None if queue is empty.
         """
         queue_name = self._resolve_queue_name(queue_name, node, port)
         queue = self._output_queues.get(queue_name)
@@ -343,7 +351,8 @@ class Net:
             raise KeyError(f"Output queue '{queue_name}' not found")
 
         try:
-            return queue.get_nowait()
+            packet = queue.get_nowait()
+            return packet if include_metadata else packet.value
         except asyncio.QueueEmpty:
             return None
 
@@ -353,8 +362,9 @@ class Net:
         *,
         node: str | None = None,
         port: str | None = None,
-    ) -> list[OutputPacket]:
-        """Get all currently available packets from a single queue.
+        include_metadata: bool = False,
+    ) -> list[Any]:
+        """Get all currently available output values from a single queue.
 
         Non-blocking - returns whatever is currently in the queue.
 
@@ -362,9 +372,12 @@ class Net:
             queue_name: Name of the output queue. Mutually exclusive with node/port.
             node: Node name (keyword-only). Must be used with port.
             port: Port name (keyword-only). Must be used with node.
+            include_metadata: If True, return ConsumedOutputPacket objects with full
+                metadata. If False (default), return just the values.
 
         Returns:
-            List of OutputPackets currently in the queue.
+            List of values (default), or list of ConsumedOutputPackets if
+            include_metadata=True.
         """
         queue_name = self._resolve_queue_name(queue_name, node, port)
         queue = self._output_queues.get(queue_name)
@@ -377,21 +390,33 @@ class Net:
                 packets.append(queue.get_nowait())
             except asyncio.QueueEmpty:
                 break
-        return packets
+        if include_metadata:
+            return packets
+        return [p.value for p in packets]
 
-    def flush_all_output_queues(self) -> dict[str, list[OutputPacket]]:
-        """Get all currently available packets from all queues.
+    def flush_all_output_queues(
+        self,
+        *,
+        include_metadata: bool = False,
+    ) -> dict[str, list[Any]]:
+        """Get all currently available output values from all queues.
 
         Non-blocking - drains all queues and returns their contents.
 
+        Args:
+            include_metadata: If True, return ConsumedOutputPacket objects with full
+                metadata. If False (default), return just the values.
+
         Returns:
-            Dict mapping queue_name -> list of OutputPackets.
+            Dict mapping queue_name -> list of values (default), or
+            dict mapping queue_name -> list of ConsumedOutputPackets if
+            include_metadata=True.
         """
         result = {}
         for queue_name in list(self._output_queues.keys()):
-            packets = self.flush_output_queue(queue_name)
-            if packets:  # Only include non-empty queues
-                result[queue_name] = packets
+            items = self.flush_output_queue(queue_name, include_metadata=include_metadata)
+            if items:  # Only include non-empty queues
+                result[queue_name] = items
         return result
 
     def has_output(

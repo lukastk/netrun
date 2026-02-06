@@ -506,14 +506,14 @@ class NodeFailureContext:
     input_salvo: dict[str, list[str]] = field(default_factory=dict)  # port_name -> list[packet_id]
 
 # %% [markdown]
-# ## OutputPacket
+# ## ConsumedOutputPacket
 #
 # A packet retrieved from an output queue.
 
 # %%
 #|export
 @dataclass
-class OutputPacket:
+class ConsumedOutputPacket:
     """A packet retrieved from an output queue.
 
     Output packets are produced when packets are sent from unconnected output ports
