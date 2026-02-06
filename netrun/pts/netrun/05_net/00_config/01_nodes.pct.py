@@ -251,6 +251,24 @@ class NodeExecutionConfig(BaseModel):
     - False: Disable type checking for this node
     """
 
+    propagate_exceptions: bool | None = None
+    """
+    Override NetConfig.propagate_exceptions for this node.
+
+    - None: Inherit from NetConfig (default)
+    - True: Propagate exceptions from this node
+    - False: Queue exceptions from this node
+    """
+
+    print_exceptions: bool | None = None
+    """
+    Override NetConfig.print_exceptions for this node.
+
+    - None: Inherit from NetConfig (default)
+    - True: Print exceptions from this node to stderr
+    - False: Don't print exceptions from this node
+    """
+
     @field_serializer("exec_node_func", "start_node_func", "stop_node_func", "on_node_failure", when_used='json')
     def serialize_func(self, func: Callable | str | None) -> str | None:
         """Serialize functions to their import path for JSON.

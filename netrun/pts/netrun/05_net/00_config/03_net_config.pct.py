@@ -264,6 +264,29 @@ class NetConfig(BaseModel):
     This can be overridden per-node via NodeExecutionConfig.type_checking_enabled.
     """
 
+    propagate_exceptions: bool = True
+    """
+    Whether epoch exceptions propagate immediately from run_step/run_until_blocked.
+
+    When True (default), exceptions raised by node functions will propagate
+    from run_step/run_until_blocked after all concurrent epochs complete.
+
+    When False, exceptions are queued and can be raised manually via
+    Net.propagate_exceptions().
+
+    This can be overridden per-node via NodeExecutionConfig.propagate_exceptions.
+    """
+
+    print_exceptions: bool = False
+    """
+    Whether to print epoch exceptions to stderr when they occur.
+
+    When True, exceptions (with traceback) are printed to stderr.
+    When False (default), exceptions are only propagated or queued.
+
+    This can be overridden per-node via NodeExecutionConfig.print_exceptions.
+    """
+
     @field_serializer("dead_letter_callback", when_used='json')
     def serialize_dead_letter_callback(self, callback: Callable | str | None) -> str | None:
         """Serialize dead_letter_callback to import path for JSON.

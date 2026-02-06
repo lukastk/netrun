@@ -1436,16 +1436,16 @@ test_net_get_epoch_log_empty()
 
 # %%
 #|export
-def test_net_get_node_log_empty():
-    """Test get_node_log returns empty list for unknown node."""
+def test_net_get_node_logs_empty():
+    """Test get_node_logs returns empty list for unknown node."""
     config = create_simple_net_config()
     net = Net(config)
 
-    log = net.get_node_log("NonexistentNode")
+    log = net.get_node_logs("NonexistentNode")
     assert log == []
 
 # %%
-test_net_get_node_log_empty()
+test_net_get_node_logs_empty()
 
 # %%
 #|export
@@ -2832,8 +2832,8 @@ async def test_node_info_packets_at_input_port():
     packets = node_info.packets_at_input_port("in")
     assert len(packets) == 2
 
-    # After run_step, packets move into epoch
-    await net.run_step()
+    # After run_step (without auto-starting epochs), packets move into epoch
+    await net.run_step(auto_start_epochs=False)
     packets = node_info.packets_at_input_port("in")
     assert len(packets) == 0
 
@@ -3239,3 +3239,243 @@ def test_node_info_inject_plural_true_requires_list():
 
 # %%
 test_node_info_inject_plural_true_requires_list()
+
+# %% [markdown]
+# ## Exception Propagation Tests
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_propagate_exceptions_true_raises():
+    """Test that run_until_blocked raises when propagate_exceptions=True (default)."""
+    def failing_node(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+        raise ValueError("node failure")
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="FailNode",
+                in_ports={"in": PortConfig()},
+                execution_config=NodeExecutionConfig(
+                    pools=["main"],
+                    exec_node_func=failing_node,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+        # propagate_exceptions=True is the default
+    )
+
+    async with Net(config) as net:
+        net.inject_data("FailNode", "in", [1])
+        with pytest.raises(ValueError, match="node failure"):
+            await net.run_until_blocked()
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_propagate_exceptions_false_queues():
+    """Test that run_until_blocked succeeds when propagate_exceptions=False, and exception is queued."""
+    def failing_node(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+        raise ValueError("queued failure")
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="FailNode",
+                in_ports={"in": PortConfig()},
+                execution_config=NodeExecutionConfig(
+                    pools=["main"],
+                    exec_node_func=failing_node,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+        propagate_exceptions=False,
+    )
+
+    async with Net(config) as net:
+        net.inject_data("FailNode", "in", [1])
+        # Should NOT raise
+        await net.run_until_blocked()
+
+        # Exception should be queued
+        assert len(net.exception_queue) == 1
+        assert isinstance(net.exception_queue[0], ValueError)
+        assert "queued failure" in str(net.exception_queue[0])
+
+        # propagate_exceptions() should raise it
+        with pytest.raises(ValueError, match="queued failure"):
+            net.propagate_exceptions()
+
+        # Queue should now be empty
+        assert len(net.exception_queue) == 0
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_print_exceptions_true_prints_to_stderr(capsys):
+    """Test that print_exceptions=True prints to stderr."""
+    def failing_node(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+        raise ValueError("stderr failure")
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="FailNode",
+                in_ports={"in": PortConfig()},
+                execution_config=NodeExecutionConfig(
+                    pools=["main"],
+                    exec_node_func=failing_node,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+        propagate_exceptions=False,
+        print_exceptions=True,
+    )
+
+    async with Net(config) as net:
+        net.inject_data("FailNode", "in", [1])
+        await net.run_until_blocked()
+
+        captured = capsys.readouterr()
+        assert "stderr failure" in captured.err
+        assert "FailNode" in captured.err
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_node_level_override_propagate():
+    """Test per-node override of propagate_exceptions."""
+    def failing_node(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+        raise ValueError(f"{ctx.node_name} failed")
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="PropagatingNode",
+                in_ports={"in": PortConfig()},
+                execution_config=NodeExecutionConfig(
+                    pools=["main"],
+                    exec_node_func=failing_node,
+                    # propagate_exceptions=None -> inherits True from NetConfig
+                ),
+            ),
+            NodeConfig(
+                name="QueuingNode",
+                in_ports={"in": PortConfig()},
+                execution_config=NodeExecutionConfig(
+                    pools=["main"],
+                    exec_node_func=failing_node,
+                    propagate_exceptions=False,  # Override: queue instead
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+        propagate_exceptions=True,  # Global default
+    )
+
+    # Test QueuingNode: should queue, not raise
+    async with Net(config) as net:
+        net.inject_data("QueuingNode", "in", [1])
+        await net.run_until_blocked()  # Should not raise
+        assert len(net.exception_queue) == 1
+        assert "QueuingNode failed" in str(net.exception_queue[0])
+
+    # Test PropagatingNode: should raise
+    async with Net(config) as net:
+        net.inject_data("PropagatingNode", "in", [1])
+        with pytest.raises(ValueError, match="PropagatingNode failed"):
+            await net.run_until_blocked()
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_node_level_override_print(capsys):
+    """Test per-node override of print_exceptions."""
+    def failing_node(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+        raise ValueError(f"{ctx.node_name} failed")
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="SilentNode",
+                in_ports={"in": PortConfig()},
+                execution_config=NodeExecutionConfig(
+                    pools=["main"],
+                    exec_node_func=failing_node,
+                    # print_exceptions=None -> inherits False from NetConfig
+                ),
+            ),
+            NodeConfig(
+                name="PrintingNode",
+                in_ports={"in": PortConfig()},
+                execution_config=NodeExecutionConfig(
+                    pools=["main"],
+                    exec_node_func=failing_node,
+                    print_exceptions=True,  # Override: print to stderr
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+        propagate_exceptions=False,  # Queue all so we can check stderr
+        print_exceptions=False,  # Global default: don't print
+    )
+
+    async with Net(config) as net:
+        net.inject_data("SilentNode", "in", [1])
+        await net.run_until_blocked()
+
+        captured = capsys.readouterr()
+        # SilentNode should NOT print to stderr
+        assert "SilentNode" not in captured.err
+
+    async with Net(config) as net:
+        net.inject_data("PrintingNode", "in", [1])
+        await net.run_until_blocked()
+
+        captured = capsys.readouterr()
+        # PrintingNode SHOULD print to stderr
+        assert "PrintingNode" in captured.err
+        assert "PrintingNode failed" in captured.err
