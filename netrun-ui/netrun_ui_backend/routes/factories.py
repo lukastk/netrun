@@ -299,9 +299,15 @@ async def preview_factory(request: FactoryPreviewRequest) -> FactoryPreviewRespo
                     detail=f"Factory module '{request.factory_path}' does not have a get_node_config function"
                 )
 
+            # Filter out empty string values so factory defaults are used
+            filtered_args = {
+                k: v for k, v in request.factory_args.items()
+                if v != "" and v is not None
+            }
+
             # Call the factory
             try:
-                node_config = get_node_config(**request.factory_args)
+                node_config = get_node_config(**filtered_args)
             except ModuleNotFoundError as e:
                 return FactoryPreviewResponse(
                     factory_path=request.factory_path,
