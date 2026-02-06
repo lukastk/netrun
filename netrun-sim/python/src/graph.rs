@@ -926,9 +926,7 @@ impl Graph {
     fn get_edges_by_head(&self, input_port_ref: PortRef) -> Vec<Edge> {
         self.inner
             .get_edges_by_head(&input_port_ref)
-            .iter()
-            .cloned()
-            .collect()
+            .to_vec()
     }
 
     fn __repr__(&self) -> String {
