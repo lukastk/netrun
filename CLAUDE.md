@@ -243,6 +243,73 @@ async with manager:
 - `UP_RUN_RESPONSE` - Return result
 - `UP_PRINT_BUFFER` - Captured print statements
 
+### Node Factories (`netrun.node_factories`)
+
+Node factories provide a way to create `NodeConfig` objects dynamically. This enables reusable node templates, function-based nodes, and configuration-driven node creation.
+
+#### Factory Protocol
+
+A factory module must export exactly **two functions**:
+
+**`get_node_config(**factory_args) -> NodeConfig`**
+- Returns the graph structure (ports, salvo conditions, metadata)
+- **Must NOT include `execution_config`** (it will be stripped/ignored)
+- Cannot return closures or unpickleable objects
+
+**`get_node_funcs(**factory_args) -> tuple[exec_func, start_func, stop_func, on_failure_func]`**
+- Returns the execution functions as a 4-tuple
+- Typically: `(exec_func, None, None, None)`
+- Can capture `factory_args` in closures (functions are resolved on each worker)
+
+#### Resolution Lifecycle
+
+```
+1. CONFIG CREATION
+   NodeConfig(factory="module.path", factory_args={...})
+   → Factory and args stored, execution_config is None
+
+2. RESOLUTION (in Net.__init__)
+   NodeConfig.resolve() calls get_node_config(**factory_args)
+   → Returns config with ports/salvos, execution_config still None
+   → Factory and factory_args preserved for worker-level resolution
+
+3. WORKER EXECUTION
+   NetFuncPreprocessor._resolve_factory(node_name)
+   → Imports factory module on worker
+   → Calls get_node_funcs(**factory_args)
+   → Gets actual exec_func, caches for reuse
+```
+
+#### Using Factories in TOML
+
+```toml
+[[graph.nodes]]
+factory = "netrun.node_factories.function"
+
+[graph.nodes.factory_args]
+func = "mymodule.my_function"
+
+[graph.nodes.execution_config]
+pools = ["main"]
+type_checking_enabled = true  # Settings go here, NOT in factory_args
+```
+
+**Important**: Execution settings like `type_checking_enabled`, `pools`, etc. are configured in `execution_config`, NOT in `factory_args`. The factory only provides graph structure and execution functions.
+
+#### Existing Factories
+
+- `netrun.node_factories.function` - Creates nodes from regular Python functions
+  - `factory_args`: `func` (callable or import path string)
+  - Parses function signature for input/output ports
+  - Handles special parameters (`ctx`, `print`)
+
+#### Key Files
+
+- Factory protocol implementation: `pts/netrun/05_net/00_config/01_nodes.pct.py`
+- Function factory: `pts/netrun/06_node_factories/00_from_function.pct.py`
+- Factory resolution in Net: `pts/netrun/05_net/01_net/02_net.pct.py`
+- Example usage: `pts/examples/net/01_function_factory.pct.py`
+
 ---
 
 ## Development Workflow

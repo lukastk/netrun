@@ -77,15 +77,20 @@ class _ParsedSignature:
     """Raw type annotations for input ports (for detecting list types)."""
 
 
-def _annotation_to_port_config(annotation: Any) -> PortConfig:
+def _annotation_to_port_config(annotation: Any, include_type: bool = True) -> PortConfig:
     """Convert a type annotation to a PortConfig.
 
     Args:
         annotation: The type annotation from the function signature.
+        include_type: If False, return PortConfig without type information.
 
     Returns:
         A PortConfig derived from the annotation.
     """
+    if not include_type:
+        # Skip type information entirely
+        return PortConfig()
+
     if annotation is _MISSING or annotation is inspect.Parameter.empty:
         # No annotation - default port with no type constraint
         return PortConfig()
@@ -110,11 +115,12 @@ def _annotation_to_port_config(annotation: Any) -> PortConfig:
     return PortConfig(port_type=str(annotation))
 
 
-def _parse_return_annotation(annotation: Any) -> dict[str, PortConfig]:
+def _parse_return_annotation(annotation: Any, include_type: bool = True) -> dict[str, PortConfig]:
     """Parse the return annotation to determine output ports.
 
     Args:
         annotation: The return annotation from the function signature.
+        include_type: If False, return PortConfigs without type information.
 
     Returns:
         Dict of output port name -> PortConfig.
@@ -129,20 +135,21 @@ def _parse_return_annotation(annotation: Any) -> dict[str, PortConfig]:
         out_ports = {}
         for name, value in annotation.items():
             if isinstance(value, PortConfig):
-                out_ports[name] = value
+                out_ports[name] = value if include_type else PortConfig()
             else:
-                out_ports[name] = _annotation_to_port_config(value)
+                out_ports[name] = _annotation_to_port_config(value, include_type)
         return out_ports
 
     # Single return type - create single "out" port
-    return {"out": _annotation_to_port_config(annotation)}
+    return {"out": _annotation_to_port_config(annotation, include_type)}
 
 
-def _parse_function_signature(func: Callable|str) -> _ParsedSignature:
+def _parse_function_signature(func: Callable|str, include_port_types: bool = True) -> _ParsedSignature:
     """Parse a function's signature to extract port configurations.
 
     Args:
         func: The function to parse.
+        include_port_types: If False, ports will not have type information.
 
     Returns:
         ParsedSignature with port configs and parameter info.
@@ -175,13 +182,13 @@ def _parse_function_signature(func: Callable|str) -> _ParsedSignature:
 
         # Regular parameter - becomes an input port
         annotation = param.annotation if param.annotation is not inspect.Parameter.empty else _MISSING
-        in_ports[param_name] = _annotation_to_port_config(annotation)
+        in_ports[param_name] = _annotation_to_port_config(annotation, include_port_types)
         in_port_annotations[param_name] = annotation
         regular_params.append(param_name)
 
     # Parse return annotation for output ports
     return_annotation = sig.return_annotation
-    out_ports = _parse_return_annotation(return_annotation)
+    out_ports = _parse_return_annotation(return_annotation, include_port_types)
 
     return _ParsedSignature(
         in_ports=in_ports,
@@ -455,7 +462,7 @@ def _parse_node_config_override(override: Any) -> dict:
 
 # %%
 #|exporti
-def _from_function(func: Callable|str) -> NodeConfig:
+def _from_function(func: Callable|str, include_port_types: bool = True) -> NodeConfig:
     """Create a NodeConfig from a function.
 
     Parses the function signature to determine input/output ports and
@@ -463,6 +470,9 @@ def _from_function(func: Callable|str) -> NodeConfig:
 
     Args:
         func: The function to create a node from.
+        include_port_types: If True (default), port configs will include type
+            information from function annotations for runtime type checking.
+            If False, ports will have no type constraints.
 
     Returns:
         A complete NodeConfig.
@@ -485,7 +495,7 @@ def _from_function(func: Callable|str) -> NodeConfig:
         # - exec_node_func that wraps process()
     """
     # Parse the function signature
-    parsed_sig = _parse_function_signature(func)
+    parsed_sig = _parse_function_signature(func, include_port_types)
 
     # Generate base config - always use func.__name__
     node_name = func.__name__
@@ -530,7 +540,7 @@ def _get_func_from_import_path(func_path: str) -> Callable:
 
 # %%
 #|exporti
-def get_node_config(func: Callable | str) -> NodeConfig:
+def get_node_config(func: Callable | str, include_port_types: bool = True) -> NodeConfig:
     """Factory function to get NodeConfig from a function.
 
     This implements the factory module protocol. The `func` argument
@@ -538,6 +548,9 @@ def get_node_config(func: Callable | str) -> NodeConfig:
 
     Args:
         func: The function or its import path.
+        include_port_types: If True (default), port configs will include type
+            information from function annotations for runtime type checking.
+            If False, ports will have no type constraints.
 
     Returns:
         NodeConfig without execution_config (per factory protocol).
@@ -550,18 +563,20 @@ def get_node_config(func: Callable | str) -> NodeConfig:
         func = _get_func_from_import_path(func)
 
     # Get full config and strip execution_config
-    config = _from_function(func)
+    config = _from_function(func, include_port_types)
     config.execution_config = None
     return config
 
 
-def get_node_funcs(func: Callable | str) -> tuple:
+def get_node_funcs(func: Callable | str, include_port_types: bool = True) -> tuple:
     """Factory function to get execution functions.
 
     This implements the factory module protocol.
 
     Args:
         func: The function or its import path.
+        include_port_types: Accepted for consistency with get_node_config but
+            not used (type checking is a config concern, not execution).
 
     Returns:
         Tuple of (exec_func, start_func, stop_func, on_failure_func).
@@ -664,3 +679,30 @@ name = "TomlNode"
 config = _from_function(toml_func)
 assert config.name == "TomlNode"
 print("TOML override test passed")
+
+# %%
+# Test include_port_types=False
+def typed_func(a: int, b: str) -> float:
+    return float(a) + len(b)
+
+# With types (default)
+config_with_types = _from_function(typed_func, include_port_types=True)
+assert config_with_types.in_ports["a"].port_type == int
+assert config_with_types.in_ports["b"].port_type == str
+assert config_with_types.out_ports["out"].port_type == float
+
+# Without types
+config_no_types = _from_function(typed_func, include_port_types=False)
+assert config_no_types.in_ports["a"].port_type is None
+assert config_no_types.in_ports["b"].port_type is None
+assert config_no_types.out_ports["out"].port_type is None
+
+print("include_port_types test passed")
+
+# %%
+# Test get_node_config with include_port_types
+config_via_factory = get_node_config(typed_func, include_port_types=False)
+assert config_via_factory.in_ports["a"].port_type is None
+assert config_via_factory.out_ports["out"].port_type is None
+assert config_via_factory.execution_config is None  # Factory protocol strips this
+print("get_node_config include_port_types test passed")
