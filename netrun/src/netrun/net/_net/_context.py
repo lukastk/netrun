@@ -69,16 +69,21 @@ class PacketTypeMismatch(Exception):
         actual: str,
         packet_id: str,
         node_name: str,
+        hint: str = "",
     ):
         self.port_name = port_name
         self.expected = expected
         self.actual = actual
         self.packet_id = packet_id
         self.node_name = node_name
-        super().__init__(
+        self.hint = hint
+        msg = (
             f"Port '{node_name}.{port_name}' expects {expected}, got {actual} "
             f"(packet {packet_id})"
         )
+        if hint:
+            msg += hint
+        super().__init__(msg)
 
 
 @dataclass
@@ -259,19 +264,27 @@ class NodeExecutionContext:
         if not self._type_checking_enabled:
             return
 
-        expected, matches = self._check_type(port_type, value)
+        expected, matches, match_mode = self._check_type(port_type, value)
 
         if not matches:
             actual = type(value).__name__
+            # Add hint about string matching if that's what was used
+            hint = ""
+            if match_mode == "string":
+                hint = (
+                    " (Note: type was specified as a string, so only __name__ matching was used. "
+                    "For proper generic type checking like list[int], use actual Python types in factory definitions.)"
+                )
             raise PacketTypeMismatch(
                 port_name=port_name,
                 expected=expected,
                 actual=actual,
                 packet_id=packet_id,
                 node_name=self.node_name,
+                hint=hint,
             )
 
-    def _check_type(self, port_type: "str | type | PortTypeConfig", value: Any) -> tuple[str, bool]:
+    def _check_type(self, port_type: "str | type | PortTypeConfig", value: Any) -> tuple[str, bool, str]:
         """Check if value matches port type.
 
         Two modes of type checking:
@@ -283,7 +296,8 @@ class NodeExecutionContext:
             value: The value to check.
 
         Returns:
-            Tuple of (expected_type_name, matches).
+            Tuple of (expected_type_name, matches, match_mode).
+            match_mode is one of: "string", "isinstance", "beartype"
         """
         # MODE 1: String-based - use __name__ matching
         if isinstance(port_type, str):
@@ -292,19 +306,19 @@ class NodeExecutionContext:
                 try:
                     type_obj = self._import_type(port_type)
                     type_name = port_type.rsplit(".", 1)[-1]
-                    return (type_name, isinstance(value, type_obj))
+                    return (type_name, isinstance(value, type_obj), "isinstance")
                 except (ImportError, AttributeError):
                     # Fall back to name match if import fails
                     type_name = port_type.rsplit(".", 1)[-1]
-                    return (type_name, type(value).__name__ == type_name)
+                    return (type_name, type(value).__name__ == type_name, "string")
             else:
                 # Simple name - do name match
-                return (port_type, type(value).__name__ == port_type)
+                return (port_type, type(value).__name__ == port_type, "string")
 
         # MODE 2: Type object (including generics like list[int]) - use beartype
         if isinstance(port_type, type) or get_origin(port_type) is not None:
             type_name = getattr(port_type, '__name__', repr(port_type))
-            return (type_name, is_bearable(value, port_type))
+            return (type_name, is_bearable(value, port_type), "beartype")
 
         # PortTypeConfig - delegate based on content
         if isinstance(port_type, PortTypeConfig):
@@ -312,15 +326,15 @@ class NodeExecutionContext:
                 try:
                     type_obj = self._import_type(port_type.name)
                     type_name = port_type.name.rsplit(".", 1)[-1]
-                    return (type_name, isinstance(value, type_obj))
+                    return (type_name, isinstance(value, type_obj), "isinstance")
                 except (ImportError, AttributeError):
                     pass
             # Fall back to name match
             type_name = port_type.name.rsplit(".", 1)[-1] if "." in port_type.name else port_type.name
-            return (type_name, type(value).__name__ == type_name)
+            return (type_name, type(value).__name__ == type_name, "string")
 
         # Unknown type spec - no validation
-        return ("any", True)
+        return ("any", True, "none")
 
     def _import_type(self, import_path: str) -> type:
         """Import a type from a dotted import path.

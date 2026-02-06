@@ -390,36 +390,19 @@ def ui_to_graph_config(ui_nodes: list[dict], ui_edges: list[dict]) -> dict[str, 
 
         else:
             # Handle regular node
-            # Build in_ports dict
-            in_ports = {}
-            for port in data.get("inPorts", []):
-                port_config = {}
-                if port.get("type"):
-                    port_config["port_type"] = port["type"]
-                in_ports[port["name"]] = port_config
-
-            # Build out_ports dict
-            out_ports = {}
-            for port in data.get("outPorts", []):
-                port_config = {}
-                if port.get("type"):
-                    port_config["port_type"] = port["type"]
-                out_ports[port["name"]] = port_config
-
-            config_node = {
-                "type": "node",
-                "name": node_name,
-                "in_ports": in_ports,
-                "out_ports": out_ports,
-                "meta": {
-                    "ui": {
-                        "position": position,
-                    }
-                },
-            }
-
-            # Add factory if present
             if node_type == "factory":
+                # For factory nodes, only save name, factory, factory_args, and meta
+                # The factory will regenerate in_ports, out_ports, salvo conditions, etc.
+                config_node = {
+                    "type": "node",
+                    "name": node_name,
+                    "meta": {
+                        "ui": {
+                            "position": position,
+                        }
+                    },
+                }
+
                 if data.get("factory"):
                     config_node["factory"] = data["factory"]
                 if data.get("factoryArgs"):
@@ -431,11 +414,47 @@ def ui_to_graph_config(ui_nodes: list[dict], ui_edges: list[dict]) -> dict[str, 
                     if filtered_args:
                         config_node["factory_args"] = filtered_args
 
-            # Restore any extra config data
-            extra_config = data.get("_config", {})
-            for key, value in extra_config.items():
-                if key not in config_node:
-                    config_node[key] = value
+                # For factory nodes, only restore execution_config from extra config
+                # (pools assignment, etc.) - not ports or salvo conditions
+                extra_config = data.get("_config", {})
+                if "execution_config" in extra_config:
+                    config_node["execution_config"] = extra_config["execution_config"]
+
+            else:
+                # For regular (non-factory) nodes, include all port info
+                # Build in_ports dict
+                in_ports = {}
+                for port in data.get("inPorts", []):
+                    port_config = {}
+                    if port.get("type"):
+                        port_config["port_type"] = port["type"]
+                    in_ports[port["name"]] = port_config
+
+                # Build out_ports dict
+                out_ports = {}
+                for port in data.get("outPorts", []):
+                    port_config = {}
+                    if port.get("type"):
+                        port_config["port_type"] = port["type"]
+                    out_ports[port["name"]] = port_config
+
+                config_node = {
+                    "type": "node",
+                    "name": node_name,
+                    "in_ports": in_ports,
+                    "out_ports": out_ports,
+                    "meta": {
+                        "ui": {
+                            "position": position,
+                        }
+                    },
+                }
+
+                # Restore any extra config data for regular nodes
+                extra_config = data.get("_config", {})
+                for key, value in extra_config.items():
+                    if key not in config_node:
+                        config_node[key] = value
 
         config_nodes.append(config_node)
 
