@@ -369,7 +369,7 @@ class Net:
         except asyncio.QueueEmpty:
             return None
 
-    def drain_queue(
+    def flush_output_queue(
         self,
         queue_name: str | None = None,
         *,
@@ -401,7 +401,7 @@ class Net:
                 break
         return packets
 
-    def get_all_outputs(self) -> dict[str, list[OutputPacket]]:
+    def flush_all_output_queues(self) -> dict[str, list[OutputPacket]]:
         """Get all currently available packets from all queues.
 
         Non-blocking - drains all queues and returns their contents.
@@ -411,7 +411,7 @@ class Net:
         """
         result = {}
         for queue_name in list(self._output_queues.keys()):
-            packets = self.drain_queue(queue_name)
+            packets = self.flush_output_queue(queue_name)
             if packets:  # Only include non-empty queues
                 result[queue_name] = packets
         return result
