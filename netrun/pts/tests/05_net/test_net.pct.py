@@ -712,6 +712,114 @@ def test_check_type_distinguishes_modes():
 # %%
 test_check_type_distinguishes_modes()
 
+# %%
+#|export
+def test_type_checking_disabled():
+    """Test that type checking can be disabled via _type_checking_enabled."""
+    from netrun.net._net import PacketTypeMismatch
+
+    # Create context with type checking enabled (default)
+    ctx_enabled = NodeExecutionContext(
+        epoch_id="test",
+        node_name="Test",
+        _type_checking_enabled=True,
+    )
+    ctx_enabled._out_ports = {"out": PortConfig(port_type="int")}
+
+    # Should raise on type mismatch
+    try:
+        ctx_enabled._validate_port_type("out", "int", "not an int", "pkt1")
+        assert False, "Should have raised PacketTypeMismatch"
+    except PacketTypeMismatch:
+        pass  # Expected
+
+    # Create context with type checking disabled
+    ctx_disabled = NodeExecutionContext(
+        epoch_id="test",
+        node_name="Test",
+        _type_checking_enabled=False,
+    )
+    ctx_disabled._out_ports = {"out": PortConfig(port_type="int")}
+
+    # Should NOT raise on type mismatch
+    ctx_disabled._validate_port_type("out", "int", "not an int", "pkt1")
+    # If we get here without exception, the test passes
+
+# %%
+test_type_checking_disabled()
+
+# %%
+#|export
+def test_node_execution_config_type_checking():
+    """Test type_checking_enabled field in NodeExecutionConfig."""
+    # Default should be None (inherit from Net)
+    config = NodeExecutionConfig()
+    assert config.type_checking_enabled is None
+
+    # Can be set explicitly
+    config_enabled = NodeExecutionConfig(type_checking_enabled=True)
+    assert config_enabled.type_checking_enabled is True
+
+    config_disabled = NodeExecutionConfig(type_checking_enabled=False)
+    assert config_disabled.type_checking_enabled is False
+
+# %%
+test_node_execution_config_type_checking()
+
+# %%
+#|export
+def test_net_config_type_checking():
+    """Test type_checking_enabled field in NetConfig."""
+    # Default should be True
+    config = NetConfig(graph=GraphConfig(nodes=[], edges=[]))
+    assert config.type_checking_enabled is True
+
+    # Can be set explicitly
+    config_disabled = NetConfig(
+        graph=GraphConfig(nodes=[], edges=[]),
+        type_checking_enabled=False,
+    )
+    assert config_disabled.type_checking_enabled is False
+
+# %%
+test_net_config_type_checking()
+
+# %%
+#|export
+def test_preprocessor_type_checking_inheritance():
+    """Test that preprocessor correctly inherits/overrides type_checking_enabled."""
+    # Create node configs with different settings
+    node_configs = {
+        "inherit_node": NodeExecutionConfig(),  # None = inherit
+        "enabled_node": NodeExecutionConfig(type_checking_enabled=True),
+        "disabled_node": NodeExecutionConfig(type_checking_enabled=False),
+    }
+
+    # Test with net-level enabled (default)
+    preprocessor_enabled = create_net_func_preprocessor(
+        node_configs,
+        net_type_checking_enabled=True,
+    )
+
+    # Check the configs passed through
+    assert preprocessor_enabled._node_configs["inherit_node"].type_checking_enabled is True
+    assert preprocessor_enabled._node_configs["enabled_node"].type_checking_enabled is True
+    assert preprocessor_enabled._node_configs["disabled_node"].type_checking_enabled is False
+
+    # Test with net-level disabled
+    preprocessor_disabled = create_net_func_preprocessor(
+        node_configs,
+        net_type_checking_enabled=False,
+    )
+
+    # inherit_node should now be False, but explicit settings stay
+    assert preprocessor_disabled._node_configs["inherit_node"].type_checking_enabled is False
+    assert preprocessor_disabled._node_configs["enabled_node"].type_checking_enabled is True
+    assert preprocessor_disabled._node_configs["disabled_node"].type_checking_enabled is False
+
+# %%
+test_preprocessor_type_checking_inheritance()
+
 # %% [markdown]
 # ## NodeFailureContext Tests
 

@@ -96,6 +96,7 @@ class Net:
             self._node_out_ports,
             self._node_factories,
             net_node_vars=self._config_resolved.node_vars,
+            net_type_checking_enabled=self._config_resolved.type_checking_enabled,
         )
         func_done_callback = create_net_func_done_callback()
 

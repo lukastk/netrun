@@ -242,6 +242,15 @@ class NodeExecutionConfig(BaseModel):
     node_vars: dict[str, NodeVariable] | None = None
     """Per-node variables. Override net-level vars with the same name."""
 
+    type_checking_enabled: bool | None = None
+    """
+    Enable/disable runtime type checking for this node's packets.
+
+    - None: Inherit from NetConfig.type_checking_enabled (default)
+    - True: Enable type checking for this node
+    - False: Disable type checking for this node
+    """
+
     @field_serializer("exec_node_func", "start_node_func", "stop_node_func", "on_node_failure", when_used='json')
     def serialize_func(self, func: Callable | str | None) -> str | None:
         """Serialize functions to their import path for JSON.
