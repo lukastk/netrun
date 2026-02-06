@@ -271,9 +271,9 @@ class NodeInfo:
             return
         record.print_logs_to_stdout(include_timestamps=include_timestamps)
 
-    def print_all_logs(self, include_timestamps: bool = True) -> None:
-        """Print all logs for this node (across all epochs)."""
-        self._net.print_node_logs(self._name, include_timestamps=include_timestamps)
+    def print_all_logs(self, include_timestamps: bool = True, chronological: bool = False) -> None:
+        """Print all logs for this node, grouped by epoch or chronologically."""
+        self._net.print_node_logs(self._name, include_timestamps=include_timestamps, chronological=chronological)
 
     def __repr__(self) -> str:
         return f"NodeInfo(name={self._name!r})"

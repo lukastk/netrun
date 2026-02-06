@@ -102,7 +102,7 @@ def test_epoch_record_print_logs_to_stdout_with_timestamps(capsys):
 
     record.print_logs_to_stdout(include_timestamps=True)
     captured = capsys.readouterr()
-    assert str(t) in captured.out
+    assert "[10:30:00.000]" in captured.out
     assert "msg" in captured.out
 
 
@@ -157,7 +157,7 @@ def test_epochs_used_by_handle_print_buffer():
     assert net._epochs["epoch_1"].print_logs[0] == (timestamp, "hello\n")
 
     # Should be retrievable via get_node_log
-    node_logs = net.get_node_log("NodeA")
+    node_logs = net.get_node_logs("NodeA")
     assert len(node_logs) == 1
     assert node_logs[0] == (timestamp, "hello\n")
 
@@ -193,8 +193,8 @@ def test_handle_print_buffer_multiple_nodes():
     net._handle_print_buffer("epoch_b1", [(t2, "b1\n")])
     net._handle_print_buffer("epoch_a2", [(t3, "a2\n")])
 
-    node_a_logs = net.get_node_log("NodeA")
-    node_b_logs = net.get_node_log("NodeB")
+    node_a_logs = net.get_node_logs("NodeA")
+    node_b_logs = net.get_node_logs("NodeB")
     assert len(node_a_logs) == 2
     assert len(node_b_logs) == 1
 
