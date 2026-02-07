@@ -66,13 +66,11 @@ def test_net_config_with_output_queues():
         output_queues={
             "results": OutputQueueConfig(ports=[("Sink", "out")]),
         },
-        catch_all_output_queue="_uncategorized",
-        undeclared_output_behavior="discard",
+        error_on_undeclared_output=False,
     )
 
     assert "results" in config.output_queues
-    assert config.catch_all_output_queue == "_uncategorized"
-    assert config.undeclared_output_behavior == "discard"
+    assert config.error_on_undeclared_output is False
 
 
 def test_net_initializes_output_queues():
@@ -92,7 +90,6 @@ def test_net_initializes_output_queues():
             "results": OutputQueueConfig(ports=[("Sink", "out")]),
             "logs": OutputQueueConfig(ports=[("Logger", "out")]),
         },
-        catch_all_output_queue="_other",
     )
 
     net = Net(config)
@@ -100,7 +97,6 @@ def test_net_initializes_output_queues():
     # Check queues were created
     assert "results" in net._output_queues
     assert "logs" in net._output_queues
-    assert "_other" in net._output_queues
 
     # Check port-to-queue mapping
     assert net._port_to_queue[("Sink", "out")] == "results"
@@ -296,79 +292,8 @@ def test_net_route_orphaned_packet_to_queue_with_metadata():
     assert packet.epoch_id == "epoch_1"
 
 
-def test_net_route_orphaned_packet_to_catch_all():
-    """Test _route_orphaned_packet routes to catch-all queue."""
-    graph_config = GraphConfig(
-        nodes=[
-            NodeConfig(name="Unknown", out_ports={"out": PortConfig()}),
-        ],
-        edges=[],
-    )
-
-    config = NetConfig(
-        pools={"main": PoolConfig(spec=MainPoolConfig())},
-        graph=graph_config,
-        output_queues={},  # No specific queues
-        catch_all_output_queue="_other",
-    )
-
-    net = Net(config)
-
-    # Register a packet value
-    net._packet_store.register("pkt_456", "catch_all_value")
-
-    # Route the packet (not in any specific queue)
-    net._route_orphaned_packet(
-        packet_id="pkt_456",
-        from_node="Unknown",
-        from_port="out",
-        epoch_id="epoch_2",
-    )
-
-    # Check catch-all queue has the packet (default returns value)
-    assert net.has_output("_other")
-    value = net.try_get_output("_other")
-    assert value == "catch_all_value"
-
-
-def test_net_route_orphaned_packet_to_catch_all_with_metadata():
-    """Test _route_orphaned_packet catch-all with include_metadata=True."""
-    graph_config = GraphConfig(
-        nodes=[
-            NodeConfig(name="Unknown", out_ports={"out": PortConfig()}),
-        ],
-        edges=[],
-    )
-
-    config = NetConfig(
-        pools={"main": PoolConfig(spec=MainPoolConfig())},
-        graph=graph_config,
-        output_queues={},  # No specific queues
-        catch_all_output_queue="_other",
-    )
-
-    net = Net(config)
-
-    # Register a packet value
-    net._packet_store.register("pkt_456", "catch_all_value")
-
-    # Route the packet (not in any specific queue)
-    net._route_orphaned_packet(
-        packet_id="pkt_456",
-        from_node="Unknown",
-        from_port="out",
-        epoch_id="epoch_2",
-    )
-
-    # Check catch-all queue with metadata
-    packet = net.try_get_output("_other", include_metadata=True)
-    assert isinstance(packet, ConsumedOutputPacket)
-    assert packet.value == "catch_all_value"
-    assert packet.queue_name == "_other"
-
-
 def test_net_route_orphaned_packet_discard():
-    """Test _route_orphaned_packet discards when undeclared_output_behavior is discard."""
+    """Test _route_orphaned_packet discards when error_on_undeclared_output is False."""
     graph_config = GraphConfig(
         nodes=[
             NodeConfig(name="Unknown", out_ports={"out": PortConfig()}),
@@ -380,8 +305,7 @@ def test_net_route_orphaned_packet_discard():
         pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
         output_queues={},  # No specific queues
-        catch_all_output_queue=None,  # No catch-all
-        undeclared_output_behavior="discard",  # Discard undeclared
+        error_on_undeclared_output=False,
     )
 
     net = Net(config)
@@ -406,7 +330,7 @@ def test_net_route_orphaned_packet_discard():
 
 
 def test_net_route_orphaned_packet_error():
-    """Test _route_orphaned_packet raises when undeclared_output_behavior is error."""
+    """Test _route_orphaned_packet raises when error_on_undeclared_output is True."""
     graph_config = GraphConfig(
         nodes=[
             NodeConfig(name="Unknown", out_ports={"out": PortConfig()}),
@@ -418,8 +342,7 @@ def test_net_route_orphaned_packet_error():
         pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
         output_queues={},  # No specific queues
-        catch_all_output_queue=None,  # No catch-all
-        undeclared_output_behavior="error",  # Error on undeclared
+        error_on_undeclared_output=True,
     )
 
     net = Net(config)
