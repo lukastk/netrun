@@ -42,6 +42,28 @@ async def health_check():
     return {"status": "healthy"}
 
 
+@app.post("/api/shutdown")
+async def shutdown():
+    """Shut down the application.
+
+    In pywebview app mode this destroys the native window.
+    In plain server mode this stops the process.
+    """
+    import threading
+
+    def _do_shutdown():
+        try:
+            import webview
+            for w in webview.windows:
+                w.destroy()
+        except (ImportError, Exception):
+            os._exit(0)
+
+    # Run in background so the response can be sent first
+    threading.Timer(0.1, _do_shutdown).start()
+    return {"status": "shutting_down"}
+
+
 def find_first_netrun_file(directory: str) -> str | None:
     """Find the first .netrun.json or .netrun.toml file recursively.
 
@@ -75,7 +97,9 @@ async def get_config():
     Also returns the first netrun file found (if any) for auto-opening.
     """
     working_dir = os.environ.get("NETRUN_UI_WORKING_DIR") or os.getcwd()
-    first_file = find_first_netrun_file(working_dir)
+    # Explicit file from CLI takes priority over recursive search
+    initial_file = os.environ.get("NETRUN_UI_INITIAL_FILE")
+    first_file = initial_file if initial_file else find_first_netrun_file(working_dir)
     return {
         "working_dir": working_dir,
         "first_netrun_file": first_file,
