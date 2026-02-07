@@ -4,5 +4,5 @@ version = "0.1.0"
 description = "Deployable netrun application for remote pool server"
 requires-python = ">=3.11"
 dependencies = [
-    "netrun",
+    "netrun @ git+https://github.com/lukastk/netrun#subdirectory=netrun",
 ]

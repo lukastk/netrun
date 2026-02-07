@@ -1,6 +1,9 @@
 [pools.main]
 spec = { type = "main" }
 
+[pools.remote]
+spec = { type = "remote", num_processes = 1, threads_per_process = 1 }
+
 [[graph.nodes]]
 name = "double"
 factory = "netrun.node_factories.from_function"
