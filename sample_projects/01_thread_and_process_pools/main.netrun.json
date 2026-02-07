@@ -1,4 +1,18 @@
 {
+  "output_queues": {
+    "primes": {
+      "ports": [
+        ["in_main_pool", "out"],
+        ["in_thread_pool", "out"],
+        ["in_process_pool", "out"],
+        ["in_remote_pool", "out"],
+        ["in_all_pools", "out"]
+      ]
+    },
+    "count": {
+      "ports": [["count_once", "out"]]
+    }
+  },
   "recipes": {
     "add_node": {
       "path": "./recipes/add_node.py",
