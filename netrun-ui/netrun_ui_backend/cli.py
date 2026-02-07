@@ -334,6 +334,7 @@ def main() -> None:
         epilog="""
 Examples:
   netrun-ui                        Open native window (runs in background)
+  netrun-ui myfile.netrun.json     Open a specific file
   netrun-ui --fg                   Open native window (blocks until closed)
   netrun-ui --server               Start server for browser access
   netrun-ui --dev                  Development mode (requires Node.js)
@@ -388,6 +389,13 @@ Examples:
         help="Window height in app mode (default: 900)",
     )
 
+    parser.add_argument(
+        "file",
+        nargs="?",
+        default=None,
+        help="Netrun file to open (.netrun.json or .netrun.toml)",
+    )
+
     args = parser.parse_args()
 
     # Resolve port: auto-find a free one if not explicitly set
@@ -398,7 +406,23 @@ Examples:
             print(f"Error: {e}", file=sys.stderr)
             sys.exit(1)
 
+    # Resolve file argument
+    initial_file = None
+    if args.file:
+        file_path = Path(args.file).resolve()
+        if not file_path.exists():
+            print(f"Error: File not found: {file_path}", file=sys.stderr)
+            sys.exit(1)
+        initial_file = str(file_path)
+        # If no explicit working dir, use file's parent
+        if not args.working_dir:
+            args.working_dir = str(file_path.parent)
+
     initial_path = args.working_dir or os.getcwd()
+
+    # Set initial file env var before any run functions
+    if initial_file:
+        os.environ["NETRUN_UI_INITIAL_FILE"] = initial_file
 
     # For app modes (not --server), run in background by default
     if not args.server and not args.foreground:
@@ -411,6 +435,8 @@ Examples:
         cmd.extend(["-C", initial_path])
         cmd.extend(["--width", str(args.width)])
         cmd.extend(["--height", str(args.height)])
+        if initial_file:
+            cmd.append(initial_file)
 
         # Start detached process
         if sys.platform == "win32":
