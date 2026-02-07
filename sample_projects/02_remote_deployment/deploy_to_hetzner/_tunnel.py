@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import shlex
 import subprocess
 import time
 
@@ -25,7 +26,7 @@ def wait_for_remote_port(
     while time.time() < deadline:
         r = subprocess.run(
             _ssh_base(host, user, key_path) + [
-                f"bash -c 'echo > /dev/tcp/localhost/{port}' 2>/dev/null"
+                f"bash -c 'echo > /dev/tcp/localhost/{int(port)}' 2>/dev/null"
             ],
             capture_output=True, text=True,
         )
@@ -63,7 +64,7 @@ def start_ssh_tunnel(
         # Symlink the forwarded agent socket to a fixed path, then sleep
         # to keep the connection (and the agent socket) alive.
         remote_cmd = (
-            f'ln -sf "$SSH_AUTH_SOCK" {agent_sock_path} && '
+            f'ln -sf "$SSH_AUTH_SOCK" {shlex.quote(agent_sock_path)} && '
             f"sleep infinity"
         )
         cmd = [

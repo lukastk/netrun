@@ -35,6 +35,7 @@ Usage::
 from __future__ import annotations
 
 import os
+import shlex
 import signal
 import subprocess
 from dataclasses import dataclass, field
@@ -219,8 +220,9 @@ def check_deployed(
     Returns ``True`` if both the serve script and the virtualenv exist.
     """
     key = str(Path(ssh_private_key_path).expanduser())
+    _qdir = shlex.quote(remote_dir)
     cmd = _ssh_base(host, user, key) + [
-        f"test -f {remote_dir}/.netrun_serve_pool.py && test -d {remote_dir}/.venv"
+        f"test -f {_qdir}/.netrun_serve_pool.py && test -d {_qdir}/.venv"
     ]
     result = subprocess.run(cmd, capture_output=True)
     return result.returncode == 0
@@ -242,7 +244,8 @@ def check_pool_server_running(
     Returns ``True`` if the PID file exists and the process is alive.
     """
     key = str(Path(ssh_private_key_path).expanduser())
-    pid_file = f"{remote_dir}/.netrun_serve_pool.pid"
+    _qdir = shlex.quote(remote_dir)
+    pid_file = f"{_qdir}/.netrun_serve_pool.pid"
     cmd = _ssh_base(host, user, key) + [
         f'test -f {pid_file} && kill -0 "$(cat {pid_file})" 2>/dev/null'
     ]
@@ -290,6 +293,7 @@ def start_pool_server(
 
     # Start the tunnel first so the forwarded SSH agent socket is available
     # before the pool server launches.
+    _qdir = shlex.quote(remote_dir)
     tunnel_pid: int | None = None
     if ssh_tunnel:
         agent_sock = f"{remote_dir}/.ssh_agent.sock" if forward_ssh_agent else None
@@ -302,7 +306,7 @@ def start_pool_server(
         url = f"ws://{host}:{pool_server_port}"
 
     # Execute the start script on the remote (no-op if already running)
-    cmd = _ssh_base(host, user, key) + [f"{remote_dir}/.netrun_start.sh"]
+    cmd = _ssh_base(host, user, key) + [f"{_qdir}/.netrun_start.sh"]
     subprocess.run(cmd, check=True, capture_output=True, text=True)
 
     # Wait for the server process to start listening
@@ -335,7 +339,8 @@ def stop_pool_server(
     No-op if no PID file exists.
     """
     key = str(Path(ssh_private_key_path).expanduser())
-    pid_file = f"{remote_dir}/.netrun_serve_pool.pid"
+    _qdir = shlex.quote(remote_dir)
+    pid_file = f"{_qdir}/.netrun_serve_pool.pid"
     cmd = _ssh_base(host, user, key) + [
         f"test -f {pid_file} && kill $(cat {pid_file}) && rm -f {pid_file} "
         f"&& echo 'Pool server stopped.' || echo 'No pool server running.'"

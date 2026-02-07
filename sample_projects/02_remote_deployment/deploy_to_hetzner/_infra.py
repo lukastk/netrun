@@ -7,13 +7,37 @@ expressed as pyinfra operations and executed in a single ``run_ops`` call.
 from __future__ import annotations
 
 import io
+import re
+import shlex
 from pathlib import Path
 
 _ASSETS = Path(__file__).parent / "assets"
 
+_DOTTED_PATH_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*$")
+_SAFE_PATH_RE = re.compile(r"^[A-Za-z0-9/_.\-]+$")
+
+
+def _validate_safe_path(value: str, name: str) -> str:
+    """Validate that *value* contains only safe path characters.
+
+    Used for values that are substituted into bash script templates where
+    ``shlex.quote`` would break the surrounding quoting context.
+    """
+    if not _SAFE_PATH_RE.match(value):
+        raise ValueError(
+            f"{name} contains unsafe characters: {value!r}. "
+            "Only alphanumerics, '/', '_', '-', and '.' are allowed."
+        )
+    return value
+
 
 def _load_asset(name: str) -> str:
     return (_ASSETS / name).read_text()
+
+
+def _py_escape(s: str) -> str:
+    """Escape a string for safe inclusion inside a Python ``"..."`` literal."""
+    return s.replace("\\", "\\\\").replace('"', '\\"')
 
 
 # ---------------------------------------------------------------------------
@@ -39,35 +63,41 @@ def build_serve_script(
         file_path, var = net_source.split("::", 1)
         config_loader = "\n".join([
             "import importlib.util",
-            f'_spec = importlib.util.spec_from_file_location("_m", "{file_path}")',
+            f'_spec = importlib.util.spec_from_file_location("_m", "{_py_escape(file_path)}")',
             "_mod = importlib.util.module_from_spec(_spec)",
             "sys.modules[_spec.name] = _mod",
             "_spec.loader.exec_module(_mod)",
-            f'_cfg = getattr(_mod, "{var}")',
+            f'_cfg = getattr(_mod, "{_py_escape(var)}")',
         ])
     elif net_source.endswith((".toml", ".json")):
         config_loader = "\n".join([
             "from netrun.net.config import NetConfig",
-            f'_cfg = NetConfig.from_file("{net_source}")',
+            f'_cfg = NetConfig.from_file("{_py_escape(net_source)}")',
         ])
     else:
         mod, attr = net_source.rsplit(".", 1)
+        if not _DOTTED_PATH_RE.match(mod) or not _DOTTED_PATH_RE.match(attr):
+            raise ValueError(
+                f"Invalid dotted import path: {net_source!r}. "
+                "Must contain only alphanumerics, underscores, and dots."
+            )
         config_loader = f"from {mod} import {attr} as _cfg"
 
-    log_arg = f'"{log_file}"' if log_file else "None"
+    log_arg = f'"{_py_escape(log_file)}"' if log_file else "None"
 
     return (
         _load_asset("serve_pool.py.template")
         .replace("__CONFIG_LOADER__", config_loader)
-        .replace("__HOST__", host)
-        .replace("__PORT__", str(port))
+        .replace("__HOST__", _py_escape(host))
+        .replace("__PORT__", str(int(port)))
         .replace("__LOG_ARG__", log_arg)
-        .replace("__WORKER_NAME__", worker_name)
+        .replace("__WORKER_NAME__", _py_escape(worker_name))
     )
 
 
 def build_start_script(remote_dir: str, use_uv: bool = True) -> str:
     """Generate the shell wrapper that launches the pool server via nohup."""
+    _validate_safe_path(remote_dir, "remote_dir")
     prefix = "uv run " if use_uv else ""
     return (
         _load_asset("start.sh")
@@ -88,16 +118,18 @@ def build_watchdog_script(
     Hetzner API.  A *start_delay_minutes* grace period prevents deletion during
     initial deployment / first use.
     """
+    _validate_safe_path(remote_dir, "remote_dir")
     return (
         _load_asset("watchdog.sh")
         .replace("__REMOTE_DIR__", remote_dir)
-        .replace("__IDLE_TIMEOUT__", str(idle_minutes * 60))
-        .replace("__START_DELAY__", str(start_delay_minutes * 60))
+        .replace("__IDLE_TIMEOUT__", str(int(idle_minutes) * 60))
+        .replace("__START_DELAY__", str(int(start_delay_minutes) * 60))
     )
 
 
 def build_watchdog_service(remote_dir: str) -> str:
     """Generate a systemd service unit for the watchdog."""
+    _validate_safe_path(remote_dir, "remote_dir")
     return _load_asset("netrun-watchdog.service").replace("__REMOTE_DIR__", remote_dir)
 
 
@@ -173,6 +205,7 @@ def run_deployment(
                     server.shell(commands=[cmd])
 
             # 3. Transfer code
+            _qdir = shlex.quote(remote_dir)
             if local_folder:
                 server.shell(commands=[
                     "which rsync > /dev/null 2>&1 "
@@ -189,7 +222,7 @@ def run_deployment(
                 if git_url.startswith("git@"):
                     git_host = git_url.split("@")[1].split(":")[0]
                     server.shell(commands=[
-                        f"ssh-keyscan -H {git_host} "
+                        f"ssh-keyscan -H {shlex.quote(git_host)} "
                         f">> ~/.ssh/known_hosts 2>/dev/null || true",
                     ])
                 branch_kwargs = {}
@@ -203,13 +236,13 @@ def run_deployment(
             ])
             uv_parts = [
                 'export PATH="$HOME/.local/bin:$PATH"',
-                f"cd {remote_dir}",
+                f"cd {_qdir}",
             ]
             if python_version:
-                uv_parts.append(f"uv python install {python_version}")
+                uv_parts.append(f"uv python install {shlex.quote(python_version)}")
             sync_cmd = "uv sync"
             if uv_extra_args:
-                sync_cmd += f" {uv_extra_args}"
+                sync_cmd += f" {shlex.quote(uv_extra_args)}"
             uv_parts.append(sync_cmd)
             server.shell(commands=[" && ".join(uv_parts)])
 
@@ -217,9 +250,9 @@ def run_deployment(
             if netrun_install_spec:
                 git_install_parts = [
                     'export PATH="$HOME/.local/bin:$PATH"',
-                    f"cd {remote_dir}",
+                    f"cd {_qdir}",
                     f"uv pip install --reinstall --python .venv/bin/python "
-                    f"'{netrun_install_spec}'",
+                    f"{shlex.quote(netrun_install_spec)}",
                 ]
                 server.shell(commands=[" && ".join(git_install_parts)])
 
