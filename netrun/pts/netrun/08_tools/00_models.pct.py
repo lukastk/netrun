@@ -30,7 +30,6 @@ class ActionConfig(BaseModel):
     id: str
     label: str
     command: str
-    icon: str | None = None
 
 
 class ActionContext(BaseModel):
@@ -45,6 +44,8 @@ class ActionContext(BaseModel):
     node_env: dict[str, str] | None = None
     """Node-level variable overrides (highest precedence)."""
     working_directory: str | None = None
+    node_config: str | None = None
+    """JSON-serialized node configuration, available as $NODE_CONFIG."""
 
 
 class ActionResult(BaseModel):

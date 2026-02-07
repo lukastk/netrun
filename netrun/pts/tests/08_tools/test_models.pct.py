@@ -31,12 +31,6 @@ def test_action_config_basic():
     assert action.id == "test"
     assert action.label == "Test"
     assert action.command == "echo hello"
-    assert action.icon is None
-
-
-def test_action_config_with_icon():
-    action = ActionConfig(id="a1", label="Run", command="./run.sh", icon="play")
-    assert action.icon == "play"
 
 
 def test_action_context_defaults():
@@ -45,6 +39,7 @@ def test_action_context_defaults():
     assert ctx.env is None
     assert ctx.node_env is None
     assert ctx.working_directory is None
+    assert ctx.node_config is None
 
 
 def test_action_context_full():
@@ -57,10 +52,12 @@ def test_action_context_full():
         env={"FOO": "bar"},
         node_env={"BAZ": "qux"},
         working_directory="/tmp/work",
+        node_config='{"name": "MyNode"}',
     )
     assert ctx.node_name == "MyNode"
     assert ctx.env == {"FOO": "bar"}
     assert ctx.node_env == {"BAZ": "qux"}
+    assert ctx.node_config == '{"name": "MyNode"}'
 
 
 def test_action_result():

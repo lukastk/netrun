@@ -13,7 +13,6 @@ export interface Action {
 	id: string;
 	label: string;
 	command: string;
-	icon?: string;
 }
 
 // Project-level action settings stored in extra.ui

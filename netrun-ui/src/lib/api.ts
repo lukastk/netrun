@@ -155,6 +155,7 @@ export interface ExecuteActionResponse {
 	stdout: string;
 	stderr: string;
 	resolved_command: string;
+	timed_out?: boolean;
 }
 
 export interface ResolveTemplateResponse {

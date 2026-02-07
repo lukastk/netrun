@@ -1,0 +1,108 @@
+{
+  "project_root": ".",
+  "graph": {
+    "nodes": [
+      {
+        "name": "DataLoader",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {
+          "func": "json.loads"
+        },
+        "extra": {
+          "ui": {
+            "position": { "x": 100, "y": 150 }
+          }
+        }
+      },
+      {
+        "name": "Transformer",
+        "in_ports": {
+          "input": { "port_type": "dict" },
+          "config": { "port_type": "dict" }
+        },
+        "out_ports": {
+          "output": { "port_type": "dict" },
+          "logs": { "port_type": "str" }
+        },
+        "extra": {
+          "ui": {
+            "position": { "x": 400, "y": 100 },
+            "env": {
+              "TRANSFORM_MODE": "uppercase"
+            },
+            "actions": [
+              {
+                "id": "node-action-inspect",
+                "label": "Inspect Transform Config",
+                "command": "echo 'Node: $NODE_NAME, Mode: $TRANSFORM_MODE'"
+              }
+            ]
+          }
+        }
+      },
+      {
+        "name": "OutputSink",
+        "in_ports": {
+          "value": { "port_type": "any" }
+        },
+        "out_ports": {},
+        "extra": {
+          "ui": {
+            "position": { "x": 700, "y": 150 }
+          }
+        }
+      }
+    ],
+    "edges": [
+      { "source_str": "DataLoader.out", "target_str": "Transformer.input" },
+      { "source_str": "Transformer.output", "target_str": "OutputSink.value" }
+    ],
+    "extra": {
+      "ui": {
+        "defaultCmd": "echo",
+        "env": {
+          "GREETING": "hello",
+          "PROJECT_LABEL": "actions-demo"
+        },
+        "actions": [
+          {
+            "id": "action-show-node-config",
+            "label": "Show Node Config (jq)",
+            "command": "echo '$NODE_CONFIG' | jq ."
+          },
+          {
+            "id": "action-get-node-name",
+            "label": "Get Node Name from Config",
+            "command": "echo '$NODE_CONFIG' | jq -r '.name // \"(none)\"'"
+          },
+          {
+            "id": "action-echo-greeting",
+            "label": "Echo Greeting",
+            "command": "$DEFAULT_CMD '$GREETING from $NODE_NAME in $PROJECT_LABEL'"
+          },
+          {
+            "id": "action-show-paths",
+            "label": "Show Paths",
+            "command": "echo 'Project root: $PROJECT_ROOT' && echo 'Net file: $NET_FILE_PATH' && echo 'Net dir: $NET_FILE_DIR'"
+          },
+          {
+            "id": "action-list-files",
+            "label": "List Project Files",
+            "command": "ls -la $PROJECT_ROOT"
+          },
+          {
+            "id": "action-node-env-demo",
+            "label": "Show Node Env Override",
+            "command": "echo 'TRANSFORM_MODE=$TRANSFORM_MODE (set only on Transformer node)'"
+          }
+        ]
+      }
+    }
+  },
+  "recipes": {
+    "add_greeter_node": {
+      "path": "./recipes/add_greeter_node.py",
+      "description": "Add a greeter node to the graph"
+    }
+  }
+}

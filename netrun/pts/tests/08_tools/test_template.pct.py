@@ -62,6 +62,7 @@ def test_build_template_variables_with_values():
         net_file_path="/tmp/test.netrun.json",
         project_root="/tmp",
         default_cmd="python",
+        node_config='{"name": "MyNode"}',
     )
     vars = build_template_variables(ctx)
     assert vars["NODE_NAME"] == "MyNode"
@@ -70,6 +71,14 @@ def test_build_template_variables_with_values():
     assert vars["NET_FILE_DIR"] == "/tmp"
     assert vars["PROJECT_ROOT"] == "/tmp"
     assert vars["DEFAULT_CMD"] == "python"
+    assert vars["NODE_CONFIG"] == '{"name": "MyNode"}'
+
+
+def test_build_template_variables_node_config_default():
+    """NODE_CONFIG defaults to '{}' when not provided."""
+    ctx = ActionContext()
+    vars = build_template_variables(ctx)
+    assert vars["NODE_CONFIG"] == "{}"
 
 
 def test_build_template_variables_precedence():
@@ -126,6 +135,19 @@ def test_resolve_template_no_match():
     ctx = ActionContext()
     result = resolve_template("echo hello", ctx)
     assert result == "echo hello"
+
+
+def test_resolve_template_node_config():
+    ctx = ActionContext(node_config='{"name": "N"}')
+    result = resolve_template("echo $NODE_CONFIG", ctx)
+    assert result == 'echo {"name": "N"}'
+
+
+def test_resolve_template_regex_safe_value():
+    r"""Values with regex special chars (like backslashes in paths) are safe."""
+    ctx = ActionContext(env={"PATH_VAR": r"C:\Users\test"})
+    result = resolve_template("echo $PATH_VAR", ctx)
+    assert result == r"echo C:\Users\test"
 
 
 # --- resolve_working_directory ---

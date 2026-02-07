@@ -389,16 +389,23 @@ const nodeCommands: Command[] = [
 		category: 'node',
 		keywords: ['check', 'errors'],
 		action: async () => {
-			const result = validateAllNodes();
+			const result = await validateAllNodes();
 			if (result.valid) {
 				await showAlert({
 					title: 'Validation Passed',
 					message: 'All nodes are valid!',
 				});
 			} else {
+				const parts: string[] = [];
+				if (result.errorCount > 0) {
+					parts.push(`${result.errorCount} node(s) with errors (see nodes for details)`);
+				}
+				for (const err of result.configErrors) {
+					parts.push(err);
+				}
 				await showAlert({
 					title: 'Validation Failed',
-					message: `Found ${result.errorCount} node(s) with errors.`,
+					message: parts.join('\n'),
 				});
 			}
 		},

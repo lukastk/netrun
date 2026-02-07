@@ -25,9 +25,11 @@
 	import { showPrompt, showAlert, showConfirm } from '$lib/stores/modalStore';
 	import { showFactorySelector } from '$lib/stores/factorySelectorStore';
 
+	import type { ValidationResult } from '$lib/stores/flowStore';
+
 	// Validation state
-	let lastValidationResult = $state<{ valid: boolean; errorCount: number } | null>(null);
-	let isValidating = false;
+	let lastValidationResult = $state<ValidationResult | null>(null);
+	let isValidating = $state(false);
 
 	// Reset validation state when nodes or edges change (but not during validation itself)
 	$effect(() => {
@@ -265,22 +267,30 @@
 		<button
 			onclick={async () => {
 				isValidating = true;
-				lastValidationResult = validateAllNodes();
-				await tick();
+				lastValidationResult = await validateAllNodes();
 				isValidating = false;
+				if (!lastValidationResult.valid && lastValidationResult.configErrors.length > 0) {
+					await showAlert({
+						title: 'Config Errors',
+						message: lastValidationResult.configErrors.join('\n'),
+					});
+				}
 			}}
 			title="Validate all nodes"
+			disabled={isValidating}
 			class:has-errors={lastValidationResult && !lastValidationResult.valid}
 			class:has-success={lastValidationResult && lastValidationResult.valid}
 		>
 			<span class="icon">✓</span>
-			{#if lastValidationResult && lastValidationResult.valid}
-				<span class="label">Success</span>
+			{#if isValidating}
+				<span class="label">Validating...</span>
+			{:else if lastValidationResult && lastValidationResult.valid}
+				<span class="label">Valid</span>
 			{:else}
 				<span class="label">Validate</span>
 			{/if}
 			{#if lastValidationResult && !lastValidationResult.valid}
-				<span class="error-badge">{lastValidationResult.errorCount}</span>
+				<span class="error-badge">{lastValidationResult.errorCount + lastValidationResult.configErrors.length}</span>
 			{/if}
 		</button>
 		<div class="separator"></div>
