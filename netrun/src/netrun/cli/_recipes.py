@@ -17,13 +17,13 @@ from ..tools._recipes import execute_recipe, get_recipe_prompts
 recipes_app = typer.Typer(help="List and run recipes.", no_args_is_help=True)
 
 ConfigOpt = Annotated[Optional[str], typer.Option("--config", "-c", help="Path to netrun config file.")]
-PrettyOpt = Annotated[bool, typer.Option("--pretty", "-p", help="Pretty-print JSON output.")]
+PrettyOpt = Annotated[bool, typer.Option("--pretty/--compact", help="Pretty-print or compact JSON output.")]
 
 
 @recipes_app.command("list")
 def recipes_list(
     config: ConfigOpt = None,
-    pretty: PrettyOpt = False,
+    pretty: PrettyOpt = True,
 ) -> None:
     """List available recipes."""
     raw, config_path = load_raw_data(config)
@@ -38,7 +38,7 @@ def recipes_run(
     config: ConfigOpt = None,
     inputs: Annotated[Optional[str], typer.Option("--inputs", "-i", help="JSON string of input values.")] = None,
     output: Annotated[Optional[str], typer.Option("--output", "-o", help="Output file path for modified config.")] = None,
-    pretty: PrettyOpt = False,
+    pretty: PrettyOpt = True,
 ) -> None:
     """Run a recipe with JSON inputs."""
     raw, config_path = load_raw_data(config)

@@ -26,12 +26,12 @@ from ..net.config._nodes import NodeConfig, SubgraphConfig
 
 # %% pts/netrun/09_cli/02_commands.pct.py 5
 ConfigOpt = Annotated[Optional[str], typer.Option("--config", "-c", help="Path to netrun config file.")]
-PrettyOpt = Annotated[bool, typer.Option("--pretty", "-p", help="Pretty-print JSON output.")]
+PrettyOpt = Annotated[bool, typer.Option("--pretty/--compact", help="Pretty-print or compact JSON output.")]
 
 
 def validate(
     config: ConfigOpt = None,
-    pretty: PrettyOpt = False,
+    pretty: PrettyOpt = True,
 ) -> None:
     """Validate a netrun config file."""
     config_path = find_config(config)
@@ -99,7 +99,7 @@ def _port_map(ports: dict) -> dict[str, str | None]:
 
 def structure(
     config: ConfigOpt = None,
-    pretty: PrettyOpt = False,
+    pretty: PrettyOpt = True,
 ) -> None:
     """Output graph topology as JSON (strips extra, execution_config, pools)."""
     net_config, config_path = load_resolved_config(config)
@@ -182,7 +182,7 @@ def convert(
 # %% pts/netrun/09_cli/02_commands.pct.py 11
 def factory_info(
     factory_path: Annotated[str, typer.Argument(help="Dotted import path to factory module.")],
-    pretty: PrettyOpt = False,
+    pretty: PrettyOpt = True,
 ) -> None:
     """Inspect a factory module: parameters, types, defaults."""
     try:
@@ -226,7 +226,7 @@ def factory_info(
 # %% pts/netrun/09_cli/02_commands.pct.py 13
 def info(
     config: ConfigOpt = None,
-    pretty: PrettyOpt = False,
+    pretty: PrettyOpt = True,
 ) -> None:
     """Summary stats for a netrun config."""
     net_config, config_path = load_resolved_config(config)
@@ -281,7 +281,7 @@ def info(
 # %% pts/netrun/09_cli/02_commands.pct.py 15
 def nodes(
     config: ConfigOpt = None,
-    pretty: PrettyOpt = False,
+    pretty: PrettyOpt = True,
 ) -> None:
     """List all nodes with port names."""
     net_config, _ = load_resolved_config(config)
@@ -306,7 +306,7 @@ def nodes(
 def node(
     name: Annotated[str, typer.Argument(help="Node name.")],
     config: ConfigOpt = None,
-    pretty: PrettyOpt = False,
+    pretty: PrettyOpt = True,
 ) -> None:
     """Detailed info about a specific node."""
     net_config, _ = load_resolved_config(config)
