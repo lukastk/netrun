@@ -132,13 +132,23 @@ class GraphConfig(BaseModel):
             if isinstance(node, SubgraphConfig):
                 # Resolve subgraph to flat nodes and edges
                 sg_nodes, sg_edges, in_mapping, out_mapping = node.resolve(base_path=base_path)
-                resolved_nodes.extend(sg_nodes)
+                # Resolve factory nodes inside subgraphs (bug fix)
+                resolved_nodes.extend(n.resolve(project_root=project_root) for n in sg_nodes)
                 resolved_edges.extend(sg_edges)
                 subgraph_in_mappings[node.name] = in_mapping
                 subgraph_out_mappings[node.name] = out_mapping
             else:
                 # Regular node - resolve factories
-                resolved_nodes.append(node.resolve(project_root=project_root))
+                resolved = node.resolve(project_root=project_root)
+                if isinstance(resolved, SubgraphConfig):
+                    # Factory returned a subgraph — flatten it
+                    sg_nodes, sg_edges, in_mapping, out_mapping = resolved.resolve(base_path=base_path)
+                    resolved_nodes.extend(n.resolve(project_root=project_root) for n in sg_nodes)
+                    resolved_edges.extend(sg_edges)
+                    subgraph_in_mappings[resolved.name] = in_mapping
+                    subgraph_out_mappings[resolved.name] = out_mapping
+                else:
+                    resolved_nodes.append(resolved)
 
         # Second pass: rewrite edges that connect to subgraph exposed ports
         final_edges: list[EdgeConfig] = []

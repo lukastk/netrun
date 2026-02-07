@@ -2489,3 +2489,351 @@ def test_net_config_custom_output_queues_preserved():
 
 # %%
 test_net_config_custom_output_queues_preserved()
+
+# %% [markdown]
+# ## Subgraph Factory Tests
+
+# %%
+#|export
+def test_factory_returns_subgraph_basic():
+    """Test that a factory returning SubgraphConfig is flattened correctly."""
+    import textwrap
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        factory_file = tmp / "sg_factory.py"
+        factory_file.write_text(textwrap.dedent("""\
+            from netrun.net.config import (
+                NodeConfig, SubgraphConfig, EdgeConfig,
+                PortConfig, ExposedPortConfig,
+            )
+
+            def get_node_config(num_stages=2):
+                nodes = [
+                    NodeConfig(
+                        name=f"stage_{i}",
+                        in_ports={"in": PortConfig()},
+                        out_ports={"out": PortConfig()},
+                    )
+                    for i in range(num_stages)
+                ]
+                edges = [
+                    EdgeConfig(
+                        source_str=f"stage_{i}.out",
+                        target_str=f"stage_{i+1}.in",
+                    )
+                    for i in range(num_stages - 1)
+                ]
+                return SubgraphConfig(
+                    name="pipeline",
+                    nodes=nodes,
+                    edges=edges,
+                    exposed_in_ports={"in": ExposedPortConfig(
+                        internal_node="stage_0", internal_port="in",
+                    )},
+                    exposed_out_ports={"out": ExposedPortConfig(
+                        internal_node=f"stage_{num_stages - 1}", internal_port="out",
+                    )},
+                )
+        """))
+
+        graph = GraphConfig(
+            nodes=[
+                NodeConfig(name="pipeline", factory=str(factory_file)),
+            ],
+        )
+
+        resolved = graph.resolve(project_root=tmp)
+
+        # Should have 2 flattened nodes
+        assert len(resolved.nodes) == 2
+        node_names = [n.name for n in resolved.nodes]
+        assert "pipeline.stage_0" in node_names
+        assert "pipeline.stage_1" in node_names
+
+        # Should have internal edge
+        assert len(resolved.edges) == 1
+        edge = resolved.edges[0]
+        assert edge.get_source().node_name == "pipeline.stage_0"
+        assert edge.get_target().node_name == "pipeline.stage_1"
+
+# %%
+test_factory_returns_subgraph_basic()
+
+# %%
+#|export
+def test_factory_returns_subgraph_exposed_ports():
+    """Test that parent-level edges connect to exposed ports of factory subgraphs."""
+    import textwrap
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        factory_file = tmp / "sg_factory2.py"
+        factory_file.write_text(textwrap.dedent("""\
+            from netrun.net.config import (
+                NodeConfig, SubgraphConfig, EdgeConfig,
+                PortConfig, ExposedPortConfig,
+            )
+
+            def get_node_config():
+                return SubgraphConfig(
+                    name="inner",
+                    nodes=[
+                        NodeConfig(
+                            name="A",
+                            in_ports={"in": PortConfig()},
+                            out_ports={"out": PortConfig()},
+                        ),
+                        NodeConfig(
+                            name="B",
+                            in_ports={"in": PortConfig()},
+                            out_ports={"out": PortConfig()},
+                        ),
+                    ],
+                    edges=[EdgeConfig(source_str="A.out", target_str="B.in")],
+                    exposed_in_ports={"input": ExposedPortConfig(
+                        internal_node="A", internal_port="in",
+                    )},
+                    exposed_out_ports={"output": ExposedPortConfig(
+                        internal_node="B", internal_port="out",
+                    )},
+                )
+        """))
+
+        graph = GraphConfig(
+            nodes=[
+                NodeConfig(name="Source", out_ports={"out": PortConfig()}),
+                NodeConfig(name="middle", factory=str(factory_file)),
+                NodeConfig(name="Sink", in_ports={"in": PortConfig()}),
+            ],
+            edges=[
+                EdgeConfig(source_str="Source.out", target_str="middle.input"),
+                EdgeConfig(source_str="middle.output", target_str="Sink.in"),
+            ],
+        )
+
+        resolved = graph.resolve(project_root=tmp)
+
+        # 4 nodes: Source, middle.A, middle.B, Sink
+        assert len(resolved.nodes) == 4
+        node_names = [n.name for n in resolved.nodes]
+        assert "Source" in node_names
+        assert "middle.A" in node_names
+        assert "middle.B" in node_names
+        assert "Sink" in node_names
+
+        # 3 edges: Source->middle.A, middle.A->middle.B, middle.B->Sink
+        assert len(resolved.edges) == 3
+
+        # Check the rewritten edges connect properly
+        edge_pairs = [
+            (e.get_source().node_name, e.get_target().node_name)
+            for e in resolved.edges
+        ]
+        assert ("Source", "middle.A") in edge_pairs
+        assert ("middle.A", "middle.B") in edge_pairs
+        assert ("middle.B", "Sink") in edge_pairs
+
+# %%
+test_factory_returns_subgraph_exposed_ports()
+
+# %%
+#|export
+def test_factory_returns_subgraph_name_override():
+    """Test that NodeConfig's name overrides factory SubgraphConfig's name."""
+    import textwrap
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        factory_file = tmp / "sg_factory_name.py"
+        factory_file.write_text(textwrap.dedent("""\
+            from netrun.net.config import (
+                NodeConfig, SubgraphConfig, PortConfig, ExposedPortConfig,
+            )
+
+            def get_node_config():
+                return SubgraphConfig(
+                    name="default_name",
+                    nodes=[
+                        NodeConfig(name="Inner", in_ports={"in": PortConfig()}, out_ports={"out": PortConfig()}),
+                    ],
+                    exposed_in_ports={"in": ExposedPortConfig(internal_node="Inner", internal_port="in")},
+                    exposed_out_ports={"out": ExposedPortConfig(internal_node="Inner", internal_port="out")},
+                )
+        """))
+
+        # NodeConfig has explicit name that overrides factory's
+        node = NodeConfig(name="custom_name", factory=str(factory_file))
+        resolved = node.resolve(project_root=tmp)
+
+        assert isinstance(resolved, SubgraphConfig)
+        assert resolved.name == "custom_name"
+
+        # If name is empty, factory name is used
+        node2 = NodeConfig(factory=str(factory_file))
+        resolved2 = node2.resolve(project_root=tmp)
+        assert isinstance(resolved2, SubgraphConfig)
+        assert resolved2.name == "default_name"
+
+# %%
+test_factory_returns_subgraph_name_override()
+
+# %%
+#|export
+def test_factory_returns_subgraph_extra_merge():
+    """Test that extra dict is merged (NodeConfig overrides factory)."""
+    import textwrap
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        factory_file = tmp / "sg_factory_extra.py"
+        factory_file.write_text(textwrap.dedent("""\
+            from netrun.net.config import (
+                NodeConfig, SubgraphConfig, PortConfig, ExposedPortConfig,
+            )
+
+            def get_node_config():
+                return SubgraphConfig(
+                    name="sg",
+                    nodes=[
+                        NodeConfig(name="A", in_ports={"in": PortConfig()}),
+                    ],
+                    exposed_in_ports={"in": ExposedPortConfig(internal_node="A", internal_port="in")},
+                    extra={"factory_key": "factory_value", "shared_key": "from_factory"},
+                )
+        """))
+
+        node = NodeConfig(
+            name="sg",
+            factory=str(factory_file),
+            extra={"node_key": "node_value", "shared_key": "from_node"},
+        )
+        resolved = node.resolve(project_root=tmp)
+
+        assert isinstance(resolved, SubgraphConfig)
+        assert resolved.extra["factory_key"] == "factory_value"
+        assert resolved.extra["node_key"] == "node_value"
+        # NodeConfig's extra takes precedence
+        assert resolved.extra["shared_key"] == "from_node"
+
+# %%
+test_factory_returns_subgraph_extra_merge()
+
+# %%
+#|export
+def test_factory_returns_subgraph_from_factory_raises():
+    """Test that NodeConfig.from_factory() raises ValueError for subgraph factories."""
+    import textwrap
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        factory_file = tmp / "sg_factory_raise.py"
+        factory_file.write_text(textwrap.dedent("""\
+            from netrun.net.config import (
+                NodeConfig, SubgraphConfig, PortConfig, ExposedPortConfig,
+            )
+
+            def get_node_config():
+                return SubgraphConfig(
+                    name="sg",
+                    nodes=[NodeConfig(name="A", in_ports={"in": PortConfig()})],
+                    exposed_in_ports={"in": ExposedPortConfig(internal_node="A", internal_port="in")},
+                )
+
+            def get_node_funcs():
+                return None, None, None, None
+        """))
+
+        with pytest.raises(ValueError, match="from_factory\\(\\) does not support subgraph factories"):
+            NodeConfig.from_factory(factory=str(factory_file), project_root=tmp)
+
+# %%
+test_factory_returns_subgraph_from_factory_raises()
+
+# %%
+#|export
+def test_factory_returns_subgraph_serialization():
+    """Test NodeConfig with factory survives JSON roundtrip; after resolve, produces subgraph."""
+    import textwrap
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        factory_file = tmp / "sg_factory_serial.py"
+        factory_file.write_text(textwrap.dedent("""\
+            from netrun.net.config import (
+                NodeConfig, SubgraphConfig, PortConfig, ExposedPortConfig,
+            )
+
+            def get_node_config():
+                return SubgraphConfig(
+                    name="sg",
+                    nodes=[
+                        NodeConfig(name="X", in_ports={"in": PortConfig()}, out_ports={"out": PortConfig()}),
+                    ],
+                    exposed_in_ports={"in": ExposedPortConfig(internal_node="X", internal_port="in")},
+                    exposed_out_ports={"out": ExposedPortConfig(internal_node="X", internal_port="out")},
+                )
+        """))
+
+        # Create NodeConfig with factory
+        node = NodeConfig(name="my_sg", factory=str(factory_file))
+
+        # JSON roundtrip
+        json_str = node.model_dump_json()
+        loaded = NodeConfig.model_validate_json(json_str)
+
+        assert loaded.name == "my_sg"
+        assert loaded.factory == str(factory_file)
+
+        # Resolve produces subgraph
+        resolved = loaded.resolve(project_root=tmp)
+        assert isinstance(resolved, SubgraphConfig)
+        assert resolved.name == "my_sg"
+
+# %%
+test_factory_returns_subgraph_serialization()
+
+# %%
+#|export
+def test_factory_nodes_inside_subgraph_resolved():
+    """Test that factory-based NodeConfig inside an inline subgraph gets resolved."""
+    import textwrap
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        tmp = Path(tmp_dir)
+        factory_file = tmp / "inner_factory.py"
+        factory_file.write_text(textwrap.dedent("""\
+            from netrun.net.config import NodeConfig, PortConfig
+
+            def get_node_config():
+                return NodeConfig(
+                    name="FactoryNode",
+                    in_ports={"data": PortConfig()},
+                    out_ports={"result": PortConfig()},
+                )
+        """))
+
+        graph = GraphConfig(
+            nodes=[
+                NodeConfig(name="Source", out_ports={"out": PortConfig()}),
+                SubgraphConfig(
+                    name="sg",
+                    nodes=[
+                        NodeConfig(
+                            name="Worker",
+                            factory=str(factory_file),
+                        ),
+                    ],
+                    exposed_in_ports={"in": ExposedPortConfig(internal_node="Worker", internal_port="data")},
+                    exposed_out_ports={"out": ExposedPortConfig(internal_node="Worker", internal_port="result")},
+                ),
+                NodeConfig(name="Sink", in_ports={"in": PortConfig()}),
+            ],
+            edges=[
+                EdgeConfig(source_str="Source.out", target_str="sg.in"),
+                EdgeConfig(source_str="sg.out", target_str="Sink.in"),
+            ],
+        )
+
+        resolved = graph.resolve(project_root=tmp)
+
+        # The factory node inside the subgraph should have been resolved
+        worker = next(n for n in resolved.nodes if n.name == "sg.Worker")
+        assert "data" in worker.in_ports
+        assert "result" in worker.out_ports
+
+# %%
+test_factory_nodes_inside_subgraph_resolved()
