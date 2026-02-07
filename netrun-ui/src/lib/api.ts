@@ -146,6 +146,7 @@ export interface ExecuteActionRequest {
 	net_file_path?: string;
 	project_root?: string;
 	default_cmd?: string;
+	node_config?: string;  // JSON-serialized node config
 }
 
 export interface ExecuteActionResponse {
@@ -417,6 +418,7 @@ class ApiClient {
 			default_cmd?: string;
 			env?: Record<string, string>;
 			node_env?: Record<string, string>;  // Node-level variable overrides
+			node_config?: string;  // JSON-serialized node config
 		} = {}
 	): Promise<ResolveTemplateResponse> {
 		return this.request<ResolveTemplateResponse>('/actions/resolve', {
