@@ -1286,6 +1286,8 @@ class Net:
         if auto_start_epochs:
             startable = self.get_startable_epochs()
             if startable:
+                startable = self._filter_by_max_parallel_epochs(startable)
+            if startable:
                 # Execute epochs concurrently
                 tasks = [
                     asyncio.create_task(self._execute_epoch(epoch_id))
@@ -1336,6 +1338,46 @@ class Net:
     def get_running_epochs(self) -> list[str]:
         """Get list of currently running epoch IDs."""
         return list(self._running_epochs)
+
+    def _filter_by_max_parallel_epochs(self, epoch_ids: list[str]) -> list[str]:
+        """Filter startable epochs based on max_parallel_epochs limits.
+
+        For each node, only allows up to max_parallel_epochs concurrent
+        running epochs. Epochs beyond the limit are skipped and will remain
+        startable for future run_step() calls.
+
+        Args:
+            epoch_ids: List of startable epoch IDs.
+
+        Returns:
+            Filtered list of epoch IDs that are allowed to start.
+        """
+        # Count currently running epochs per node
+        running_per_node: dict[str, int] = {}
+        for eid in self._running_epochs:
+            record = self._epochs.get(eid)
+            if record:
+                running_per_node[record.node_name] = running_per_node.get(record.node_name, 0) + 1
+
+        allowed = []
+        # Track how many new epochs we're allowing per node (within this batch)
+        new_per_node: dict[str, int] = {}
+
+        for epoch_id in epoch_ids:
+            epoch = self._netsim.get_epoch(epoch_id)
+            node_name = epoch.node_name
+            config = self._get_node_execution_config(node_name)
+            max_parallel = config.max_parallel_epochs if config else None
+
+            if max_parallel is not None:
+                current = running_per_node.get(node_name, 0) + new_per_node.get(node_name, 0)
+                if current >= max_parallel:
+                    continue  # Skip — at the limit
+
+            new_per_node[node_name] = new_per_node.get(node_name, 0) + 1
+            allowed.append(epoch_id)
+
+        return allowed
 
     def _get_func_key(self, node_name: str) -> str:
         """Get the function key for a node's exec_node_func.
