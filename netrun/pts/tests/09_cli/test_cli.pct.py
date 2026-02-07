@@ -204,6 +204,21 @@ def test_actions_run_not_found():
     result = runner.invoke(app, ["actions", "run", "nonexistent", "double", "-c", BASIC_CONFIG])
     assert result.exit_code == 1
 
+
+def test_actions_run_requires_node_or_global():
+    result = runner.invoke(app, ["actions", "run", "some_action", "-c", BASIC_CONFIG])
+    assert result.exit_code == 2
+
+
+def test_actions_run_global_not_found():
+    result = runner.invoke(app, ["actions", "run", "nonexistent", "--global", "-c", BASIC_CONFIG])
+    assert result.exit_code == 1
+
+
+def test_actions_run_global_and_node_conflict():
+    result = runner.invoke(app, ["actions", "run", "some_action", "double", "--global", "-c", BASIC_CONFIG])
+    assert result.exit_code == 2
+
 # %% [markdown]
 # ## Test recipes
 
