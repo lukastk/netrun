@@ -1,0 +1,6 @@
+[Unit]
+Description=netrun auto-delete watchdog
+
+[Service]
+Type=oneshot
+ExecStart=__REMOTE_DIR__/.netrun_watchdog.sh

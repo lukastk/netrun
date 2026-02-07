@@ -1,0 +1,18 @@
+import asyncio, os, sys
+
+_dir = os.path.dirname(os.path.abspath(__file__))
+if _dir not in sys.path:
+    sys.path.insert(0, _dir)
+os.environ["PYTHONPATH"] = _dir + os.pathsep + os.environ.get("PYTHONPATH", "")
+
+from netrun.net import Net
+__CONFIG_LOADER__
+
+async def main():
+    ctx = Net.serve_pool(_cfg, "__HOST__", __PORT__, log_file=__LOG_ARG__, worker_name="__WORKER_NAME__")
+    await ctx.start()
+    await ctx.wait_until_stopped()
+    await ctx.stop()
+
+if __name__ == "__main__":
+    asyncio.run(main())
