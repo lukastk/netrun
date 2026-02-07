@@ -7,6 +7,13 @@ expressed as pyinfra operations and executed in a single ``run_ops`` call.
 from __future__ import annotations
 
 import io
+from pathlib import Path
+
+_ASSETS = Path(__file__).parent / "assets"
+
+
+def _load_asset(name: str) -> str:
+    return (_ASSETS / name).read_text()
 
 
 # ---------------------------------------------------------------------------
@@ -28,64 +35,75 @@ def build_serve_script(
     - Contains ``::`` (e.g. ``config.py::my_var``) — Python file + variable.
     - Otherwise — dotted import path (e.g. ``myapp.config.net``).
     """
-    log_arg = f'"{log_file}"' if log_file else "None"
-
-    lines = [
-        "import asyncio, os, sys",
-        "",
-        "_dir = os.path.dirname(os.path.abspath(__file__))",
-        "if _dir not in sys.path:",
-        "    sys.path.insert(0, _dir)",
-        'os.environ["PYTHONPATH"] = _dir + os.pathsep + os.environ.get("PYTHONPATH", "")',
-        "",
-        "from netrun.net import Net",
-    ]
-
     if "::" in net_source:
         file_path, var = net_source.split("::", 1)
-        lines += [
+        config_loader = "\n".join([
             "import importlib.util",
             f'_spec = importlib.util.spec_from_file_location("_m", "{file_path}")',
             "_mod = importlib.util.module_from_spec(_spec)",
             "sys.modules[_spec.name] = _mod",
             "_spec.loader.exec_module(_mod)",
             f'_cfg = getattr(_mod, "{var}")',
-        ]
+        ])
     elif net_source.endswith((".toml", ".json")):
-        lines += [
+        config_loader = "\n".join([
             "from netrun.net.config import NetConfig",
             f'_cfg = NetConfig.from_file("{net_source}")',
-        ]
+        ])
     else:
         mod, attr = net_source.rsplit(".", 1)
-        lines += [f"from {mod} import {attr} as _cfg"]
+        config_loader = f"from {mod} import {attr} as _cfg"
 
-    lines += [
-        "",
-        "async def main():",
-        f'    ctx = Net.serve_pool(_cfg, "{host}", {port}, '
-        f'log_file={log_arg}, worker_name="{worker_name}")',
-        "    await ctx.start()",
-        "    await ctx.wait_until_stopped()",
-        "    await ctx.stop()",
-        "",
-        'if __name__ == "__main__":',
-        "    asyncio.run(main())",
-    ]
-    return "\n".join(lines) + "\n"
+    log_arg = f'"{log_file}"' if log_file else "None"
+
+    return (
+        _load_asset("serve_pool.py.template")
+        .replace("__CONFIG_LOADER__", config_loader)
+        .replace("__HOST__", host)
+        .replace("__PORT__", str(port))
+        .replace("__LOG_ARG__", log_arg)
+        .replace("__WORKER_NAME__", worker_name)
+    )
 
 
 def build_start_script(remote_dir: str, use_uv: bool = True) -> str:
     """Generate the shell wrapper that launches the pool server via nohup."""
     prefix = "uv run " if use_uv else ""
     return (
-        "#!/bin/sh\n"
-        f'export PATH="$HOME/.local/bin:$PATH"\n'
-        f"cd {remote_dir}\n"
-        f"nohup {prefix}python .netrun_serve_pool.py "
-        f"> pool_server_stdout.log 2>&1 &\n"
-        f"echo $! > .netrun_serve_pool.pid\n"
+        _load_asset("start.sh")
+        .replace("__REMOTE_DIR__", remote_dir)
+        .replace("__RUN_PREFIX__", prefix)
     )
+
+
+def build_watchdog_script(
+    remote_dir: str,
+    idle_minutes: int = 10,
+    start_delay_minutes: int = 15,
+) -> str:
+    """Generate a bash script that auto-deletes the server after idle timeout.
+
+    The script checks whether the pool server process is running (via PID file).
+    If not running for longer than *idle_minutes*, it deletes the server via the
+    Hetzner API.  A *start_delay_minutes* grace period prevents deletion during
+    initial deployment / first use.
+    """
+    return (
+        _load_asset("watchdog.sh")
+        .replace("__REMOTE_DIR__", remote_dir)
+        .replace("__IDLE_TIMEOUT__", str(idle_minutes * 60))
+        .replace("__START_DELAY__", str(start_delay_minutes * 60))
+    )
+
+
+def build_watchdog_service(remote_dir: str) -> str:
+    """Generate a systemd service unit for the watchdog."""
+    return _load_asset("netrun-watchdog.service").replace("__REMOTE_DIR__", remote_dir)
+
+
+def build_watchdog_timer() -> str:
+    """Generate a systemd timer unit that fires the watchdog every minute."""
+    return _load_asset("netrun-watchdog.timer")
 
 
 # ---------------------------------------------------------------------------
@@ -98,6 +116,8 @@ def run_deployment(
     user: str,
     ssh_key: str | None,
     local_folder: str | None,
+    exclude: list[str] | None,
+    exclude_dir: list[str] | None,
     git_url: str | None,
     git_branch: str | None,
     remote_dir: str,
@@ -107,6 +127,11 @@ def run_deployment(
     uv_extra_args: str,
     pre_commands: list[str] | None,
     setup_firewall: bool,
+    netrun_install_spec: str | None,
+    watchdog_script: str | None = None,
+    watchdog_service: str | None = None,
+    watchdog_timer: str | None = None,
+    hcloud_api_token: str | None = None,
 ) -> None:
     """Execute all deployment operations on a remote host via pyinfra."""
     from pyinfra.api import Config, Inventory, State
@@ -154,7 +179,12 @@ def run_deployment(
                     "|| (apt-get update -qq "
                     "&& apt-get install -y -qq rsync > /dev/null 2>&1)",
                 ])
-                files.sync(src=local_folder, dest=remote_dir)
+                sync_kwargs: dict = {}
+                if exclude:
+                    sync_kwargs["exclude"] = exclude
+                if exclude_dir:
+                    sync_kwargs["exclude_dir"] = exclude_dir
+                files.sync(src=local_folder, dest=remote_dir, **sync_kwargs)
             elif git_url:
                 if git_url.startswith("git@"):
                     git_host = git_url.split("@")[1].split(":")[0]
@@ -183,7 +213,17 @@ def run_deployment(
             uv_parts.append(sync_cmd)
             server.shell(commands=[" && ".join(uv_parts)])
 
-            # 5. Upload scripts and start the pool server
+            # 4b. Override netrun with git version if requested
+            if netrun_install_spec:
+                git_install_parts = [
+                    'export PATH="$HOME/.local/bin:$PATH"',
+                    f"cd {remote_dir}",
+                    f"uv pip install --reinstall --python .venv/bin/python "
+                    f"'{netrun_install_spec}'",
+                ]
+                server.shell(commands=[" && ".join(git_install_parts)])
+
+            # 5. Upload scripts (server is started separately via start_pool_server())
             files.put(
                 src=io.BytesIO(serve_script.encode()),
                 dest=f"{remote_dir}/.netrun_serve_pool.py",
@@ -193,7 +233,31 @@ def run_deployment(
                 dest=f"{remote_dir}/.netrun_start.sh",
                 mode="755",
             )
-            server.shell(commands=[f"{remote_dir}/.netrun_start.sh"])
+
+            # 6. Auto-delete watchdog (opt-in)
+            if watchdog_script and watchdog_service and watchdog_timer and hcloud_api_token:
+                files.put(
+                    src=io.BytesIO(watchdog_script.encode()),
+                    dest=f"{remote_dir}/.netrun_watchdog.sh",
+                    mode="755",
+                )
+                files.put(
+                    src=io.BytesIO(hcloud_api_token.encode()),
+                    dest=f"{remote_dir}/.hcloud_token",
+                    mode="600",
+                )
+                files.put(
+                    src=io.BytesIO(watchdog_service.encode()),
+                    dest="/etc/systemd/system/netrun-watchdog.service",
+                )
+                files.put(
+                    src=io.BytesIO(watchdog_timer.encode()),
+                    dest="/etc/systemd/system/netrun-watchdog.timer",
+                )
+                server.shell(commands=[
+                    "systemctl daemon-reload "
+                    "&& systemctl enable --now netrun-watchdog.timer",
+                ])
 
         # -- execute ---------------------------------------------------------
         run_ops(state)

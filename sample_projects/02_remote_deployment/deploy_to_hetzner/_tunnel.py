@@ -40,19 +40,48 @@ def wait_for_remote_port(
 def start_ssh_tunnel(
     host: str, user: str, key_path: str,
     remote_port: int, local_port: int | None = None,
+    forward_agent: bool = False,
+    agent_sock_path: str | None = None,
 ) -> tuple[int, int]:
     """Start an SSH port-forward in the background.
+
+    If *forward_agent* is ``True``, enables SSH agent forwarding (``-A``)
+    and symlinks the forwarded agent socket to *agent_sock_path* on the
+    remote so that other processes can use it.
 
     Returns ``(local_port, pid)`` of the tunnel process.
     """
     if local_port is None:
         local_port = remote_port
     print(f"Opening SSH tunnel (localhost:{local_port} -> {host}:{remote_port})...")
+
+    extra_flags: list[str] = []
+    if forward_agent:
+        extra_flags.append("-A")
+
+    if forward_agent and agent_sock_path:
+        # Symlink the forwarded agent socket to a fixed path, then sleep
+        # to keep the connection (and the agent socket) alive.
+        remote_cmd = (
+            f'ln -sf "$SSH_AUTH_SOCK" {agent_sock_path} && '
+            f"sleep infinity"
+        )
+        cmd = [
+            "ssh", "-i", key_path, *_SSH_OPTS, *extra_flags,
+            "-L", f"{local_port}:localhost:{remote_port}",
+            f"{user}@{host}",
+            remote_cmd,
+        ]
+    else:
+        cmd = [
+            "ssh", "-i", key_path, *_SSH_OPTS, *extra_flags,
+            "-N",  # no remote command
+            "-L", f"{local_port}:localhost:{remote_port}",
+            f"{user}@{host}",
+        ]
+
     proc = subprocess.Popen(
-        ["ssh", "-i", key_path, *_SSH_OPTS,
-         "-N",  # no remote command
-         "-L", f"{local_port}:localhost:{remote_port}",
-         f"{user}@{host}"],
+        cmd,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
     )
@@ -61,4 +90,6 @@ def start_ssh_tunnel(
     if proc.poll() is not None:
         raise RuntimeError("SSH tunnel process exited immediately — check your SSH key and host")
     print(f"  Tunnel active (pid {proc.pid})")
+    if forward_agent:
+        print(f"  SSH agent forwarding enabled")
     return local_port, proc.pid
