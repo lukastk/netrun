@@ -31,13 +31,16 @@
 	let lastValidationResult = $state<ValidationResult | null>(null);
 	let isValidating = $state(false);
 
-	// Reset validation state when nodes or edges change (but not during validation itself)
+	// Reset validation state when nodes or edges change (but not during/right after validation)
+	let skipNextReset = false;
 	$effect(() => {
 		$nodes;
 		$edges;
-		if (!isValidating) {
-			lastValidationResult = null;
+		if (isValidating || skipNextReset) {
+			skipNextReset = false;
+			return;
 		}
+		lastValidationResult = null;
 	});
 
 	// State for loading/saving
@@ -268,6 +271,7 @@
 			onclick={async () => {
 				isValidating = true;
 				lastValidationResult = await validateAllNodes();
+				skipNextReset = true;
 				isValidating = false;
 				if (!lastValidationResult.valid && lastValidationResult.configErrors.length > 0) {
 					await showAlert({
