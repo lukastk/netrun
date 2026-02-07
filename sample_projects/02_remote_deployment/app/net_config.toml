@@ -4,10 +4,30 @@
 type = "main"
 
 [[graph.nodes]]
+name = "double"
 factory = "netrun.node_factories.from_function"
 
 [graph.nodes.factory_args]
-func = "nodes.find_primes"
+func = "nodes.double"
 
-[graph.nodes.execution_config]
-pools = ["main"]
+[[graph.nodes]]
+name = "add"
+factory = "netrun.node_factories.from_function"
+
+[graph.nodes.factory_args]
+func = "nodes.add"
+
+[[graph.nodes]]
+name = "format_result"
+factory = "netrun.node_factories.from_function"
+
+[graph.nodes.factory_args]
+func = "nodes.format_result"
+
+[[graph.edges]]
+source_str = "double.out"
+target_str = "add.a"
+
+[[graph.edges]]
+source_str = "add.out"
+target_str = "format_result.value"

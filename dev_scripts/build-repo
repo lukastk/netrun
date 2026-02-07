@@ -47,8 +47,8 @@ echo ""
 bold "── netrun ──"
 
 cd "$REPO/netrun"
-echo "  uv sync --no-dev"
-uv sync --no-dev
+echo "  uv sync"
+uv sync --all-extras
 
 echo "  Installing local netrun-sim"
 uv pip install --reinstall --no-deps "$NETRUN_SIM_WHEEL"
@@ -59,8 +59,8 @@ bold "── netrun-ui ──"
 
 cd "$REPO/netrun-ui"
 
-echo "  uv sync --no-dev"
-uv sync --no-dev
+echo "  uv sync"
+uv sync
 
 echo "  Building frontend"
 uv run python build_frontend.py

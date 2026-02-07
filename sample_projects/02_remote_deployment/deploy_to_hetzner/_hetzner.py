@@ -14,6 +14,17 @@ def _run(cmd: list[str]) -> subprocess.CompletedProcess[str]:
     return r
 
 
+def get_server_ip(server_name: str) -> str | None:
+    """Return the IPv4 address of an existing server, or None."""
+    result = subprocess.run(
+        ["hcloud", "server", "ip", server_name],
+        capture_output=True, text=True,
+    )
+    if result.returncode == 0:
+        return result.stdout.strip()
+    return None
+
+
 def create_server(
     name: str,
     ssh_key_name: str,
