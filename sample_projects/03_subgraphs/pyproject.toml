@@ -1,0 +1,13 @@
+[project]
+name = "subgraphs"
+version = "0.1.0"
+description = "Subgraph examples: inline, file-referenced, nested, and factory-generated"
+requires-python = ">=3.11"
+dependencies = [
+    "netrun",
+    "netrun-ui",
+]
+
+[tool.uv.sources]
+netrun = { path = "../../netrun", editable = true }
+netrun-ui = { path = "../../netrun-ui", editable = true }

@@ -1,0 +1,98 @@
+{
+  "extra": {
+    "description": "Demonstrates subgraphs: inline, file-referenced, nested, factory-generated, and port groups"
+  },
+  "output_queues": {
+    "results": {
+      "ports": [["format_output", "out"]]
+    },
+    "features": {
+      "ports": [
+        ["extract_features", "features.color"],
+        ["extract_features", "features.shape"],
+        ["extract_features", "features.size"]
+      ]
+    }
+  },
+  "graph": {
+    "extra": {
+      "ui": {
+        "viewport": {"x": 0, "y": 0, "zoom": 0.8}
+      }
+    },
+    "nodes": [
+      {
+        "name": "source",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {"func": "nodes.generate_data"},
+        "extra": {"ui": {"position": {"x": 100, "y": 200}}}
+      },
+
+      {
+        "type": "subgraph",
+        "name": "preprocess",
+        "nodes": [
+          {
+            "name": "normalize",
+            "factory": "netrun.node_factories.from_function",
+            "factory_args": {"func": "nodes.normalize"}
+          },
+          {
+            "name": "validate",
+            "factory": "netrun.node_factories.from_function",
+            "factory_args": {"func": "nodes.validate"}
+          }
+        ],
+        "edges": [
+          {"source_str": "normalize.out", "target_str": "validate.data"}
+        ],
+        "exposed_in_ports": {
+          "in": {"internal_node": "normalize", "internal_port": "data"}
+        },
+        "exposed_out_ports": {
+          "out": {"internal_node": "validate", "internal_port": "out"}
+        },
+        "extra": {"ui": {"position": {"x": 350, "y": 200}}}
+      },
+
+      {
+        "type": "subgraph",
+        "name": "shared",
+        "path": "./shared_pipeline.netrun.json",
+        "exposed_in_ports": {
+          "in": {"internal_node": "validate", "internal_port": "data"}
+        },
+        "exposed_out_ports": {
+          "out": {"internal_node": "enrich", "internal_port": "out"}
+        },
+        "extra": {"ui": {"position": {"x": 600, "y": 200}}}
+      },
+
+      {
+        "name": "format_output",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {"func": "nodes.format_output"},
+        "extra": {"ui": {"position": {"x": 850, "y": 200}}}
+      },
+
+      {
+        "name": "extract_features",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {"func": "nodes.extract_features"},
+        "extra": {"ui": {"position": {"x": 350, "y": 400}}}
+      },
+
+      {
+        "name": "factory_pipeline",
+        "factory": "./pipeline_factory.py",
+        "factory_args": {"num_stages": 3},
+        "extra": {"ui": {"position": {"x": 850, "y": 400}}}
+      }
+    ],
+    "edges": [
+      {"source_str": "source.out", "target_str": "preprocess.in"},
+      {"source_str": "preprocess.out", "target_str": "shared.in"},
+      {"source_str": "shared.out", "target_str": "format_output.data"}
+    ]
+  }
+}
