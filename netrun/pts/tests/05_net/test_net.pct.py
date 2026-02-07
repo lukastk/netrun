@@ -3497,7 +3497,7 @@ async def test_node_level_override_print(capsys):
 
 # %%
 #|export
-from netrun.net._net._net import _PoolServerContext
+from netrun.net._net._net import _PoolServerContext, _ServerLogCallback
 from netrun.net.config import RemotePoolConfig
 from tests.net.workers import doubler_node, echo_node
 
@@ -3792,16 +3792,20 @@ test_pool_server_context_log_no_file()
 
 # %%
 #|export
-def test_pool_server_context_make_done_callback():
-    """Test _PoolServerContext._make_done_callback returns a callable."""
-    ctx = _PoolServerContext(None, "127.0.0.1", 8080, log_file="/tmp/test.log")
-    callback = ctx._make_done_callback()
+def test_server_log_callback():
+    """Test _ServerLogCallback is callable and picklable."""
+    import pickle
+    callback = _ServerLogCallback("/tmp/test_netrun_log.log")
     assert callable(callback)
-    # Calling with no log file handle open should be a no-op
+    # Calling with result=None should be a no-op
     callback("arg0", "test_node", result=None)
+    # Must be picklable for multiprocess workers
+    pickled = pickle.dumps(callback)
+    restored = pickle.loads(pickled)
+    assert callable(restored)
 
 # %%
-test_pool_server_context_make_done_callback()
+test_server_log_callback()
 
 # %% [markdown]
 # ## EpochError Tests

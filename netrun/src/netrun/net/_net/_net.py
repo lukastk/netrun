@@ -34,6 +34,40 @@ from ...net._net._context import (
 from ...net._net._info import NodeInfo, EdgeInfo
 
 # %% pts/netrun/05_net/01_net/02_net.pct.py 4
+class _ServerLogCallback:
+    """Picklable callback that logs execution results to a file.
+
+    Unlike a closure, this can be pickled and sent to subprocess workers.
+    Each process lazily opens its own file handle in append mode.
+    """
+
+    def __init__(self, log_file_path: str):
+        self._path = log_file_path
+        self._fh = None
+
+    def _log(self, message: str):
+        if self._fh is None:
+            self._fh = open(self._path, "a")
+        self._fh.write(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] {message}\n")
+        self._fh.flush()
+
+    def __call__(self, *args, result=None, **kwargs):
+        if result is None:
+            return
+        node_name = args[1] if len(args) > 1 else "unknown"
+        status = "error" if result.exception else "ok"
+        self._log(f"[{node_name}] execution {status}")
+        if hasattr(result, "print_buffer") and result.print_buffer:
+            for _ts, msg in result.print_buffer:
+                self._log(f"[{node_name}] {msg}")
+
+    def __getstate__(self):
+        # Don't pickle the file handle — each process opens its own
+        state = self.__dict__.copy()
+        state["_fh"] = None
+        return state
+
+# %% pts/netrun/05_net/01_net/02_net.pct.py 5
 class _PoolServerContext:
     """Async context manager for Net.serve_pool.
 
@@ -52,20 +86,6 @@ class _PoolServerContext:
         if self._log_fh:
             self._log_fh.write(f"[{datetime.now().strftime('%H:%M:%S.%f')[:-3]}] {message}\n")
             self._log_fh.flush()
-
-    def _make_done_callback(self):
-        """Create a func_done_callback that logs execution results to the log file."""
-        ctx = self
-        def callback(*args, result=None, **kwargs):
-            if ctx._log_fh is None or result is None:
-                return
-            node_name = args[1] if len(args) > 1 else "unknown"
-            status = "error" if result.exception else "ok"
-            ctx._log(f"[{node_name}] execution {status}")
-            if hasattr(result, 'print_buffer') and result.print_buffer:
-                for _ts, msg in result.print_buffer:
-                    ctx._log(f"[{node_name}] {msg}")
-        return callback
 
     async def start(self):
         """Start the pool server."""
@@ -97,7 +117,7 @@ class _PoolServerContext:
     async def __aexit__(self, *exc_info):
         await self.stop()
 
-# %% pts/netrun/05_net/01_net/02_net.pct.py 5
+# %% pts/netrun/05_net/01_net/02_net.pct.py 6
 class Net:
     """Main orchestrator for flow-based network execution.
 
@@ -320,7 +340,7 @@ class Net:
         func_preprocessor = cls._create_func_preprocessor_from_config(config_resolved)
 
         ctx = _PoolServerContext(None, host, port, log_file)
-        done_callback = ctx._make_done_callback() if log_file else None
+        done_callback = _ServerLogCallback(log_file) if log_file else None
 
         server = _create_em_server(
             worker_name=worker_name,
