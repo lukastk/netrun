@@ -840,6 +840,7 @@
 							<NodeExecutionSection
 								{executionConfig}
 								{availablePools}
+								isFactory={$selectedNode.data.nodeType === 'factory'}
 								onUpdate={(config) => {
 									updateNodeExecutionConfig($selectedNode.id, config);
 									pushHistory();
