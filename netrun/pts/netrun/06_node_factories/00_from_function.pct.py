@@ -361,19 +361,22 @@ def _generate_output_salvo_condition(out_ports: dict[str, PortConfig]) -> dict[s
 
 # %%
 #|exporti
-def _create_exec_func(func: Callable, parsed_sig: _ParsedSignature) -> Callable:
+def _create_exec_func(func: Callable, parsed_sig: _ParsedSignature, manual_output: bool = False) -> Callable:
     """Create the exec_node_func that wraps the user function.
 
     The wrapper:
     1. Extracts packet values from input ports
     2. Handles special parameters (ctx, print)
     3. Calls the user function
-    4. Routes return value to output ports
-    5. Sends the output salvo
+    4. Routes return value to output ports (unless manual_output=True)
+    5. Sends the output salvo (unless manual_output=True)
 
     Args:
         func: The user function to wrap.
         parsed_sig: The parsed function signature.
+        manual_output: If True, the wrapper does not create packets or send
+            salvos from the return value.  The function must return None and
+            manage its own output via ``ctx``.
 
     Returns:
         An exec_node_func suitable for NodeExecutionConfig.
@@ -445,6 +448,18 @@ def _create_exec_func(func: Callable, parsed_sig: _ParsedSignature) -> Callable:
             # Send the output salvo
             ctx.send_output_salvo("send")
 
+    def _handle_result(ctx, result):
+        """Route result or validate manual_output mode."""
+        if manual_output:
+            if result is not None:
+                raise TypeError(
+                    f"Function {func.__name__} returned {type(result).__name__} "
+                    f"but manual_output=True requires it to return None "
+                    f"(manage output via ctx instead)"
+                )
+        else:
+            _route_result(ctx, result)
+
     if is_async:
         # Async user function - need to handle event loop
         def exec_node_func(ctx, packets):
@@ -453,7 +468,7 @@ def _create_exec_func(func: Callable, parsed_sig: _ParsedSignature) -> Callable:
 
             async def _run_async():
                 result = await func(**kwargs)
-                _route_result(ctx, result)
+                _handle_result(ctx, result)
                 return result
 
             # Check if we're already in a running event loop
@@ -478,7 +493,7 @@ def _create_exec_func(func: Callable, parsed_sig: _ParsedSignature) -> Callable:
             """Wrapper for sync user function."""
             kwargs = _prepare_kwargs(ctx, packets)
             result = func(**kwargs)
-            _route_result(ctx, result)
+            _handle_result(ctx, result)
             return result
 
     return exec_node_func
@@ -543,7 +558,7 @@ def _parse_node_config_override(override: Any) -> dict:
 
 # %%
 #|exporti
-def _from_function(func: Callable|str, include_port_types: bool = True) -> NodeConfig:
+def _from_function(func: Callable|str, include_port_types: bool = True, manual_output: bool = False) -> NodeConfig:
     """Create a NodeConfig from a function.
 
     Parses the function signature to determine input/output ports and
@@ -554,6 +569,8 @@ def _from_function(func: Callable|str, include_port_types: bool = True) -> NodeC
         include_port_types: If True (default), port configs will include type
             information from function annotations for runtime type checking.
             If False, ports will have no type constraints.
+        manual_output: If True, the node function manages its own output via
+            ctx and must return None.
 
     Returns:
         A complete NodeConfig.
@@ -606,7 +623,7 @@ def _from_function(func: Callable|str, include_port_types: bool = True) -> NodeC
     config = NodeConfig.model_validate(base_config_dict)
 
     # Create execution config with the wrapper function
-    exec_func = _create_exec_func(func, parsed_sig)
+    exec_func = _create_exec_func(func, parsed_sig, manual_output=manual_output)
     config.execution_config = NodeExecutionConfig(exec_node_func=exec_func)
 
     return config
@@ -623,7 +640,7 @@ def _get_func_from_import_path(func_path: str) -> Callable:
 
 # %%
 #|exporti
-def get_node_config(func: Callable | str, include_port_types: bool = True) -> NodeConfig:
+def get_node_config(func: Callable | str, include_port_types: bool = True, manual_output: bool = False) -> NodeConfig:
     """Factory function to get NodeConfig from a function.
 
     This implements the factory module protocol.  See ``_factory_desc`` for
@@ -636,6 +653,8 @@ def get_node_config(func: Callable | str, include_port_types: bool = True) -> No
         include_port_types: If True (default), port configs will include type
             information from function annotations for runtime type checking.
             If False, ports will have no type constraints.
+        manual_output: If True, the node manages its own output via ctx.
+            The function must return None.
 
     Returns:
         NodeConfig without execution_config (per factory protocol).
@@ -648,12 +667,12 @@ def get_node_config(func: Callable | str, include_port_types: bool = True) -> No
         func = _get_func_from_import_path(func)
 
     # Get full config and strip execution_config
-    config = _from_function(func, include_port_types)
+    config = _from_function(func, include_port_types, manual_output=manual_output)
     config.execution_config = None
     return config
 
 
-def get_node_funcs(func: Callable | str, include_port_types: bool = True) -> tuple:
+def get_node_funcs(func: Callable | str, include_port_types: bool = True, manual_output: bool = False) -> tuple:
     """Factory function to get execution functions.
 
     This implements the factory module protocol.
@@ -662,6 +681,8 @@ def get_node_funcs(func: Callable | str, include_port_types: bool = True) -> tup
         func: The function or its import path.
         include_port_types: Accepted for consistency with get_node_config but
             not used (type checking is a config concern, not execution).
+        manual_output: If True, the wrapper enforces that the function
+            returns None.
 
     Returns:
         Tuple of (exec_func, start_func, stop_func, on_failure_func).
@@ -670,7 +691,7 @@ def get_node_funcs(func: Callable | str, include_port_types: bool = True) -> tup
         func = _get_func_from_import_path(func)
 
     parsed_sig = _parse_function_signature(func)
-    exec_func = _create_exec_func(func, parsed_sig)
+    exec_func = _create_exec_func(func, parsed_sig, manual_output=manual_output)
 
     return (exec_func, None, None, None)
 
@@ -682,6 +703,12 @@ Creates a node from a regular Python function.
 **Factory args:**
 - ``func`` (str | callable): The function or its import path.
 - ``include_port_types`` (bool, default True): Include type annotations on ports.
+- ``manual_output`` (bool, default False): When True, the factory does not
+  create packets or send salvos from the return value.  The function must
+  return ``None`` and manage its own output via ``ctx`` (e.g. by calling
+  ``ctx.create_packet()``, ``ctx.load_output_port()``, and
+  ``ctx.send_output_salvo()`` directly).  Raises ``TypeError`` if the
+  function returns a non-None value.
 
 **Input ports** are derived from regular function parameters. Each parameter
 becomes an input port. If the parameter has a type annotation, the port gets
