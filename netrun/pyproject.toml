@@ -1,6 +1,6 @@
 [project]
 name = "netrun"
-version = "0.3.0"
+version = "0.3.1"
 description = "A flow-based development (FBD) runtime system."
 readme = "README.md"
 requires-python = ">=3.11"
@@ -41,8 +41,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build]
 ignore-vcs = true
-packages = ["src/netrun"]
-include = []
+sources = ["src"]
 
 [tool.ruff]
 target-version = "py311"
