@@ -55,7 +55,9 @@ from netrun.net.config import (
     SalvoConditionTermTrueConfig,
     SalvoConditionTermPortConfig,
     MaxSalvosFiniteConfig,
+    MaxSalvosInfiniteConfig,
     PacketCountAllConfig,
+    PacketCountNConfig,
     PortStateNonEmptyConfig,
 )
 from netrun.execution_manager import RunAllocationMethod
@@ -4687,3 +4689,234 @@ async def test_timeout_none_no_limit():
         # No timeout error - epoch should complete normally
         assert len(net.exception_queue) == 0
         assert len(net.dead_letter_queue) == 0
+
+# %% [markdown]
+# ## max_parallel_epochs Tests
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_max_parallel_epochs_limits_concurrent_starts():
+    """Test that max_parallel_epochs prevents starting too many epochs in a single run_step.
+
+    Accumulates 3 startable epochs by calling run_step(auto_start_epochs=False) multiple
+    times. With max_parallel_epochs=1, only 1 should start per run_step call.
+    """
+    execution_order = []
+
+    def tracked_node(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                val = ctx.consume_packet(pid)
+                execution_order.append(val)
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Worker",
+                in_ports={"in": PortConfig()},
+                in_salvo_conditions={
+                    "trigger": SalvoConditionConfig(
+                        max_salvos=MaxSalvosInfiniteConfig(),
+                        ports={"in": PacketCountNConfig(count=1)},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="Worker",
+                    pools=["main"],
+                    exec_node_func=tracked_node,
+                    max_parallel_epochs=1,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        # Inject 3 packets
+        net.inject_data("Worker", "in", [10, 20, 30])
+
+        # Accumulate startable epochs by calling run_step(auto_start_epochs=False)
+        # multiple times. Each call creates 1 more startable epoch.
+        for _ in range(3):
+            await net.run_step(auto_start_epochs=False)
+        startable = net.get_startable_epochs()
+        assert len(startable) == 3, f"Expected 3 startable epochs, got {len(startable)}"
+
+        # Now run_step with auto_start_epochs=True — should only start 1
+        await net.run_step(auto_start_epochs=True)
+
+        # Should have executed exactly 1 epoch
+        assert len(execution_order) == 1
+
+        # Run until all are done
+        await net.run_until_blocked()
+
+    # All 3 packets should have been processed eventually
+    assert sorted(execution_order) == [10, 20, 30]
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_max_parallel_epochs_none_allows_all():
+    """Test that max_parallel_epochs=None (default) allows all startable epochs."""
+    execution_order = []
+
+    def tracked_node(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                val = ctx.consume_packet(pid)
+                execution_order.append(val)
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Worker",
+                in_ports={"in": PortConfig()},
+                in_salvo_conditions={
+                    "trigger": SalvoConditionConfig(
+                        max_salvos=MaxSalvosInfiniteConfig(),
+                        ports={"in": PacketCountNConfig(count=1)},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="Worker",
+                    pools=["main"],
+                    exec_node_func=tracked_node,
+                    # max_parallel_epochs defaults to None — unlimited
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        net.inject_data("Worker", "in", [10, 20, 30])
+
+        # Accumulate 3 startable epochs
+        for _ in range(3):
+            await net.run_step(auto_start_epochs=False)
+        startable = net.get_startable_epochs()
+        assert len(startable) == 3
+
+        # Run once with auto_start — all should start (no max_parallel limit)
+        await net.run_step(auto_start_epochs=True)
+
+        # All 3 should have been executed in the single run_step
+        assert len(execution_order) == 3
+
+    assert sorted(execution_order) == [10, 20, 30]
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_max_parallel_epochs_per_node():
+    """Test that max_parallel_epochs is enforced per-node, not globally."""
+    results_a = []
+    results_b = []
+
+    def node_a_func(ctx, packets):
+        for pkt_ids in packets.values():
+            for pid in pkt_ids:
+                results_a.append(ctx.consume_packet(pid))
+
+    def node_b_func(ctx, packets):
+        for pkt_ids in packets.values():
+            for pid in pkt_ids:
+                results_b.append(ctx.consume_packet(pid))
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="NodeA",
+                in_ports={"in": PortConfig()},
+                in_salvo_conditions={
+                    "trigger": SalvoConditionConfig(
+                        max_salvos=MaxSalvosInfiniteConfig(),
+                        ports={"in": PacketCountNConfig(count=1)},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="NodeA",
+                    pools=["main"],
+                    exec_node_func=node_a_func,
+                    max_parallel_epochs=1,
+                ),
+            ),
+            NodeConfig(
+                name="NodeB",
+                in_ports={"in": PortConfig()},
+                in_salvo_conditions={
+                    "trigger": SalvoConditionConfig(
+                        max_salvos=MaxSalvosInfiniteConfig(),
+                        ports={"in": PacketCountNConfig(count=1)},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="NodeB",
+                    pools=["main"],
+                    exec_node_func=node_b_func,
+                    max_parallel_epochs=1,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        # Inject 2 packets to each node
+        net.inject_data("NodeA", "in", [1, 2])
+        net.inject_data("NodeB", "in", [3, 4])
+
+        # Accumulate startable epochs (2 run_steps to get 1 per node per step)
+        for _ in range(2):
+            await net.run_step(auto_start_epochs=False)
+
+        startable = net.get_startable_epochs()
+        # Should have at least 2 startable (1+ per node)
+        assert len(startable) >= 2
+
+        # Run one step — each node should start max 1 epoch
+        await net.run_step(auto_start_epochs=True)
+
+        # Each node should have processed at most 1 packet
+        assert len(results_a) <= 1
+        assert len(results_b) <= 1
+
+        # Run until complete
+        await net.run_until_blocked()
+
+    # All packets processed eventually
+    assert sorted(results_a) == [1, 2]
+    assert sorted(results_b) == [3, 4]
