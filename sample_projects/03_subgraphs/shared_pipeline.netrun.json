@@ -1,0 +1,17 @@
+{
+  "nodes": [
+    {
+      "name": "validate",
+      "factory": "netrun.node_factories.from_function",
+      "factory_args": {"func": "nodes.validate"}
+    },
+    {
+      "name": "enrich",
+      "factory": "netrun.node_factories.from_function",
+      "factory_args": {"func": "nodes.enrich"}
+    }
+  ],
+  "edges": [
+    {"source_str": "validate.out", "target_str": "enrich.data"}
+  ]
+}
