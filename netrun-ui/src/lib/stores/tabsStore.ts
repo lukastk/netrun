@@ -188,13 +188,9 @@ export async function closeTab(tabId: string, confirmUnsaved: boolean = true): P
 		}
 	}
 
-	// If this is the last tab, create a new empty one
+	// If this is the last tab, close the window
 	if (tabList.length === 1) {
-		const newTab = createEmptyTabState();
-		tabs.set([newTab]);
-		activeTabId.set(newTab.id);
-		// Clear URL since there's no file open
-		updateUrlWithFile(null);
+		window.close();
 		return true;
 	}
 

@@ -22,8 +22,9 @@
 <style>
 	.toast-container {
 		position: fixed;
-		bottom: 20px;
-		right: 20px;
+		top: 20px;
+		left: 50%;
+		transform: translateX(-50%);
 		z-index: 9999;
 		display: flex;
 		flex-direction: column;
@@ -45,11 +46,11 @@
 
 	@keyframes slideIn {
 		from {
-			transform: translateX(100%);
+			transform: translateY(-100%);
 			opacity: 0;
 		}
 		to {
-			transform: translateX(0);
+			transform: translateY(0);
 			opacity: 1;
 		}
 	}
