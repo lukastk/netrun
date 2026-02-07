@@ -796,20 +796,34 @@ function computeValidatedNodes(nodes: FlowNode[]): { nodes: FlowNode[]; errorCou
 	return { nodes: updatedNodes, errorCount };
 }
 
-/**
- * Validate all nodes in the active tab and update their validation state
- */
-export function validateAllNodes(): { valid: boolean; errorCount: number } {
-	const tab = get(activeTab);
-	if (!tab) return { valid: true, errorCount: 0 };
+export interface ValidationResult {
+	valid: boolean;
+	/** Number of nodes that have errors. */
+	errorCount: number;
+	/** Config-level errors not attributable to a specific node. */
+	configErrors: string[];
+}
 
-	const { nodes: updatedNodes, errorCount } = computeValidatedNodes(tab.nodes);
+/**
+ * Validate all nodes in the active tab and update their validation state.
+ * Runs both client-side and backend validation, awaiting the full result.
+ */
+export async function validateAllNodes(): Promise<ValidationResult> {
+	const tab = get(activeTab);
+	if (!tab) return { valid: true, errorCount: 0, configErrors: [] };
+
+	const { nodes: updatedNodes, errorCount: clientErrorCount } = computeValidatedNodes(tab.nodes);
 	updateActiveTab({ nodes: updatedNodes });
 
-	// Also trigger backend validation
-	triggerBackendValidation();
+	// Run backend validation synchronously (not debounced) and count total errors
+	const backendResult = await runBackendValidation();
+	const totalNodeErrors = clientErrorCount + backendResult.nodeErrorCount;
 
-	return { valid: errorCount === 0, errorCount };
+	return {
+		valid: totalNodeErrors === 0 && backendResult.configErrors.length === 0,
+		errorCount: totalNodeErrors,
+		configErrors: backendResult.configErrors,
+	};
 }
 
 // Backend validation state
@@ -819,121 +833,166 @@ export const backendValidationAvailable = writable<boolean>(true);
 // Debounce timer for backend validation
 let backendValidationTimer: ReturnType<typeof setTimeout> | null = null;
 
+interface BackendValidationResult {
+	/** Number of nodes with backend-detected errors (factory imports, node-level pydantic). */
+	nodeErrorCount: number;
+	/** Config-level errors not attributable to a specific node. */
+	configErrors: string[];
+}
+
 /**
- * Trigger backend validation (debounced)
+ * Core backend validation logic.
+ * Runs Pydantic model validation and factory import checks.
+ * Attributes errors to individual nodes where possible;
+ * returns remaining config-level errors separately.
+ */
+async function runBackendValidation(): Promise<BackendValidationResult> {
+	const tab = get(activeTab);
+	if (!tab) return { nodeErrorCount: 0, configErrors: [] };
+
+	try {
+		// Convert nodes to UINode format for API
+		const apiNodes: UINode[] = tab.nodes.map(n => ({
+			id: n.id,
+			type: n.type || 'netrunNode',
+			position: n.position,
+			data: {
+				label: n.data.label,
+				nodeType: n.data.nodeType,
+				inPorts: n.data.inPorts,
+				outPorts: n.data.outPorts,
+				factory: (n.data as NetrunNodeData).factory,
+				factoryArgs: (n.data as NetrunNodeData).factoryArgs,
+				_config: (n.data as NetrunNodeData)._config,
+				_subgraphConfig: (n.data as SubgraphNodeData)._subgraphConfig,
+			},
+		}));
+
+		const apiEdges: UIEdge[] = tab.edges.map(e => ({
+			id: e.id,
+			source: e.source,
+			target: e.target,
+			sourceHandle: e.sourceHandle ?? undefined,
+			targetHandle: e.targetHandle ?? undefined,
+			type: e.type,
+		}));
+
+		const response = await api.validateConfig(
+			apiNodes,
+			apiEdges,
+			tab.graphExtra ?? undefined,
+			tab.extraData ?? undefined
+		);
+
+		backendValidationAvailable.set(response.netrun_available);
+		backendValidationErrors.set(response.errors);
+
+		// Collect per-node errors from Pydantic validation
+		// Errors with loc like ["graph", "nodes", <index>, ...] can be attributed to a node
+		const nodeErrorMap = new Map<string, string[]>();
+		const configErrors: string[] = [];
+
+		for (const err of response.errors) {
+			const loc = err.loc;
+			// Match patterns: ["graph", "nodes", <idx>, ...] or ["nodes", <idx>, ...]
+			let nodeIdx: number | null = null;
+			if (loc.length >= 3 && loc[0] === 'graph' && loc[1] === 'nodes') {
+				nodeIdx = parseInt(String(loc[2]), 10);
+			} else if (loc.length >= 2 && loc[0] === 'nodes') {
+				nodeIdx = parseInt(String(loc[1]), 10);
+			}
+
+			if (nodeIdx !== null && !isNaN(nodeIdx) && nodeIdx >= 0 && nodeIdx < tab.nodes.length) {
+				const nodeId = tab.nodes[nodeIdx].id;
+				const fieldPath = loc.slice(loc.indexOf(String(nodeIdx)) + 1).join('.');
+				const msg = fieldPath ? `${fieldPath}: ${err.msg}` : err.msg;
+				const existing = nodeErrorMap.get(nodeId) || [];
+				existing.push(msg);
+				nodeErrorMap.set(nodeId, existing);
+			} else {
+				const locStr = loc.join('.');
+				configErrors.push(locStr ? `${locStr}: ${err.msg}` : err.msg);
+			}
+		}
+
+		// Validate factory import paths
+		const factoryNodes = tab.nodes.filter(
+			n => n.data.nodeType === 'factory' && (n.data as NetrunNodeData).factory?.trim()
+		);
+
+		if (factoryNodes.length > 0) {
+			const projectRoot = (tab.extraData as Record<string, unknown>)?.project_root as string | undefined;
+			const results = await Promise.all(
+				factoryNodes.map(async (node) => {
+					const factory = (node.data as NetrunNodeData).factory!;
+					try {
+						const result = await api.validateImport(factory, projectRoot);
+						if (!result.valid) {
+							return { nodeId: node.id, error: `Factory import failed: ${result.error}` };
+						}
+						if (!result.is_factory) {
+							return { nodeId: node.id, error: `Module '${factory}' has no get_node_config function` };
+						}
+						return null;
+					} catch {
+						return null; // Backend unreachable, skip
+					}
+				})
+			);
+
+			for (const result of results) {
+				if (result) {
+					const existing = nodeErrorMap.get(result.nodeId) || [];
+					existing.push(result.error);
+					nodeErrorMap.set(result.nodeId, existing);
+				}
+			}
+		}
+
+		// Merge all backend node errors into node state
+		if (nodeErrorMap.size > 0) {
+			const currentTab = get(activeTab);
+			if (!currentTab) return { nodeErrorCount: nodeErrorMap.size, configErrors };
+
+			const { nodes: validatedNodes } = computeValidatedNodes(currentTab.nodes);
+			const mergedNodes = validatedNodes.map(node => {
+				const bErrors = nodeErrorMap.get(node.id);
+				if (bErrors) {
+					const existingErrors = node.data.validationErrors || [];
+					return {
+						...node,
+						data: {
+							...node.data,
+							isValid: false,
+							validationErrors: [...existingErrors, ...bErrors],
+						},
+					};
+				}
+				return node;
+			});
+
+			updateActiveTab({ nodes: mergedNodes });
+		}
+
+		return { nodeErrorCount: nodeErrorMap.size, configErrors };
+	} catch (e) {
+		// Backend not available - clear errors but note it's not available
+		backendValidationAvailable.set(false);
+		backendValidationErrors.set([]);
+		return { nodeErrorCount: 0, configErrors: [] };
+	}
+}
+
+/**
+ * Trigger backend validation (debounced) — used for auto-validation on changes.
  */
 function triggerBackendValidation() {
 	if (backendValidationTimer) {
 		clearTimeout(backendValidationTimer);
 	}
 
-	backendValidationTimer = setTimeout(async () => {
-		const tab = get(activeTab);
-		if (!tab) return;
-
-		try {
-			// Convert nodes to UINode format for API
-			const apiNodes: UINode[] = tab.nodes.map(n => ({
-				id: n.id,
-				type: n.type || 'netrunNode',
-				position: n.position,
-				data: {
-					label: n.data.label,
-					nodeType: n.data.nodeType,
-					inPorts: n.data.inPorts,
-					outPorts: n.data.outPorts,
-					factory: (n.data as NetrunNodeData).factory,
-					factoryArgs: (n.data as NetrunNodeData).factoryArgs,
-					_config: (n.data as NetrunNodeData)._config,
-					_subgraphConfig: (n.data as SubgraphNodeData)._subgraphConfig,
-				},
-			}));
-
-			const apiEdges: UIEdge[] = tab.edges.map(e => ({
-				id: e.id,
-				source: e.source,
-				target: e.target,
-				sourceHandle: e.sourceHandle ?? undefined,
-				targetHandle: e.targetHandle ?? undefined,
-				type: e.type,
-			}));
-
-			const response = await api.validateConfig(
-				apiNodes,
-				apiEdges,
-				tab.graphExtra ?? undefined,
-				tab.extraData ?? undefined
-			);
-
-			backendValidationAvailable.set(response.netrun_available);
-			backendValidationErrors.set(response.errors);
-
-			// Validate factory import paths
-			const factoryNodes = tab.nodes.filter(
-				n => n.data.nodeType === 'factory' && (n.data as NetrunNodeData).factory?.trim()
-			);
-
-			const factoryErrorMap = new Map<string, string[]>();
-
-			if (factoryNodes.length > 0) {
-				const projectRoot = (tab.extraData as Record<string, unknown>)?.project_root as string | undefined;
-				const results = await Promise.all(
-					factoryNodes.map(async (node) => {
-						const factory = (node.data as NetrunNodeData).factory!;
-						try {
-							const result = await api.validateImport(factory, projectRoot);
-							if (!result.valid) {
-								return { nodeId: node.id, error: `Factory import failed: ${result.error}` };
-							}
-							if (!result.is_factory) {
-								return { nodeId: node.id, error: `Module '${factory}' has no get_node_config function` };
-							}
-							return null;
-						} catch {
-							return null; // Backend unreachable, skip
-						}
-					})
-				);
-
-				for (const result of results) {
-					if (result) {
-						const existing = factoryErrorMap.get(result.nodeId) || [];
-						existing.push(result.error);
-						factoryErrorMap.set(result.nodeId, existing);
-					}
-				}
-			}
-
-			// Merge factory import errors into nodes
-			if (factoryErrorMap.size > 0) {
-				const currentTab = get(activeTab);
-				if (!currentTab) return;
-
-				// Re-compute client-side validation as a clean base, then add factory errors
-				const { nodes: validatedNodes } = computeValidatedNodes(currentTab.nodes);
-				const mergedNodes = validatedNodes.map(node => {
-					const fErrors = factoryErrorMap.get(node.id);
-					if (fErrors) {
-						const existingErrors = node.data.validationErrors || [];
-						return {
-							...node,
-							data: {
-								...node.data,
-								isValid: false,
-								validationErrors: [...existingErrors, ...fErrors],
-							},
-						};
-					}
-					return node;
-				});
-
-				updateActiveTab({ nodes: mergedNodes });
-			}
-		} catch (e) {
-			// Backend not available - clear errors but note it's not available
-			backendValidationAvailable.set(false);
-			backendValidationErrors.set([]);
-		}
+	backendValidationTimer = setTimeout(() => {
+		runBackendValidation();
 	}, 500); // 500ms debounce
 }
 

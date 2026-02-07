@@ -103,6 +103,7 @@ def build_action_context(
     node_extra: dict[str, Any] | None = None,
     net_file_path: str | None = None,
     project_root: str | None = None,
+    node_config: str | None = None,
 ) -> ActionContext:
     """Build an ActionContext from graph and node extra data.
 
@@ -125,6 +126,7 @@ def build_action_context(
         default_cmd=default_cmd,
         env=env,
         node_env=node_env,
+        node_config=node_config,
     )
 
 

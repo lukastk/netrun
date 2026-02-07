@@ -179,6 +179,7 @@ def run_production_app(
         sys.exit(1)
 
     # Open native window pointing to backend (which serves static files)
+    # Close guard is handled by the frontend via beforeunload event
     print("Opening window...")
     window = webview.create_window(
         APP_TITLE,
@@ -186,21 +187,7 @@ def run_production_app(
         width=width,
         height=height,
         min_size=(800, 600),
-        confirm_close=True,
     )
-
-    def on_closing():
-        """Check for unsaved changes before allowing window close."""
-        try:
-            result = window.evaluate_js(
-                "window.__netrunHasUnsavedChanges ? window.__netrunHasUnsavedChanges() : false"
-            )
-            if result:
-                return False  # Prevent close
-        except Exception:
-            pass  # Allow close on error
-
-    window.events.closing += on_closing
 
     webview.start()
     print("Shutting down...")
@@ -322,6 +309,7 @@ def run_dev_app(
         print("Warning: Backend may not be ready", file=sys.stderr)
 
     # Open native window
+    # Close guard is handled by the frontend via beforeunload event
     print("Opening window...")
     window = webview.create_window(
         f"{APP_TITLE} (dev)",
@@ -329,21 +317,7 @@ def run_dev_app(
         width=width,
         height=height,
         min_size=(800, 600),
-        confirm_close=True,
     )
-
-    def on_closing():
-        """Check for unsaved changes before allowing window close."""
-        try:
-            result = window.evaluate_js(
-                "window.__netrunHasUnsavedChanges ? window.__netrunHasUnsavedChanges() : false"
-            )
-            if result:
-                return False  # Prevent close
-        except Exception:
-            pass  # Allow close on error
-
-    window.events.closing += on_closing
 
     # This blocks until window is closed
     webview.start()

@@ -188,6 +188,7 @@
 		color: var(--text-secondary, #a0a0a0);
 		margin: 0 0 20px 0;
 		line-height: 1.5;
+		white-space: pre-line;
 	}
 
 	.input-container {

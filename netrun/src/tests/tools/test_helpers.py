@@ -110,12 +110,14 @@ def test_build_action_context():
         node_extra=node_extra,
         net_file_path="/tmp/test.json",
         project_root="/tmp",
+        node_config='{"name": "MyNode"}',
     )
     assert ctx.node_name == "MyNode"
     assert ctx.default_cmd == "python"
     assert ctx.env == {"PROJECT_VAR": "val"}
     assert ctx.node_env == {"NODE_VAR": "nval"}
     assert ctx.project_root == "/tmp"
+    assert ctx.node_config == '{"name": "MyNode"}'
 
 
 def test_get_recipes_empty():

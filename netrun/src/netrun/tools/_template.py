@@ -58,6 +58,7 @@ def build_template_variables(context: ActionContext) -> dict[str, str]:
     variables["NET_FILE_DIR"] = net_file_dir or ""
     variables["PROJECT_ROOT"] = context.project_root or net_file_dir or ""
     variables["DEFAULT_CMD"] = context.default_cmd or ""
+    variables["NODE_CONFIG"] = context.node_config or "{}"
 
     # 2. Project-level custom variables
     if context.env:
@@ -93,7 +94,7 @@ def resolve_template(template: str, context: ActionContext) -> str:
     # Replace $VAR syntax (word boundary aware)
     for var_name, var_value in variables.items():
         pattern = rf"\${var_name}(?=\W|$)"
-        result = re.sub(pattern, var_value, result)
+        result = re.sub(pattern, lambda _: var_value, result)
 
     return result
 

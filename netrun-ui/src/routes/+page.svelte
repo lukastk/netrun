@@ -41,9 +41,6 @@
 	onMount(async () => {
 		initializeCommands();
 
-		// Expose unsaved changes check for pywebview's confirm_close
-		(window as any).__netrunHasUnsavedChanges = hasUnsavedChanges;
-
 		// Fetch working directory from server
 		let firstNetrunFile: string | null = null;
 		try {
