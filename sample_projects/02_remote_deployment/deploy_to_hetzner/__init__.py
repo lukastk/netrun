@@ -99,10 +99,12 @@ def create_hetzner_server(
     server_type: str = "cpx11",
     server_image: str = "ubuntu-24.04",
     server_location: str = "fsn1",
+    timeout: int = 60,
 ) -> str:
     """Create a Hetzner Cloud server and return its IPv4 address.
 
     Idempotent — if the server already exists, returns its IP immediately.
+    *timeout* is the max seconds to wait for SSH to become ready (-1 = no limit).
     """
     existing_ip = get_server_ip(server_name)
     if existing_ip:
@@ -114,7 +116,7 @@ def create_hetzner_server(
     # Hetzner reuses IPs — remove stale known_hosts entries
     subprocess.run(["ssh-keygen", "-R", ip], capture_output=True)
 
-    wait_for_ssh(ip)
+    wait_for_ssh(ip, timeout=timeout)
     return ip
 
 
@@ -267,6 +269,7 @@ def start_pool_server(
     ssh_tunnel: bool = True,
     tunnel_local_port: int | None = None,
     forward_ssh_agent: bool = False,
+    timeout: int = 60,
 ) -> PoolServerHandle:
     """Start the pool server on the remote and optionally open an SSH tunnel.
 
@@ -277,6 +280,9 @@ def start_pool_server(
     If *forward_ssh_agent* is ``True`` (requires *ssh_tunnel*), the SSH
     tunnel connection carries agent forwarding so that code running on the
     remote can use the local machine's SSH keys.
+
+    *timeout* is the max seconds to wait for the pool server port to become
+    ready (-1 = no limit).
 
     Returns a :class:`PoolServerHandle` with the connection URL, tunnel info,
     and ``already_running`` indicating whether the server was already up.
@@ -310,7 +316,7 @@ def start_pool_server(
     subprocess.run(cmd, check=True, capture_output=True, text=True)
 
     # Wait for the server process to start listening
-    wait_for_remote_port(host, user, key, pool_server_port)
+    wait_for_remote_port(host, user, key, pool_server_port, timeout=timeout)
 
     if was_running:
         print(f"Pool server was already running: {url}")

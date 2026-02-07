@@ -54,11 +54,14 @@ def delete_server(name: str) -> None:
     print("  Done.")
 
 
-def wait_for_ssh(host: str, timeout: int = 120) -> None:
-    """Block until the SSH port (22) on *host* is reachable."""
+def wait_for_ssh(host: str, timeout: int = 60) -> None:
+    """Block until the SSH port (22) on *host* is reachable.
+
+    *timeout* of -1 means wait indefinitely.
+    """
     print("Waiting for SSH", end="", flush=True)
-    deadline = time.time() + timeout
-    while time.time() < deadline:
+    deadline = None if timeout < 0 else time.time() + timeout
+    while deadline is None or time.time() < deadline:
         try:
             with socket.create_connection((host, 22), timeout=2):
                 pass
