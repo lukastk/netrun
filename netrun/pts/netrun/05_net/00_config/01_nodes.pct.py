@@ -443,6 +443,13 @@ class NodeConfig(BaseModel):
 
         # Call factories
         base_config = get_node_config(**args)
+
+        if isinstance(base_config, SubgraphConfig):
+            raise ValueError(
+                "from_factory() does not support subgraph factories. "
+                "Use the 'factory' field in config instead."
+            )
+
         exec_func, start_func, stop_func, on_failure_func = get_node_funcs(**args)
 
         # Build execution config from functions
@@ -467,17 +474,21 @@ class NodeConfig(BaseModel):
             extra=base_config.extra,
         )
 
-    def resolve(self, project_root: 'Path | None' = None) -> "NodeConfig":
+    def resolve(self, project_root: 'Path | None' = None) -> "NodeConfig | SubgraphConfig":
         """Return a resolved copy with factory expanded and imports resolved.
 
         If this node has a factory set, expands it to generate the full config.
         Also resolves any string import paths in execution_config to callables.
 
+        If the factory returns a SubgraphConfig, returns it directly with the
+        NodeConfig's name and extra applied.
+
         Args:
             project_root: Base path for resolving relative file-path references.
 
         Returns:
-            A new NodeConfig with factory expanded and functions resolved.
+            A NodeConfig with factory expanded and functions resolved,
+            or a SubgraphConfig if the factory returned one.
             If no resolution is needed, returns self.
         """
         result = self
@@ -501,6 +512,15 @@ class NodeConfig(BaseModel):
             # Call get_node_config only (NOT get_node_funcs - that's resolved lazily on workers)
             # This avoids creating closures that can't be pickled for multiprocess pools.
             base_config = get_node_config_fn(**self.factory_args)
+
+            # If factory returned a SubgraphConfig, return it with name/extra applied
+            if isinstance(base_config, SubgraphConfig):
+                name = self.name if self.name else base_config.name
+                merged_extra = {**base_config.extra, **self.extra}
+                return base_config.model_copy(update={
+                    "name": name,
+                    "extra": merged_extra,
+                })
 
             # Build execution config - exec_node_func is None because it will be
             # resolved lazily on workers using the factory info from NodeConfig
