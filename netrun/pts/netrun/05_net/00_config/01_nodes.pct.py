@@ -197,7 +197,8 @@ class NodeExecutionConfig(BaseModel):
     # Additional execution options (from PROJECT_SPEC.md)
     defer_startup: bool = False
     """
-    If True, the node's `start_node_func` will not be called until before the first time `start_node_func` is called.
+    If True, the node's `start_node_func` will not be called during Net.start(),
+    but instead will be called before the node's first epoch executes.
     """
 
     max_parallel_epochs: int | None = None

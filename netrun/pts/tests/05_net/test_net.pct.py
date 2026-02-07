@@ -4920,3 +4920,288 @@ async def test_max_parallel_epochs_per_node():
     # All packets processed eventually
     assert sorted(results_a) == [1, 2]
     assert sorted(results_b) == [3, 4]
+
+# %% [markdown]
+# ## start_node_func, stop_node_func, and defer_startup Tests
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_start_node_func_called_on_net_start():
+    """Test that start_node_func is called when the Net starts."""
+    lifecycle = []
+
+    def my_start(net):
+        lifecycle.append("started")
+
+    def my_exec(ctx, packets):
+        for pkt_ids in packets.values():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Worker",
+                in_ports={"in": PortConfig()},
+                execution_config=NodeExecutionConfig(
+                    node_name="Worker",
+                    pools=["main"],
+                    exec_node_func=my_exec,
+                    start_node_func=my_start,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        # start_node_func should have been called during Net.start()
+        assert lifecycle == ["started"]
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_stop_node_func_called_on_net_stop():
+    """Test that stop_node_func is called when the Net stops."""
+    lifecycle = []
+
+    def my_start(net):
+        lifecycle.append("started")
+
+    def my_stop(net):
+        lifecycle.append("stopped")
+
+    def my_exec(ctx, packets):
+        for pkt_ids in packets.values():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Worker",
+                in_ports={"in": PortConfig()},
+                execution_config=NodeExecutionConfig(
+                    node_name="Worker",
+                    pools=["main"],
+                    exec_node_func=my_exec,
+                    start_node_func=my_start,
+                    stop_node_func=my_stop,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        assert lifecycle == ["started"]
+
+    # stop_node_func should have been called during Net.stop()
+    assert lifecycle == ["started", "stopped"]
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_defer_startup_delays_start_node_func():
+    """Test that defer_startup=True delays start_node_func until first epoch."""
+    lifecycle = []
+
+    def my_start(net):
+        lifecycle.append("started")
+
+    def my_stop(net):
+        lifecycle.append("stopped")
+
+    def my_exec(ctx, packets):
+        lifecycle.append("executed")
+        for pkt_ids in packets.values():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Worker",
+                in_ports={"in": PortConfig()},
+                execution_config=NodeExecutionConfig(
+                    node_name="Worker",
+                    pools=["main"],
+                    exec_node_func=my_exec,
+                    start_node_func=my_start,
+                    stop_node_func=my_stop,
+                    defer_startup=True,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        # start_node_func should NOT have been called yet
+        assert lifecycle == []
+
+        # Trigger an epoch
+        net.inject_data("Worker", "in", [42])
+        await net.run_until_blocked()
+
+        # Now start should have been called before execution
+        assert lifecycle == ["started", "executed"]
+
+    # stop should be called on Net.stop()
+    assert lifecycle == ["started", "executed", "stopped"]
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_start_stop_with_async_funcs():
+    """Test that async start/stop functions work correctly."""
+    lifecycle = []
+
+    async def my_start(net):
+        lifecycle.append("async_started")
+
+    async def my_stop(net):
+        lifecycle.append("async_stopped")
+
+    def my_exec(ctx, packets):
+        for pkt_ids in packets.values():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Worker",
+                in_ports={"in": PortConfig()},
+                execution_config=NodeExecutionConfig(
+                    node_name="Worker",
+                    pools=["main"],
+                    exec_node_func=my_exec,
+                    start_node_func=my_start,
+                    stop_node_func=my_stop,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        assert lifecycle == ["async_started"]
+
+    assert lifecycle == ["async_started", "async_stopped"]
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_start_node_func_called_once_with_defer_startup():
+    """Test that start_node_func is called exactly once even with multiple epochs."""
+    start_count = 0
+
+    def my_start(net):
+        nonlocal start_count
+        start_count += 1
+
+    def my_exec(ctx, packets):
+        for pkt_ids in packets.values():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Worker",
+                in_ports={"in": PortConfig()},
+                execution_config=NodeExecutionConfig(
+                    node_name="Worker",
+                    pools=["main"],
+                    exec_node_func=my_exec,
+                    start_node_func=my_start,
+                    defer_startup=True,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        # Run 3 separate epochs
+        for val in [1, 2, 3]:
+            net.inject_data("Worker", "in", [val])
+            await net.run_until_blocked()
+
+        # start should have been called exactly once
+        assert start_count == 1
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_stop_not_called_for_unstarted_deferred_node():
+    """Test that stop_node_func is NOT called for a deferred node that never ran."""
+    lifecycle = []
+
+    def my_start(net):
+        lifecycle.append("started")
+
+    def my_stop(net):
+        lifecycle.append("stopped")
+
+    def my_exec(ctx, packets):
+        for pkt_ids in packets.values():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Worker",
+                in_ports={"in": PortConfig()},
+                execution_config=NodeExecutionConfig(
+                    node_name="Worker",
+                    pools=["main"],
+                    exec_node_func=my_exec,
+                    start_node_func=my_start,
+                    stop_node_func=my_stop,
+                    defer_startup=True,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        # Don't inject any data — node never runs
+        pass
+
+    # Neither start nor stop should have been called
+    assert lifecycle == []
