@@ -138,13 +138,13 @@ def test_get_env_prefix_none():
 def test_get_env_prefix_uv():
     """Test _get_env_prefix with uv env setup."""
     config = _make_deploy_config(env_setup=UvEnvSetup())
-    assert _get_env_prefix(config) == "cd /opt/app && uv run "
+    assert _get_env_prefix(config) == "uv run "
 
 # %% pts/tests/07_deploy/test_deploy.pct.py 27
 def test_get_env_prefix_pixi():
     """Test _get_env_prefix with pixi env setup."""
     config = _make_deploy_config(env_setup=PixiEnvSetup())
-    assert _get_env_prefix(config) == "cd /opt/app && pixi run "
+    assert _get_env_prefix(config) == "pixi run "
 
 # %% pts/tests/07_deploy/test_deploy.pct.py 29
 def test_get_env_prefix_conda():
@@ -180,8 +180,8 @@ def test_build_nohup_command_basic():
 def test_build_nohup_command_with_prefix():
     """Test _build_nohup_command with env prefix."""
     config = _make_deploy_config()
-    cmd = _build_nohup_command(config, "cd /opt/app && uv run ")
-    assert "cd /opt/app && uv run python .netrun_serve_pool.py" in cmd
+    cmd = _build_nohup_command(config, "uv run ")
+    assert "uv run python .netrun_serve_pool.py" in cmd
 
 # %% pts/tests/07_deploy/test_deploy.pct.py 41
 def test_update_pool_url():
