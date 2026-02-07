@@ -201,6 +201,11 @@ class NodeExecutionConfig(BaseModel):
     """
 
     max_parallel_epochs: int | None = None
+    max_epochs: int | None = None
+    """Maximum total epochs this node can have across its entire lifetime.
+    None = unlimited (default). If a salvo triggers beyond this limit,
+    the epoch is cancelled and MaxEpochsExceeded is raised."""
+
     rate_limit_per_second: float | None = None
 
     defer_net_actions: bool|None = None

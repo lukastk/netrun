@@ -23,6 +23,7 @@ from ...storage import PacketStore, PacketStoreConfig
 
 from ...net._net._context import (
     EpochError,
+    MaxEpochsExceeded,
     EpochRecord,
     NodeExecutionResult,
     NodeFailureContext,
@@ -150,6 +151,9 @@ class Net:
 
         # Epoch records (persists after epoch finishes in netsim)
         self._epochs: dict[str, EpochRecord] = {}  # epoch_id -> EpochRecord
+
+        # Total epoch counts per node (for max_epochs enforcement)
+        self._node_epoch_counts: dict[str, int] = {}  # node_name -> count
 
         # Dead letter queue for failed epochs
         self._dead_letter_queue: list[dict[str, Any]] = []
@@ -1484,6 +1488,35 @@ class Net:
         # Check rate limiting
         if not self._check_rate_limit(node_name):
             return None  # Will be retried on next call
+
+        # Check max_epochs limit
+        self._node_epoch_counts[node_name] = self._node_epoch_counts.get(node_name, 0) + 1
+        if config is not None and config.max_epochs is not None:
+            if self._node_epoch_counts[node_name] > config.max_epochs:
+                # Cancel the epoch and raise
+                response, _ = self._netsim.do_action(netrun_sim.NetAction.cancel_epoch(epoch_id))
+                record = self._epochs[epoch_id]
+                record.was_cancelled = True
+                record.ended_at = get_timestamp_utc()
+                record.destroyed_packets = list(response.destroyed_packets)
+
+                error = MaxEpochsExceeded(node_name, config.max_epochs)
+                propagate, print_exc = self._get_effective_exception_config(config)
+
+                if print_exc:
+                    import sys
+                    print(f"MaxEpochsExceeded: {error}", file=sys.stderr)
+
+                epoch_error = EpochError(
+                    str(error), node_name=node_name, epoch_id=epoch_id,
+                )
+                epoch_error.__cause__ = error
+
+                if propagate:
+                    raise epoch_error from error
+                else:
+                    self._exception_queue.append(epoch_error)
+                    return None
 
         # Get input packet values
         packets, packet_values = self._get_input_packet_values(epoch_id)

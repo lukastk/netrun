@@ -2,6 +2,7 @@
 from ._context import (
     NetProtocolKeys,
     EpochCancelled,
+    MaxEpochsExceeded,
     PacketTypeMismatch,
     EpochError,
     NodeExecutionContext,

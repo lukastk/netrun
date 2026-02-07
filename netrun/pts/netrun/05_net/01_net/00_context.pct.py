@@ -89,6 +89,17 @@ class EpochCancelled(Exception):
     pass
 
 
+class MaxEpochsExceeded(Exception):
+    """Raised when a node exceeds its configured max_epochs limit."""
+
+    def __init__(self, node_name: str, max_epochs: int):
+        self.node_name = node_name
+        self.max_epochs = max_epochs
+        super().__init__(
+            f"Node '{node_name}' exceeded max_epochs={max_epochs}"
+        )
+
+
 class PacketTypeMismatch(Exception):
     """Raised when a packet value doesn't match the expected port type."""
 
