@@ -1,6 +1,6 @@
 {
   "extra": {
-    "description": "Advanced flow control: custom salvo conditions, finite port slots, rate limiting, catch-all output queue"
+    "description": "Advanced flow control: custom salvo conditions, finite port slots, rate limiting, multiple output ports"
   },
   "output_queues": {
     "batch_results": {
@@ -11,9 +11,11 @@
     },
     "main_results": {
       "ports": [["multi_output", "main_out"]]
+    },
+    "secondary_results": {
+      "ports": [["multi_output", "debug_out"], ["multi_output", "extra_out"]]
     }
   },
-  "catch_all_output_queue": "_overflow",
   "graph": {
     "nodes": [
       {

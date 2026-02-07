@@ -4,7 +4,7 @@ Demonstrates:
 1. Custom salvo conditions (batch_processor fires only when 3 packets accumulate)
 2. Finite port slots (batch_processor.data has capacity=5)
 3. Rate limiting (rate_limited_worker at 2 epochs/sec)
-4. Catch-all output queue (multi_output's unconfigured ports go to _overflow)
+4. Multiple output ports (multi_output sends to main_out, debug_out, extra_out)
 """
 
 import asyncio
@@ -48,7 +48,7 @@ async def main():
         await run_net(net)
         elapsed = time.time() - t0
 
-        # --- 3. Multi-output with catch-all queue ---
+        # --- 3. Multi-output with secondary queue ---
         net.inject_data("multi_output", "value", [42])
         net.inject_data("multi_output", "value", [99])
 
@@ -71,9 +71,9 @@ async def main():
         main_results = net.flush_output_queue("main_results")
         print(f"\n3. Multi-output main results: {main_results}")
 
-        # Catch-all queue captures debug_out and extra_out
-        overflow = net.flush_output_queue("_overflow")
-        print(f"   Catch-all overflow queue: {overflow}")
+        # Secondary queue captures debug_out and extra_out
+        secondary = net.flush_output_queue("secondary_results")
+        print(f"   Secondary results (debug_out + extra_out): {secondary}")
 
         # Logs
         print("\nNode Logs:")

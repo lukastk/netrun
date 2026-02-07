@@ -248,10 +248,6 @@ class Net:
             for node_name, port_name in queue_config.ports:
                 self._port_to_queue[(node_name, port_name)] = queue_name
 
-        # Initialize catch-all queue if configured
-        if self._config_resolved.catch_all_output_queue:
-            if self._config_resolved.catch_all_output_queue not in self._output_queues:
-                self._output_queues[self._config_resolved.catch_all_output_queue] = asyncio.Queue()
 
     @classmethod
     def from_file(cls, path: 'str | Path') -> "Net":
@@ -509,10 +505,7 @@ class Net:
         queue_name = self._port_to_queue.get((from_node, from_port))
 
         if queue_name is None:
-            # Not in a specific queue - check catch-all
-            if self._config.catch_all_output_queue:
-                queue_name = self._config.catch_all_output_queue
-            elif self._config.undeclared_output_behavior == "error":
+            if self._config.error_on_undeclared_output:
                 raise RuntimeError(
                     f"Packet {packet_id} sent from unconnected output port "
                     f"'{from_port}' on node '{from_node}' but no output queue configured"

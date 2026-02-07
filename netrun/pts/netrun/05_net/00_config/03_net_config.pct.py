@@ -245,19 +245,14 @@ class NetConfig(BaseModel):
         }
     """
 
-    catch_all_output_queue: str | None = None
+    error_on_undeclared_output: bool = False
     """
-    If set, packets from unconnected output ports that aren't in any
-    configured queue go to this queue. If None, they are silently discarded.
+    If True, raise an error when a packet is sent from an unconnected output
+    port that has no configured output queue.  When False (default), such
+    packets are silently discarded.
 
-    Example: catch_all_output_queue="_uncategorized"
-    """
-
-    undeclared_output_behavior: Literal["discard", "error"] = "discard"
-    """
-    What to do with packets from unconnected ports not in any queue:
-    - "discard": Silently discard (default)
-    - "error": Raise an error (original behavior)
+    This is useful for enforcing that all output ports are either connected
+    via an edge or explicitly collected by an output queue.
     """
 
     type_checking_enabled: bool = True

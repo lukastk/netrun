@@ -20,8 +20,10 @@ import pytest
 from netrun.node_factories.from_function import (
     _from_function,
     _parse_function_signature,
+    _parse_return_annotation,
     get_node_config,
     get_node_funcs,
+    PreCreatedPacket,
 )
 from netrun.net.config import PortConfig
 
@@ -201,3 +203,68 @@ def test_generic_type_survives_from_function_roundtrip():
     out_type = config.out_ports["out"].port_type
     assert get_origin(out_type) is list, f"Expected generic alias, got {type(out_type)}: {out_type!r}"
     assert out_type == list[int]
+
+# %% [markdown]
+# ## Tests for PreCreatedPacket
+
+# %%
+#|export
+def test_precreated_packet_single_port():
+    """Test PreCreatedPacket annotation for a single output port."""
+    def my_func(x: int, ctx) -> PreCreatedPacket(int):
+        return ctx.create_packet(x * 2)
+
+    parsed = _parse_function_signature(my_func)
+    assert "out" in parsed.out_ports
+    assert "out" in parsed.packet_ports
+    assert parsed.out_ports["out"].port_type == int
+
+# %%
+#|export
+def test_precreated_packet_multi_port():
+    """Test PreCreatedPacket annotation mixed with regular ports."""
+    def my_func(x: int, ctx) -> {"eager": str, "lazy": PreCreatedPacket(str)}:
+        pid = ctx.create_packet("lazy_value")
+        return {"eager": "hello", "lazy": pid}
+
+    parsed = _parse_function_signature(my_func)
+    assert "eager" in parsed.out_ports
+    assert "lazy" in parsed.out_ports
+    assert "eager" not in parsed.packet_ports
+    assert "lazy" in parsed.packet_ports
+    assert parsed.out_ports["eager"].port_type == str
+    assert parsed.out_ports["lazy"].port_type == str
+
+# %%
+#|export
+def test_precreated_packet_with_port_config():
+    """Test PreCreatedPacket wrapping a PortConfig."""
+    def my_func(x: int, ctx) -> {"out": PreCreatedPacket(PortConfig(port_type=float))}:
+        return {"out": ctx.create_packet(3.14)}
+
+    parsed = _parse_function_signature(my_func)
+    assert "out" in parsed.packet_ports
+    assert parsed.out_ports["out"].port_type == float
+
+# %%
+#|export
+def test_precreated_packet_no_type():
+    """Test PreCreatedPacket with no port_type."""
+    def my_func(x: int, ctx) -> PreCreatedPacket():
+        return ctx.create_packet(x)
+
+    parsed = _parse_function_signature(my_func)
+    assert "out" in parsed.packet_ports
+    assert parsed.out_ports["out"].port_type is None
+
+# %%
+#|export
+def test_parse_return_annotation_preserves_non_packet_ports():
+    """Test that _parse_return_annotation correctly distinguishes packet and regular ports."""
+    annotation = {"a": int, "b": PortConfig(port_type=str), "c": PreCreatedPacket(float)}
+    out_ports, packet_ports = _parse_return_annotation(annotation)
+    assert set(out_ports.keys()) == {"a", "b", "c"}
+    assert packet_ports == {"c"}
+    assert out_ports["a"].port_type == int
+    assert out_ports["b"].port_type == str
+    assert out_ports["c"].port_type == float
