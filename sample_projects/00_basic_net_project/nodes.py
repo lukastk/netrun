@@ -10,6 +10,8 @@ Special parameters:
 - print: A captured print function that logs output with timestamps
 """
 
+from netrun.net.config import PortConfig
+
 
 def double(x: int, print) -> int:
     """Double the input value."""
@@ -33,3 +35,27 @@ def format_result(value: int, print) -> str:
     result = f"The answer is: {value}"
     print(f"Formatted: {result}")
     return result
+
+
+# _node_config override (TOML string) — adds extra metadata to the node
+# without modifying the JSON config file. Merged with the auto-generated config.
+format_result._node_config = '''
+[extra]
+description = "Formats the final result as a human-readable string"
+category = "output"
+'''
+
+
+def analyze(value: int, print) -> {"summary": str, "breakdown": str}:
+    """Analyze a value and produce multiple outputs.
+
+    Demonstrates multiple output ports via dict return annotation.
+    Each key in the return dict maps to a separate output port.
+    """
+    print(f"Analyzing {value}")
+    is_even = "even" if value % 2 == 0 else "odd"
+    is_positive = "positive" if value > 0 else "non-positive"
+    return {
+        "summary": f"Result: {value}",
+        "breakdown": f"{value} is {is_even} and {is_positive}",
+    }
