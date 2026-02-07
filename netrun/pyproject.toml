@@ -15,6 +15,10 @@ dependencies = [
 
 [project.optional-dependencies]
 deploy = ["pyinfra>=3.0"]
+cli = ["typer>=0.15.0", "tomli-w>=1.0"]
+
+[project.scripts]
+netrun = "netrun.cli._app:app_main"
 
 [project.urls]
 Homepage = "https://github.com/lukastk/netrun"
