@@ -93,8 +93,16 @@ if [ ! -d ".venv" ]; then
     uv venv .venv
 fi
 uv pip install jupyterlab
-uv pip install --reinstall -e netrun netrun-ui netrun-sim/python
+uv pip install --reinstall "$NETRUN_SIM_WHEEL" "$REPO/netrun" "$REPO/netrun-ui"
 
+# netrun-ui/examples
+bold "── netrun-ui/examples ──"
+cd "$REPO/netrun-ui/examples"
+rm -rf .venv
+uv venv
+uv pip install -e "$REPO/netrun"
+uv pip install -e "$REPO/netrun-ui"
+echo ""
 
 # Clean up wheel cache
 rm -rf "$WHEELS"
