@@ -161,6 +161,9 @@ class Net:
         # Exception queue for non-propagating epoch failures
         self._exception_queue: list[Exception] = []
 
+        # Track which nodes have had start_node_func called
+        self._started_nodes: set[str] = set()
+
         # Build node execution configs lookup (using resolved config for runtime)
         self._node_execution_configs: dict[str, NodeExecutionConfig] = {}
         for node_config in self._config_resolved.graph.nodes:
@@ -1063,7 +1066,8 @@ class Net:
     async def start(self) -> None:
         """Start the Net.
 
-        This starts the ExecutionManager, all pools, and registers node functions.
+        This starts the ExecutionManager, all pools, registers node functions,
+        and calls start_node_func for nodes that don't have defer_startup.
         """
         if self._started:
             raise RuntimeError("Net already started")
@@ -1072,6 +1076,9 @@ class Net:
 
         # Register node functions with all workers
         await self._register_node_functions()
+
+        # Call start_node_func for non-deferred nodes
+        await self._start_all_nodes()
 
         self._started = True
 
@@ -1085,9 +1092,13 @@ class Net:
     async def stop(self) -> None:
         """Stop the Net gracefully.
 
-        This stops the background task and closes the ExecutionManager.
+        This calls stop_node_func for all started nodes, stops the background
+        task, and closes the ExecutionManager.
         """
         self._stopping = True
+
+        # Call stop_node_func for all started nodes
+        await self._stop_all_nodes()
 
         # Cancel background task if running
         if self._background_task is not None:
@@ -1520,6 +1531,10 @@ class Net:
             self._epochs[epoch_id].state = netrun_sim.EpochState.Finished
             return None
 
+        # Deferred startup: call start_node_func on first epoch if not yet started
+        if node_name not in self._started_nodes:
+            await self._start_node(node_name)
+
         # Check rate limiting
         if not self._check_rate_limit(node_name):
             return None  # Will be retried on next call
@@ -1876,6 +1891,128 @@ class Net:
         module_path, name = import_path.rsplit(".", 1)
         module = importlib.import_module(module_path)
         return getattr(module, name)
+
+    def _get_node_start_func(self, node_name: str) -> Callable | None:
+        """Get the start_node_func for a node, resolving from config or factory.
+
+        Args:
+            node_name: The node name.
+
+        Returns:
+            The start function, or None if not configured.
+        """
+        config = self._get_node_execution_config(node_name)
+        if config is None:
+            return None
+
+        func = config.start_node_func
+        if func is not None:
+            if isinstance(func, str):
+                func = self._import_from_path(func)
+            return func
+
+        # Check factory
+        if node_name in self._node_factories:
+            factory_path, factory_args = self._node_factories[node_name]
+            import importlib
+            module = importlib.import_module(factory_path)
+            get_node_funcs = getattr(module, "get_node_funcs", None)
+            if get_node_funcs is not None:
+                _, start_func, _, _ = get_node_funcs(**factory_args)
+                return start_func
+
+        return None
+
+    def _get_node_stop_func(self, node_name: str) -> Callable | None:
+        """Get the stop_node_func for a node, resolving from config or factory.
+
+        Args:
+            node_name: The node name.
+
+        Returns:
+            The stop function, or None if not configured.
+        """
+        config = self._get_node_execution_config(node_name)
+        if config is None:
+            return None
+
+        func = config.stop_node_func
+        if func is not None:
+            if isinstance(func, str):
+                func = self._import_from_path(func)
+            return func
+
+        # Check factory
+        if node_name in self._node_factories:
+            factory_path, factory_args = self._node_factories[node_name]
+            import importlib
+            module = importlib.import_module(factory_path)
+            get_node_funcs = getattr(module, "get_node_funcs", None)
+            if get_node_funcs is not None:
+                _, _, stop_func, _ = get_node_funcs(**factory_args)
+                return stop_func
+
+        return None
+
+    async def _call_lifecycle_func(self, func: Callable, node_name: str) -> None:
+        """Call a node lifecycle function (start or stop), handling sync/async.
+
+        Args:
+            func: The lifecycle function to call.
+            node_name: The node name (for error messages).
+        """
+        result = func(self)
+        if asyncio.iscoroutine(result):
+            await result
+
+    async def _start_node(self, node_name: str) -> None:
+        """Call start_node_func for a node if configured and not yet started.
+
+        Args:
+            node_name: The node to start.
+        """
+        if node_name in self._started_nodes:
+            return
+
+        func = self._get_node_start_func(node_name)
+        if func is not None:
+            await self._call_lifecycle_func(func, node_name)
+
+        self._started_nodes.add(node_name)
+
+    async def _stop_node(self, node_name: str) -> None:
+        """Call stop_node_func for a node if configured and was started.
+
+        Args:
+            node_name: The node to stop.
+        """
+        if node_name not in self._started_nodes:
+            return
+
+        func = self._get_node_stop_func(node_name)
+        if func is not None:
+            await self._call_lifecycle_func(func, node_name)
+
+        self._started_nodes.discard(node_name)
+
+    async def _start_all_nodes(self) -> None:
+        """Call start_node_func for all nodes that don't have defer_startup.
+
+        Called during Net.start() after registering node functions.
+        """
+        for node_config in self._config_resolved.graph.nodes:
+            config = self._get_node_execution_config(node_config.name)
+            if config is not None and not config.defer_startup:
+                await self._start_node(node_config.name)
+
+    async def _stop_all_nodes(self) -> None:
+        """Call stop_node_func for all started nodes.
+
+        Called during Net.stop() before closing the execution manager.
+        """
+        # Copy since _stop_node modifies the set
+        for node_name in list(self._started_nodes):
+            await self._stop_node(node_name)
 
     async def _register_node_functions(self) -> None:
         """Register all node functions with the execution manager pools.
