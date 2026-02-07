@@ -156,7 +156,7 @@ def test_actions_list_empty():
 
 
 def test_actions_run_not_found():
-    result = runner.invoke(app, ["actions", "run", "nonexistent", "-c", BASIC_CONFIG])
+    result = runner.invoke(app, ["actions", "run", "nonexistent", "double", "-c", BASIC_CONFIG])
     assert result.exit_code == 1
 
 # %% pts/tests/09_cli/test_cli.pct.py 21
