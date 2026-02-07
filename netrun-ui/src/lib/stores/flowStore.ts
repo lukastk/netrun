@@ -22,6 +22,11 @@ import {
 } from './tabsStore';
 import { triggerFileExplorerRefresh } from './fileExplorerStore';
 import { updateUrlWithFile } from './urlStore';
+import {
+	isGroupHandle as isGroupHandleFn,
+	parseGroupHandleId as parseGroupHandleIdFn,
+	areGroupsCompatible as areGroupsCompatibleFn,
+} from '$lib/utils/portGroups';
 
 // Types for netrun node data
 export interface PortConfig {
@@ -555,14 +560,39 @@ export function deleteNodes(ids: string[]) {
  * Check if a connection is valid.
  * Prevents fan-out: multiple edges from the same output port are not allowed.
  * Allows fan-in: multiple edges to the same input port are allowed.
+ * For group handles: validates that source and target groups are compatible.
  */
-export function isValidConnection(connection: { source?: string | null; sourceHandle?: string | null }): boolean {
+export function isValidConnection(connection: {
+	source?: string | null;
+	target?: string | null;
+	sourceHandle?: string | null;
+	targetHandle?: string | null;
+}): boolean {
 	if (!connection.source || !connection.sourceHandle) return false;
 
 	const tab = get(activeTab);
 	if (!tab) return false;
 
-	// Prevent multiple edges from same output port (fan-out not allowed)
+	const sourceIsGroup = isGroupHandleFn(connection.sourceHandle);
+	const targetIsGroup = connection.targetHandle ? isGroupHandleFn(connection.targetHandle) : false;
+
+	// Group handle to non-group handle (or vice versa) is not allowed
+	if (sourceIsGroup !== targetIsGroup) return false;
+
+	// Group-to-group validation
+	if (sourceIsGroup && targetIsGroup && connection.target && connection.targetHandle) {
+		const sourceNode = tab.nodes.find(n => n.id === connection.source);
+		const targetNode = tab.nodes.find(n => n.id === connection.target);
+		if (!sourceNode || !targetNode) return false;
+
+		const srcParsed = parseGroupHandleIdFn(connection.sourceHandle);
+		const tgtParsed = parseGroupHandleIdFn(connection.targetHandle);
+		if (!srcParsed || !tgtParsed) return false;
+
+		return areGroupsCompatibleFn(sourceNode, srcParsed.groupPath, targetNode, tgtParsed.groupPath);
+	}
+
+	// Normal port: prevent multiple edges from same output port (fan-out not allowed)
 	const existingFromSource = tab.edges.some(
 		e => e.source === connection.source && e.sourceHandle === connection.sourceHandle
 	);
@@ -586,6 +616,32 @@ export function addEdge(edge: NetrunEdge) {
 
 	pushHistory();
 	updateActiveTab({ edges: [...tab.edges, edge] });
+}
+
+/**
+ * Add multiple edges in a single history entry.
+ * Used for group-to-group connections where one drag creates multiple edges.
+ * Skips edges that would violate fan-out (output port already connected).
+ */
+export function addEdges(newEdges: NetrunEdge[]) {
+	const tab = get(activeTab);
+	if (!tab) return;
+
+	// Filter out edges that would violate fan-out
+	const existingSources = new Set(tab.edges.map(e => `${e.source}:${e.sourceHandle}`));
+	const toAdd: NetrunEdge[] = [];
+	for (const edge of newEdges) {
+		const key = `${edge.source}:${edge.sourceHandle}`;
+		if (!existingSources.has(key)) {
+			existingSources.add(key);
+			toAdd.push(edge);
+		}
+	}
+
+	if (toAdd.length === 0) return;
+
+	pushHistory();
+	updateActiveTab({ edges: [...tab.edges, ...toAdd] });
 }
 
 export function deleteEdges(ids: string[]) {
