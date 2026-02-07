@@ -186,6 +186,17 @@ export async function executeAction(action: Action): Promise<void> {
 	});
 
 	try {
+		// Serialize node config as JSON for $NODE_CONFIG variable
+		const nodeConfig = node ? JSON.stringify({
+			name: node.data.label,
+			nodeType: node.data.nodeType,
+			inPorts: node.data.inPorts,
+			outPorts: node.data.outPorts,
+			...(node.data.nodeType !== 'subgraph' && (node.data as any).factory ? { factory: (node.data as any).factory } : {}),
+			...(node.data.nodeType !== 'subgraph' && (node.data as any).factoryArgs ? { factoryArgs: (node.data as any).factoryArgs } : {}),
+			...(node.data.nodeType !== 'subgraph' && (node.data as any)._config ? { _config: (node.data as any)._config } : {}),
+		}) : undefined;
+
 		const result = await api.executeAction({
 			command: action.command,
 			node_name: node?.data.label,
@@ -195,6 +206,7 @@ export async function executeAction(action: Action): Promise<void> {
 			default_cmd: settings.defaultCmd,
 			env: settings.env,
 			node_env: nodeEnvVars,
+			node_config: nodeConfig,
 		});
 
 		actionExecutions.update(map => {
@@ -252,6 +264,16 @@ export async function resolveCommand(command: string): Promise<string> {
 	const nodeEnvVars = get(nodeEnv);
 
 	try {
+		const nodeConfig = node ? JSON.stringify({
+			name: node.data.label,
+			nodeType: node.data.nodeType,
+			inPorts: node.data.inPorts,
+			outPorts: node.data.outPorts,
+			...(node.data.nodeType !== 'subgraph' && (node.data as any).factory ? { factory: (node.data as any).factory } : {}),
+			...(node.data.nodeType !== 'subgraph' && (node.data as any).factoryArgs ? { factoryArgs: (node.data as any).factoryArgs } : {}),
+			...(node.data.nodeType !== 'subgraph' && (node.data as any)._config ? { _config: (node.data as any)._config } : {}),
+		}) : undefined;
+
 		const result = await api.resolveTemplate(command, {
 			node_name: node?.data.label,
 			node_id: node?.id,
@@ -260,6 +282,7 @@ export async function resolveCommand(command: string): Promise<string> {
 			default_cmd: settings.defaultCmd,
 			env: settings.env,
 			node_env: nodeEnvVars,
+			node_config: nodeConfig,
 		});
 		return result.resolved;
 	} catch {

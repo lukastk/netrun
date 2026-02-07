@@ -89,7 +89,7 @@
 				></textarea>
 				<div class="field-hint">
 					Use variables: <code>$NODE_NAME</code>, <code>$PROJECT_ROOT</code>,
-					<code>$NET_FILE_PATH</code>, <code>$DEFAULT_CMD</code>, or custom env vars
+					<code>$NET_FILE_PATH</code>, <code>$NODE_CONFIG</code>, <code>$DEFAULT_CMD</code>, or custom env vars
 				</div>
 			</div>
 

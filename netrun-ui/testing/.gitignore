@@ -10,3 +10,4 @@
 !shared_component.netrun.json
 !multiple_refs.netrun.json
 !complex_pipeline.netrun.json
+!actions_node_config.netrun.json

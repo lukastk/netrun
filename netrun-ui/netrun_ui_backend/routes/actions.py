@@ -22,6 +22,7 @@ class ExecuteActionRequest(BaseModel):
     net_file_path: str | None = None
     project_root: str | None = None
     default_cmd: str | None = None
+    node_config: str | None = None  # JSON-serialized node config
 
 
 class ExecuteActionResponse(BaseModel):
@@ -62,6 +63,7 @@ def _build_template_variables(
     default_cmd: str | None,
     env: dict[str, str] | None,
     node_env: dict[str, str] | None,
+    node_config: str | None = None,
 ) -> dict[str, str]:
     """Build variable mapping with proper precedence."""
     net_file_dir = str(Path(net_file_path).parent) if net_file_path else None
@@ -73,6 +75,7 @@ def _build_template_variables(
     variables["NET_FILE_DIR"] = net_file_dir or ""
     variables["PROJECT_ROOT"] = project_root or net_file_dir or ""
     variables["DEFAULT_CMD"] = default_cmd or ""
+    variables["NODE_CONFIG"] = node_config or "{}"
 
     if env:
         variables.update(env)
@@ -91,7 +94,7 @@ def _resolve_template(template: str, variables: dict[str, str]) -> str:
 
     for var_name, var_value in variables.items():
         pattern = rf"\${var_name}(?=\W|$)"
-        result = re.sub(pattern, var_value, result)
+        result = re.sub(pattern, lambda _: var_value, result)
 
     return result
 
@@ -106,7 +109,7 @@ async def execute_action(request: ExecuteActionRequest) -> ExecuteActionResponse
     variables = _build_template_variables(
         request.node_name, request.node_id, request.net_file_path,
         resolved_project_root, request.default_cmd,
-        request.env, request.node_env,
+        request.env, request.node_env, request.node_config,
     )
 
     # Determine working directory
@@ -172,6 +175,7 @@ class ResolveTemplateRequest(BaseModel):
     default_cmd: str | None = None
     env: dict[str, str] | None = None  # Project-level custom variables
     node_env: dict[str, str] | None = None  # Node-level custom variables
+    node_config: str | None = None  # JSON-serialized node config
 
 
 class ResolveTemplateResponse(BaseModel):
@@ -189,7 +193,7 @@ async def resolve_action_template(request: ResolveTemplateRequest) -> ResolveTem
     variables = _build_template_variables(
         request.node_name, request.node_id, request.net_file_path,
         resolved_project_root, request.default_cmd,
-        request.env, request.node_env,
+        request.env, request.node_env, request.node_config,
     )
 
     resolved = _resolve_template(request.template, variables)
