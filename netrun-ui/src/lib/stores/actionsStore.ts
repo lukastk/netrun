@@ -7,6 +7,7 @@
 import { writable, derived, get } from 'svelte/store';
 import { api } from '$lib/api';
 import { activeTab, graphExtra, updateGraphExtraLive, extraData, updateExtraDataLive, currentFilePath, selectedNode } from './flowStore';
+import { toasts } from './toastStore';
 
 // Action definition
 export interface Action {
@@ -219,6 +220,11 @@ export async function executeAction(action: Action): Promise<void> {
 			});
 			return new Map(map);
 		});
+
+		// Show stdout as a toast notification
+		if (result.stdout?.trim()) {
+			toasts.info(result.stdout.trim());
+		}
 
 		// Clear success status after a delay
 		if (result.success) {
