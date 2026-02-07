@@ -14,6 +14,7 @@ Usage:
 import argparse
 import os
 import signal
+import socket
 import subprocess
 import sys
 import threading
@@ -25,6 +26,18 @@ import uvicorn
 from importlib.metadata import version as pkg_version
 
 APP_TITLE = f"netrun-ui v{pkg_version('netrun-ui')}"
+
+
+def find_free_port(start: int = 8000, end: int = 8099) -> int:
+    """Find a free port in the given range."""
+    for port in range(start, end + 1):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            try:
+                s.bind(("127.0.0.1", port))
+                return port
+            except OSError:
+                continue
+    raise RuntimeError(f"No free port found in range {start}-{end}")
 
 
 def get_package_dir() -> Path:
@@ -347,8 +360,8 @@ Examples:
     parser.add_argument(
         "--port", "-p",
         type=int,
-        default=8000,
-        help="Backend server port (default: 8000)",
+        default=None,
+        help="Backend server port (default: auto-select from 8000-8099)",
     )
     parser.add_argument(
         "--frontend-port",
@@ -374,6 +387,14 @@ Examples:
     )
 
     args = parser.parse_args()
+
+    # Resolve port: auto-find a free one if not explicitly set
+    if args.port is None:
+        try:
+            args.port = find_free_port()
+        except RuntimeError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
 
     initial_path = args.working_dir or os.getcwd()
 

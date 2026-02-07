@@ -254,8 +254,8 @@ async def list_directory(request: DirectoryListRequest) -> DirectoryListResponse
 
             is_netrun = (
                 item.is_file() and
-                (item.name.endswith('.netrun.json') or
-                 item.name.endswith('.netrun.toml'))
+                (item.name.endswith('netrun.json') or
+                 item.name.endswith('netrun.toml'))
             )
 
             entries.append(FileEntry(

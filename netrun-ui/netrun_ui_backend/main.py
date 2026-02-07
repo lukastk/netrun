@@ -59,7 +59,7 @@ def find_first_netrun_file(directory: str) -> str | None:
 
         # Check for netrun files in sorted order
         for filename in sorted(filenames):
-            if filename.endswith('.netrun.json') or filename.endswith('.netrun.toml'):
+            if filename.endswith('netrun.json') or filename.endswith('netrun.toml'):
                 return str(Path(dirpath) / filename)
 
     return None
