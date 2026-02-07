@@ -1600,19 +1600,38 @@ class Net:
         # Get func key for this node
         func_key = self._get_func_key(node_name)
 
-        # Dispatch to worker
-        job_result = await self._execution_manager.run_allocate(
-            pool_worker_ids=config.pools,
-            allocation_method=allocation_method,
-            func_import_path_or_key=func_key,
-            send_channel=False,  # Deferred mode doesn't need channel
-            func_args=(epoch_id, node_name, packets, packet_values),
-            func_kwargs={
-                "retry_count": retry_count,
-                "retry_timestamps": retry_timestamps,
-                "retry_exceptions": retry_exceptions,
-            },
-        )
+        # Dispatch to worker (with optional timeout)
+        try:
+            coro = self._execution_manager.run_allocate(
+                pool_worker_ids=config.pools,
+                allocation_method=allocation_method,
+                func_import_path_or_key=func_key,
+                send_channel=False,  # Deferred mode doesn't need channel
+                func_args=(epoch_id, node_name, packets, packet_values),
+                func_kwargs={
+                    "retry_count": retry_count,
+                    "retry_timestamps": retry_timestamps,
+                    "retry_exceptions": retry_exceptions,
+                },
+            )
+            if config.timeout is not None:
+                job_result = await asyncio.wait_for(coro, timeout=config.timeout)
+            else:
+                job_result = await coro
+        except asyncio.TimeoutError:
+            return await self._handle_epoch_failure(
+                epoch_id=epoch_id,
+                node_name=node_name,
+                config=config,
+                packets=packets,
+                packet_values=packet_values,
+                error=TimeoutError(
+                    f"Node '{node_name}' exceeded timeout of {config.timeout}s"
+                ),
+                retry_count=retry_count,
+                retry_timestamps=retry_timestamps,
+                retry_exceptions=retry_exceptions,
+            )
 
         # Extract NodeExecutionResult from job result
         execution_result: NodeExecutionResult = job_result.result

@@ -1,0 +1,63 @@
+{
+  "extra": {
+    "description": "Demonstrates error handling: retries, dead letter queue, type checking, epoch cancellation"
+  },
+  "graph": {
+    "nodes": [
+      {
+        "name": "flaky",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {"func": "nodes.flaky_node"},
+        "execution_config": {
+          "pools": ["main"],
+          "retries": 3,
+          "retry_wait": 0.1,
+          "on_node_failure": "nodes.on_failure"
+        },
+        "extra": {"ui": {"position": {"x": 300, "y": 50}}}
+      },
+      {
+        "name": "once_only",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {"func": "nodes.run_once"},
+        "execution_config": {
+          "pools": ["main"],
+          "max_epochs": 1,
+          "propagate_exceptions": false
+        },
+        "extra": {"ui": {"position": {"x": 300, "y": 150}}}
+      },
+      {
+        "name": "canceller",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {"func": "nodes.cancelling_node"},
+        "execution_config": {
+          "pools": ["main"]
+        },
+        "extra": {"ui": {"position": {"x": 300, "y": 250}}}
+      },
+      {
+        "name": "type_checked",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {"func": "nodes.typed_output"},
+        "execution_config": {
+          "pools": ["main"],
+          "type_checking_enabled": true,
+          "propagate_exceptions": false
+        },
+        "extra": {"ui": {"position": {"x": 300, "y": 350}}}
+      },
+      {
+        "name": "quiet",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {"func": "nodes.quiet_fail"},
+        "execution_config": {
+          "pools": ["main"],
+          "propagate_exceptions": false
+        },
+        "extra": {"ui": {"position": {"x": 300, "y": 450}}}
+      }
+    ],
+    "edges": []
+  }
+}

@@ -1,0 +1,13 @@
+[project]
+name = "advanced-flow-control"
+version = "0.1.0"
+description = "Advanced flow control: custom salvo conditions, finite port slots, rate limiting, catch-all output queue"
+requires-python = ">=3.11"
+dependencies = [
+    "netrun",
+    "netrun-ui",
+]
+
+[tool.uv.sources]
+netrun = { path = "../../netrun", editable = true }
+netrun-ui = { path = "../../netrun-ui", editable = true }
