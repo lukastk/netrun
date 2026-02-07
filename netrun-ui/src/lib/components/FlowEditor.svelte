@@ -26,6 +26,7 @@
 		selectedNodeIds,
 		selectedEdgeIds,
 		addEdge as addEdgeToStore,
+		addEdges as addEdgesToStore,
 		generateEdgeId,
 		deleteNodes,
 		deleteEdges,
@@ -35,6 +36,11 @@
 		type NetrunNodeData,
 		type NetrunEdge
 	} from '$lib/stores/flowStore';
+	import {
+		isGroupHandle,
+		parseGroupHandleId,
+		getGroupConnectionPairs,
+	} from '$lib/utils/portGroups';
 
 	// Get edge style from graph extra, defaulting to smoothstep
 	const edgeStyle = derived(graphExtra, ($graphExtra) => {
@@ -101,7 +107,53 @@
 		subgraphNode: SubgraphNodeComponent
 	};
 
-	// Handle new connections
+	/**
+	 * Intercept connections before they are created.
+	 * Handles group-to-group connections by expanding into multiple edges.
+	 */
+	function onBeforeConnect(connection: Connection): Connection | false {
+		const srcGroup = parseGroupHandleId(connection.sourceHandle);
+		const tgtGroup = parseGroupHandleId(connection.targetHandle);
+
+		// If neither handle is a group, pass through normally
+		if (!srcGroup && !tgtGroup) return connection;
+
+		// If only one is a group, reject (group-to-individual not allowed)
+		if (!srcGroup || !tgtGroup) return false;
+
+		// Both are groups — expand to individual edges
+		if (!connection.source || !connection.target) return false;
+
+		const currentNodes = get(nodes);
+		const sourceNode = currentNodes.find(n => n.id === connection.source);
+		const targetNode = currentNodes.find(n => n.id === connection.target);
+		if (!sourceNode || !targetNode) return false;
+
+		const pairs = getGroupConnectionPairs(
+			sourceNode, srcGroup.groupPath,
+			targetNode, tgtGroup.groupPath,
+		);
+
+		if (pairs.length === 0) return false;
+
+		const markers = getMarkers(get(edgeMarkers));
+		const style = get(edgeStyle);
+		const newEdges: NetrunEdge[] = pairs.map(([srcPort, tgtPort]) => ({
+			id: generateEdgeId(),
+			source: connection.source!,
+			target: connection.target!,
+			sourceHandle: srcPort,
+			targetHandle: tgtPort,
+			type: style,
+			animated: false,
+			...markers,
+		}));
+
+		addEdgesToStore(newEdges);
+		return false; // Suppress default single edge creation
+	}
+
+	// Handle new connections (for normal single-port connections)
 	function onConnect(connection: Connection) {
 		if (connection.source && connection.target) {
 			const markers = getMarkers(get(edgeMarkers));
@@ -227,6 +279,7 @@
 		nodes={$nodesWithSelection}
 		edges={$edgesWithSelection}
 		{nodeTypes}
+		onbeforeconnect={onBeforeConnect}
 		onconnect={onConnect}
 		ondelete={onDelete}
 		onselectionchange={onSelectionChange}

@@ -1,7 +1,7 @@
 <script lang="ts">
-	import { Handle, Position } from '@xyflow/svelte';
 	import type { SubgraphNodeData } from '$lib/stores/flowStore';
 	import { openSubgraphTab } from '$lib/stores/tabsStore';
+	import PortList from './PortList.svelte';
 
 	interface Props {
 		id: string;
@@ -10,14 +10,6 @@
 	}
 
 	let { id, data, selected = false }: Props = $props();
-
-	// Calculate handle positions for multiple ports
-	function getHandleStyle(index: number, total: number): string {
-		if (total === 1) return 'top: 50%';
-		const spacing = 100 / (total + 1);
-		const top = spacing * (index + 1);
-		return `top: ${top}%`;
-	}
 
 	// Get display source (truncate long paths)
 	function getDisplaySource(source: string): string {
@@ -48,35 +40,8 @@
 
 	<!-- Ports container -->
 	<div class="ports-container">
-		<!-- Input ports (left) -->
-		<div class="ports input-ports">
-			{#each data.inPorts as port, i}
-				<div class="port-row">
-					<Handle
-						type="target"
-						position={Position.Left}
-						id={port.name}
-						style={getHandleStyle(i, data.inPorts.length)}
-					/>
-					<span class="port-label">{port.name}</span>
-				</div>
-			{/each}
-		</div>
-
-		<!-- Output ports (right) -->
-		<div class="ports output-ports">
-			{#each data.outPorts as port, i}
-				<div class="port-row">
-					<span class="port-label">{port.name}</span>
-					<Handle
-						type="source"
-						position={Position.Right}
-						id={port.name}
-						style={getHandleStyle(i, data.outPorts.length)}
-					/>
-				</div>
-			{/each}
-		</div>
+		<PortList nodeId={id} ports={data.inPorts} side="in" />
+		<PortList nodeId={id} ports={data.outPorts} side="out" />
 	</div>
 
 	<!-- Subgraph info footer -->
@@ -152,34 +117,6 @@
 		min-height: 40px;
 	}
 
-	.ports {
-		display: flex;
-		flex-direction: column;
-		gap: 4px;
-	}
-
-	.input-ports {
-		align-items: flex-start;
-		padding-left: 12px;
-	}
-
-	.output-ports {
-		align-items: flex-end;
-		padding-right: 12px;
-	}
-
-	.port-row {
-		display: flex;
-		align-items: center;
-		gap: 4px;
-		position: relative;
-	}
-
-	.port-label {
-		color: var(--text-secondary, #a0a0a0);
-		font-size: 11px;
-	}
-
 	.subgraph-info {
 		display: flex;
 		justify-content: space-between;
@@ -242,5 +179,12 @@
 
 	:global(.subgraph-node .svelte-flow__handle.connecting) {
 		background: var(--accent-color, #3b82f6);
+	}
+
+	/* Group handle styling — slightly larger, rounded rectangle */
+	:global(.subgraph-node .svelte-flow__handle.group-handle) {
+		width: 12px;
+		height: 12px;
+		border-radius: 3px;
 	}
 </style>
