@@ -242,6 +242,25 @@ export function getGroupConnectionPairs(
 	return pairs;
 }
 
+/**
+ * Get the innermost group path that a port name belongs to.
+ * For port "a.b.c", returns "a.b". For port "a.x", returns "a".
+ * For a port with no dots (standalone), returns null.
+ */
+export function getPortGroupPath(portName: string): string | null {
+	const lastDot = portName.lastIndexOf('.');
+	if (lastDot === -1) return null;
+	return portName.slice(0, lastDot);
+}
+
+/**
+ * Get all port names that belong to a group (recursively includes all leaf ports).
+ */
+export function getGroupPortNames(groupPath: string, ports: PortConfig[]): string[] {
+	const prefix = groupPath + '.';
+	return ports.filter(p => p.name.startsWith(prefix)).map(p => p.name);
+}
+
 // --- Utility for counting visible items (for handle positioning) ---
 
 /**
