@@ -175,6 +175,7 @@ def test_build_nohup_command_basic():
     assert "pool_server_stdout.log" in cmd
     assert ".netrun_serve_pool.pid" in cmd
     assert ".netrun_start.sh" in cmd
+    assert "$HOME/.local/bin" in cmd
 
 # %% pts/tests/07_deploy/test_deploy.pct.py 38
 def test_build_nohup_command_with_prefix():

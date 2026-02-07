@@ -108,7 +108,9 @@ def _build_nohup_command(config: DeployConfig, env_prefix: str) -> str:
     repo_dir = config.repo.remote_dir
     return (
         f"cd {repo_dir} && "
-        f"printf '#!/bin/sh\\nnohup {env_prefix}python .netrun_serve_pool.py "
+        f"printf '#!/bin/sh\\nexport PATH=\"$HOME/.local/bin:$PATH\"\\n"
+        f"cd {repo_dir}\\n"
+        f"nohup {env_prefix}python .netrun_serve_pool.py "
         f"> pool_server_stdout.log 2>&1 &\\necho $! > .netrun_serve_pool.pid\\n' "
         f"> .netrun_start.sh && chmod +x .netrun_start.sh && ./.netrun_start.sh"
     )
