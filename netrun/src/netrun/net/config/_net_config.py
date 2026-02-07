@@ -51,10 +51,16 @@ class MultiprocessPoolConfig(BaseModel):
 
 
 class RemotePoolConfig(BaseModel):
-    """Configuration for a remote pool."""
+    """Configuration for a remote pool.
+
+    ``url`` and ``worker_name`` may be left as ``None`` when building a
+    partial config (e.g. loaded from a file).  They **must** be set before
+    the config is used to construct a ``Net`` — otherwise a ``ValueError``
+    is raised at pool-construction time.
+    """
     type: Literal["remote"] = "remote"
-    url: str
-    worker_name: str
+    url: str | None = None
+    worker_name: str | None = None
     num_processes: int = 1
     threads_per_process: int = 1
 

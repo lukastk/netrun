@@ -37,7 +37,7 @@ from netrun.pool.thread import ThreadPool
 from netrun.pool.multiprocess import MultiprocessPool
 from netrun.pool.aio import SingleWorkerPool
 from netrun.pool.remote import RemotePoolClient
-from netrun.net.config import NetConfig, NodeExecutionConfig, PortConfig
+from netrun.net.config import NetConfig, NodeExecutionConfig, PortConfig, RemotePoolConfig
 from netrun.execution_manager import ExecutionManager, PoolType, RunAllocationMethod
 from netrun._iutils import get_timestamp_utc
 from netrun.storage import PacketStore, PacketStoreConfig
@@ -211,6 +211,21 @@ class Net:
             net_type_checking_enabled=self._config_resolved.type_checking_enabled,
         )
         func_done_callback = create_net_func_done_callback()
+
+        # Validate RemotePoolConfig fields are set before constructing pools
+        for pool_name, pool_config in self._config_resolved.pools.items():
+            spec = pool_config.spec
+            if isinstance(spec, RemotePoolConfig):
+                missing = []
+                if spec.url is None:
+                    missing.append("url")
+                if spec.worker_name is None:
+                    missing.append("worker_name")
+                if missing:
+                    raise ValueError(
+                        f"Pool '{pool_name}': RemotePoolConfig fields "
+                        f"{', '.join(missing)} must be set before running the Net"
+                    )
 
         # Build ExecutionManager config
         _exec_manager_config = {}
