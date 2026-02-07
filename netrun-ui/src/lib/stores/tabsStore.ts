@@ -188,9 +188,9 @@ export async function closeTab(tabId: string, confirmUnsaved: boolean = true): P
 		}
 	}
 
-	// If this is the last tab, close the window
+	// If this is the last tab, shut down the app
 	if (tabList.length === 1) {
-		window.close();
+		await api.shutdown();
 		return true;
 	}
 

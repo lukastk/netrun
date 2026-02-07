@@ -344,6 +344,17 @@ class ApiClient {
 	}
 
 	/**
+	 * Shut down the application (closes pywebview window or stops server)
+	 */
+	async shutdown(): Promise<void> {
+		try {
+			await fetch(`${this.baseUrl.replace('/api', '')}/api/shutdown`, { method: 'POST' });
+		} catch {
+			// Connection may be lost before response arrives — that's expected
+		}
+	}
+
+	/**
 	 * List directory contents
 	 */
 	async listDirectory(
