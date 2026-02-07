@@ -881,7 +881,8 @@ async function runBackendValidation(): Promise<BackendValidationResult> {
 			apiNodes,
 			apiEdges,
 			tab.graphExtra ?? undefined,
-			tab.extraData ?? undefined
+			tab.extraData ?? undefined,
+			tab.filePath ?? undefined
 		);
 
 		backendValidationAvailable.set(response.netrun_available);
@@ -912,41 +913,6 @@ async function runBackendValidation(): Promise<BackendValidationResult> {
 			} else {
 				const locStr = loc.join('.');
 				configErrors.push(locStr ? `${locStr}: ${err.msg}` : err.msg);
-			}
-		}
-
-		// Validate factory nodes by previewing them (resolves imports + calls get_node_config)
-		const factoryNodes = tab.nodes.filter(
-			n => n.data.nodeType === 'factory' && (n.data as NetrunNodeData).factory?.trim()
-		);
-
-		if (factoryNodes.length > 0) {
-			const projectRoot = (tab.extraData as Record<string, unknown>)?.project_root as string | undefined;
-			const results = await Promise.all(
-				factoryNodes.map(async (node) => {
-					const nData = node.data as NetrunNodeData;
-					try {
-						const preview = await api.previewFactory(
-							nData.factory!,
-							nData.factoryArgs || {},
-							projectRoot
-						);
-						if (preview.error) {
-							return { nodeId: node.id, error: preview.error };
-						}
-						return null;
-					} catch {
-						return null; // Backend unreachable, skip
-					}
-				})
-			);
-
-			for (const result of results) {
-				if (result) {
-					const existing = nodeErrorMap.get(result.nodeId) || [];
-					existing.push(result.error);
-					nodeErrorMap.set(result.nodeId, existing);
-				}
 			}
 		}
 

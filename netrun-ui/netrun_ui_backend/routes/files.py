@@ -624,6 +624,7 @@ class ValidateRequest(BaseModel):
     edges: list[dict[str, Any]]
     extra: dict[str, Any] | None = None
     extra_data: dict[str, Any] | None = None
+    file_path: str | None = None  # Config file path (for project_root resolution)
 
 
 class ValidateResponse(BaseModel):
@@ -631,6 +632,27 @@ class ValidateResponse(BaseModel):
     valid: bool
     errors: list[ValidationError_]
     netrun_available: bool  # Whether netrun package is importable
+
+
+def _resolve_project_root(
+    project_root: str | None,
+    file_path: str | None,
+) -> Path | None:
+    """Resolve the project root path for factory/import resolution.
+
+    Mirrors NetConfig.project_root_path logic.
+    """
+    if project_root is not None:
+        p = Path(project_root)
+        if p.is_absolute():
+            return p
+        # Relative: resolve from config file dir or cwd
+        if file_path:
+            return (Path(file_path).resolve().parent / p).resolve()
+        return (Path.cwd() / p).resolve()
+    if file_path:
+        return Path(file_path).resolve().parent
+    return None
 
 
 def validate_tool_configs(graph: Any, extra_data: dict[str, Any]) -> list[ValidationError_]:
@@ -701,10 +723,12 @@ def validate_tool_configs(graph: Any, extra_data: dict[str, Any]) -> list[Valida
 
 @router.post("/validate", response_model=ValidateResponse)
 async def validate_config(request: ValidateRequest) -> ValidateResponse:
-    """Validate UI data against the actual NetConfig/GraphConfig Pydantic models.
+    """Validate UI data against NetConfig/GraphConfig models, then resolve.
 
-    This performs full validation using the netrun package's Pydantic models,
-    catching errors that simple client-side validation might miss.
+    Performs:
+    1. Structural validation via pydantic model_validate
+    2. Full resolution (factory expansion, import resolution, subgraph flattening)
+    3. Tool config validation (actions, recipes)
     """
     if not _NETRUN_VALIDATE_AVAILABLE:
         return ValidateResponse(
@@ -715,8 +739,8 @@ async def validate_config(request: ValidateRequest) -> ValidateResponse:
 
     errors: list[ValidationError_] = []
 
+    # Step 1: Build graph config (structural validation via pydantic models)
     try:
-        # Convert UI format to GraphConfig (also validates graph structure)
         graph = ui_to_graph_config(request.nodes, request.edges, request.extra)
     except ValidationError as e:
         for err in e.errors():
@@ -734,7 +758,7 @@ async def validate_config(request: ValidateRequest) -> ValidateResponse:
         )
 
     try:
-        # Validate as NetConfig if extra_data present
+        # Step 2: Validate as NetConfig if extra_data present
         if request.extra_data:
             if NETRUN_AVAILABLE:
                 graph_dict = dump_graph_config(graph)
@@ -751,7 +775,24 @@ async def validate_config(request: ValidateRequest) -> ValidateResponse:
                         type=err.get("type", "unknown"),
                     ))
 
-        # Validate tool configs (actions, recipes)
+        # Step 3: Resolve each node individually for per-node error attribution
+        if NETRUN_AVAILABLE and hasattr(graph, 'nodes'):
+            project_root = _resolve_project_root(
+                request.extra_data.get("project_root") if request.extra_data else None,
+                request.file_path,
+            )
+            for idx, node in enumerate(graph.nodes):
+                if hasattr(node, 'resolve'):
+                    try:
+                        node.resolve(project_root=project_root)
+                    except Exception as e:
+                        errors.append(ValidationError_(
+                            loc=["graph", "nodes", str(idx)],
+                            msg=str(e),
+                            type="resolve_error",
+                        ))
+
+        # Step 4: Validate tool configs (actions, recipes)
         errors.extend(validate_tool_configs(graph, request.extra_data or {}))
 
         return ValidateResponse(

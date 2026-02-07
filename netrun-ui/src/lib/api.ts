@@ -438,11 +438,12 @@ class ApiClient {
 		nodes: UINode[],
 		edges: UIEdge[],
 		extra?: Record<string, unknown>,
-		extra_data?: Record<string, unknown>
+		extra_data?: Record<string, unknown>,
+		file_path?: string
 	): Promise<ValidateConfigResponse> {
 		return this.request<ValidateConfigResponse>('/files/validate', {
 			method: 'POST',
-			body: JSON.stringify({ nodes, edges, extra, extra_data }),
+			body: JSON.stringify({ nodes, edges, extra, extra_data, file_path }),
 		});
 	}
 
