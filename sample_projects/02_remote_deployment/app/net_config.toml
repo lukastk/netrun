@@ -1,28 +1,26 @@
 [pools.main]
+spec = { type = "main" }
 
-[pools.main.spec]
-type = "main"
+[pools.remote]
+spec = { type = "remote", num_processes = 1, threads_per_process = 1 }
 
 [[graph.nodes]]
 name = "double"
 factory = "netrun.node_factories.from_function"
-
-[graph.nodes.factory_args]
-func = "nodes.double"
+factory_args = { func = "nodes.double" }
+execution_config = { pools = ["main"] }
 
 [[graph.nodes]]
 name = "add"
 factory = "netrun.node_factories.from_function"
-
-[graph.nodes.factory_args]
-func = "nodes.add"
+factory_args = { func = "nodes.add" }
+execution_config = { pools = ["remote"] }
 
 [[graph.nodes]]
 name = "format_result"
 factory = "netrun.node_factories.from_function"
-
-[graph.nodes.factory_args]
-func = "nodes.format_result"
+factory_args = { func = "nodes.format_result" }
+execution_config = { pools = ["main"] }
 
 [[graph.edges]]
 source_str = "double.out"
@@ -31,3 +29,6 @@ target_str = "add.a"
 [[graph.edges]]
 source_str = "add.out"
 target_str = "format_result.value"
+
+[output_queues.results]
+ports = [["format_result", "out"]]
