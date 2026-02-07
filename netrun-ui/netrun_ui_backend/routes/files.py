@@ -13,14 +13,23 @@ from ..converter import (
     graph_config_to_ui,
     extract_graph_and_extras,
     merge_graph_with_extras,
+    dump_graph_config,
+    NETRUN_AVAILABLE,
 )
 
 # Import netrun config types for validation
 try:
     from netrun.net.config import NetConfig, GraphConfig
-    NETRUN_AVAILABLE = True
+    _NETRUN_VALIDATE_AVAILABLE = True
 except ImportError:
-    NETRUN_AVAILABLE = False
+    _NETRUN_VALIDATE_AVAILABLE = False
+
+# Import tool config types for validation
+try:
+    from netrun.tools._models import ActionConfig, RecipeConfig
+    _NETRUN_TOOLS_AVAILABLE = True
+except ImportError:
+    _NETRUN_TOOLS_AVAILABLE = False
 
 router = APIRouter()
 
@@ -139,14 +148,19 @@ async def save_file(request: FileSaveRequest) -> FileSaveResponse:
         )
 
     try:
-        # Convert UI format to GraphConfig
-        graph_config = ui_to_graph_config(request.nodes, request.edges)
+        # Convert UI format to GraphConfig (model when netrun available, dict otherwise)
+        graph = ui_to_graph_config(request.nodes, request.edges, request.extra)
+
+        # Serialize to dict
+        if NETRUN_AVAILABLE:
+            graph_dict = dump_graph_config(graph)
+        else:
+            graph_dict = graph  # already a dict
 
         # Merge graph with any extra data (pools, net-level settings)
         output_data = merge_graph_with_extras(
-            graph_config,
+            graph_dict,
             request.extra_data or {},
-            request.extra,
         )
 
         # Serialize based on format
@@ -619,6 +633,72 @@ class ValidateResponse(BaseModel):
     netrun_available: bool  # Whether netrun package is importable
 
 
+def validate_tool_configs(graph: Any, extra_data: dict[str, Any]) -> list[ValidationError_]:
+    """Validate ActionConfig and RecipeConfig within graph and extra_data."""
+    if not _NETRUN_TOOLS_AVAILABLE:
+        return []
+
+    errors: list[ValidationError_] = []
+
+    # Helper to extract extra dict from model or dict
+    def _get_extra(obj: Any) -> dict:
+        if hasattr(obj, "extra"):
+            return obj.extra or {}
+        if isinstance(obj, dict):
+            return obj.get("extra", {})
+        return {}
+
+    def _get_nodes(obj: Any) -> list:
+        if hasattr(obj, "nodes"):
+            return obj.nodes or []
+        if isinstance(obj, dict):
+            return obj.get("nodes", [])
+        return []
+
+    # Project-level actions: graph.extra.ui.actions
+    graph_extra = _get_extra(graph)
+    for i, action in enumerate(graph_extra.get("ui", {}).get("actions", [])):
+        try:
+            ActionConfig.model_validate(action)
+        except ValidationError as e:
+            for err in e.errors():
+                errors.append(ValidationError_(
+                    loc=["graph", "extra", "ui", "actions", str(i)]
+                        + [str(x) for x in err["loc"]],
+                    msg=err["msg"],
+                    type=err["type"],
+                ))
+
+    # Node-level actions: node.extra.ui.actions
+    for idx, node in enumerate(_get_nodes(graph)):
+        node_extra = _get_extra(node)
+        for i, action in enumerate(node_extra.get("ui", {}).get("actions", [])):
+            try:
+                ActionConfig.model_validate(action)
+            except ValidationError as e:
+                for err in e.errors():
+                    errors.append(ValidationError_(
+                        loc=["graph", "nodes", str(idx), "extra", "ui", "actions", str(i)]
+                            + [str(x) for x in err["loc"]],
+                        msg=err["msg"],
+                        type=err["type"],
+                    ))
+
+    # Recipes: extra_data.recipes
+    for name, recipe in extra_data.get("recipes", {}).items():
+        try:
+            RecipeConfig.model_validate(recipe)
+        except ValidationError as e:
+            for err in e.errors():
+                errors.append(ValidationError_(
+                    loc=["recipes", name] + [str(x) for x in err["loc"]],
+                    msg=err["msg"],
+                    type=err["type"],
+                ))
+
+    return errors
+
+
 @router.post("/validate", response_model=ValidateResponse)
 async def validate_config(request: ValidateRequest) -> ValidateResponse:
     """Validate UI data against the actual NetConfig/GraphConfig Pydantic models.
@@ -626,33 +706,41 @@ async def validate_config(request: ValidateRequest) -> ValidateResponse:
     This performs full validation using the netrun package's Pydantic models,
     catching errors that simple client-side validation might miss.
     """
-    if not NETRUN_AVAILABLE:
+    if not _NETRUN_VALIDATE_AVAILABLE:
         return ValidateResponse(
             valid=True,  # Can't validate without netrun, assume valid
             errors=[],
             netrun_available=False,
         )
 
+    errors: list[ValidationError_] = []
+
     try:
-        # Convert UI format to GraphConfig format
-        graph_config = ui_to_graph_config(request.nodes, request.edges)
-
-        # Add extra if provided
-        if request.extra:
-            graph_config["extra"] = request.extra
-
-        # Merge with extra data to get full config
-        full_config = merge_graph_with_extras(
-            graph_config,
-            request.extra_data or {},
-            request.extra,
+        # Convert UI format to GraphConfig (also validates graph structure)
+        graph = ui_to_graph_config(request.nodes, request.edges, request.extra)
+    except ValidationError as e:
+        for err in e.errors():
+            errors.append(ValidationError_(
+                loc=[str(x) for x in err.get("loc", [])],
+                msg=err.get("msg", "Unknown error"),
+                type=err.get("type", "unknown"),
+            ))
+        return ValidateResponse(valid=False, errors=errors, netrun_available=True)
+    except Exception as e:
+        return ValidateResponse(
+            valid=False,
+            errors=[ValidationError_(loc=["_root_"], msg=str(e), type="validation_error")],
+            netrun_available=True,
         )
 
-        # Validate using Pydantic models
-        errors: list[ValidationError_] = []
-
+    try:
+        # Validate as NetConfig if extra_data present
         if request.extra_data:
-            # Has extra data - validate as NetConfig
+            if NETRUN_AVAILABLE:
+                graph_dict = dump_graph_config(graph)
+            else:
+                graph_dict = graph
+            full_config = merge_graph_with_extras(graph_dict, request.extra_data or {})
             try:
                 NetConfig.model_validate(full_config)
             except ValidationError as e:
@@ -662,17 +750,9 @@ async def validate_config(request: ValidateRequest) -> ValidateResponse:
                         msg=err.get("msg", "Unknown error"),
                         type=err.get("type", "unknown"),
                     ))
-        else:
-            # No extra data - validate graph portion as GraphConfig
-            try:
-                GraphConfig.model_validate(graph_config)
-            except ValidationError as e:
-                for err in e.errors():
-                    errors.append(ValidationError_(
-                        loc=[str(x) for x in err.get("loc", [])],
-                        msg=err.get("msg", "Unknown error"),
-                        type=err.get("type", "unknown"),
-                    ))
+
+        # Validate tool configs (actions, recipes)
+        errors.extend(validate_tool_configs(graph, request.extra_data or {}))
 
         return ValidateResponse(
             valid=len(errors) == 0,
@@ -681,7 +761,6 @@ async def validate_config(request: ValidateRequest) -> ValidateResponse:
         )
 
     except Exception as e:
-        # Unexpected error during validation
         return ValidateResponse(
             valid=False,
             errors=[ValidationError_(
