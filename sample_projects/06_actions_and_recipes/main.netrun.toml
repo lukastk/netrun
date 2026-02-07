@@ -1,0 +1,120 @@
+# Actions and Recipes Demo
+# Demonstrates: TOML config format, actions with template variables,
+# project-level and node-level env, recipes with all prompt types,
+# file-path imports (./nodes.py::func syntax)
+
+project_root = "."
+
+# --- Recipes ---
+[recipes.add_node]
+path = "./recipes/add_node.py"
+description = "Add a new node to the graph with configurable settings"
+
+[recipes.set_defaults]
+path = "./recipes/set_defaults.py"
+description = "Set default node variables for all nodes"
+
+# --- Global node variables (accessible via ctx.vars) ---
+[node_vars.greeting_template]
+value = "Hello, {name}!"
+type = "str"
+
+[node_vars.mode]
+value = "uppercase"
+type = "str"
+
+# --- Output queues ---
+[output_queues.results]
+ports = [["format_output", "out"]]
+
+# --- Graph ---
+[graph.extra.ui]
+defaultCmd = "echo"
+
+# Project-level env variables (used in action template expansion)
+[graph.extra.ui.env]
+APP_NAME = "actions-demo"
+VERSION = "1.0"
+
+# Project-level actions (available on all nodes)
+[[graph.extra.ui.actions]]
+id = "action-show-info"
+label = "Show Node Info"
+command = "echo \"Node: $NODE_NAME\" && echo \"App: $APP_NAME v$VERSION\""
+
+[[graph.extra.ui.actions]]
+id = "action-show-paths"
+label = "Show Paths"
+command = "echo \"Project: $PROJECT_ROOT\" && echo \"Config: $NET_FILE_PATH\" && echo \"Dir: $NET_FILE_DIR\""
+
+[[graph.extra.ui.actions]]
+id = "action-show-config"
+label = "Show Config JSON"
+command = "echo \"$NODE_CONFIG\" | python3 -m json.tool 2>/dev/null || echo \"$NODE_CONFIG\""
+
+[[graph.extra.ui.actions]]
+id = "action-default-cmd"
+label = "Default Command Demo"
+command = "$DEFAULT_CMD \"Running default command for $NODE_NAME\""
+
+# --- Nodes ---
+
+# greeter: uses file-path import syntax and node_vars
+[[graph.nodes]]
+name = "greeter"
+factory = "netrun.node_factories.from_function"
+factory_args = { func = "./nodes.py::greet" }
+
+[graph.nodes.execution_config]
+pools = ["main"]
+
+# Override greeting_template per-node
+[graph.nodes.execution_config.node_vars.greeting_template]
+value = "Welcome aboard, {name}!"
+type = "str"
+
+# Node-level env override for actions
+[graph.nodes.extra.ui.env]
+ROLE = "greeter"
+
+# Node-level action (only on this node)
+[[graph.nodes.extra.ui.actions]]
+id = "action-greet-test"
+label = "Test Greeting"
+command = "echo \"$NODE_NAME ($ROLE): greeting_template is set per-node\""
+
+# transformer: uses global node_vars (mode=uppercase)
+[[graph.nodes]]
+name = "transformer"
+factory = "netrun.node_factories.from_function"
+factory_args = { func = "./nodes.py::transform" }
+
+[graph.nodes.execution_config]
+pools = ["main"]
+
+[graph.nodes.extra.ui]
+position = { x = 400, y = 100 }
+
+[graph.nodes.extra.ui.env]
+ROLE = "transformer"
+
+# format_output: standard function factory
+[[graph.nodes]]
+name = "format_output"
+factory = "netrun.node_factories.from_function"
+factory_args = { func = "./nodes.py::format_output" }
+
+[graph.nodes.execution_config]
+pools = ["main"]
+
+[graph.nodes.extra.ui]
+position = { x = 700, y = 100 }
+
+# --- Edges ---
+[[graph.edges]]
+source_str = "greeter.out"
+target_str = "transformer.data"
+
+[[graph.edges]]
+source_str = "transformer.out"
+target_str = "format_output.value"

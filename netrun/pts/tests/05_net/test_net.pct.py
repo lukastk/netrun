@@ -4510,3 +4510,180 @@ async def test_factory_node_exec_func_override():
         # Verify no output packets were created (proving override ran, not factory).
         record = list(net._epochs.values())[0]
         assert len(record.out_salvos) == 0
+
+# %% [markdown]
+# ## Timeout Enforcement Tests
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_timeout_enforcement_raises_epoch_error():
+    """Test that timeout on NodeExecutionConfig is enforced via asyncio.wait_for.
+
+    Uses a ThreadPool so the worker runs in a separate thread.
+    asyncio.wait_for can then cancel the await on the worker response.
+    """
+    import threading
+    stop_event = threading.Event()
+
+    def slow_node(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+        # Block until test signals completion (or 30s safety limit)
+        stop_event.wait(timeout=30)
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="SlowNode",
+                in_ports={"in": PortConfig()},
+                in_salvo_conditions={
+                    "default": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"in": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="SlowNode",
+                    pools=["thread"],
+                    exec_node_func=slow_node,
+                    timeout=0.2,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"thread": PoolConfig(spec=ThreadPoolConfig(num_workers=1))},
+        graph=graph_config,
+    )
+
+    try:
+        async with Net(config) as net:
+            net.inject_data("SlowNode", "in", [1])
+            with pytest.raises(EpochError) as exc_info:
+                await net.run_until_blocked()
+
+            assert exc_info.value.node_name == "SlowNode"
+            assert isinstance(exc_info.value.__cause__, TimeoutError)
+            assert "exceeded timeout" in str(exc_info.value.__cause__)
+    finally:
+        # Release the worker thread so pool cleanup completes quickly
+        stop_event.set()
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_timeout_goes_to_dead_letter_queue():
+    """Test that a timed-out epoch goes to the dead letter queue."""
+    import threading
+    stop_event = threading.Event()
+
+    def slow_node(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+        stop_event.wait(timeout=30)
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="SlowNode",
+                in_ports={"in": PortConfig()},
+                in_salvo_conditions={
+                    "default": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"in": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="SlowNode",
+                    pools=["thread"],
+                    exec_node_func=slow_node,
+                    timeout=0.2,
+                    propagate_exceptions=False,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"thread": PoolConfig(spec=ThreadPoolConfig(num_workers=1))},
+        graph=graph_config,
+    )
+
+    try:
+        async with Net(config) as net:
+            net.inject_data("SlowNode", "in", [1])
+            await net.run_until_blocked()
+
+            # Should be in dead letter queue
+            dlq = net.dead_letter_queue
+            assert len(dlq) == 1
+            assert dlq[0]["node_name"] == "SlowNode"
+            assert isinstance(dlq[0]["error"], TimeoutError)
+
+            # Should be in exception queue
+            assert len(net.exception_queue) == 1
+            assert isinstance(net.exception_queue[0].__cause__, TimeoutError)
+    finally:
+        stop_event.set()
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_timeout_none_no_limit():
+    """Test that timeout=None (default) means no timeout is applied."""
+    def fast_node(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="FastNode",
+                in_ports={"in": PortConfig()},
+                in_salvo_conditions={
+                    "default": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"in": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="FastNode",
+                    pools=["main"],
+                    exec_node_func=fast_node,
+                    # timeout=None is the default
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        net.inject_data("FastNode", "in", [1])
+        await net.run_until_blocked()
+        # No timeout error - epoch should complete normally
+        assert len(net.exception_queue) == 0
+        assert len(net.dead_letter_queue) == 0

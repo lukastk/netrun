@@ -20,6 +20,7 @@ from ..net.config import (
     SalvoConditionTermTrueConfig,
     MaxSalvosFiniteConfig,
     PacketCountAllConfig,
+    PacketCountNConfig,
     PortStateNonEmptyConfig,
 )
 
@@ -177,7 +178,18 @@ def _parse_function_signature(func: Callable|str, include_port_types: bool = Tru
     )
 
 # %% pts/netrun/06_node_factories/00_from_function.pct.py 7
-def _generate_input_salvo_condition(in_ports: dict[str, PortConfig]) -> dict[str, SalvoConditionConfig]:
+def _is_list_type(annotation) -> bool:
+    """Check if annotation is a list type like list[T] or List[T]."""
+    if annotation is _MISSING or annotation is inspect.Parameter.empty:
+        return False
+    origin = get_origin(annotation)
+    return origin is list
+
+
+def _generate_input_salvo_condition(
+    in_ports: dict[str, PortConfig],
+    in_port_annotations: dict[str, Any] | None = None,
+) -> dict[str, SalvoConditionConfig]:
     """Generate default input salvo condition.
 
     Default: Fires when all input ports have at least one packet.
@@ -209,8 +221,16 @@ def _generate_input_salvo_condition(in_ports: dict[str, PortConfig]) -> dict[str
     else:
         term = SalvoConditionTermAndConfig(terms=port_terms)
 
-    # Include all packets from all ports
-    ports = {port_name: PacketCountAllConfig() for port_name in in_ports.keys()}
+    # Determine packet count per port based on type annotation:
+    # - list types: grab all packets (function receives them as a list)
+    # - non-list types: grab exactly 1 packet (function receives a single value)
+    ports = {}
+    for port_name in in_ports.keys():
+        annotation = (in_port_annotations or {}).get(port_name, _MISSING)
+        if _is_list_type(annotation):
+            ports[port_name] = PacketCountAllConfig()
+        else:
+            ports[port_name] = PacketCountNConfig(count=1)
 
     return {
         "trigger": SalvoConditionConfig(
@@ -266,13 +286,6 @@ def _create_exec_func(func: Callable, parsed_sig: _ParsedSignature) -> Callable:
         An exec_node_func suitable for NodeExecutionConfig.
     """
     is_async = asyncio.iscoroutinefunction(func)
-
-    def _is_list_type(annotation):
-        """Check if annotation is a list type like list[T] or List[T]."""
-        if annotation is _MISSING:
-            return False
-        origin = get_origin(annotation)
-        return origin is list
 
     def _prepare_kwargs(ctx, packets):
         """Extract kwargs from packets and special params."""
@@ -459,7 +472,9 @@ def _from_function(func: Callable|str, include_port_types: bool = True) -> NodeC
         "out_ports": {k: v.model_dump() for k, v in parsed_sig.out_ports.items()},
         "in_salvo_conditions": {
             k: v.model_dump()
-            for k, v in _generate_input_salvo_condition(parsed_sig.in_ports).items()
+            for k, v in _generate_input_salvo_condition(
+                parsed_sig.in_ports, parsed_sig.in_port_annotations
+            ).items()
         },
         "out_salvo_conditions": {
             k: v.model_dump()

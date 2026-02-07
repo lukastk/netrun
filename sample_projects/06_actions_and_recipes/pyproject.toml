@@ -1,0 +1,13 @@
+[project]
+name = "actions-and-recipes"
+version = "0.1.0"
+description = "Actions and recipes: template variables, env overrides, all prompt types, TOML config"
+requires-python = ">=3.11"
+dependencies = [
+    "netrun",
+    "netrun-ui",
+]
+
+[tool.uv.sources]
+netrun = { path = "../../netrun", editable = true }
+netrun-ui = { path = "../../netrun-ui", editable = true }
