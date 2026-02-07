@@ -347,6 +347,8 @@ uv sync  # Install dependencies
 
 ### Code Quality Guidelines
 
+**CRITICAL — STOP AND ASK if something feels wrong:** If at any point — while implementing a feature, writing a test, building a sample project, or doing anything else — you find yourself writing code that works around a bug, feels like a hack, or is not in the spirit of the package, you **MUST stop immediately and ask the user for instructions**. Do NOT silently work around the problem. Do NOT introduce tech debt. Do NOT write "temporary" fixes. Instead, describe what you encountered, why the current approach feels wrong, and ask how to proceed. This applies to ALL work, not just core library code — tests, examples, and sample projects are equally important.
+
 - **No hacks or workarounds**: If you find yourself writing code like `time.sleep(0.01)` to "get different timestamps" or similar workarounds, STOP and discuss with the user. There's likely a better design that captures the data properly at the source.
 - **Capture data at the source**: Timestamps, metadata, and context should be captured when events occur, not approximated later. For example, `ctx.print()` should capture the timestamp when called, not when the buffer is flushed.
 - **Ask before implementing workarounds**: If the current design doesn't support what you need, propose a design change rather than working around it.
