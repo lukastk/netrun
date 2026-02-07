@@ -5,14 +5,14 @@ UI Format (flowStore.ts):
 - edges: list of {id, source, target, sourceHandle, targetHandle, ...}
 
 GraphConfig Format (netrun.net.config):
-- nodes: list of NodeConfig {name, in_ports, out_ports, in_salvo_conditions, out_salvo_conditions, factory, factory_args, meta, ...}
+- nodes: list of NodeConfig {name, in_ports, out_ports, in_salvo_conditions, out_salvo_conditions, factory, factory_args, extra, ...}
 - edges: list of EdgeConfig {source_str, target_str} or {source, target}
-- meta: optional dict for graph-level metadata
+- extra: optional dict for graph-level extra data
 
 NetConfig Format (netrun.net.config):
 - pools: dict[str, PoolConfig] (required)
 - graph: GraphConfig
-- meta: optional dict for net-level metadata
+- extra: optional dict for net-level extra data
 - ... other net-level settings
 """
 from typing import Any
@@ -59,21 +59,21 @@ def extract_graph_and_extras(data: dict[str, Any]) -> tuple[dict[str, Any], dict
 def merge_graph_with_extras(
     graph_config: dict[str, Any],
     extra_data: dict[str, Any],
-    graph_meta: dict[str, Any] | None = None,
+    graph_extra: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     """Merge graph config with extra data to produce final output.
 
     Args:
         graph_config: The GraphConfig portion.
         extra_data: Non-graph data to preserve (pools, net-level settings).
-        graph_meta: Optional graph-level meta to include.
+        graph_extra: Optional graph-level extra data to include.
 
     Returns:
         Complete config ready for serialization.
     """
-    # Add graph-level meta if provided
-    if graph_meta:
-        graph_config = {**graph_config, "meta": graph_meta}
+    # Add graph-level extra if provided
+    if graph_extra:
+        graph_config = {**graph_config, "extra": graph_extra}
 
     if extra_data:
         # Has extra data - produce NetConfig format
@@ -197,10 +197,10 @@ def graph_config_to_ui(
     for i, node in enumerate(nodes_data):
         node_name = node.get("name", f"node_{i}")
 
-        # Extract meta.ui for position and other UI data
-        meta = node.get("meta", {})
-        ui_meta = meta.get("ui", {})
-        position = ui_meta.get("position", {"x": i * 200, "y": 100})
+        # Extract extra.ui for position and other UI data
+        extra = node.get("extra", {})
+        ui_extra = extra.get("ui", {})
+        position = ui_extra.get("position", {"x": i * 200, "y": 100})
 
         # Check if this is a subgraph
         is_subgraph = node.get("type") == "subgraph"
@@ -240,7 +240,7 @@ def graph_config_to_ui(
                     # Store the full subgraph config for round-trip
                     "_subgraphConfig": {
                         k: v for k, v in node.items()
-                        if k not in ("meta",)  # Exclude meta, we handle it separately
+                        if k not in ("extra",)  # Exclude extra, we handle it separately
                     },
                 },
             }
@@ -292,7 +292,7 @@ def graph_config_to_ui(
             # Store original config data for non-UI fields
             ui_node["data"]["_config"] = {
                 k: v for k, v in node.items()
-                if k not in ("name", "in_ports", "out_ports", "factory", "factory_args", "meta", "type")
+                if k not in ("name", "in_ports", "out_ports", "factory", "factory_args", "extra", "type")
             }
 
         ui_nodes.append(ui_node)
@@ -369,7 +369,7 @@ def ui_to_graph_config(ui_nodes: list[dict], ui_edges: list[dict]) -> dict[str, 
                 "type": "subgraph",
                 "name": node_name,
                 **subgraph_config,
-                "meta": {
+                "extra": {
                     "ui": {
                         "position": position,
                     }
@@ -391,12 +391,12 @@ def ui_to_graph_config(ui_nodes: list[dict], ui_edges: list[dict]) -> dict[str, 
         else:
             # Handle regular node
             if node_type == "factory":
-                # For factory nodes, only save name, factory, factory_args, and meta
+                # For factory nodes, only save name, factory, factory_args, and extra
                 # The factory will regenerate in_ports, out_ports, salvo conditions, etc.
                 config_node = {
                     "type": "node",
                     "name": node_name,
-                    "meta": {
+                    "extra": {
                         "ui": {
                             "position": position,
                         }
@@ -443,7 +443,7 @@ def ui_to_graph_config(ui_nodes: list[dict], ui_edges: list[dict]) -> dict[str, 
                     "name": node_name,
                     "in_ports": in_ports,
                     "out_ports": out_ports,
-                    "meta": {
+                    "extra": {
                         "ui": {
                             "position": position,
                         }

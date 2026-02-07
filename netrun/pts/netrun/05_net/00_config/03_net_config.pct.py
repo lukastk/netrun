@@ -209,8 +209,8 @@ class NetConfig(BaseModel):
     """Pool configurations. None = generate default on resolve(), {} = no pools."""
     graph: GraphConfig
 
-    meta: dict[str, Any] = Field(default_factory=dict)
-    """Arbitrary metadata for the net configuration.
+    extra: dict[str, Any] = Field(default_factory=dict)
+    """Arbitrary extra data for the net configuration.
 
     Can be used to store descriptions, version info, or any other
     tool-specific data that should be preserved across serialization.

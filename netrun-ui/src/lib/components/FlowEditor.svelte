@@ -31,20 +31,20 @@
 		deleteEdges,
 		pushHistory,
 		updateNodePositions,
-		graphMeta,
+		graphExtra,
 		type NetrunNodeData,
 		type NetrunEdge
 	} from '$lib/stores/flowStore';
 
-	// Get edge style from graph meta, defaulting to smoothstep
-	const edgeStyle = derived(graphMeta, ($graphMeta) => {
-		const ui = ($graphMeta as Record<string, unknown>)?.ui as Record<string, unknown> | undefined;
+	// Get edge style from graph extra, defaulting to smoothstep
+	const edgeStyle = derived(graphExtra, ($graphExtra) => {
+		const ui = ($graphExtra as Record<string, unknown>)?.ui as Record<string, unknown> | undefined;
 		return (ui?.edgeStyle as string) ?? 'smoothstep';
 	});
 
-	// Get edge markers setting from graph meta
-	const edgeMarkers = derived(graphMeta, ($graphMeta) => {
-		const ui = ($graphMeta as Record<string, unknown>)?.ui as Record<string, unknown> | undefined;
+	// Get edge markers setting from graph extra
+	const edgeMarkers = derived(graphExtra, ($graphExtra) => {
+		const ui = ($graphExtra as Record<string, unknown>)?.ui as Record<string, unknown> | undefined;
 		return (ui?.edgeMarkers as string) ?? 'arrow-end';
 	});
 

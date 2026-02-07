@@ -38,7 +38,7 @@ export interface TabState {
 	edges: NetrunEdge[];
 	history: History;
 	extraData: Record<string, unknown> | null;
-	graphMeta: Record<string, unknown> | null;
+	graphExtra: Record<string, unknown> | null;
 	fileFormat: 'json' | 'toml';
 	// Subgraph context (null for root tabs)
 	subgraphContext: SubgraphContext | null;
@@ -69,7 +69,7 @@ export function createEmptyTabState(filePath?: string | null): TabState {
 		edges: [],
 		history: { past: [], future: [] },
 		extraData: null,
-		graphMeta: null,
+		graphExtra: null,
 		fileFormat: 'json',
 		subgraphContext: null,
 		isNewFile: false,
@@ -373,7 +373,7 @@ export async function openSubgraphTab(nodeId: string, data: SubgraphNodeData): P
 			edges,
 			history: { past: [], future: [] },
 			extraData: null,
-			graphMeta: null,
+			graphExtra: null,
 			fileFormat: parentTab.fileFormat,
 			subgraphContext: {
 				parentTabId: parentTab.id,

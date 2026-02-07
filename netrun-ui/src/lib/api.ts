@@ -47,7 +47,7 @@ export interface FileReadResponse {
 	format: 'json' | 'toml';
 	nodes: UINode[];
 	edges: UIEdge[];
-	meta?: Record<string, unknown>;
+	extra?: Record<string, unknown>;
 	extra_data?: Record<string, unknown>;  // Non-graph data (pools, etc.)
 }
 
@@ -242,12 +242,12 @@ class ApiClient {
 		format: 'json' | 'toml',
 		nodes: UINode[],
 		edges: UIEdge[],
-		meta?: Record<string, unknown>,
+		extra?: Record<string, unknown>,
 		extra_data?: Record<string, unknown>  // Non-graph data (pools, etc.)
 	): Promise<FileSaveResponse> {
 		return this.request<FileSaveResponse>('/files/save', {
 			method: 'POST',
-			body: JSON.stringify({ path, format, nodes, edges, meta, extra_data }),
+			body: JSON.stringify({ path, format, nodes, edges, extra, extra_data }),
 		});
 	}
 
@@ -434,12 +434,12 @@ class ApiClient {
 	async validateConfig(
 		nodes: UINode[],
 		edges: UIEdge[],
-		meta?: Record<string, unknown>,
+		extra?: Record<string, unknown>,
 		extra_data?: Record<string, unknown>
 	): Promise<ValidateConfigResponse> {
 		return this.request<ValidateConfigResponse>('/files/validate', {
 			method: 'POST',
-			body: JSON.stringify({ nodes, edges, meta, extra_data }),
+			body: JSON.stringify({ nodes, edges, extra, extra_data }),
 		});
 	}
 

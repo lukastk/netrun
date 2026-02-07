@@ -72,8 +72,8 @@ class GraphConfig(BaseModel):
 
     edges: list[EdgeConfig] = Field(default_factory=list)
 
-    meta: dict[str, Any] = Field(default_factory=dict)
-    """Arbitrary metadata for the graph.
+    extra: dict[str, Any] = Field(default_factory=dict)
+    """Arbitrary extra data for the graph.
 
     Can be used to store descriptions, UI viewport state, or any other
     tool-specific data that should be preserved across serialization.
@@ -173,7 +173,7 @@ class GraphConfig(BaseModel):
                     )
             seen_names.add(name)
 
-        return GraphConfig(nodes=resolved_nodes, edges=final_edges, meta=self.meta)
+        return GraphConfig(nodes=resolved_nodes, edges=final_edges, extra=self.extra)
 
     def has_subgraphs(self) -> bool:
         """Check if this graph contains any subgraphs."""

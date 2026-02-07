@@ -80,7 +80,7 @@ export const edges = derived(activeTab, ($activeTab) => $activeTab?.edges || [])
 export const isDirty = derived(activeTab, ($activeTab) => $activeTab?.isDirty || false);
 export const currentFilePath = derived(activeTab, ($activeTab) => $activeTab?.filePath || null);
 export const extraData = derived(activeTab, ($activeTab) => $activeTab?.extraData || null);
-export const graphMeta = derived(activeTab, ($activeTab) => $activeTab?.graphMeta || null);
+export const graphExtra = derived(activeTab, ($activeTab) => $activeTab?.graphExtra || null);
 export const fileFormat = derived(activeTab, ($activeTab) => $activeTab?.fileFormat || 'json');
 export const history = derived(activeTab, ($activeTab) => $activeTab?.history || { past: [], future: [] });
 export const isInlineSubgraph = derived(activeTab, ($activeTab) => $activeTab?.subgraphContext?.isInline || false);
@@ -303,20 +303,20 @@ export function updateNodeEnv(id: string, env: Record<string, string> | undefine
 			if (node.id !== id) return node;
 
 			const config = (node.data._config || {}) as Record<string, unknown>;
-			const meta = (config.meta || {}) as Record<string, unknown>;
-			const ui = (meta.ui || {}) as Record<string, unknown>;
+			const extra = (config.extra || {}) as Record<string, unknown>;
+			const ui = (extra.ui || {}) as Record<string, unknown>;
 
 			const newUi = env && Object.keys(env).length > 0
 				? { ...ui, env }
 				: (() => { const { env: _env, ...rest } = ui; return rest; })();
 
-			const newMeta = Object.keys(newUi).length > 0
-				? { ...meta, ui: newUi }
-				: (() => { const { ui: _ui, ...rest } = meta; return rest; })();
+			const newExtra = Object.keys(newUi).length > 0
+				? { ...extra, ui: newUi }
+				: (() => { const { ui: _ui, ...rest } = extra; return rest; })();
 
-			const newConfig = Object.keys(newMeta).length > 0
-				? { ...config, meta: newMeta }
-				: (() => { const { meta: _meta, ...rest } = config; return rest; })();
+			const newConfig = Object.keys(newExtra).length > 0
+				? { ...config, extra: newExtra }
+				: (() => { const { extra: _extra, ...rest } = config; return rest; })();
 
 			return {
 				...node,
@@ -340,20 +340,20 @@ export function updateNodeActions(id: string, actions: unknown[] | undefined) {
 			if (node.id !== id) return node;
 
 			const config = (node.data._config || {}) as Record<string, unknown>;
-			const meta = (config.meta || {}) as Record<string, unknown>;
-			const ui = (meta.ui || {}) as Record<string, unknown>;
+			const extra = (config.extra || {}) as Record<string, unknown>;
+			const ui = (extra.ui || {}) as Record<string, unknown>;
 
 			const newUi = actions && actions.length > 0
 				? { ...ui, actions }
 				: (() => { const { actions: _actions, ...rest } = ui; return rest; })();
 
-			const newMeta = Object.keys(newUi).length > 0
-				? { ...meta, ui: newUi }
-				: (() => { const { ui: _ui, ...rest } = meta; return rest; })();
+			const newExtra = Object.keys(newUi).length > 0
+				? { ...extra, ui: newUi }
+				: (() => { const { ui: _ui, ...rest } = extra; return rest; })();
 
-			const newConfig = Object.keys(newMeta).length > 0
-				? { ...config, meta: newMeta }
-				: (() => { const { meta: _meta, ...rest } = config; return rest; })();
+			const newConfig = Object.keys(newExtra).length > 0
+				? { ...config, extra: newExtra }
+				: (() => { const { extra: _extra, ...rest } = config; return rest; })();
 
 			return {
 				...node,
@@ -623,15 +623,15 @@ export function updateExtraData(updates: Record<string, unknown>): void {
 }
 
 /**
- * Update graphMeta for the active tab
+ * Update graphExtra for the active tab
  */
-export function updateGraphMeta(updates: Record<string, unknown>): void {
+export function updateGraphExtra(updates: Record<string, unknown>): void {
 	const tab = get(activeTab);
 	if (!tab) return;
 
 	pushHistory();
 	updateActiveTab({
-		graphMeta: { ...(tab.graphMeta || {}), ...updates },
+		graphExtra: { ...(tab.graphExtra || {}), ...updates },
 	});
 }
 
@@ -649,14 +649,14 @@ export function updateExtraDataLive(updates: Record<string, unknown>): void {
 }
 
 /**
- * Update graphMeta without pushing history (for live editing)
+ * Update graphExtra without pushing history (for live editing)
  */
-export function updateGraphMetaLive(updates: Record<string, unknown>): void {
+export function updateGraphExtraLive(updates: Record<string, unknown>): void {
 	const tab = get(activeTab);
 	if (!tab) return;
 
 	updateActiveTab({
-		graphMeta: { ...(tab.graphMeta || {}), ...updates },
+		graphExtra: { ...(tab.graphExtra || {}), ...updates },
 		isDirty: true,
 	});
 }
@@ -805,7 +805,7 @@ function triggerBackendValidation() {
 			const response = await api.validateConfig(
 				apiNodes,
 				apiEdges,
-				tab.graphMeta ?? undefined,
+				tab.graphExtra ?? undefined,
 				tab.extraData ?? undefined
 			);
 
@@ -1181,7 +1181,7 @@ export async function loadFromFile(path: string): Promise<void> {
 			isDirty: false,
 			history: { past: [], future: [] },
 			extraData: response.extra_data || null,
-			graphMeta: response.meta || null,
+			graphExtra: response.extra || null,
 			fileFormat: response.format,
 		});
 	} else {
@@ -1193,7 +1193,7 @@ export async function loadFromFile(path: string): Promise<void> {
 			isDirty: false,
 			history: { past: [], future: [] },
 			extraData: response.extra_data || null,
-			graphMeta: response.meta || null,
+			graphExtra: response.extra || null,
 			fileFormat: response.format,
 		});
 	}
@@ -1233,8 +1233,8 @@ export function saveInlineSubgraphToParent(): boolean {
 					name: nodeData.label,
 					// Spread the stored subgraph config (includes nodes, edges, exposed_ports, etc.)
 					...(subgraphData._subgraphConfig || {}),
-					// Update meta with current UI state (only position)
-					meta: {
+					// Update extra with current UI state (only position)
+					extra: {
 						ui: {
 							position: n.position,
 						}
@@ -1251,7 +1251,7 @@ export function saveInlineSubgraphToParent(): boolean {
 					out_ports: Object.fromEntries(
 						nodeData.outPorts.map(p => [p.name, { port_type: p.type || null }])
 					),
-					meta: {
+					extra: {
 						ui: {
 							position: n.position,
 						}
@@ -1403,7 +1403,7 @@ export async function saveToFile(path?: string): Promise<void> {
 		format,
 		apiNodes,
 		apiEdges,
-		tab.graphMeta ?? undefined,
+		tab.graphExtra ?? undefined,
 		tab.extraData ?? undefined
 	);
 
@@ -1439,7 +1439,7 @@ export function clearFlow(format: 'json' | 'toml' = 'json', fileName?: string): 
 		isDirty: false,
 		history: { past: [], future: [] },
 		extraData: null,
-		graphMeta: null,
+		graphExtra: null,
 		fileFormat: format,
 		isNewFile: true,
 	});
@@ -1699,7 +1699,7 @@ export async function createSubgraphFromSelection(subgraphName: string): Promise
  */
 export function getCurrentConfig(): Record<string, unknown> {
 	const tab = get(activeTab);
-	if (!tab) return { nodes: [], edges: [], meta: {}, extraData: {} };
+	if (!tab) return { nodes: [], edges: [], extra: {}, extraData: {} };
 
 	return {
 		nodes: tab.nodes.map(n => ({
@@ -1715,7 +1715,7 @@ export function getCurrentConfig(): Record<string, unknown> {
 			sourceHandle: e.sourceHandle,
 			targetHandle: e.targetHandle
 		})),
-		meta: tab.graphMeta || {},
+		extra: tab.graphExtra || {},
 		extraData: tab.extraData || {}
 	};
 }
@@ -1776,10 +1776,10 @@ export function applyConfig(config: Record<string, unknown>): void {
 		isDirty: true,
 	});
 
-	// Update meta and extraData if provided
-	if (config.meta) {
+	// Update extra and extraData if provided
+	if (config.extra) {
 		updateActiveTab({
-			graphMeta: config.meta as Record<string, unknown>,
+			graphExtra: config.extra as Record<string, unknown>,
 		});
 	}
 	if (config.extraData) {

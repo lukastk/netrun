@@ -346,8 +346,8 @@ class NodeConfig(BaseModel):
 
     execution_config: NodeExecutionConfig | None = None
 
-    meta: dict[str, Any] = Field(default_factory=dict)
-    """Arbitrary metadata for this node.
+    extra: dict[str, Any] = Field(default_factory=dict)
+    """Arbitrary extra data for this node.
 
     Can be used to store UI position, custom tags, documentation, or any
     other tool-specific data that should be preserved across serialization.
@@ -355,7 +355,7 @@ class NodeConfig(BaseModel):
     Example:
         NodeConfig(
             name="Processor",
-            meta={
+            extra={
                 "ui": {"id": "node-1", "position": {"x": 100, "y": 200}},
                 "description": "Processes incoming data",
             }
@@ -459,7 +459,7 @@ class NodeConfig(BaseModel):
             in_salvo_conditions=base_config.in_salvo_conditions,
             out_salvo_conditions=base_config.out_salvo_conditions,
             execution_config=execution_config,
-            meta=base_config.meta,
+            extra=base_config.extra,
         )
 
     def resolve(self, project_root: 'Path | None' = None) -> "NodeConfig":
@@ -534,8 +534,8 @@ class NodeConfig(BaseModel):
             else:
                 merged_exec_config = factory_exec_config
 
-            # Merge meta: base config first, then explicit overrides from self
-            merged_meta = {**base_config.meta, **self.meta}
+            # Merge extra: base config first, then explicit overrides from self
+            merged_extra = {**base_config.extra, **self.extra}
 
             # Keep factory and factory_args in resolved config for lazy resolution on workers
             result = NodeConfig.model_construct(
@@ -545,7 +545,7 @@ class NodeConfig(BaseModel):
                 in_salvo_conditions=merged_in_salvo,
                 out_salvo_conditions=merged_out_salvo,
                 execution_config=merged_exec_config,
-                meta=merged_meta,
+                extra=merged_extra,
                 factory=factory_path,
                 factory_args=self.factory_args,
             )
@@ -682,8 +682,8 @@ class SubgraphConfig(BaseModel):
     exposed_out_ports: dict[str, ExposedPortConfig] = Field(default_factory=dict)
     """Output ports exposed to the parent graph."""
 
-    meta: dict[str, Any] = Field(default_factory=dict)
-    """Arbitrary metadata for this subgraph."""
+    extra: dict[str, Any] = Field(default_factory=dict)
+    """Arbitrary extra data for this subgraph."""
 
     @model_validator(mode='after')
     def validate_inline_or_path(self) -> "SubgraphConfig":

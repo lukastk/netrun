@@ -36,7 +36,7 @@ class FileReadResponse(BaseModel):
     format: str  # "json" or "toml"
     nodes: list[dict[str, Any]]
     edges: list[dict[str, Any]]
-    meta: dict[str, Any] | None = None
+    extra: dict[str, Any] | None = None
     extra_data: dict[str, Any] | None = None  # Non-graph data (pools, etc.)
 
 
@@ -46,7 +46,7 @@ class FileSaveRequest(BaseModel):
     format: str  # "json" or "toml"
     nodes: list[dict[str, Any]]
     edges: list[dict[str, Any]]
-    meta: dict[str, Any] | None = None
+    extra: dict[str, Any] | None = None
     extra_data: dict[str, Any] | None = None  # Non-graph data (pools, etc.)
 
 
@@ -92,15 +92,15 @@ async def read_file(request: FileReadRequest) -> FileReadResponse:
         working_dir = str(path.parent)
         nodes, edges = graph_config_to_ui(graph_data, working_dir=working_dir)
 
-        # Extract graph-level meta if present
-        meta = graph_data.get("meta")
+        # Extract graph-level extra if present
+        extra = graph_data.get("extra")
 
         return FileReadResponse(
             path=str(path),
             format=file_format,
             nodes=nodes,
             edges=edges,
-            meta=meta,
+            extra=extra,
             extra_data=extra_data if extra_data else None,
         )
 
@@ -146,7 +146,7 @@ async def save_file(request: FileSaveRequest) -> FileSaveResponse:
         output_data = merge_graph_with_extras(
             graph_config,
             request.extra_data or {},
-            request.meta,
+            request.extra,
         )
 
         # Serialize based on format
@@ -524,7 +524,7 @@ async def create_subgraph(request: SubgraphCreateRequest) -> SubgraphCreateRespo
             "name": node["id"],
             "in_ports": {p["name"]: {} for p in data.get("inPorts", [])},
             "out_ports": {p["name"]: {} for p in data.get("outPorts", [])},
-            "meta": {
+            "extra": {
                 "ui": {
                     "position": {"x": rel_x, "y": rel_y},
                 }
@@ -536,7 +536,7 @@ async def create_subgraph(request: SubgraphCreateRequest) -> SubgraphCreateRespo
             node_config = {
                 **data["_subgraphConfig"],
                 "name": data.get("label", node["id"]),
-                "meta": node_config["meta"],
+                "extra": node_config["extra"],
             }
 
         # Preserve _config if present
@@ -608,7 +608,7 @@ class ValidateRequest(BaseModel):
     """Request to validate a config."""
     nodes: list[dict[str, Any]]
     edges: list[dict[str, Any]]
-    meta: dict[str, Any] | None = None
+    extra: dict[str, Any] | None = None
     extra_data: dict[str, Any] | None = None
 
 
@@ -637,15 +637,15 @@ async def validate_config(request: ValidateRequest) -> ValidateResponse:
         # Convert UI format to GraphConfig format
         graph_config = ui_to_graph_config(request.nodes, request.edges)
 
-        # Add meta if provided
-        if request.meta:
-            graph_config["meta"] = request.meta
+        # Add extra if provided
+        if request.extra:
+            graph_config["extra"] = request.extra
 
         # Merge with extra data to get full config
         full_config = merge_graph_with_extras(
             graph_config,
             request.extra_data or {},
-            request.meta,
+            request.extra,
         )
 
         # Validate using Pydantic models

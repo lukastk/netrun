@@ -16,9 +16,9 @@
 		activeTab,
 		isNewFile,
 		extraData,
-		graphMeta,
+		graphExtra,
 		updateExtraDataLive,
-		updateGraphMetaLive,
+		updateGraphExtraLive,
 		type NetrunNodeData,
 		type PortConfig
 	} from '$lib/stores/flowStore';
@@ -901,8 +901,8 @@
 							<input
 								id="graph-name"
 								type="text"
-								value={($graphMeta as Record<string, unknown>)?.name ?? ''}
-								oninput={(e) => updateGraphMetaLive({ name: (e.target as HTMLInputElement).value })}
+								value={($graphExtra as Record<string, unknown>)?.name ?? ''}
+								oninput={(e) => updateGraphExtraLive({ name: (e.target as HTMLInputElement).value })}
 								onblur={() => pushHistory()}
 								placeholder="Graph name"
 							/>
@@ -911,8 +911,8 @@
 							<label for="graph-description">Description</label>
 							<textarea
 								id="graph-description"
-								value={String(($graphMeta as Record<string, unknown>)?.description ?? '')}
-								oninput={(e) => updateGraphMetaLive({ description: (e.target as HTMLTextAreaElement).value })}
+								value={String(($graphExtra as Record<string, unknown>)?.description ?? '')}
+								oninput={(e) => updateGraphExtraLive({ description: (e.target as HTMLTextAreaElement).value })}
 								onblur={() => pushHistory()}
 								placeholder="Graph description"
 								rows="3"
@@ -1075,7 +1075,7 @@
 					<span class="section-toggle">{sectionsOpen.uiSettings ? '−' : '+'}</span>
 				</button>
 				{#if sectionsOpen.uiSettings}
-					{@const uiMeta = (($graphMeta as Record<string, unknown>)?.ui || {}) as Record<string, unknown>}
+					{@const uiMeta = (($graphExtra as Record<string, unknown>)?.ui || {}) as Record<string, unknown>}
 					<div class="section-content">
 						<div class="field">
 							<label for="edge-style">Edge Style</label>
@@ -1083,7 +1083,7 @@
 								id="edge-style"
 								value={uiMeta.edgeStyle ?? 'smoothstep'}
 								onchange={(e) => {
-									updateGraphMetaLive({
+									updateGraphExtraLive({
 										ui: { ...uiMeta, edgeStyle: (e.target as HTMLSelectElement).value }
 									});
 									pushHistory();
@@ -1101,7 +1101,7 @@
 								id="edge-markers"
 								value={uiMeta.edgeMarkers ?? 'arrow-end'}
 								onchange={(e) => {
-									updateGraphMetaLive({
+									updateGraphExtraLive({
 										ui: { ...uiMeta, edgeMarkers: (e.target as HTMLSelectElement).value }
 									});
 									pushHistory();
