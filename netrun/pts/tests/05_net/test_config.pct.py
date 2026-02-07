@@ -1496,7 +1496,7 @@ def test_subgraph_json_roundtrip():
         edges=[EdgeConfig(source_str="A.out", target_str="B.in")],
         exposed_in_ports={"input": ExposedPortConfig(internal_node="A", internal_port="in")},
         exposed_out_ports={"output": ExposedPortConfig(internal_node="B", internal_port="out")},
-        meta={"description": "Preprocessing pipeline"},
+        extra={"description": "Preprocessing pipeline"},
     )
 
     json_str = config.model_dump_json()
@@ -1507,7 +1507,7 @@ def test_subgraph_json_roundtrip():
     assert len(loaded.edges) == len(config.edges)
     assert loaded.exposed_in_ports == config.exposed_in_ports
     assert loaded.exposed_out_ports == config.exposed_out_ports
-    assert loaded.meta == config.meta
+    assert loaded.extra == config.extra
 
 # %%
 test_subgraph_json_roundtrip();

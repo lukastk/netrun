@@ -1,0 +1,133 @@
+# ---
+# jupyter:
+#   kernelspec:
+#     display_name: .venv
+#     language: python
+#     name: python3
+# ---
+
+# %%
+#|default_exp tools._execute
+
+# %%
+#|hide
+from nblite import nbl_export; nbl_export();
+
+# %%
+#|export
+import asyncio
+import os
+from pathlib import Path
+
+from netrun.tools._models import ActionConfig, ActionContext, ActionResult
+from netrun.tools._template import (
+    resolve_template,
+    resolve_working_directory,
+    build_template_variables,
+)
+
+# %% [markdown]
+# # Action Execution
+#
+# Execute shell commands with template variable resolution.
+
+# %%
+#|export
+async def execute_action(
+    action: ActionConfig,
+    context: ActionContext,
+    timeout: float = 30.0,
+) -> ActionResult:
+    """Execute an action's command with template resolution.
+
+    Args:
+        action: The action to execute.
+        context: Variables for template resolution and environment.
+        timeout: Maximum seconds to wait for command completion.
+
+    Returns:
+        ActionResult with execution outcome.
+
+    Raises:
+        ValueError: If the working directory does not exist.
+    """
+    return await execute_command(action.command, context, timeout)
+
+
+async def execute_command(
+    command: str,
+    context: ActionContext,
+    timeout: float = 30.0,
+) -> ActionResult:
+    """Execute a shell command with template resolution and environment setup.
+
+    The original command is passed to the shell — the shell expands $VAR
+    references using the environment variables we set.  The resolved_command
+    in the result is computed separately for display/preview purposes.
+
+    Args:
+        command: Shell command string (may contain $VAR references).
+        context: Variables for template resolution and environment.
+        timeout: Maximum seconds to wait for command completion.
+
+    Returns:
+        ActionResult with execution outcome.
+
+    Raises:
+        ValueError: If the working directory does not exist.
+    """
+    working_dir = resolve_working_directory(context)
+
+    if working_dir and not Path(working_dir).is_dir():
+        raise ValueError(f"Working directory does not exist: {working_dir}")
+
+    # Build environment
+    env = os.environ.copy()
+    variables = build_template_variables(context)
+    env.update(variables)
+
+    # Compute resolved command for preview
+    resolved_command = resolve_template(command, context)
+
+    try:
+        process = await asyncio.create_subprocess_shell(
+            command,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+            cwd=working_dir,
+            env=env,
+        )
+
+        try:
+            stdout, stderr = await asyncio.wait_for(
+                process.communicate(),
+                timeout=timeout,
+            )
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
+            return ActionResult(
+                success=False,
+                exit_code=-1,
+                stdout="",
+                stderr=f"Command timed out after {timeout} seconds",
+                resolved_command=resolved_command,
+                timed_out=True,
+            )
+
+        return ActionResult(
+            success=process.returncode == 0,
+            exit_code=process.returncode or 0,
+            stdout=stdout.decode("utf-8", errors="replace"),
+            stderr=stderr.decode("utf-8", errors="replace"),
+            resolved_command=resolved_command,
+        )
+
+    except Exception as e:
+        return ActionResult(
+            success=False,
+            exit_code=-1,
+            stdout="",
+            stderr=str(e),
+            resolved_command=resolved_command,
+        )

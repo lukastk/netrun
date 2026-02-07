@@ -6,7 +6,7 @@
  */
 import { writable, derived, get } from 'svelte/store';
 import { api } from '$lib/api';
-import { activeTab, graphMeta, updateGraphMetaLive, extraData, updateExtraDataLive, currentFilePath, selectedNode } from './flowStore';
+import { activeTab, graphExtra, updateGraphExtraLive, extraData, updateExtraDataLive, currentFilePath, selectedNode } from './flowStore';
 
 // Action definition
 export interface Action {
@@ -16,7 +16,7 @@ export interface Action {
 	icon?: string;
 }
 
-// Project-level action settings stored in meta.ui
+// Project-level action settings stored in extra.ui
 export interface ActionSettings {
 	projectRoot?: string;
 	defaultCmd?: string;
@@ -39,11 +39,11 @@ export const actionExecutions = writable<Map<string, ActionExecution>>(new Map()
 
 // Derived: get action settings from extraData (project_root) and graph meta (rest)
 export const actionSettings = derived(
-	[graphMeta, extraData],
-	([$graphMeta, $extraData]): ActionSettings => {
-		const ui = ($graphMeta as Record<string, unknown>)?.ui as Record<string, unknown> | undefined;
+	[graphExtra, extraData],
+	([$graphExtra, $extraData]): ActionSettings => {
+		const ui = ($graphExtra as Record<string, unknown>)?.ui as Record<string, unknown> | undefined;
 		const extra = $extraData as Record<string, unknown> | null;
-		// project_root: prefer extraData.project_root, fall back to legacy graphMeta.ui.projectRoot
+		// project_root: prefer extraData.project_root, fall back to legacy graphExtra.ui.projectRoot
 		const projectRoot = (extra?.project_root as string | undefined) ?? (ui?.projectRoot as string | undefined);
 		return {
 			projectRoot,
@@ -66,8 +66,8 @@ export const nodeActions = derived(
 	($selectedNode): Action[] => {
 		if (!$selectedNode) return [];
 		const config = $selectedNode.data._config as Record<string, unknown> | undefined;
-		const meta = config?.meta as Record<string, unknown> | undefined;
-		const ui = meta?.ui as Record<string, unknown> | undefined;
+		const extra = config?.extra as Record<string, unknown> | undefined;
+		const ui = extra?.ui as Record<string, unknown> | undefined;
 		return (ui?.actions as Action[]) || [];
 	}
 );
@@ -78,8 +78,8 @@ export const nodeEnv = derived(
 	($selectedNode): Record<string, string> | undefined => {
 		if (!$selectedNode) return undefined;
 		const config = $selectedNode.data._config as Record<string, unknown> | undefined;
-		const meta = config?.meta as Record<string, unknown> | undefined;
-		const ui = meta?.ui as Record<string, unknown> | undefined;
+		const extra = config?.extra as Record<string, unknown> | undefined;
+		const ui = extra?.ui as Record<string, unknown> | undefined;
 		const env = ui?.env as Record<string, string> | undefined;
 		return env && Object.keys(env).length > 0 ? env : undefined;
 	}
@@ -108,20 +108,20 @@ export const availableActions = derived(
  * Update project-level action settings
  */
 export function updateActionSettings(updates: Partial<ActionSettings>): void {
-	const meta = get(graphMeta) || {};
-	const ui = (meta as Record<string, unknown>).ui as Record<string, unknown> || {};
+	const graphExtraVal = get(graphExtra) || {};
+	const ui = (graphExtraVal as Record<string, unknown>).ui as Record<string, unknown> || {};
 
 	// projectRoot is stored in extraData.project_root (top-level NetConfig field)
 	if (updates.projectRoot !== undefined) {
 		updateExtraDataLive({ project_root: updates.projectRoot || undefined });
-		// Remove legacy key from graphMeta.ui if present
+		// Remove legacy key from graphExtra.ui if present
 		if ('projectRoot' in ui) {
 			const { projectRoot: _, ...restUi } = ui;
-			updateGraphMetaLive({ ui: restUi });
+			updateGraphExtraLive({ ui: restUi });
 		}
 	}
 
-	// Other settings remain in graphMeta.ui
+	// Other settings remain in graphExtra.ui
 	const uiUpdates: Record<string, unknown> = {
 		...ui,
 		...(updates.defaultCmd !== undefined && { defaultCmd: updates.defaultCmd }),
@@ -131,7 +131,7 @@ export function updateActionSettings(updates: Partial<ActionSettings>): void {
 	// Remove legacy projectRoot from ui if it got merged in from spread
 	delete uiUpdates.projectRoot;
 
-	updateGraphMetaLive({ ui: uiUpdates });
+	updateGraphExtraLive({ ui: uiUpdates });
 }
 
 /**

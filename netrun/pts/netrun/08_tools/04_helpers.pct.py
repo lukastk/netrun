@@ -1,0 +1,140 @@
+# ---
+# jupyter:
+#   kernelspec:
+#     display_name: .venv
+#     language: python
+#     name: python3
+# ---
+
+# %%
+#|default_exp tools._helpers
+
+# %%
+#|hide
+from nblite import nbl_export; nbl_export();
+
+# %%
+#|export
+from typing import Any
+
+from netrun.tools._models import ActionConfig, ActionContext, RecipeConfig
+
+# %% [markdown]
+# # Config Extraction Helpers
+#
+# Functions to extract action and recipe configurations from extra data.
+
+# %%
+#|export
+def get_project_actions(graph_extra: dict[str, Any]) -> list[ActionConfig]:
+    """Extract project-level actions from graph extra data.
+
+    Actions are stored at ``extra.ui.actions``.
+    """
+    ui = graph_extra.get("ui", {})
+    raw_actions = ui.get("actions", [])
+    return [ActionConfig.model_validate(a) for a in raw_actions]
+
+
+def get_node_actions(node_extra: dict[str, Any]) -> list[ActionConfig]:
+    """Extract node-level actions from node extra data.
+
+    Actions are stored at ``extra.ui.actions``.
+    """
+    ui = node_extra.get("ui", {})
+    raw_actions = ui.get("actions", [])
+    return [ActionConfig.model_validate(a) for a in raw_actions]
+
+
+def get_available_actions(
+    graph_extra: dict[str, Any],
+    node_extra: dict[str, Any] | None = None,
+) -> list[ActionConfig]:
+    """Get all available actions, with node actions taking precedence.
+
+    Combines project-level and node-level actions. If both define
+    an action with the same id, the node-level version wins.
+    """
+    action_map: dict[str, ActionConfig] = {}
+
+    for action in get_project_actions(graph_extra):
+        action_map[action.id] = action
+
+    if node_extra:
+        for action in get_node_actions(node_extra):
+            action_map[action.id] = action
+
+    return list(action_map.values())
+
+
+def get_action_settings(
+    graph_extra: dict[str, Any],
+    project_root: str | None = None,
+) -> dict[str, Any]:
+    """Extract action settings from graph extra data.
+
+    Returns a dict with keys: projectRoot, defaultCmd, env, actions.
+    """
+    ui = graph_extra.get("ui", {})
+    return {
+        "projectRoot": project_root or ui.get("projectRoot"),
+        "defaultCmd": ui.get("defaultCmd"),
+        "env": ui.get("env"),
+        "actions": ui.get("actions", []),
+    }
+
+
+def get_node_env(node_extra: dict[str, Any]) -> dict[str, str] | None:
+    """Extract node-level environment variable overrides.
+
+    Stored at ``extra.ui.env``.
+    """
+    ui = node_extra.get("ui", {})
+    env = ui.get("env")
+    if env and isinstance(env, dict) and len(env) > 0:
+        return env
+    return None
+
+
+def build_action_context(
+    graph_extra: dict[str, Any],
+    node_name: str | None = None,
+    node_id: str | None = None,
+    node_extra: dict[str, Any] | None = None,
+    net_file_path: str | None = None,
+    project_root: str | None = None,
+) -> ActionContext:
+    """Build an ActionContext from graph and node extra data.
+
+    Extracts env, node_env, defaultCmd, and projectRoot from the
+    extra data and combines with the provided arguments.
+    """
+    ui = graph_extra.get("ui", {})
+    env = ui.get("env")
+    default_cmd = ui.get("defaultCmd")
+
+    node_env = None
+    if node_extra:
+        node_env = get_node_env(node_extra)
+
+    return ActionContext(
+        node_name=node_name,
+        node_id=node_id,
+        net_file_path=net_file_path,
+        project_root=project_root or ui.get("projectRoot"),
+        default_cmd=default_cmd,
+        env=env,
+        node_env=node_env,
+    )
+
+
+def get_recipes(extra_data: dict[str, Any]) -> dict[str, RecipeConfig]:
+    """Extract recipe configurations from extra data.
+
+    Recipes are stored at ``extra_data.recipes`` (top-level net config key).
+    """
+    raw_recipes = extra_data.get("recipes", {})
+    return {
+        name: RecipeConfig.model_validate(cfg)
+        for name, cfg in raw_recipes.items()
+    }

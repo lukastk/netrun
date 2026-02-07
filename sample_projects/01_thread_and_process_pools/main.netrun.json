@@ -39,7 +39,7 @@
       {
         "type": "node",
         "name": "in_main_pool",
-        "meta": {
+        "extra": {
           "ui": {
             "position": {
               "x": 540,
@@ -55,7 +55,7 @@
       {
         "type": "node",
         "name": "in_thread_pool",
-        "meta": {
+        "extra": {
           "ui": {
             "position": {
               "x": 540,
@@ -76,7 +76,7 @@
       {
         "type": "node",
         "name": "in_process_pool",
-        "meta": {
+        "extra": {
           "ui": {
             "position": {
               "x": 540,
@@ -97,7 +97,7 @@
       {
         "type": "node",
         "name": "in_remote_pool",
-        "meta": {
+        "extra": {
           "ui": {
             "position": {
               "x": 540,
@@ -118,7 +118,7 @@
       {
         "type": "node",
         "name": "in_all_pools",
-        "meta": {
+        "extra": {
           "ui": {
             "position": {
               "x": 540,

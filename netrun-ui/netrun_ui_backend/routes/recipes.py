@@ -1,11 +1,10 @@
 """Recipe execution endpoints for running Python scripts that transform configs."""
-import importlib.util
-import sys
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+
+from netrun.tools._recipes import get_recipe_prompts, execute_recipe
 
 router = APIRouter()
 
@@ -33,46 +32,6 @@ class ExecuteResponse(BaseModel):
     config: dict[str, Any]
 
 
-def _load_recipe_module(path: str):
-    """Hot-load a Python module from path.
-
-    Each invocation creates a fresh module to ensure code changes are picked up.
-    """
-    path_obj = Path(path)
-    if not path_obj.exists():
-        raise HTTPException(status_code=404, detail=f"Recipe not found: {path}")
-
-    if not path_obj.suffix == '.py':
-        raise HTTPException(status_code=400, detail=f"Recipe must be a .py file: {path}")
-
-    # Create unique module name to force reload
-    # Use path hash + id to ensure uniqueness even for repeated calls
-    module_name = f"_recipe_{path_obj.stem}_{id(path_obj)}_{hash(path)}"
-
-    # Remove from cache if present (shouldn't be, but just in case)
-    if module_name in sys.modules:
-        del sys.modules[module_name]
-
-    try:
-        spec = importlib.util.spec_from_file_location(module_name, path_obj)
-        if spec is None or spec.loader is None:
-            raise HTTPException(status_code=500, detail=f"Failed to load recipe module: {path}")
-
-        module = importlib.util.module_from_spec(spec)
-        sys.modules[module_name] = module
-        spec.loader.exec_module(module)
-
-        return module
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error loading recipe: {e}")
-    finally:
-        # Clean up module from cache to avoid memory leaks
-        if module_name in sys.modules:
-            del sys.modules[module_name]
-
-
 @router.post("/get-prompts", response_model=GetPromptsResponse)
 async def get_prompts(request: GetPromptsRequest) -> GetPromptsResponse:
     """Load a recipe and return its prompts.
@@ -80,26 +39,17 @@ async def get_prompts(request: GetPromptsRequest) -> GetPromptsResponse:
     If the recipe has a `get_prompts(config)` function, call it to get the list
     of prompts. Otherwise, return an empty list (recipe runs immediately).
     """
-    module = _load_recipe_module(request.recipe_path)
-
-    if hasattr(module, 'get_prompts'):
-        try:
-            prompts = module.get_prompts(request.config)
-            if not isinstance(prompts, list):
-                raise HTTPException(
-                    status_code=400,
-                    detail="get_prompts() must return a list"
-                )
-            return GetPromptsResponse(prompts=prompts)
-        except HTTPException:
-            raise
-        except Exception as e:
-            raise HTTPException(
-                status_code=500,
-                detail=f"Error calling get_prompts(): {e}"
-            )
-
-    return GetPromptsResponse(prompts=[])
+    try:
+        prompts = get_recipe_prompts(request.recipe_path, request.config)
+        return GetPromptsResponse(prompts=[p.model_dump() for p in prompts])
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except TypeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except (ImportError, Exception) as e:
+        raise HTTPException(status_code=500, detail=f"Error loading recipe: {e}")
 
 
 @router.post("/execute", response_model=ExecuteResponse)
@@ -109,26 +59,14 @@ async def execute(request: ExecuteRequest) -> ExecuteResponse:
     The recipe must have a `run(config, inputs)` function that takes the current
     config and user inputs, and returns the modified config.
     """
-    module = _load_recipe_module(request.recipe_path)
-
-    if not hasattr(module, 'run'):
-        raise HTTPException(
-            status_code=400,
-            detail="Recipe missing required 'run' function"
-        )
-
     try:
-        result = module.run(request.config, request.inputs)
-        if not isinstance(result, dict):
-            raise HTTPException(
-                status_code=400,
-                detail="run() must return a dict"
-            )
+        result = execute_recipe(request.recipe_path, request.config, request.inputs)
         return ExecuteResponse(config=result)
-    except HTTPException:
-        raise
-    except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail=f"Error executing recipe: {e}"
-        )
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except (ValueError, AttributeError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except TypeError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except (ImportError, Exception) as e:
+        raise HTTPException(status_code=500, detail=f"Error executing recipe: {e}")

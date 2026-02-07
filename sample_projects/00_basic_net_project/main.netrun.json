@@ -1,5 +1,5 @@
 {
-  "meta": {
+  "extra": {
     "description": "A basic example demonstrating netrun's flow-based execution"
   },
   "output_queues": {
@@ -13,7 +13,7 @@
         "name": "double",
         "factory": "netrun.node_factories.from_function",
         "factory_args": {"func": "nodes.double"},
-        "meta": {
+        "extra": {
           "ui": {"position": {"x": 300, "y": 100}}
         }
       },
@@ -21,7 +21,7 @@
         "name": "add",
         "factory": "netrun.node_factories.from_function",
         "factory_args": {"func": "nodes.add"},
-        "meta": {
+        "extra": {
           "ui": {"position": {"x": 500, "y": 150}}
         }
       },
@@ -29,7 +29,7 @@
         "name": "format_result",
         "factory": "netrun.node_factories.from_function",
         "factory_args": {"func": "nodes.format_result"},
-        "meta": {
+        "extra": {
           "ui": {"position": {"x": 700, "y": 150}}
         }
       }
