@@ -1,72 +1,5 @@
-# Plan: Sample Projects + `max_epochs` Feature
+# Plan: Sample Projects
 
-## Part 1: `max_epochs` Feature
-
-### Overview
-
-Add a `max_epochs` field to `NodeExecutionConfig` that caps the total number of epochs a node can have over its lifetime. If an input salvo condition triggers and would exceed this limit, the epoch is cancelled and an exception is raised.
-
-**Use case:** Ensure a node only runs once (or N times) per net execution.
-
-### Design
-
-**Config field:**
-```python
-# In NodeExecutionConfig
-max_epochs: int | None = None
-"""Maximum total epochs this node can have (across entire net lifetime).
-None = unlimited (default). If exceeded, the epoch is cancelled and
-MaxEpochsExceeded is raised."""
-```
-
-**Exception class:**
-```python
-class MaxEpochsExceeded(Exception):
-    def __init__(self, node_name: str, max_epochs: int):
-        self.node_name = node_name
-        self.max_epochs = max_epochs
-        super().__init__(
-            f"Node '{node_name}' exceeded max_epochs={max_epochs}"
-        )
-```
-
-**Runtime check location:** `Net._execute_epoch()`, between rate limit check and epoch start. Uses a `_node_epoch_counts: dict[str, int]` counter (O(1) lookup).
-
-**Behavior when limit exceeded:**
-1. Cancel the epoch in netsim (packets destroyed — consistent with other error paths)
-2. Raise `MaxEpochsExceeded`, following normal propagation/queueing rules
-
-**Note on retries:** Retries happen within `_execute_epoch_with_retry` for the same epoch_id, so they don't increment the counter. Only new epoch creations count.
-
-### Files to Modify
-
-| File | Change |
-|------|--------|
-| `pts/netrun/05_net/00_config/01_nodes.pct.py` | Add `max_epochs` field to `NodeExecutionConfig` |
-| `pts/netrun/05_net/01_net/02_net.pct.py` | Add `_node_epoch_counts` dict to `__init__`, add check in `_execute_epoch()`, add `MaxEpochsExceeded` exception |
-| `pts/tests/05_net/test_net.pct.py` | Add tests for max_epochs behavior |
-
-### Implementation Steps
-
-1. Add `max_epochs: int | None = None` to `NodeExecutionConfig`
-2. Add `MaxEpochsExceeded` exception class (in the net module, near other exceptions)
-3. Add `_node_epoch_counts: dict[str, int] = {}` to `Net.__init__`
-4. In `Net._execute_epoch()`, after rate limit check:
-   - Increment `_node_epoch_counts[node_name]`
-   - If `config.max_epochs` is set and count exceeds it:
-     - Cancel the epoch via netsim
-     - Update epoch record
-     - Raise `MaxEpochsExceeded` (through normal propagation/queueing)
-5. Write tests:
-   - `test_max_epochs_one` — node with `max_epochs=1` runs once, second trigger raises
-   - `test_max_epochs_none` — default (None) allows unlimited
-   - `test_max_epochs_propagation` — exception follows propagate_exceptions setting
-6. `nbl export --reverse && nbl export`
-7. Run tests
-
----
-
-## Part 2: Sample Projects
 
 ### Feature Coverage Matrix
 
@@ -166,7 +99,7 @@ sample_projects/05_advanced_flow_control/
 #### Project 06: `actions_and_recipes` (new)
 
 **Demonstrates:**
-- Actions with all template variables (`$NODE_NAME`, `$NODE_ID`, `$NET_FILE_PATH`, `$NET_FILE_DIR`, `$PROJECT_ROOT`, `$DEFAULT_CMD`)
+- Actions with all default template variables
 - Node-level actions (per-node overrides)
 - Project-level `env` and node-level `node_env` variables
 - Recipes with all prompt types (text, number, select, checkbox)
@@ -234,7 +167,7 @@ sample_projects/06_actions_and_recipes/
 | Lazy packet values | 05 |
 | Catch-all output queue | 05 |
 | `undeclared_output_behavior` | 05 |
-| Template variables in actions | 06 |
+| All default template variables in actions | 06 |
 | Node-level actions | 06 |
 | `env` / `node_env` variables | 06 |
 | All recipe prompt types | 06 |
