@@ -198,6 +198,10 @@ def factory_info(
         typer.echo(f"Error: '{factory_path}' has no get_node_config function.", err=True)
         raise typer.Exit(1)
 
+    if not has_get_node_funcs:
+        typer.echo(f"Error: '{factory_path}' has no get_node_funcs function.", err=True)
+        raise typer.Exit(1)
+
     sig = inspect.signature(get_node_config_fn)
     params = []
     for name, param in sig.parameters.items():
@@ -214,7 +218,6 @@ def factory_info(
     output_json({
         "factory": factory_path,
         "params": params,
-        "has_get_node_funcs": has_get_node_funcs,
     }, pretty)
 
 # %% pts/netrun/09_cli/02_commands.pct.py 13
