@@ -249,64 +249,62 @@
 		</div>
 	{/if}
 
-	<!-- Execution Functions (regular nodes only) -->
-	{#if !isFactory}
-		<div class="field-group">
-			<div class="field-group-header">Execution Functions</div>
-			<div class="field">
-				<label>Exec Function</label>
-				<input
-					type="text"
-					value={getValue('exec_node_func') ?? ''}
-					placeholder="module.path.func"
-					oninput={(e) => {
-						const val = (e.target as HTMLInputElement).value;
-						updateFieldLive('exec_node_func', val || null);
-					}}
-					onblur={() => pushHistory()}
-				/>
-			</div>
-			<div class="field">
-				<label>Start Function</label>
-				<input
-					type="text"
-					value={getValue('start_node_func') ?? ''}
-					placeholder="module.path.func"
-					oninput={(e) => {
-						const val = (e.target as HTMLInputElement).value;
-						updateFieldLive('start_node_func', val || null);
-					}}
-					onblur={() => pushHistory()}
-				/>
-			</div>
-			<div class="field">
-				<label>Stop Function</label>
-				<input
-					type="text"
-					value={getValue('stop_node_func') ?? ''}
-					placeholder="module.path.func"
-					oninput={(e) => {
-						const val = (e.target as HTMLInputElement).value;
-						updateFieldLive('stop_node_func', val || null);
-					}}
-					onblur={() => pushHistory()}
-				/>
-			</div>
-			<div class="field">
-				<label>On Failure Function</label>
-				<input
-					type="text"
-					value={getValue('on_node_failure') ?? ''}
-					placeholder="module.path.func"
-					oninput={(e) => {
-						const val = (e.target as HTMLInputElement).value;
-						updateFieldLive('on_node_failure', val || null);
-					}}
-					onblur={() => pushHistory()}
-				/>
-			</div>
+	<!-- Execution Functions (for factory nodes these override the factory defaults) -->
+	<div class="field-group">
+		<div class="field-group-header">Execution Functions</div>
+		<div class="field">
+			<label>{isFactory ? 'Exec Function Override' : 'Exec Function'}</label>
+			<input
+				type="text"
+				value={getValue('exec_node_func') ?? ''}
+				placeholder={isFactory ? 'override factory default' : 'module.path.func'}
+				oninput={(e) => {
+					const val = (e.target as HTMLInputElement).value;
+					updateFieldLive('exec_node_func', val || null);
+				}}
+				onblur={() => pushHistory()}
+			/>
 		</div>
-	{/if}
+		<div class="field">
+			<label>Start Function</label>
+			<input
+				type="text"
+				value={getValue('start_node_func') ?? ''}
+				placeholder="module.path.func"
+				oninput={(e) => {
+					const val = (e.target as HTMLInputElement).value;
+					updateFieldLive('start_node_func', val || null);
+				}}
+				onblur={() => pushHistory()}
+			/>
+		</div>
+		<div class="field">
+			<label>Stop Function</label>
+			<input
+				type="text"
+				value={getValue('stop_node_func') ?? ''}
+				placeholder="module.path.func"
+				oninput={(e) => {
+					const val = (e.target as HTMLInputElement).value;
+					updateFieldLive('stop_node_func', val || null);
+				}}
+				onblur={() => pushHistory()}
+			/>
+		</div>
+		<div class="field">
+			<label>On Failure Function</label>
+			<input
+				type="text"
+				value={getValue('on_node_failure') ?? ''}
+				placeholder="module.path.func"
+				oninput={(e) => {
+					const val = (e.target as HTMLInputElement).value;
+					updateFieldLive('on_node_failure', val || null);
+				}}
+				onblur={() => pushHistory()}
+			/>
+		</div>
+	</div>
 
 	<!-- Execution Limits -->
 	<div class="field-group">
