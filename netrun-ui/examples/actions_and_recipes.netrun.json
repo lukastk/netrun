@@ -6,26 +6,30 @@
       "description": "Add a greeter node to the graph"
     }
   },
+  "node_vars": {
+    "TRANSFORM_MODE": {
+      "value": "test_global"
+    }
+  },
   "graph": {
     "nodes": [
       {
-        "type": "node",
         "name": "DataLoader",
         "extra": {
           "ui": {
             "position": {
-              "x": 100,
-              "y": 150
+              "x": 120,
+              "y": 90
             }
           }
         },
         "factory": "netrun.node_factories.from_function",
         "factory_args": {
           "func": "json.loads"
-        }
+        },
+        "type": "node"
       },
       {
-        "type": "node",
         "name": "Transformer",
         "in_ports": {
           "input": {
@@ -43,34 +47,30 @@
             "port_type": "str"
           }
         },
+        "execution_config": {
+          "node_vars": {
+            "TRANSFORM_MODE": {
+              "value": "test_local"
+            }
+          }
+        },
         "extra": {
           "ui": {
             "position": {
               "x": 400,
               "y": 100
-            },
-            "env": {
-              "TRANSFORM_MODE": "uppercase"
-            },
-            "actions": [
-              {
-                "id": "node-action-inspect",
-                "label": "Inspect Transform Config",
-                "command": "echo \"Node: $NODE_NAME, Mode: $TRANSFORM_MODE\""
-              }
-            ]
+            }
           }
-        }
+        },
+        "type": "node"
       },
       {
-        "type": "node",
         "name": "OutputSink",
         "in_ports": {
           "value": {
             "port_type": "any"
           }
         },
-        "out_ports": {},
         "extra": {
           "ui": {
             "position": {
@@ -78,7 +78,8 @@
               "y": 150
             }
           }
-        }
+        },
+        "type": "node"
       }
     ],
     "edges": [
