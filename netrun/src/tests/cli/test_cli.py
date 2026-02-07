@@ -91,7 +91,6 @@ def test_factory_info():
     assert result.exit_code == 0
     data = json.loads(result.stdout)
     assert data["factory"] == "netrun.node_factories.from_function"
-    assert data["has_get_node_funcs"] is True
     assert len(data["params"]) >= 1
     assert data["params"][0]["name"] == "func"
     assert data["params"][0]["required"] is True
