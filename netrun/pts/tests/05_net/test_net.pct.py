@@ -4462,3 +4462,51 @@ async def test_max_epochs_queued_when_not_propagating():
         assert len(net._exception_queue) == 1
         assert isinstance(net._exception_queue[0], EpochError)
         assert isinstance(net._exception_queue[0].__cause__, MaxEpochsExceeded)
+
+# %% [markdown]
+# ## Factory exec_node_func Override Tests
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_factory_node_exec_func_override():
+    """Test that exec_node_func in execution_config overrides the factory's function."""
+    override_called = []
+
+    def override_exec(ctx, packets):
+        override_called.append(True)
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                factory="tests.net.sample_factory",
+                factory_args={"name": "FactoryNode", "threshold": 0.5},
+                execution_config=NodeExecutionConfig(
+                    pools=["main"],
+                    exec_node_func=override_exec,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        net.inject_data("FactoryNode", "task", [{"score": 0.9}])
+        await net.run_until_blocked()
+
+        # The override function should have been called, not the factory's
+        assert len(override_called) == 1
+
+        # The factory function creates output packets for score > threshold,
+        # but our override just consumes inputs without producing output.
+        # Verify no output packets were created (proving override ran, not factory).
+        record = list(net._epochs.values())[0]
+        assert len(record.out_salvos) == 0

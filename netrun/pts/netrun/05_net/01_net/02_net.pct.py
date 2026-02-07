@@ -1853,8 +1853,9 @@ class Net:
         This sends the exec_node_func for each node to all workers in the
         configured pools, so they can be called by function key.
 
-        For factory-based nodes, registers a _FactoryPlaceholder that the
-        NetFuncPreprocessor will resolve lazily on each worker.
+        If execution_config has an explicit exec_node_func, it takes priority
+        (even for factory nodes). Otherwise, factory-based nodes get a
+        _FactoryPlaceholder that the NetFuncPreprocessor resolves lazily.
 
         String import paths are resolved to actual functions before registration.
         """
@@ -1866,15 +1867,15 @@ class Net:
             func_key = self._get_func_key(node_config.name)
 
             # Determine what to register
-            if node_config.name in self._node_factories:
-                # Factory-based node: register placeholder for lazy resolution
-                exec_func = _FactoryPlaceholder(node_config.name)
-            elif config.exec_node_func is not None:
-                # Regular node: register the function directly
+            if config.exec_node_func is not None:
+                # Explicit exec function (overrides factory default)
                 exec_func = config.exec_node_func
                 # Resolve string import path if needed
                 if isinstance(exec_func, str):
                     exec_func = self._import_from_path(exec_func)
+            elif node_config.name in self._node_factories:
+                # Factory-based node: register placeholder for lazy resolution
+                exec_func = _FactoryPlaceholder(node_config.name)
             else:
                 # No function to register
                 continue
