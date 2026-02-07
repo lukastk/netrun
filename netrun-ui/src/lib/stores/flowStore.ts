@@ -915,7 +915,7 @@ async function runBackendValidation(): Promise<BackendValidationResult> {
 			}
 		}
 
-		// Validate factory import paths
+		// Validate factory nodes by previewing them (resolves imports + calls get_node_config)
 		const factoryNodes = tab.nodes.filter(
 			n => n.data.nodeType === 'factory' && (n.data as NetrunNodeData).factory?.trim()
 		);
@@ -924,14 +924,15 @@ async function runBackendValidation(): Promise<BackendValidationResult> {
 			const projectRoot = (tab.extraData as Record<string, unknown>)?.project_root as string | undefined;
 			const results = await Promise.all(
 				factoryNodes.map(async (node) => {
-					const factory = (node.data as NetrunNodeData).factory!;
+					const nData = node.data as NetrunNodeData;
 					try {
-						const result = await api.validateImport(factory, projectRoot);
-						if (!result.valid) {
-							return { nodeId: node.id, error: `Factory import failed: ${result.error}` };
-						}
-						if (!result.is_factory) {
-							return { nodeId: node.id, error: `Module '${factory}' has no get_node_config function` };
+						const preview = await api.previewFactory(
+							nData.factory!,
+							nData.factoryArgs || {},
+							projectRoot
+						);
+						if (preview.error) {
+							return { nodeId: node.id, error: preview.error };
 						}
 						return null;
 					} catch {
