@@ -1,10 +1,12 @@
 """Factory inspection and preview endpoints."""
+import enum
 import importlib
 import inspect
+import json
 import os
 import sys
 from contextlib import contextmanager
-from typing import Any
+from typing import Any, Union, get_args
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -158,6 +160,7 @@ class FactoryParameter(BaseModel):
     type: str | None = None
     default: Any | None = None
     has_default: bool = False
+    enum_options: list[str] | None = None
 
 
 class FactorySignatureResponse(BaseModel):
@@ -189,6 +192,23 @@ class FactoryPreviewResponse(BaseModel):
     has_in_salvo_conditions: bool
     has_out_salvo_conditions: bool
     error: str | None = None
+
+
+def _unwrap_optional(annotation: Any) -> Any:
+    """Extract the non-None type from Optional[T] / T | None.
+
+    Returns annotation as-is if not a union type.  Returns None for
+    multi-type unions (e.g. str | int).
+    """
+    origin = getattr(annotation, "__origin__", None)
+    # Handle typing.Union and types.UnionType (T | None syntax)
+    if origin is Union or type(annotation).__name__ == "UnionType":
+        args = get_args(annotation)
+        non_none = [a for a in args if a is not type(None)]
+        if len(non_none) == 1:
+            return non_none[0]
+        return None  # multi-type union, skip
+    return annotation
 
 
 @router.post("/signature", response_model=FactorySignatureResponse)
@@ -228,23 +248,34 @@ async def get_factory_signature(request: FactorySignatureRequest) -> FactorySign
                 else:
                     type_str = str(param.annotation)
 
+            # Detect Enum types and extract member values
+            enum_options = None
+            annotation = param.annotation
+            if annotation != inspect.Parameter.empty:
+                actual_type = _unwrap_optional(annotation)
+                if actual_type is not None and isinstance(actual_type, type) and issubclass(actual_type, enum.Enum):
+                    enum_options = [member.value for member in actual_type]
+
             # Get default value
             has_default = param.default != inspect.Parameter.empty
             default = param.default if has_default else None
 
             # Convert default to JSON-serializable format
             if default is not None:
-                try:
-                    import json
-                    json.dumps(default)  # Test if serializable
-                except (TypeError, ValueError):
-                    default = str(default)
+                if isinstance(default, enum.Enum):
+                    default = default.value
+                else:
+                    try:
+                        json.dumps(default)  # Test if serializable
+                    except (TypeError, ValueError):
+                        default = str(default)
 
             parameters.append(FactoryParameter(
                 name=name,
                 type=type_str,
                 default=default,
                 has_default=has_default,
+                enum_options=enum_options,
             ))
 
         # Get description: prefer _factory_desc attribute, fall back to docstring

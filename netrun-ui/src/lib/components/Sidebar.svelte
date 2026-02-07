@@ -378,6 +378,11 @@
 		return typeStr === 'float' || typeStr === 'float | none' || typeStr === 'none | float';
 	}
 
+	// Check if parameter has enum options
+	function isEnumParam(param: FactoryParameter): boolean {
+		return Array.isArray(param.enum_options) && param.enum_options.length > 0;
+	}
+
 	// Convert a string value to the appropriate type based on parameter type
 	function convertFactoryArgValue(param: FactoryParameter, value: string | boolean): unknown {
 		// If it's already a boolean (from checkbox), return as-is
@@ -608,6 +613,23 @@
 														/>
 														<span class="checkbox-text">{effectiveValue ? 'True' : 'False'}{storedValue === undefined ? ' (default)' : ''}</span>
 													</label>
+												{:else if isEnumParam(param)}
+													<!-- Enum: dropdown -->
+													<select
+														value={String($selectedNode.data.factoryArgs?.[param.name] ?? param.default ?? '')}
+														onchange={(e) => {
+															updateFactoryArg(param.name, (e.target as HTMLSelectElement).value);
+															pushHistory();
+															refreshFactoryPreview();
+														}}
+													>
+														{#if !param.has_default && !$selectedNode.data.factoryArgs?.[param.name]}
+															<option value="" disabled selected>Select...</option>
+														{/if}
+														{#each param.enum_options as option}
+															<option value={option}>{option}</option>
+														{/each}
+													</select>
 												{:else if isIntParam(param) || isFloatParam(param)}
 													<input
 														type="number"
@@ -1547,7 +1569,8 @@
 		font-weight: bold;
 	}
 
-	.factory-arg input {
+	.factory-arg input,
+	.factory-arg select {
 		width: 100%;
 	}
 
@@ -1590,6 +1613,21 @@
 	.factory-arg input[type="number"] {
 		font-family: 'SF Mono', Monaco, Consolas, monospace;
 		font-size: 12px;
+	}
+
+	.factory-arg select {
+		padding: 8px;
+		background: var(--bg-primary, #1a1a1a);
+		border: 1px solid var(--border-color, #404040);
+		border-radius: 4px;
+		color: var(--text-primary, #fff);
+		font-size: 12px;
+		cursor: pointer;
+	}
+
+	.factory-arg select:focus {
+		outline: none;
+		border-color: var(--accent-color, #3b82f6);
 	}
 
 	.loading-hint {

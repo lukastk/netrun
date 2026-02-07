@@ -61,6 +61,7 @@ export interface FactoryParameter {
 	type: string | null;
 	default: unknown;
 	has_default: boolean;
+	enum_options?: string[] | null;
 }
 
 export interface FactorySignatureResponse {
