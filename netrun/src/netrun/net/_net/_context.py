@@ -544,6 +544,8 @@ class EpochRecord:
     started_at: datetime | None = None
     ended_at: datetime | None = None
     destroyed_packets: list[str] = field(default_factory=list)
+    pool_id: str | None = None
+    worker_id: int | None = None
 
     @classmethod
     def from_epoch(cls, epoch) -> "EpochRecord":
@@ -563,6 +565,16 @@ class EpochRecord:
     def get_logs(self) -> list[tuple[datetime, str]]:
         """Return a copy of the print logs."""
         return list(self.logs)
+
+    @property
+    def pool_worker_label(self) -> str | None:
+        """Human-readable label for pool/worker, or None if not set."""
+        if self.pool_id is None:
+            return None
+        label = self.pool_id
+        if self.worker_id is not None:
+            label += f"/{self.worker_id}"
+        return label
 
     def print_logs(self, include_timestamps: bool = True) -> None:
         """Print the logs to stdout.

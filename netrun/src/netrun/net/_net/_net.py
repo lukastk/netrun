@@ -1003,6 +1003,14 @@ class Net:
             else:
                 print(message.strip())
 
+    def _epoch_header(self, record: EpochRecord) -> str:
+        """Format an epoch header line with optional pool/worker info."""
+        header = f"--- Epoch {record.id}"
+        if record.pool_worker_label is not None:
+            header += f" [{record.pool_worker_label}]"
+        header += " ---"
+        return header
+
     def print_node_logs(self, node_name: str, include_timestamps: bool = True, chronological: bool = False) -> None:
         """Print all logs for a node, grouped by epoch or chronologically."""
         if chronological:
@@ -1019,7 +1027,7 @@ class Net:
             for record in self._epochs.values():
                 if record.node_name != node_name or not record.logs:
                     continue
-                print(f"--- Epoch {record.id} ---")
+                print(self._epoch_header(record))
                 record.print_logs(include_timestamps=include_timestamps)
 
     def print_all_logs(self, include_timestamps: bool = True, chronological: bool = False) -> None:
@@ -1037,7 +1045,7 @@ class Net:
                 for record in self._epochs.values():
                     if record.node_name != node_name or not record.logs:
                         continue
-                    print(f"--- Epoch {record.id} ---")
+                    print(self._epoch_header(record))
                     record.print_logs(include_timestamps=include_timestamps)
 
     async def start(self) -> None:
@@ -1536,6 +1544,10 @@ class Net:
 
         # Extract NodeExecutionResult from job result
         execution_result: NodeExecutionResult = job_result.result
+
+        # Record which pool/worker ran this epoch
+        self._epochs[epoch_id].pool_id = job_result.pool_id
+        self._epochs[epoch_id].worker_id = job_result.worker_id
 
         # Handle print buffer
         if execution_result.print_buffer:
