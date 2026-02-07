@@ -186,7 +186,21 @@ def run_production_app(
         width=width,
         height=height,
         min_size=(800, 600),
+        confirm_close=True,
     )
+
+    def on_closing():
+        """Check for unsaved changes before allowing window close."""
+        try:
+            result = window.evaluate_js(
+                "window.__netrunHasUnsavedChanges ? window.__netrunHasUnsavedChanges() : false"
+            )
+            if result:
+                return False  # Prevent close
+        except Exception:
+            pass  # Allow close on error
+
+    window.events.closing += on_closing
 
     webview.start()
     print("Shutting down...")
@@ -315,7 +329,21 @@ def run_dev_app(
         width=width,
         height=height,
         min_size=(800, 600),
+        confirm_close=True,
     )
+
+    def on_closing():
+        """Check for unsaved changes before allowing window close."""
+        try:
+            result = window.evaluate_js(
+                "window.__netrunHasUnsavedChanges ? window.__netrunHasUnsavedChanges() : false"
+            )
+            if result:
+                return False  # Prevent close
+        except Exception:
+            pass  # Allow close on error
+
+    window.events.closing += on_closing
 
     # This blocks until window is closed
     webview.start()

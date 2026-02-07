@@ -129,7 +129,7 @@ async def list_builtin_factories() -> ListBuiltinFactoriesResponse:
                 # Check if it's a factory module (has get_node_config)
                 if hasattr(module, "get_node_config"):
                     get_node_config = getattr(module, "get_node_config")
-                    docstring = inspect.getdoc(get_node_config)
+                    docstring = getattr(module, "_factory_desc", None) or inspect.getdoc(get_node_config)
 
                     factories.append(BuiltinFactory(
                         import_path=full_path,
@@ -247,8 +247,8 @@ async def get_factory_signature(request: FactorySignatureRequest) -> FactorySign
                 has_default=has_default,
             ))
 
-        # Get docstring
-        docstring = inspect.getdoc(get_node_config)
+        # Get description: prefer _factory_desc attribute, fall back to docstring
+        docstring = getattr(module, "_factory_desc", None) or inspect.getdoc(get_node_config)
 
         return FactorySignatureResponse(
             factory_path=request.factory_path,

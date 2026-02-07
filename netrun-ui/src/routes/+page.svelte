@@ -12,7 +12,7 @@
 	import FactorySelectorModal from '$lib/components/FactorySelectorModal.svelte';
 	import RecipeModal from '$lib/components/RecipeModal.svelte';
 	import { api } from '$lib/api';
-	import { nodes, currentFilePath, activeTab, recentFiles, loadFromFile, clearFlow, isNewFile, saveToFile, selectNodeByName, extraData } from '$lib/stores/flowStore';
+	import { nodes, currentFilePath, activeTab, recentFiles, loadFromFile, clearFlow, isNewFile, saveToFile, selectNodeByName, extraData, hasUnsavedChanges } from '$lib/stores/flowStore';
 	import { factorySelectorState, closeFactorySelector } from '$lib/stores/factorySelectorStore';
 	import { recipeModalState } from '$lib/stores/recipeStore';
 	import { resolveFilePath } from '$lib/stores/fileExplorerStore';
@@ -30,9 +30,19 @@
 	// Initial path for file explorer - fetched from server, with fallback
 	let initialPath = $state('~');
 
+	// Warn before closing with unsaved changes
+	function handleBeforeUnload(event: BeforeUnloadEvent) {
+		if (hasUnsavedChanges()) {
+			event.preventDefault();
+		}
+	}
+
 	// Initialize command system and process URL parameters
 	onMount(async () => {
 		initializeCommands();
+
+		// Expose unsaved changes check for pywebview's confirm_close
+		(window as any).__netrunHasUnsavedChanges = hasUnsavedChanges;
 
 		// Fetch working directory from server
 		let firstNetrunFile: string | null = null;
@@ -121,7 +131,7 @@
 	}
 </script>
 
-<svelte:window onkeydown={handleGlobalKeydown} />
+<svelte:window onkeydown={handleGlobalKeydown} onbeforeunload={handleBeforeUnload} />
 
 <div class="app">
 	<Toolbar />
