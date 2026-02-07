@@ -298,7 +298,7 @@
 			style: 'stroke-width: 2px;'
 		}}
 		connectionLineType={getConnectionLineType($edgeStyle)}
-		deleteKey="Delete"
+		deleteKey={['Delete', 'Backspace']}
 		selectionKey="Shift"
 		colorMode="dark"
 	>
