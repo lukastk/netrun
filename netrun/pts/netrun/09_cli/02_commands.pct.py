@@ -229,10 +229,6 @@ def factory_info(
         typer.echo(f"Error: '{factory_path}' has no get_node_config function.", err=True)
         raise typer.Exit(1)
 
-    if not has_get_node_funcs:
-        typer.echo(f"Error: '{factory_path}' has no get_node_funcs function.", err=True)
-        raise typer.Exit(1)
-
     sig = inspect.signature(get_node_config_fn)
     params = []
     for name, param in sig.parameters.items():
@@ -246,10 +242,17 @@ def factory_info(
             p["required"] = True
         params.append(p)
 
-    output_json({
+    result: dict[str, Any] = {
         "factory": factory_path,
+        "type": "node" if has_get_node_funcs else "subgraph",
         "params": params,
-    }, pretty)
+    }
+
+    desc = getattr(module, "_factory_desc", None)
+    if desc:
+        result["description"] = desc
+
+    output_json(result, pretty)
 
 # %% [markdown]
 # ## info

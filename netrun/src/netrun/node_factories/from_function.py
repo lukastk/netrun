@@ -537,3 +537,6 @@ def get_node_funcs(func: Callable | str, include_port_types: bool = True) -> tup
     exec_func = _create_exec_func(func, parsed_sig)
 
     return (exec_func, None, None, None)
+
+# %% pts/netrun/06_node_factories/00_from_function.pct.py 17
+_factory_desc = "Creates a node from a regular Python function. Parses the function signature to determine input/output ports, handles special parameters (ctx, print), and wraps the function for node execution."

@@ -593,6 +593,10 @@ def get_node_funcs(func: Callable | str, include_port_types: bool = True) -> tup
 
     return (exec_func, None, None, None)
 
+# %%
+#|export
+_factory_desc = "Creates a node from a regular Python function. Parses the function signature to determine input/output ports, handles special parameters (ctx, print), and wraps the function for node execution."
+
 # %% [markdown]
 # ## Tests
 
