@@ -171,7 +171,7 @@ def test_inject_data_triggers_epoch():
 
     # Run simulation step (without auto-starting epochs)
     import asyncio
-    asyncio.get_event_loop().run_until_complete(net.run_until_blocked(auto_start_epochs=False))
+    asyncio.run(net.run_until_blocked(auto_start_epochs=False))
 
     # Now there should be a startable epoch
     startable = net.get_startable_epochs()
