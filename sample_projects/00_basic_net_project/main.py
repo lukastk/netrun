@@ -6,6 +6,8 @@ This demonstrates:
 3. Injecting data into the network
 4. Running the network until all processing is complete
 5. Retrieving results from output queues
+6. Multiple output ports (analyze node)
+7. _node_config attribute overrides (format_result node)
 """
 
 import asyncio
@@ -26,15 +28,15 @@ async def main():
         # Inject input data:
         # - 'double' node receives x=5
         # - 'add' node receives b=10
+        # - 'analyze' node receives value=42 (standalone, demonstrates multi-output)
         net.inject_data("double", "x", [5])
         net.inject_data("add", "b", [10])
+        net.inject_data("analyze", "value", [42])
 
         # Run until all processing is complete
         while True:
-            # Move packets through edges
             await net.run_until_blocked()
 
-            # Execute any startable epochs
             startable = net.get_startable_epochs()
             if not startable:
                 break
@@ -42,19 +44,29 @@ async def main():
             for epoch_id in startable:
                 await net.execute_epoch(epoch_id)
 
-        # Retrieve results from the output queue
-        results = net.get_all_outputs("results")
+        # Retrieve results from output queues
+        results = net.flush_output_queue("results")
+        summaries = net.flush_output_queue("summaries")
+        breakdowns = net.flush_output_queue("breakdowns")
 
         print("=" * 50)
-        print("Results:")
-        for packet in results:
-            print(f"  {packet.value}")
+        print("Results (from format_result):")
+        for value in results:
+            print(f"  {value}")
+
+        print("\nSummaries (from analyze.summary):")
+        for value in summaries:
+            print(f"  {value}")
+
+        print("\nBreakdowns (from analyze.breakdown):")
+        for value in breakdowns:
+            print(f"  {value}")
 
         # Show captured print logs from all nodes
         print()
         print("Node Logs:")
-        for node_name in ["double", "add", "format_result"]:
-            logs = net.get_node_log(node_name)
+        for node_name in ["double", "add", "format_result", "analyze"]:
+            logs = net.get_node_logs(node_name)
             if logs:
                 print(f"\n  [{node_name}]")
                 for timestamp, message in logs:

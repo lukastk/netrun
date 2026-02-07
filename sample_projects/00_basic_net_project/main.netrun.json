@@ -5,9 +5,32 @@
   "output_queues": {
     "results": {
       "ports": [["format_result", "out"]]
+    },
+    "summaries": {
+      "ports": [["analyze", "summary"]]
+    },
+    "breakdowns": {
+      "ports": [["analyze", "breakdown"]]
     }
   },
   "graph": {
+    "extra": {
+      "ui": {
+        "viewport": {"x": 0, "y": 0, "zoom": 1},
+        "actions": [
+          {
+            "id": "action-show-info",
+            "label": "Show Node Info",
+            "command": "echo \"Node: $NODE_NAME\" && echo \"Project root: $PROJECT_ROOT\""
+          },
+          {
+            "id": "action-run-project",
+            "label": "Run Project",
+            "command": "cd $PROJECT_ROOT && uv run python main.py"
+          }
+        ]
+      }
+    },
     "nodes": [
       {
         "name": "double",
@@ -30,7 +53,24 @@
         "factory": "netrun.node_factories.from_function",
         "factory_args": {"func": "nodes.format_result"},
         "extra": {
-          "ui": {"position": {"x": 700, "y": 150}}
+          "ui": {"position": {"x": 700, "y": 100}}
+        }
+      },
+      {
+        "name": "analyze",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {"func": "nodes.analyze"},
+        "extra": {
+          "ui": {
+            "position": {"x": 700, "y": 250},
+            "actions": [
+              {
+                "id": "action-show-analysis",
+                "label": "Show Analysis Ports",
+                "command": "echo \"$NODE_NAME has output ports: summary, breakdown\""
+              }
+            ]
+          }
         }
       }
     ],
