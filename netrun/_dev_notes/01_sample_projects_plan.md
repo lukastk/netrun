@@ -105,6 +105,13 @@ No changes needed — deployment features are well covered.
 - Nested subgraphs (subgraph containing a subgraph)
 - Edges crossing subgraph boundaries
 - Subgraph `extra` metadata
+- **Subgraph factories** — a factory module whose `get_node_config()` returns a `SubgraphConfig` instead of a `NodeConfig`, allowing parameterized generation of node groups (e.g., a pipeline factory that takes `num_stages`)
+- **Port groups** — dot-separated port naming convention (e.g., `features.color`, `features.shape`) that `netrun-ui` renders as collapsible groups. Include nested port groups (e.g., `batch.images.train`, `batch.labels.train`). Port groups are purely a naming convention in `netrun` — they have no runtime effect — but `netrun-ui` detects them and provides:
+  - Collapsible/expandable groups in the node UI
+  - Group-level connections (connecting all ports in a group at once when the source and target groups have matching port names)
+  - Nested group hierarchy
+
+  The README should instruct the user to open the `.netrun.json` file in `netrun-ui` to see port groups in action.
 
 **Structure:**
 ```
@@ -113,6 +120,7 @@ sample_projects/03_subgraphs/
   shared_pipeline.netrun.json  # Reusable subgraph config
   nodes.py                  # Node functions
   pyproject.toml
+  README.md
 ```
 
 #### Project 04: `error_handling` (new)
@@ -207,6 +215,9 @@ sample_projects/06_actions_and_recipes/
 | File-referenced subgraphs | 03 |
 | Exposed ports on subgraphs | 03 |
 | Nested subgraphs | 03 |
+| Subgraph factories (`get_node_config` returns `SubgraphConfig`) | 03 |
+| Port groups (dot-separated naming convention for `netrun-ui`) | 03 |
+| Nested port groups (`batch.images.train`) | 03 |
 | Retries + `retry_wait` | 04 |
 | `on_node_failure` callback | 04 |
 | `timeout` | 04 |
