@@ -268,3 +268,46 @@ def test_parse_return_annotation_preserves_non_packet_ports():
     assert out_ports["a"].port_type == int
     assert out_ports["b"].port_type == str
     assert out_ports["c"].port_type == float
+
+# %% [markdown]
+# ## Tests for manual_output
+
+# %%
+#|export
+def test_manual_output_returns_none():
+    """Test manual_output mode accepts None return."""
+    from netrun.node_factories.from_function import _create_exec_func
+
+    def my_func(x: int, ctx) -> None:
+        pass
+
+    parsed = _parse_function_signature(my_func)
+    exec_func = _create_exec_func(my_func, parsed, manual_output=True)
+    # Should not raise — we can't easily test exec_func without a real ctx,
+    # but we can verify it was created
+    assert callable(exec_func)
+
+# %%
+#|export
+def test_manual_output_get_node_funcs():
+    """Test get_node_funcs passes manual_output through."""
+    def my_func(x: int, ctx):
+        pass
+
+    exec_func, start, stop, on_fail = get_node_funcs(my_func, manual_output=True)
+    assert callable(exec_func)
+    assert start is None
+    assert stop is None
+    assert on_fail is None
+
+# %%
+#|export
+def test_manual_output_get_node_config():
+    """Test get_node_config with manual_output."""
+    def my_func(x: int, ctx):
+        pass
+
+    config = get_node_config(my_func, manual_output=True)
+    # execution_config should be stripped per factory protocol
+    assert config.execution_config is None
+    assert "x" in config.in_ports
