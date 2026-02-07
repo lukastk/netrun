@@ -159,7 +159,6 @@ def run_deployment(
     uv_extra_args: str,
     pre_commands: list[str] | None,
     setup_firewall: bool,
-    netrun_install_spec: str | None,
     watchdog_script: str | None = None,
     watchdog_service: str | None = None,
     watchdog_timer: str | None = None,
@@ -245,16 +244,6 @@ def run_deployment(
                 sync_cmd += f" {shlex.quote(uv_extra_args)}"
             uv_parts.append(sync_cmd)
             server.shell(commands=[" && ".join(uv_parts)])
-
-            # 4b. Override netrun with git version if requested
-            if netrun_install_spec:
-                git_install_parts = [
-                    'export PATH="$HOME/.local/bin:$PATH"',
-                    f"cd {_qdir}",
-                    f"uv pip install --reinstall --python .venv/bin/python "
-                    f"{shlex.quote(netrun_install_spec)}",
-                ]
-                server.shell(commands=[" && ".join(git_install_parts)])
 
             # 5. Upload scripts (server is started separately via start_pool_server())
             files.put(

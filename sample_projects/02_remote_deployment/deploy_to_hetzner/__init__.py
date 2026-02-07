@@ -142,7 +142,6 @@ def deploy_to_server(
     pre_commands: list[str] | None = None,
     setup_firewall: bool = False,
     ssh_tunnel: bool = True,
-    netrun_install_spec: str | None = None,
     exclude: list[str] | None = None,
     exclude_dir: list[str] | None = None,
     enable_watchdog: bool = False,
@@ -199,7 +198,6 @@ def deploy_to_server(
         serve_script=serve_script, start_script=start_script,
         python_version=python_version, uv_extra_args=uv_extra_args,
         pre_commands=pre_commands, setup_firewall=setup_firewall,
-        netrun_install_spec=netrun_install_spec,
         watchdog_script=wd_script, watchdog_service=wd_service,
         watchdog_timer=wd_timer, hcloud_api_token=hcloud_api_token,
     )
