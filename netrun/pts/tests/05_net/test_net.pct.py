@@ -31,6 +31,7 @@ from netrun.net._net import (
     NodeFailureContext,
     DeferredActionQueue,
     EpochCancelled,
+    MaxEpochsExceeded,
     EpochError,
     EpochRecord,
     NodeInfo,
@@ -4247,3 +4248,217 @@ async def test_pool_server_context_start_stop_with_log_file(tmp_path):
 
     content = log_file.read_text()
     assert "Pool server stopped" in content
+
+# %% [markdown]
+# ## MaxEpochsExceeded Tests
+
+# %%
+#|export
+def test_max_epochs_exceeded_exception():
+    """Test MaxEpochsExceeded exception has correct attributes."""
+    exc = MaxEpochsExceeded("MyNode", 3)
+    assert exc.node_name == "MyNode"
+    assert exc.max_epochs == 3
+    assert "MyNode" in str(exc)
+    assert "3" in str(exc)
+
+# %%
+test_max_epochs_exceeded_exception()
+
+# %%
+#|export
+def test_node_execution_config_max_epochs_default():
+    """Test max_epochs defaults to None (unlimited)."""
+    config = NodeExecutionConfig()
+    assert config.max_epochs is None
+
+# %%
+test_node_execution_config_max_epochs_default()
+
+# %%
+#|export
+def test_node_execution_config_max_epochs_set():
+    """Test max_epochs can be set."""
+    config = NodeExecutionConfig(max_epochs=1)
+    assert config.max_epochs == 1
+
+# %%
+test_node_execution_config_max_epochs_set()
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_max_epochs_allows_up_to_limit():
+    """Test that a node with max_epochs=2 can run exactly 2 epochs."""
+    results = []
+
+    def counting_node(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                val = ctx.consume_packet(pid)
+                results.append(val)
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Counter",
+                in_ports={"in": PortConfig()},
+                execution_config=NodeExecutionConfig(
+                    node_name="Counter",
+                    pools=["main"],
+                    exec_node_func=counting_node,
+                    max_epochs=2,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        # First epoch
+        net.inject_data("Counter", "in", [10])
+        await net.run_until_blocked()
+
+        # Second epoch
+        net.inject_data("Counter", "in", [20])
+        await net.run_until_blocked()
+
+    assert results == [10, 20]
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_max_epochs_one_raises_on_second():
+    """Test that max_epochs=1 raises EpochError on second epoch."""
+    def simple_node(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="OnceOnly",
+                in_ports={"in": PortConfig()},
+                execution_config=NodeExecutionConfig(
+                    node_name="OnceOnly",
+                    pools=["main"],
+                    exec_node_func=simple_node,
+                    max_epochs=1,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        # First epoch - should succeed
+        net.inject_data("OnceOnly", "in", [1])
+        await net.run_until_blocked()
+
+        # Second epoch - should raise
+        net.inject_data("OnceOnly", "in", [2])
+        with pytest.raises(EpochError) as exc_info:
+            await net.run_until_blocked()
+
+        assert isinstance(exc_info.value.__cause__, MaxEpochsExceeded)
+        assert exc_info.value.__cause__.node_name == "OnceOnly"
+        assert exc_info.value.__cause__.max_epochs == 1
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_max_epochs_none_unlimited():
+    """Test that max_epochs=None allows unlimited epochs."""
+    count = 0
+
+    def counting_node(ctx, packets):
+        nonlocal count
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+                count += 1
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Unlimited",
+                in_ports={"in": PortConfig()},
+                execution_config=NodeExecutionConfig(
+                    node_name="Unlimited",
+                    pools=["main"],
+                    exec_node_func=counting_node,
+                    # max_epochs defaults to None
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        for i in range(10):
+            net.inject_data("Unlimited", "in", [i])
+            await net.run_until_blocked()
+
+    assert count == 10
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_max_epochs_queued_when_not_propagating():
+    """Test that MaxEpochsExceeded is queued when propagate_exceptions=False."""
+    def simple_node(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Queued",
+                in_ports={"in": PortConfig()},
+                execution_config=NodeExecutionConfig(
+                    node_name="Queued",
+                    pools=["main"],
+                    exec_node_func=simple_node,
+                    max_epochs=1,
+                    propagate_exceptions=False,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        # First epoch succeeds
+        net.inject_data("Queued", "in", [1])
+        await net.run_until_blocked()
+
+        # Second epoch - should NOT raise, but queue the exception
+        net.inject_data("Queued", "in", [2])
+        await net.run_until_blocked()  # No exception raised
+
+        # Exception should be in the queue
+        assert len(net._exception_queue) == 1
+        assert isinstance(net._exception_queue[0], EpochError)
+        assert isinstance(net._exception_queue[0].__cause__, MaxEpochsExceeded)
