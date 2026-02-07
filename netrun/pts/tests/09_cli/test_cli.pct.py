@@ -42,7 +42,7 @@ def test_validate_basic():
     assert result.exit_code == 0
     data = json.loads(result.stdout)
     assert data["valid"] is True
-    assert data["nodes"] == 3
+    assert data["nodes"] == 4
     assert data["edges"] == 2
 
 
@@ -51,7 +51,7 @@ def test_validate_pools():
     assert result.exit_code == 0
     data = json.loads(result.stdout)
     assert data["valid"] is True
-    assert data["nodes"] == 5
+    assert data["nodes"] == 6
 
 
 def test_validate_not_found():
@@ -74,7 +74,7 @@ def test_structure_basic():
     result = runner.invoke(app, ["structure", "-c", BASIC_CONFIG])
     assert result.exit_code == 0
     data = json.loads(result.stdout)
-    assert len(data["nodes"]) == 3
+    assert len(data["nodes"]) == 4
     assert len(data["edges"]) == 2
     # Check edge format
     assert data["edges"][0]["source"] == "double.out"
@@ -140,7 +140,7 @@ def test_info_basic():
     result = runner.invoke(app, ["info", "-c", BASIC_CONFIG, "--pretty"])
     assert result.exit_code == 0
     data = json.loads(result.stdout)
-    assert data["nodes"] == 3
+    assert data["nodes"] == 4
     assert data["edges"] == 2
     assert data["recipes"] == 0
 
@@ -149,7 +149,7 @@ def test_info_pools():
     result = runner.invoke(app, ["info", "-c", POOLS_CONFIG, "--pretty"])
     assert result.exit_code == 0
     data = json.loads(result.stdout)
-    assert data["nodes"] == 5
+    assert data["nodes"] == 6
     assert "pools" in data
     assert data["pools"]["threads"] == "thread"
     assert data["pools"]["processes"] == "multiprocess"
@@ -164,11 +164,12 @@ def test_nodes_basic():
     result = runner.invoke(app, ["nodes", "-c", BASIC_CONFIG])
     assert result.exit_code == 0
     data = json.loads(result.stdout)
-    assert len(data) == 3
+    assert len(data) == 4
     names = [n["name"] for n in data]
     assert "double" in names
     assert "add" in names
     assert "format_result" in names
+    assert "analyze" in names
 
 # %% [markdown]
 # ## Test node
@@ -193,11 +194,14 @@ def test_node_not_found():
 
 # %%
 #|export
-def test_actions_list_empty():
+def test_actions_list_basic():
     result = runner.invoke(app, ["actions", "list", "-c", BASIC_CONFIG])
     assert result.exit_code == 0
     data = json.loads(result.stdout)
-    assert data == []
+    assert len(data) == 2
+    ids = [a["id"] for a in data]
+    assert "action-show-info" in ids
+    assert "action-run-project" in ids
 
 
 def test_actions_run_not_found():
