@@ -104,19 +104,47 @@ def build_action_context(
     net_file_path: str | None = None,
     project_root: str | None = None,
     node_config: str | None = None,
+    global_node_vars: dict[str, Any] | None = None,
+    node_execution_config: dict[str, Any] | None = None,
 ) -> ActionContext:
     """Build an ActionContext from graph and node extra data.
 
     Extracts env, node_env, defaultCmd, and projectRoot from the
     extra data and combines with the provided arguments.
+
+    Node environment precedence (lowest to highest):
+    1. Global node_vars values
+    2. Node-level node_vars values (from execution_config)
+    3. Legacy per-node ui.env overrides
     """
     ui = graph_extra.get("ui", {})
     env = ui.get("env")
     default_cmd = ui.get("defaultCmd")
 
-    node_env = None
+    # Merge node_vars and legacy ui.env into node_env
+    merged: dict[str, str] = {}
+
+    # 1. Global node_vars
+    if global_node_vars:
+        for key, var in global_node_vars.items():
+            if isinstance(var, dict) and "value" in var:
+                merged[key] = str(var["value"])
+
+    # 2. Node-level node_vars from execution_config
+    if node_execution_config:
+        nv = node_execution_config.get("node_vars")
+        if nv and isinstance(nv, dict):
+            for key, var in nv.items():
+                if isinstance(var, dict) and "value" in var:
+                    merged[key] = str(var["value"])
+
+    # 3. Legacy per-node ui.env (highest precedence)
     if node_extra:
-        node_env = get_node_env(node_extra)
+        legacy_env = get_node_env(node_extra)
+        if legacy_env:
+            merged.update(legacy_env)
+
+    node_env = merged if merged else None
 
     return ActionContext(
         node_name=node_name,

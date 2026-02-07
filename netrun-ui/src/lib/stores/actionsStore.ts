@@ -73,15 +73,43 @@ export const nodeActions = derived(
 );
 
 // Derived: get node-level environment variable overrides
+// Merges node_vars (global then node-level) with legacy ui.env overrides.
+// Precedence (lowest to highest): global node_vars < node node_vars < ui.env
 export const nodeEnv = derived(
-	selectedNode,
-	($selectedNode): Record<string, string> | undefined => {
+	[selectedNode, extraData],
+	([$selectedNode, $extraData]): Record<string, string> | undefined => {
 		if (!$selectedNode) return undefined;
+
+		const merged: Record<string, string> = {};
+
+		// 1. Global node_vars (from extraData.node_vars)
+		const extra = $extraData as Record<string, unknown> | null;
+		const globalVars = extra?.node_vars as Record<string, { value: string }> | undefined;
+		if (globalVars) {
+			for (const [key, v] of Object.entries(globalVars)) {
+				merged[key] = v.value;
+			}
+		}
+
+		// 2. Node-level node_vars (from execution_config.node_vars)
 		const config = $selectedNode.data._config as Record<string, unknown> | undefined;
-		const extra = config?.extra as Record<string, unknown> | undefined;
-		const ui = extra?.ui as Record<string, unknown> | undefined;
+		const executionConfig = config?.execution_config as Record<string, unknown> | undefined;
+		const nodeVars = executionConfig?.node_vars as Record<string, { value: string }> | undefined;
+		if (nodeVars) {
+			for (const [key, v] of Object.entries(nodeVars)) {
+				merged[key] = v.value;
+			}
+		}
+
+		// 3. Legacy ui.env overrides (highest precedence)
+		const nodeExtra = config?.extra as Record<string, unknown> | undefined;
+		const ui = nodeExtra?.ui as Record<string, unknown> | undefined;
 		const env = ui?.env as Record<string, string> | undefined;
-		return env && Object.keys(env).length > 0 ? env : undefined;
+		if (env) {
+			Object.assign(merged, env);
+		}
+
+		return Object.keys(merged).length > 0 ? merged : undefined;
 	}
 );
 
