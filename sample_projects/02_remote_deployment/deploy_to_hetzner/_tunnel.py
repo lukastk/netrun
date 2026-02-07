@@ -15,15 +15,16 @@ def _ssh_base(host: str, user: str, key_path: str) -> list[str]:
 
 def wait_for_remote_port(
     host: str, user: str, key_path: str,
-    port: int, timeout: int = 120,
+    port: int, timeout: int = 60,
 ) -> None:
     """Block until *port* is listening on the remote server (checked via SSH).
 
     Used when the port is bound to 127.0.0.1 and not reachable externally.
+    *timeout* of -1 means wait indefinitely.
     """
     print(f"Waiting for remote port {port}", end="", flush=True)
-    deadline = time.time() + timeout
-    while time.time() < deadline:
+    deadline = None if timeout < 0 else time.time() + timeout
+    while deadline is None or time.time() < deadline:
         r = subprocess.run(
             _ssh_base(host, user, key_path) + [
                 f"bash -c 'echo > /dev/tcp/localhost/{int(port)}' 2>/dev/null"
