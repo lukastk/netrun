@@ -561,7 +561,7 @@ wheels = [
 
 [[package]]
 name = "netrun"
-version = "0.2.1"
+version = "0.3.2"
 source = { directory = "../../netrun" }
 dependencies = [
     { name = "beartype" },
@@ -578,9 +578,11 @@ requires-dist = [
     { name = "diskcache", specifier = ">=5.6.3" },
     { name = "nblite", specifier = ">=1.1.1" },
     { name = "netrun-sim", specifier = ">=0.1.2" },
+    { name = "pyinfra", marker = "extra == 'deploy'", specifier = ">=3.0" },
     { name = "websockets", specifier = ">=16.0" },
     { name = "xxhash", specifier = ">=3.6.0" },
 ]
+provides-extras = ["deploy"]
 
 [package.metadata.requires-dev]
 dev = [
