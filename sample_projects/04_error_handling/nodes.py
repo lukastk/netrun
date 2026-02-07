@@ -1,5 +1,7 @@
 """Node functions demonstrating error handling features."""
 
+import time
+
 
 def flaky_node(data: str, print) -> str:
     """A node that fails on the first two attempts, then succeeds.
@@ -54,6 +56,17 @@ def typed_output(value: int, print) -> int:
     print(f"Input value: {value}")
     # Intentionally return wrong type to trigger PacketTypeMismatch
     return str(value)  # type: ignore — deliberate mismatch for demo
+
+
+def slow_node(data: str, print) -> str:
+    """A node that takes too long, demonstrating timeout enforcement.
+
+    Must run on a thread pool (not main) so the timeout can interrupt
+    the blocking sleep.
+    """
+    print(f"Starting slow processing of: {data}")
+    time.sleep(10)  # Will be interrupted by timeout
+    return data.upper()
 
 
 def quiet_fail(data: str, print) -> str:

@@ -46,4 +46,24 @@ Note: For the `main` pool (SingleWorkerPool), synchronous blocking calls won't b
 
 ### Impact on sample projects
 
-- **Project 04** (`04_error_handling`): Could re-add a `slow_node` demo using a thread pool so the timeout actually interrupts. Not done yet — would need adding a thread pool to the project config.
+- **Project 04** (`04_error_handling`): Re-added `slow_node` demo with a thread pool and `timeout: 0.5`.
+
+---
+
+## Unimplemented Features (config stubs only)
+
+The following `NodeExecutionConfig` fields exist in the config model but are **never enforced** by the runtime. They were planned for sample project 05 but cannot be demonstrated.
+
+| Config Field | Location | Description |
+|---|---|---|
+| `max_parallel_epochs` | `01_nodes.pct.py:203` | Limit concurrent running epochs per node. Config parsed but never checked when starting epochs. |
+| `start_node_func` | `01_nodes.pct.py:193` | Function called when a node starts up. Config parsed but never called during Net lifecycle. |
+| `stop_node_func` | `01_nodes.pct.py:194` | Function called when a node shuts down. Config parsed but never called during Net lifecycle. |
+| `defer_startup` | `01_nodes.pct.py:198` | Delay `start_node_func` until first epoch. Companion to `start_node_func`, equally unenforced. |
+
+### Features implemented but not in sample projects
+
+These features work but don't naturally fit `from_function`-based sample projects:
+
+- **`create_packet_from_value_func`** (lazy packets): Implemented on `NodeExecutionContext` but designed for raw `exec_node_func` usage. With `from_function`, the factory handles packet creation from return values — using lazy packets requires bypassing that, which goes against the factory pattern.
+- **`undeclared_output_behavior`**: Implemented on `NetConfig` (both `"discard"` and `"error"` modes work). But with `from_function`, all output ports are auto-declared from the return annotation, so it never triggers. Only relevant for raw `exec_node_func` nodes.

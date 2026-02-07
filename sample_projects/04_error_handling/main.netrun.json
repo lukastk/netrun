@@ -1,6 +1,10 @@
 {
   "extra": {
-    "description": "Demonstrates error handling: retries, dead letter queue, type checking, epoch cancellation"
+    "description": "Demonstrates error handling: retries, dead letter queue, type checking, epoch cancellation, timeout"
+  },
+  "pools": {
+    "main": {"spec": {"type": "main"}},
+    "thread": {"spec": {"type": "thread", "num_workers": 1}}
   },
   "graph": {
     "nodes": [
@@ -48,6 +52,17 @@
         "extra": {"ui": {"position": {"x": 300, "y": 350}}}
       },
       {
+        "name": "slow",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {"func": "nodes.slow_node"},
+        "execution_config": {
+          "pools": ["thread"],
+          "timeout": 0.5,
+          "propagate_exceptions": false
+        },
+        "extra": {"ui": {"position": {"x": 300, "y": 450}}}
+      },
+      {
         "name": "quiet",
         "factory": "netrun.node_factories.from_function",
         "factory_args": {"func": "nodes.quiet_fail"},
@@ -55,7 +70,7 @@
           "pools": ["main"],
           "propagate_exceptions": false
         },
-        "extra": {"ui": {"position": {"x": 300, "y": 450}}}
+        "extra": {"ui": {"position": {"x": 300, "y": 550}}}
       }
     ],
     "edges": []

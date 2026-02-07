@@ -6,7 +6,8 @@ Demonstrates:
 3. Epoch cancellation via ctx.cancel_epoch()
 4. Runtime type checking (PacketTypeMismatch)
 5. Non-propagating exceptions (propagate_exceptions=False)
-6. Dead letter queue
+6. Timeout enforcement (thread pool + timeout=0.5s)
+7. Dead letter queue
 """
 
 import asyncio
@@ -47,6 +48,9 @@ async def main():
         # 5. Quiet failure: exception is queued, not propagated
         net.inject_data("quiet", "data", ["test_data"])
 
+        # 6. Slow node: times out after 0.5s (runs on thread pool)
+        net.inject_data("slow", "data", ["will_timeout"])
+
         await run_net(net)
 
         # --- Phase 2: Second once_only invocation exceeds max_epochs ---
@@ -75,6 +79,10 @@ async def main():
         # 5. Quiet failure - no output
         quiet_results = net.flush_output_queue(node="quiet", port="out")
         print(f"5. Quiet failure result: {quiet_results}")
+
+        # 6. Slow node - timed out
+        slow_results = net.flush_output_queue(node="slow", port="out")
+        print(f"6. Slow node result (timed out): {slow_results}")
 
         # Exception queue
         exceptions = net.exception_queue
