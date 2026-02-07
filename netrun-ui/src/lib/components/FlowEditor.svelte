@@ -40,7 +40,10 @@
 		isGroupHandle,
 		parseGroupHandleId,
 		getGroupConnectionPairs,
+		getPortGroupPath,
+		getGroupPortNames,
 	} from '$lib/utils/portGroups';
+	import { isGroupCollapsed, portGroupOverrides } from '$lib/stores/portGroupStore';
 
 	// Get edge style from graph extra, defaulting to smoothstep
 	const edgeStyle = derived(graphExtra, ($graphExtra) => {
@@ -172,12 +175,49 @@
 	}
 
 	// Handle deletion
+	// When deleting an edge whose ports on both sides belong to collapsed groups,
+	// delete all sibling edges between those two groups.
 	function onDelete(params: { nodes: Node[]; edges: Edge[] }) {
 		if (params.nodes.length > 0) {
 			deleteNodes(params.nodes.map(n => n.id));
 		}
 		if (params.edges.length > 0) {
-			deleteEdges(params.edges.map(e => e.id));
+			const edgeIdsToDelete = new Set<string>(params.edges.map(e => e.id));
+			const currentNodes = get(nodes);
+			const currentEdges = get(edges);
+
+			for (const edge of params.edges) {
+				if (!edge.sourceHandle || !edge.targetHandle) continue;
+
+				const srcGroupPath = getPortGroupPath(edge.sourceHandle);
+				const tgtGroupPath = getPortGroupPath(edge.targetHandle);
+				if (!srcGroupPath || !tgtGroupPath) continue;
+
+				const srcNode = currentNodes.find(n => n.id === edge.source);
+				const tgtNode = currentNodes.find(n => n.id === edge.target);
+				if (!srcNode || !tgtNode) continue;
+
+				const srcCollapsed = isGroupCollapsed(edge.source, 'out', srcGroupPath,
+					srcNode.data.outPorts.filter(p => p.name.startsWith(srcGroupPath + '.')).length);
+				const tgtCollapsed = isGroupCollapsed(edge.target, 'in', tgtGroupPath,
+					tgtNode.data.inPorts.filter(p => p.name.startsWith(tgtGroupPath + '.')).length);
+
+				if (srcCollapsed && tgtCollapsed) {
+					// Both groups collapsed — delete all edges between these two groups
+					const srcPortNames = new Set(getGroupPortNames(srcGroupPath, srcNode.data.outPorts));
+					const tgtPortNames = new Set(getGroupPortNames(tgtGroupPath, tgtNode.data.inPorts));
+
+					for (const e of currentEdges) {
+						if (e.source === edge.source && e.target === edge.target &&
+							e.sourceHandle && e.targetHandle &&
+							srcPortNames.has(e.sourceHandle) && tgtPortNames.has(e.targetHandle)) {
+							edgeIdsToDelete.add(e.id);
+						}
+					}
+				}
+			}
+
+			deleteEdges([...edgeIdsToDelete]);
 		}
 	}
 
