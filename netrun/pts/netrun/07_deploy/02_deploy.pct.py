@@ -105,19 +105,21 @@ def _build_serve_script(config: DeployConfig) -> str:
 def _get_env_prefix(config: DeployConfig) -> str:
     """Return the shell prefix to activate the environment when running Python.
 
-    - uv: 'cd {repo_dir} && uv run '
-    - pixi: 'cd {repo_dir} && pixi run '
+    Returns only the runner command (e.g. 'uv run '), NOT a cd. The caller
+    (_build_nohup_command) already handles cd to repo_dir.
+
+    - uv: 'uv run '
+    - pixi: 'pixi run '
     - conda: 'conda run -n {env_name} '
     - inline_script/script_file/None: ''
     """
-    repo_dir = config.repo.remote_dir
     env = config.env_setup
     if env is None:
         return ""
     if isinstance(env, UvEnvSetup):
-        return f"cd {repo_dir} && uv run "
+        return "uv run "
     if isinstance(env, PixiEnvSetup):
-        return f"cd {repo_dir} && pixi run "
+        return "pixi run "
     if isinstance(env, CondaEnvSetup):
         return f"conda run -n {env.env_name} "
     return ""
