@@ -1473,6 +1473,7 @@
 
 	.port-fields {
 		flex: 1;
+		min-width: 0;
 		display: flex;
 		gap: 4px;
 	}
@@ -1488,6 +1489,7 @@
 		padding: 4px 8px;
 		font-size: 16px;
 		line-height: 1;
+		flex-shrink: 0;
 	}
 
 	.remove-btn:hover {
