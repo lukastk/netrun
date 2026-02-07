@@ -46,23 +46,19 @@ def actions_list(
 @actions_app.command("run")
 def actions_run(
     action_id: Annotated[str, typer.Argument(help="Action ID to run.")],
+    node_name: Annotated[str, typer.Argument(help="Node name to run the action on.")],
     config: ConfigOpt = None,
-    node_name: NodeOpt = None,
     timeout: Annotated[float, typer.Option("--timeout", "-t", help="Timeout in seconds.")] = 30.0,
     pretty: PrettyOpt = True,
 ) -> None:
-    """Run an action by ID."""
+    """Run an action by ID on a specific node."""
     net_config, config_path = load_config(config)
 
-    node_extra = None
-    node_id = None
+    n = get_node_by_name(net_config, node_name)
+    node_extra = n.extra
     node_execution_config = None
-    if node_name:
-        n = get_node_by_name(net_config, node_name)
-        node_extra = n.extra
-        node_id = node_name
-        if n.execution_config:
-            node_execution_config = n.execution_config.model_dump(exclude_none=True)
+    if n.execution_config:
+        node_execution_config = n.execution_config.model_dump(exclude_none=True)
 
     actions = get_available_actions(net_config.graph.extra, node_extra)
     action: ActionConfig | None = None
@@ -80,15 +76,19 @@ def actions_run(
     if net_config.node_vars:
         global_node_vars = {k: v.model_dump() for k, v in net_config.node_vars.items()}
 
+    # Serialize node config as JSON for $NODE_CONFIG template variable
+    node_config = n.model_dump_json(exclude_none=True)
+
     context = build_action_context(
         graph_extra=net_config.graph.extra,
         node_name=node_name,
-        node_id=node_id,
+        node_id=node_name,
         node_extra=node_extra,
         net_file_path=str(config_path),
         project_root=str(net_config.project_root_path),
         global_node_vars=global_node_vars,
         node_execution_config=node_execution_config,
+        node_config=node_config,
     )
 
     result = asyncio.run(execute_action(action, context, timeout=timeout))
