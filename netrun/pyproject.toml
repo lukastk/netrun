@@ -8,7 +8,7 @@ dependencies = [
     "beartype>=0.22.9",
     "diskcache>=5.6.3",
     "nblite>=1.1.1",
-    "netrun-sim>=0.1.2",
+    "netrun-sim>=0.1.4",
     "websockets>=16.0",
     "xxhash>=3.6.0",
 ]
