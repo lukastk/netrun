@@ -1262,10 +1262,8 @@ class Net:
         if self._running_epochs:
             return False
 
-        # Try a run_step to see if any packets can move
-        # Note: This is a sync check, so we just examine the state
-        # without actually running the step
-        return not self._netsim.can_make_progress() if hasattr(self._netsim, 'can_make_progress') else True
+        # Check if any packets can move from edges to input ports
+        return self._netsim.is_blocked()
 
     async def run_step(self, *, auto_start_epochs: bool = True) -> tuple[bool, list]:
         """Run one simulation step.
