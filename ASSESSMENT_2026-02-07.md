@@ -280,7 +280,7 @@ Please remove.
 
 ---
 
-### M25. `_bak` directory in project 02 contains dead code
+### M25. `_bak` directory in project 02 contains dead code ✅ FIXED
 
 **File:** `sample_projects/02_remote_deployment/_bak/`
 
