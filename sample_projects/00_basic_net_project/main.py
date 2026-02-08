@@ -11,7 +11,6 @@ This demonstrates:
 """
 
 import asyncio
-import json
 from pathlib import Path
 
 from netrun.core import Net, NetConfig
@@ -20,8 +19,7 @@ from netrun.core import Net, NetConfig
 async def main():
     # Load the network configuration from JSON
     config_path = Path(__file__).parent / "main.netrun.json"
-    config_data = json.loads(config_path.read_text())
-    config = NetConfig.model_validate(config_data)
+    config = NetConfig.from_file(config_path)
 
     # Create and start the network
     async with Net(config) as net:
