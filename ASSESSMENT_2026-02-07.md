@@ -388,7 +388,7 @@ Dead code -- `send_output_salvo` handles unconnected ports by moving packets to 
 
 ---
 
-### L15. `EdgeRef` in Python `__all__` does not exist (netrun-sim)
+### L15. `EdgeRef` in Python `__all__` does not exist (netrun-sim) ✅ FIXED
 
 **File:** `netrun-sim/python/python/netrun_sim/__init__.py`, line 42
 
