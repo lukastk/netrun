@@ -24,6 +24,7 @@ __all__ = [
     "CannotMovePacketIntoRunningEpochError",
     "EdgeNotFoundError",
     "GraphValidationError",
+    "GraphValidationErrorInfo",
     # Graph types
     "PacketCount",
     "PacketCountN",

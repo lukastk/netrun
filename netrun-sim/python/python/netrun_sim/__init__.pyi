@@ -1,6 +1,6 @@
 """Type stubs for netrun_sim - Flow-based development runtime simulation."""
 
-from typing import Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 from ulid import ULID
 
 # === Exceptions ===
@@ -109,6 +109,26 @@ class GraphValidationError(NetrunError):
     """Graph validation failed."""
 
     ...
+
+class GraphValidationErrorInfo:
+    """Structured validation error from graph validation.
+
+    Provides access to the error variant name, human-readable message,
+    and a dict of variant-specific fields (node names, port refs, etc.).
+    """
+
+    @property
+    def kind(self) -> str:
+        """The error variant name (e.g., 'MultipleEdgesFromOutputPort')."""
+        ...
+    @property
+    def message(self) -> str:
+        """The human-readable error message."""
+        ...
+    @property
+    def details(self) -> Dict[str, Any]:
+        """Dict of variant-specific fields (node names, port refs, counts, etc.)."""
+        ...
 
 # === Graph Types ===
 
@@ -361,7 +381,7 @@ class Graph:
     def __init__(self, nodes: List[Node], edges: List[Edge]) -> None: ...
     def nodes(self) -> Dict[str, Node]: ...
     def edges(self) -> List[Edge]: ...
-    def validate(self) -> List[GraphValidationError]: ...
+    def validate(self) -> List[GraphValidationErrorInfo]: ...
     def get_edges_by_head(self, input_port_ref: PortRef) -> List[Edge]:
         """Returns all edges that have the given input port as their target (head).
 
@@ -869,6 +889,7 @@ __all__ = [
     "CannotMovePacketIntoRunningEpochError",
     "EdgeNotFoundError",
     "GraphValidationError",
+    "GraphValidationErrorInfo",
     # Graph types
     "PacketCount",
     "PacketCountN",
