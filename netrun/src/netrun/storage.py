@@ -91,14 +91,14 @@ class PacketStore:
                 raise ValueError(f"Packet '{packet_id}' is already registered")
             self._store[packet_id] = value_or_lazy
 
-    def _evaluate_lazy_value(self, lazy_value: LazyPacketValueSpec) -> Any:
-        module_path = lazy_value.func_import_path.rsplit(".", 1)
+    def _evaluate_lazy_value(self, lazy_value: LazyPacketValueSpec, packet_id: ULID) -> Any:
+        module_path, func_name = lazy_value.func_import_path.rsplit(".", 1)
         mod = importlib.import_module(module_path)
-        if hasattr(mod, lazy_value.func_name):
-            func = getattr(mod, lazy_value.func_name)
+        if hasattr(mod, func_name):
+            func = getattr(mod, func_name)
         else:
             raise ValueError(
-                f"Function '{lazy_value.func_name}' not found in module '{module_path}'"
+                f"Function '{func_name}' not found in module '{module_path}'"
             )
         try:
             return func(*lazy_value.args, **lazy_value.kwargs)
@@ -115,7 +115,7 @@ class PacketStore:
             if packet_id not in self._hashes:
                 value_or_lazy = self._get(packet_id)
                 if self.config.evaluate_lazy_value_for_hash:
-                    value_or_lazy = self._evaluate_lazy_value(value_or_lazy)
+                    value_or_lazy = self._evaluate_lazy_value(value_or_lazy, packet_id)
                 self._hashes[packet_id] = hash(
                     value_or_lazy,
                     method=self.config.hash_method,
@@ -155,7 +155,7 @@ class PacketStore:
                 del self._hashes[packet_id]
 
         if isinstance(value_or_lazy, LazyPacketValueSpec):
-            return self._evaluate_lazy_value(value_or_lazy)
+            return self._evaluate_lazy_value(value_or_lazy, packet_id)
 
         return value_or_lazy
 
