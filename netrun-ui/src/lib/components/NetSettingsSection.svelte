@@ -1,7 +1,11 @@
 <script lang="ts">
 	import { pushHistory } from '$lib/stores/flowStore';
-	import { configSchema } from '$lib/stores/schemaStore';
+	import { configSchema, getFieldDescription } from '$lib/stores/schemaStore';
 	import AutoConfigFields from './AutoConfigFields.svelte';
+
+	function desc(field: string): string | undefined {
+		return getFieldDescription($configSchema, 'NetConfig', field);
+	}
 
 	interface Props {
 		extraData: Record<string, unknown> | null;
@@ -47,7 +51,7 @@
 	{#if deadLetterQueue}
 		<div class="subsection">
 			<div class="subsection-header">Dead Letter Callback</div>
-			<div class="field">
+			<div class="field" title={desc('dead_letter_callback')}>
 				<label for="dead-letter-callback">Callback Import Path</label>
 				<input
 					id="dead-letter-callback"

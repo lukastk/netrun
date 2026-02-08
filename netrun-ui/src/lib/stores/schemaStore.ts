@@ -87,3 +87,24 @@ export function getAutoFields(modelName: string, schema: ModelSchema) {
 		return reg?.registration === 'auto';
 	});
 }
+
+// ---------------------------------------------------------------------------
+// Helper: get field description for custom components
+// ---------------------------------------------------------------------------
+
+/**
+ * Look up a field's description from the loaded schema.
+ * Returns undefined if schema isn't loaded or field has no description.
+ * Designed for use with `title={desc}` on DOM elements.
+ */
+export function getFieldDescription(
+	schema: ConfigSchemaResponse | null,
+	modelName: string,
+	fieldName: string
+): string | undefined {
+	if (!schema) return undefined;
+	const model = schema.models[modelName];
+	if (!model) return undefined;
+	const field = model.fields.find(f => f.name === fieldName);
+	return field?.description ?? undefined;
+}
