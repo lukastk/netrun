@@ -466,3 +466,13 @@ fn test_get_edges_by_head_returns_empty_for_unconnected_port() {
         "Unconnected port should have no incoming edges"
     );
 }
+
+#[test]
+#[should_panic(expected = "Duplicate node name: 'A'")]
+fn test_duplicate_node_names_panics() {
+    let nodes = vec![
+        simple_node("A", vec![], vec!["out"]),
+        simple_node("A", vec!["in"], vec![]),
+    ];
+    Graph::new(nodes, vec![]);
+}
