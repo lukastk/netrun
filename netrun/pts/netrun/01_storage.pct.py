@@ -16,7 +16,6 @@ import netrun.storage as this_module
 
 # %%
 #|export
-from pydantic import BaseModel
 from dataclasses import dataclass
 from typing import Any
 import threading
@@ -24,8 +23,6 @@ import pickle
 import importlib
 from pathlib import Path
 from ulid import ULID
-
-from netrun._iutils.hashing import hash, HashMethod
 
 # %%
 #|hide
@@ -42,19 +39,6 @@ class LazyPacketValueEvaluationError(Exception):
         super().__init__(
             f"LazyPacketValueSpec for packet '{packet_id}' raised an exception: {original_exception}"
         )
-
-# %%
-#|hide
-show_doc(this_module.PacketStoreConfig)
-
-# %%
-#|export
-class PacketStoreConfig(BaseModel):
-    """Configuration for the PacketStore."""
-    hash_method: HashMethod = HashMethod.xxh64
-    hash_pickle_protocol: int = 4
-    try_json_dump_in_hash: bool = False
-    evaluate_lazy_value_for_hash: bool = False
 
 # %%
 #|hide
@@ -93,21 +77,10 @@ class PacketStore:
     ```
     """
 
-    def __init__(self, config: PacketStoreConfig):
-        """Initialize the packet store.
-
-        Args:
-            config: Configuration options. Defaults to PacketStoreConfig().
-        """
-        self._config = config
+    def __init__(self):
+        """Initialize the packet store."""
         self._store: dict[ULID, Any | LazyPacketValueSpec] = {}
-        self._hashes: dict[ULID, int] = {}
         self._lock = threading.RLock()
-
-    @property
-    def config(self) -> PacketStoreConfig:
-        """The store's configuration."""
-        return self._config
 
     def register(self, packet_id: ULID, value_or_lazy: Any | LazyPacketValueSpec) -> None:
         """Register a value or lazy value for a packet.
@@ -138,25 +111,6 @@ class PacketStore:
         except Exception as e:
             raise LazyPacketValueEvaluationError(packet_id, e) from e
 
-    def get_hash(self, packet_id: ULID) -> int:
-        """Get the hash of the packet.
-
-        Returns:
-            The hash of the packet.
-        """
-        with self._lock:
-            if packet_id not in self._hashes:
-                value_or_lazy = self._get(packet_id)
-                if self.config.evaluate_lazy_value_for_hash:
-                    value_or_lazy = self._evaluate_lazy_value(value_or_lazy, packet_id)
-                self._hashes[packet_id] = hash(
-                    value_or_lazy,
-                    method=self.config.hash_method,
-                    try_json_dump=self.config.try_json_dump_in_hash,
-                    pickle_protocol=self.config.hash_pickle_protocol,
-                )
-            return self._hashes[packet_id]
-
     def destroy(self, packet_id: ULID) -> None:
         """Remove packet without returning value (for cancelled epochs).
 
@@ -167,8 +121,6 @@ class PacketStore:
             if packet_id not in self._store:
                 raise KeyError(f"Packet '{packet_id}' not found")
             del self._store[packet_id]
-            if packet_id in self._hashes:
-                del self._hashes[packet_id]
 
     def consume(self, packet_id: ULID) -> Any:
         """Remove packet and return its value. Evaluates LazyPacketValueSpec if needed.
@@ -184,8 +136,6 @@ class PacketStore:
             if packet_id not in self._store:
                 raise KeyError(f"Packet '{packet_id}' not found")
             value_or_lazy = self._store.pop(packet_id)
-            if packet_id in self._hashes:
-                del self._hashes[packet_id]
 
         if isinstance(value_or_lazy, LazyPacketValueSpec):
             try:
@@ -197,10 +147,14 @@ class PacketStore:
 
         return value_or_lazy
 
-
-
-    def _get(self, packet_id: ULID) -> Any | LazyPacketValueSpec:
+    def peek(self, packet_id: ULID) -> Any | LazyPacketValueSpec:
         """Get the raw value or LazyPacketValueSpec without evaluating or removing.
+
+        Args:
+            packet_id: The packet ID to peek at.
+
+        Returns:
+            The raw value or LazyPacketValueSpec.
 
         Raises:
             KeyError: If the packet ID is not found.
@@ -209,6 +163,14 @@ class PacketStore:
             if not self.exists(packet_id):
                 raise KeyError(f"Packet '{packet_id}' not found")
             return self._store[packet_id]
+
+    def _get(self, packet_id: ULID) -> Any | LazyPacketValueSpec:
+        """Alias for peek(). Get raw value without evaluating or removing.
+
+        Raises:
+            KeyError: If the packet ID is not found.
+        """
+        return self.peek(packet_id)
 
     def exists(self, packet_id: ULID) -> bool:
         """Check if a packet ID exists in the store."""
@@ -234,9 +196,7 @@ class PacketStore:
         path = Path(path)
 
         with self._lock:
-            # Convert ULID objects to strings
             data = {
-                "hashes": {str(k) : v for k, v in self._hashes.items()},
                 "store": {str(k) : v for k, v in self._store.items()},
             }
 
@@ -261,23 +221,16 @@ class PacketStore:
 
         with self._lock:
             self._store = {ULID.from_str(k) : v for k, v in packet_store_data["store"].items()}
-            self._hashes = {ULID.from_str(k) : v for k, v in packet_store_data["hashes"].items()}
 
 # %%
-config = PacketStoreConfig()
-packet_store = PacketStore(config)
+packet_store = PacketStore()
 
 # Test registering and consumption
 packet_id = ULID()
 packet_store.register(packet_id, "my_value")
-assert packet_store._get(packet_id) == "my_value"
+assert packet_store.peek(packet_id) == "my_value"
 assert packet_store.consume(packet_id) == "my_value"
 assert not packet_store.exists(packet_id)
-
-# Test getting hashes
-packet_id = ULID()
-packet_store.register(packet_id, "my_value")
-packet_store.get_hash(packet_id)
 
 # Test checkpointing
 import tempfile
@@ -285,6 +238,6 @@ packet_id = ULID()
 packet_store.register(packet_id, "my_other_value")
 tmp_path = tempfile.mktemp(suffix=".pkl")
 packet_store.save(tmp_path)
-loaded_packet_store = PacketStore(config)
+loaded_packet_store = PacketStore()
 loaded_packet_store.load(tmp_path)
-assert loaded_packet_store._get(packet_id) == "my_other_value"
+assert loaded_packet_store.peek(packet_id) == "my_other_value"

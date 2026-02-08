@@ -627,6 +627,7 @@ class EpochRecord:
     destroyed_packets: list[str] = field(default_factory=list)
     pool_id: str | None = None
     worker_id: int | None = None
+    was_cache_hit: bool = False
 
     @classmethod
     def from_epoch(cls, epoch) -> "EpochRecord":
