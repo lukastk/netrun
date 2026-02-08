@@ -195,6 +195,30 @@ export interface ExecuteRecipeResponse {
 	config: Record<string, unknown>;
 }
 
+// Config schema types
+export type FieldCategory =
+	| 'bool' | 'str' | 'int' | 'float' | 'enum'
+	| 'bool_or_null' | 'str_or_null' | 'int_or_null' | 'float_or_null' | 'enum_or_null'
+	| 'complex';
+
+export interface FieldSchema {
+	name: string;
+	category: FieldCategory;
+	default: unknown;
+	description: string | null;
+	enum_values: string[] | null;
+	required: boolean;
+}
+
+export interface ModelSchema {
+	model_name: string;
+	fields: FieldSchema[];
+}
+
+export interface ConfigSchemaResponse {
+	models: Record<string, ModelSchema>;
+}
+
 class ApiClient {
 	private baseUrl: string;
 
@@ -493,6 +517,15 @@ class ApiClient {
 		return this.request<ExecuteRecipeResponse>('/recipes/execute', {
 			method: 'POST',
 			body: JSON.stringify({ recipe_path: recipePath, config, inputs }),
+		});
+	}
+
+	/**
+	 * Get config field schemas for NetConfig, NodeConfig, and NodeExecutionConfig
+	 */
+	async getConfigSchema(): Promise<ConfigSchemaResponse> {
+		return this.request<ConfigSchemaResponse>('/config/schema', {
+			method: 'GET',
 		});
 	}
 }
