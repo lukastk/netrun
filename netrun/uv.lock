@@ -403,6 +403,15 @@ wheels = [
 ]
 
 [[package]]
+name = "cloudpickle"
+version = "3.1.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/27/fb/576f067976d320f5f0114a8d9fa1215425441bb35627b1993e5afd8111e5/cloudpickle-3.1.2.tar.gz", hash = "sha256:7fda9eb655c9c230dab534f1983763de5835249750e85fbcef43aaa30a9a2414", size = 22330, upload-time = "2025-11-03T09:25:26.604Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/88/39/799be3f2f0f38cc727ee3b4f1445fe6d5e4133064ec2e4115069418a5bb6/cloudpickle-3.1.2-py3-none-any.whl", hash = "sha256:9acb47f6afd73f60dc1df93bb801b472f05ff42fa6c84167d25cb206be1fbf4a", size = 22228, upload-time = "2025-11-03T09:25:25.534Z" },
+]
+
+[[package]]
 name = "colorama"
 version = "0.4.6"
 source = { registry = "https://pypi.org/simple" }
@@ -526,6 +535,15 @@ wheels = [
 name = "dev"
 version = "0.1.0"
 source = { editable = "src/dev" }
+
+[[package]]
+name = "dill"
+version = "0.4.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/81/e1/56027a71e31b02ddc53c7d65b01e68edf64dea2932122fe7746a516f75d5/dill-0.4.1.tar.gz", hash = "sha256:423092df4182177d4d8ba8290c8a5b640c66ab35ec7da59ccfa00f6fa3eea5fa", size = 187315, upload-time = "2026-01-19T02:36:56.85Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/1e/77/dc8c558f7593132cf8fefec57c4f60c83b16941c574ac5f619abb3ae7933/dill-0.4.1-py3-none-any.whl", hash = "sha256:1e1ce33e978ae97fcfcff5638477032b801c46c7c65cf717f95fbc2248f79a9d", size = 120019, upload-time = "2026-01-19T02:36:55.663Z" },
+]
 
 [[package]]
 name = "diskcache"
@@ -1370,6 +1388,10 @@ cli = [
 deploy = [
     { name = "pyinfra" },
 ]
+serialization = [
+    { name = "cloudpickle" },
+    { name = "dill" },
+]
 
 [package.dev-dependencies]
 dev = [
@@ -1385,6 +1407,8 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "beartype", specifier = ">=0.22.9" },
+    { name = "cloudpickle", marker = "extra == 'serialization'", specifier = ">=3.0" },
+    { name = "dill", marker = "extra == 'serialization'", specifier = ">=0.3" },
     { name = "diskcache", specifier = ">=5.6.3" },
     { name = "nblite", specifier = ">=1.1.1" },
     { name = "netrun-sim", specifier = ">=0.1.2" },
@@ -1394,7 +1418,7 @@ requires-dist = [
     { name = "websockets", specifier = ">=16.0" },
     { name = "xxhash", specifier = ">=3.6.0" },
 ]
-provides-extras = ["deploy", "cli"]
+provides-extras = ["deploy", "cli", "serialization"]
 
 [package.metadata.requires-dev]
 dev = [

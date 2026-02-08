@@ -5,8 +5,6 @@ __all__ = ['HashMethod', 'adler32', 'blake2b', 'crc32', 'hash', 'sha256', 'xxh64
 # %% pts/netrun/00_iutils/01_hashing.pct.py 2
 from typing import Any
 
-import pickle
-import pickletools
 import zlib
 import binascii
 import hashlib
@@ -15,8 +13,10 @@ import xxhash
 import json
 from enum import Enum
 
+from .._iutils.pickling import PicklingMethod, pickle_data
+
 # %% pts/netrun/00_iutils/01_hashing.pct.py 4
-def _preprocess_data(data: Any, pickle_protocol: int, try_json_dump: bool):
+def _preprocess_data(data: Any, pickling_method: PicklingMethod, try_json_dump: bool, pickling_args: dict | None = None):
     """
     Preprocesses and converts the data to bytes for hashing.
     """
@@ -37,8 +37,7 @@ def _preprocess_data(data: Any, pickle_protocol: int, try_json_dump: bool):
     elif type_data is float:
         return struct.pack("!d", data)
     else:
-        _data = pickle.dumps(data, protocol=pickle_protocol)
-        return pickletools.optimize(_data)
+        return pickle_data(data, pickling_method, **(pickling_args or {}))
 
 # %% pts/netrun/00_iutils/01_hashing.pct.py 6
 def adler32(bdata: bytes) -> int:
@@ -85,8 +84,8 @@ class HashMethod(Enum):
     blake2b = "blake2b"
     xxh64 = "xxh64"
 
-def hash(data: Any, method: HashMethod, pickle_protocol: int, try_json_dump: bool) -> int:
-    bdata = _preprocess_data(data, pickle_protocol=pickle_protocol, try_json_dump=try_json_dump)
+def hash(data: Any, method: HashMethod, pickling_method: PicklingMethod = PicklingMethod.pickle, try_json_dump: bool = False, pickling_args: dict | None = None) -> int:
+    bdata = _preprocess_data(data, pickling_method=pickling_method, try_json_dump=try_json_dump, pickling_args=pickling_args)
     if method == HashMethod.adler32:
         return adler32(bdata)
     elif method == HashMethod.crc32:

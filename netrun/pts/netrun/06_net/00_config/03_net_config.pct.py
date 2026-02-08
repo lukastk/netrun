@@ -32,6 +32,7 @@ from netrun.net.config._base import (
 from netrun.net.config._nodes import NodeVariable
 from netrun.net.config._graph import GraphConfig
 from netrun.execution_manager import RunAllocationMethod
+from netrun.caching.config import CacheConfig
 
 # %% [markdown]
 # # Net Configuration
@@ -229,6 +230,8 @@ class NetConfig(EnvVarResolvableModel):
     propagate_exceptions: bool | EnvVar = Field(default=True, description="Propagate epoch exceptions immediately from run_step/run_until_blocked. Can be overridden per-node.")
 
     print_exceptions: bool | EnvVar = Field(default=False, description="Print epoch exceptions to stderr when they occur. Can be overridden per-node.")
+
+    cache: CacheConfig | None = Field(default=None, description="Cache/memoization configuration.")
 
     @field_serializer("dead_letter_callback", when_used='json')
     def serialize_dead_letter_callback(self, callback: Callable | str | EnvVar | None) -> str | dict | None:

@@ -18,8 +18,6 @@ import netrun._iutils.hashing as this_module
 #|export
 from typing import Any
 
-import pickle
-import pickletools
 import zlib
 import binascii
 import hashlib
@@ -28,13 +26,15 @@ import xxhash
 import json
 from enum import Enum
 
+from netrun._iutils.pickling import PicklingMethod, pickle_data
+
 # %%
 #|hide
 show_doc(this_module._preprocess_data)
 
 # %%
 #|exporti
-def _preprocess_data(data: Any, pickle_protocol: int, try_json_dump: bool):
+def _preprocess_data(data: Any, pickling_method: PicklingMethod, try_json_dump: bool, pickling_args: dict | None = None):
     """
     Preprocesses and converts the data to bytes for hashing.
     """
@@ -55,8 +55,7 @@ def _preprocess_data(data: Any, pickle_protocol: int, try_json_dump: bool):
     elif type_data is float:
         return struct.pack("!d", data)
     else:
-        _data = pickle.dumps(data, protocol=pickle_protocol)
-        return pickletools.optimize(_data)
+        return pickle_data(data, pickling_method, **(pickling_args or {}))
 
 # %%
 #|hide
@@ -133,8 +132,8 @@ class HashMethod(Enum):
     blake2b = "blake2b"
     xxh64 = "xxh64"
 
-def hash(data: Any, method: HashMethod, pickle_protocol: int, try_json_dump: bool) -> int:
-    bdata = _preprocess_data(data, pickle_protocol=pickle_protocol, try_json_dump=try_json_dump)
+def hash(data: Any, method: HashMethod, pickling_method: PicklingMethod = PicklingMethod.pickle, try_json_dump: bool = False, pickling_args: dict | None = None) -> int:
+    bdata = _preprocess_data(data, pickling_method=pickling_method, try_json_dump=try_json_dump, pickling_args=pickling_args)
     if method == HashMethod.adler32:
         return adler32(bdata)
     elif method == HashMethod.crc32:
@@ -152,9 +151,9 @@ def hash(data: Any, method: HashMethod, pickle_protocol: int, try_json_dump: boo
 # Try out the hashes
 
 # %%
-def hash_test(data, pickle_protocol, try_json_dump):
+def hash_test(data, pickling_method, try_json_dump):
     return {
-        method.value: hash(data, method, pickle_protocol=pickle_protocol, try_json_dump=try_json_dump)
+        method.value: hash(data, method, pickling_method=pickling_method, try_json_dump=try_json_dump)
         for method in HashMethod
     }
 
@@ -162,7 +161,7 @@ def hash_test(data, pickle_protocol, try_json_dump):
 # Hash a non-serializable Python object
 
 # %%
-pickle_protocol = 4
+pickling_method = PicklingMethod.pickle
 try_json_dump = False
 
 class MyObj:
@@ -170,7 +169,7 @@ class MyObj:
 data = MyObj()
 data.foo = "bar"
 
-no_try_json_hashes = hash_test(data, pickle_protocol, try_json_dump)
+no_try_json_hashes = hash_test(data, pickling_method, try_json_dump)
 for method, hash_value in no_try_json_hashes.items():
     print(f"{method}: {hash_value}")
 
@@ -180,7 +179,7 @@ for method, hash_value in no_try_json_hashes.items():
 # %%
 try_json_dump = True
 
-try_json_hashes = hash_test(data, pickle_protocol, try_json_dump)
+try_json_hashes = hash_test(data, pickling_method, try_json_dump)
 for hash_value1, hash_value2 in zip(no_try_json_hashes.values(), try_json_hashes.values()):
     assert hash_value1 == hash_value2
 
@@ -188,14 +187,14 @@ for hash_value1, hash_value2 in zip(no_try_json_hashes.values(), try_json_hashes
 # Hash a JSON-serializable value
 
 # %%
-pickle_protocol = 4
+pickling_method = PicklingMethod.pickle
 try_json_dump = False
 
 data = {
     "foo": "bar",
 }
 
-no_try_json_hashes = hash_test(data, pickle_protocol, try_json_dump)
+no_try_json_hashes = hash_test(data, pickling_method, try_json_dump)
 for method, hash_value in no_try_json_hashes.items():
     print(f"{method}: {hash_value}")
 
@@ -205,6 +204,6 @@ for method, hash_value in no_try_json_hashes.items():
 # %%
 try_json_dump = True
 
-try_json_hashes = hash_test(data, pickle_protocol, try_json_dump)
+try_json_hashes = hash_test(data, pickling_method, try_json_dump)
 for hash_value1, hash_value2 in zip(no_try_json_hashes.values(), try_json_hashes.values()):
     assert hash_value1 != hash_value2

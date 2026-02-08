@@ -16,6 +16,7 @@ dependencies = [
 [project.optional-dependencies]
 deploy = ["pyinfra>=3.0"]
 cli = ["typer>=0.15.0", "tomli-w>=1.0"]
+serialization = ["dill>=0.3", "cloudpickle>=3.0"]
 
 [project.scripts]
 netrun = "netrun.cli._app:app_main"

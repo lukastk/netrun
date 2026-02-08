@@ -27,6 +27,7 @@ import netrun_sim
 if TYPE_CHECKING:
     from netrun.net._net._net import Net
     from netrun.net.config import NodeConfig, EdgeConfig, PortConfig, NodeExecutionConfig
+    from netrun.caching._store import CachedEpochData
 
 # %%
 #|export
@@ -278,6 +279,50 @@ class NodeInfo:
     def print_all_logs(self, include_timestamps: bool = True, chronological: bool = False) -> None:
         """Print all logs for this node, grouped by epoch or chronologically."""
         self._net.print_node_logs(self._name, include_timestamps=include_timestamps, chronological=chronological)
+
+    # --- Cache Helpers ---
+
+    @property
+    def cached_entries(self) -> list["CachedEpochData"]:
+        """All cached entries for this node."""
+        return self._net.get_cached_entries(self._name)
+
+    @property
+    def cached_input_salvos(self) -> list[dict[str, list[Any]]]:
+        """Input salvos from all cached entries."""
+        return self._net.get_cached_input_salvos(self._name)
+
+    @property
+    def cached_output_salvos(self) -> list[dict[str, list[Any]]]:
+        """Output salvos from all cached entries."""
+        return self._net.get_cached_output_salvos(self._name)
+
+    def get_cached_output_for_input(
+        self, input_values: dict[str, list[Any]],
+    ) -> "CachedEpochData | None":
+        """Look up cached output for specific input values."""
+        return self._net.get_cached_output_for_input(self._name, input_values)
+
+    def clear_cache(self) -> None:
+        """Clear all cached entries for this node."""
+        self._net.clear_node_cache(self._name)
+
+    def clear_cached_output_for_input(
+        self, input_values: dict[str, list[Any]],
+    ) -> None:
+        """Clear the cached output for a specific input salvo."""
+        self._net.clear_cached_output_for_input(self._name, input_values)
+
+    @property
+    def cache_stats(self) -> dict[str, Any]:
+        """Cache statistics for this node."""
+        all_stats = self._net.cache_stats()
+        return all_stats.get(self._name, {"entry_count": 0, "epoch_count": 0, "sample_size": None})
+
+    @property
+    def is_cache_enabled(self) -> bool:
+        """Whether caching is enabled for this node."""
+        return self._net._cache_store.is_cache_enabled(self._name)
 
     def __repr__(self) -> str:
         return f"NodeInfo(name={self._name!r})"
