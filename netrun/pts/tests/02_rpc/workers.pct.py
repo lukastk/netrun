@@ -17,7 +17,7 @@
 
 # %%
 #|export
-from netrun.rpc.base import ChannelClosed
+from netrun.rpc.base import ChannelBroken, ChannelClosed
 from netrun.rpc.multiprocess import SyncProcessChannel
 
 # %%

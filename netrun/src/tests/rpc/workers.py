@@ -3,7 +3,7 @@
 __all__ = ['compute_worker', 'echo_worker', 'robust_worker', 'slow_worker']
 
 # %% pts/tests/02_rpc/workers.pct.py 2
-from netrun.rpc.base import ChannelClosed
+from netrun.rpc.base import ChannelBroken, ChannelClosed
 from netrun.rpc.multiprocess import SyncProcessChannel
 
 # %% pts/tests/02_rpc/workers.pct.py 3
