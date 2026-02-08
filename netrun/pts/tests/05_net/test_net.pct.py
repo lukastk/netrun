@@ -37,7 +37,6 @@ from netrun.net._net import (
     NodeInfo,
     EdgeInfo,
     create_net_func_preprocessor,
-    create_net_func_done_callback,
 )
 from netrun.net.config import (
     NetConfig,
@@ -1128,26 +1127,6 @@ def test_create_net_func_preprocessor_captures_exception():
 
 # %%
 test_create_net_func_preprocessor_captures_exception()
-
-# %% [markdown]
-# ## func_done_callback Tests
-
-# %%
-#|export
-def test_create_net_func_done_callback():
-    """Test func_done_callback creation."""
-    callback = create_net_func_done_callback()
-
-    # Should be callable
-    assert callable(callback)
-
-    # Should accept any arguments without error (it's a no-op)
-    callback()
-    callback("arg1", "arg2", kwarg="value")
-    # No error = success
-
-# %%
-test_create_net_func_done_callback()
 
 # %% [markdown]
 # ## Net Class Tests
