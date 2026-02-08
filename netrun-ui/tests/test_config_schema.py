@@ -168,3 +168,58 @@ class TestSchemaClassification:
         field = next(f for f in schema.fields if f.name == "error_on_undeclared_output")
         assert field.category == FieldCategory.BOOL
         assert field.default is False
+
+
+class TestEnvVarStripping:
+    """Test that EnvVar is stripped from unions before classification."""
+
+    def test_bool_with_envvar_stays_bool(self):
+        """bool | EnvVar should classify as BOOL, not COMPLEX."""
+        schema = get_model_schema(NetConfig, "NetConfig")
+        field = next(f for f in schema.fields if f.name == "dead_letter_queue")
+        assert field.category == FieldCategory.BOOL
+
+    def test_bool_or_null_with_envvar(self):
+        """bool | EnvVar | None should classify as BOOL_OR_NULL."""
+        schema = get_model_schema(NodeExecutionConfig, "NodeExecutionConfig")
+        field = next(f for f in schema.fields if f.name == "type_checking_enabled")
+        assert field.category == FieldCategory.BOOL_OR_NULL
+
+    def test_int_or_null_with_envvar(self):
+        """int | EnvVar | None should classify as INT_OR_NULL."""
+        schema = get_model_schema(NodeExecutionConfig, "NodeExecutionConfig")
+        field = next(f for f in schema.fields if f.name == "max_parallel_epochs")
+        assert field.category == FieldCategory.INT_OR_NULL
+
+    def test_enum_with_envvar(self):
+        """RunAllocationMethod | EnvVar should classify as ENUM."""
+        schema = get_model_schema(NetConfig, "NetConfig")
+        field = next(f for f in schema.fields if f.name == "default_pool_allocation_method")
+        assert field.category == FieldCategory.ENUM
+
+    def test_float_with_envvar(self):
+        """float | EnvVar should classify as FLOAT."""
+        schema = get_model_schema(NodeExecutionConfig, "NodeExecutionConfig")
+        field = next(f for f in schema.fields if f.name == "retry_wait")
+        assert field.category == FieldCategory.FLOAT
+
+    def test_env_var_supported_flag_true(self):
+        """Fields with | EnvVar should have env_var_supported=True."""
+        schema = get_model_schema(NetConfig, "NetConfig")
+        # dead_letter_queue has | EnvVar in its annotation
+        field = next(f for f in schema.fields if f.name == "dead_letter_queue")
+        assert field.env_var_supported is True
+
+    def test_env_var_supported_flag_false_for_complex(self):
+        """Fields without | EnvVar should have env_var_supported=False."""
+        schema = get_model_schema(NetConfig, "NetConfig")
+        # graph is a complex type without EnvVar
+        field = next(f for f in schema.fields if f.name == "graph")
+        assert field.env_var_supported is False
+
+    def test_env_var_supported_on_node_execution_config(self):
+        """NodeExecutionConfig fields with EnvVar should be flagged."""
+        schema = get_model_schema(NodeExecutionConfig, "NodeExecutionConfig")
+        # max_epochs should have EnvVar support
+        field = next(f for f in schema.fields if f.name == "max_epochs")
+        assert field.env_var_supported is True

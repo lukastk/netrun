@@ -208,6 +208,7 @@ export interface FieldSchema {
 	description: string | null;
 	enum_values: string[] | null;
 	required: boolean;
+	env_var_supported: boolean;
 }
 
 export interface ModelSchema {
