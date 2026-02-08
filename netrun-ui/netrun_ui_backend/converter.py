@@ -223,10 +223,11 @@ def graph_config_to_ui(
     for i, node in enumerate(nodes_data):
         node_name = node.get("name", f"node_{i}")
 
-        # Extract extra.ui for position and other UI data
+        # Extract extra.ui for position, dimensions, and other UI data
         extra = node.get("extra", {})
         ui_extra = extra.get("ui", {})
         position = ui_extra.get("position", {"x": i * 200, "y": 100})
+        dimensions = ui_extra.get("dimensions")  # {"width": ..., "height": ...} or None
 
         # Check if this is a subgraph
         is_subgraph = node.get("type") == "subgraph"
@@ -270,6 +271,9 @@ def graph_config_to_ui(
                     },
                 },
             }
+            if dimensions:
+                ui_node["width"] = dimensions.get("width")
+                ui_node["height"] = dimensions.get("height")
         else:
             # Handle regular node
             # Determine node type
@@ -323,6 +327,10 @@ def graph_config_to_ui(
                 if k not in ("name", "in_ports", "out_ports", "factory", "factory_args", "type")
             }
 
+            if dimensions:
+                ui_node["width"] = dimensions.get("width")
+                ui_node["height"] = dimensions.get("height")
+
         ui_nodes.append(ui_node)
 
     # Build name -> id mapping for edges
@@ -367,12 +375,17 @@ def graph_config_to_ui(
     return ui_nodes, ui_edges
 
 
-def _build_merged_extra(data: dict, position: dict) -> dict:
-    """Build merged extra dict from _config.extra and current UI position."""
+def _build_merged_extra(data: dict, position: dict, dimensions: dict | None = None) -> dict:
+    """Build merged extra dict from _config.extra and current UI position/dimensions."""
     extra_config = data.get("_config", {})
     saved_extra = extra_config.get("extra", {})
     saved_ui = saved_extra.get("ui", {}) if isinstance(saved_extra, dict) else {}
     merged_ui = {**saved_ui, "position": position}
+    if dimensions:
+        merged_ui["dimensions"] = dimensions
+    elif "dimensions" in merged_ui:
+        # Remove stale dimensions if node was reset to auto-size
+        del merged_ui["dimensions"]
     return {**saved_extra, "ui": merged_ui} if isinstance(saved_extra, dict) else {"ui": merged_ui}
 
 
@@ -409,7 +422,10 @@ def _ui_to_graph_config_model(
         node_type = data.get("nodeType")
         node_name = node["id"]
         extra_config = data.get("_config", {})
-        merged_extra = _build_merged_extra(data, position)
+        width = node.get("width")
+        height = node.get("height")
+        dimensions = {"width": width, "height": height} if width is not None and height is not None else None
+        merged_extra = _build_merged_extra(data, position, dimensions)
 
         if node_type == "subgraph" or node.get("type") == "subgraphNode":
             subgraph_config = data.get("_subgraphConfig", {})

@@ -31,6 +31,8 @@ export interface UINode {
 	type: string;
 	position: { x: number; y: number };
 	data: UINodeData;
+	width?: number;
+	height?: number;
 }
 
 export interface UIEdge {

@@ -1,5 +1,7 @@
 <script lang="ts">
+	import { NodeResizer } from '@xyflow/svelte';
 	import type { SubgraphNodeData } from '$lib/stores/flowStore';
+	import { updateNodeDimensions, pushHistory } from '$lib/stores/flowStore';
 	import { openSubgraphTab } from '$lib/stores/tabsStore';
 	import PortList from './PortList.svelte';
 
@@ -10,6 +12,16 @@
 	}
 
 	let { id, data, selected = false }: Props = $props();
+
+	function handleResizeEnd(_event: unknown, params: { x: number; y: number; width: number; height: number }) {
+		updateNodeDimensions([{
+			id,
+			width: params.width,
+			height: params.height,
+			position: { x: params.x, y: params.y },
+		}]);
+		pushHistory();
+	}
 
 	// Get display source (truncate long paths)
 	function getDisplaySource(source: string): string {
@@ -32,6 +44,13 @@
 	class:invalid={data.isValid === false}
 	ondblclick={handleDoubleClick}
 >
+	<NodeResizer
+		minWidth={160}
+		minHeight={80}
+		isVisible={selected}
+		color="var(--node-selected, #3b82f6)"
+		onResizeEnd={handleResizeEnd}
+	/>
 	<!-- Header -->
 	<div class="node-header">
 		<span class="subgraph-badge">SG</span>
@@ -72,6 +91,11 @@
 		border-radius: 8px;
 		min-width: 160px;
 		font-size: 12px;
+		width: 100%;
+		height: 100%;
+		box-sizing: border-box;
+		display: flex;
+		flex-direction: column;
 	}
 
 	.subgraph-node.selected {
@@ -115,6 +139,7 @@
 		justify-content: space-between;
 		padding: 8px 0;
 		min-height: 40px;
+		flex: 1;
 	}
 
 	.subgraph-info {
@@ -186,5 +211,16 @@
 		width: 12px;
 		height: 12px;
 		border-radius: 3px;
+	}
+
+	/* Resize control styling — z-index ensures controls sit above node content */
+	:global(.subgraph-node .svelte-flow__resize-control) {
+		z-index: 10;
+	}
+	:global(.subgraph-node .svelte-flow__resize-control.handle) {
+		width: 8px;
+		height: 8px;
+		border-radius: 2px;
+		border: 1px solid rgba(255, 255, 255, 0.5);
 	}
 </style>
