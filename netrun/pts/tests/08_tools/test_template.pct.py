@@ -58,7 +58,6 @@ def test_build_template_variables_empty():
 def test_build_template_variables_with_values():
     ctx = ActionContext(
         node_name="MyNode",
-        node_id="n1",
         net_file_path="/tmp/test.netrun.json",
         project_root="/tmp",
         default_cmd="python",
@@ -66,7 +65,6 @@ def test_build_template_variables_with_values():
     )
     vars = build_template_variables(ctx)
     assert vars["NODE_NAME"] == "MyNode"
-    assert vars["NODE_ID"] == "n1"
     assert vars["NET_FILE_PATH"] == "/tmp/test.netrun.json"
     assert vars["NET_FILE_DIR"] == "/tmp"
     assert vars["PROJECT_ROOT"] == "/tmp"

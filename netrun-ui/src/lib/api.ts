@@ -143,7 +143,6 @@ export interface ExecuteActionRequest {
 	env?: Record<string, string>;
 	node_env?: Record<string, string>;  // Node-level variable overrides
 	node_name?: string;
-	node_id?: string;
 	net_file_path?: string;
 	project_root?: string;
 	default_cmd?: string;
@@ -425,7 +424,6 @@ class ApiClient {
 		template: string,
 		options: {
 			node_name?: string;
-			node_id?: string;
 			net_file_path?: string;
 			project_root?: string;
 			default_cmd?: string;

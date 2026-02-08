@@ -19,7 +19,6 @@ class ExecuteActionRequest(BaseModel):
     node_env: dict[str, str] | None = None  # Node-level custom variables (override project)
     # Variables for template resolution
     node_name: str | None = None
-    node_id: str | None = None
     net_file_path: str | None = None
     project_root: str | None = None
     default_cmd: str | None = None
@@ -41,7 +40,6 @@ def _build_context(request: ExecuteActionRequest | "ResolveTemplateRequest") -> 
     resolved_root = resolve_project_root(request.project_root, request.net_file_path)
     return ActionContext(
         node_name=request.node_name,
-        node_id=request.node_id,
         net_file_path=request.net_file_path,
         project_root=resolved_root,
         default_cmd=request.default_cmd,
@@ -78,7 +76,6 @@ class ResolveTemplateRequest(BaseModel):
     """Request to resolve template variables without executing."""
     template: str
     node_name: str | None = None
-    node_id: str | None = None
     net_file_path: str | None = None
     project_root: str | None = None
     default_cmd: str | None = None

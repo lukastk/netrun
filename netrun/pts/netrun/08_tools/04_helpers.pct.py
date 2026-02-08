@@ -99,7 +99,6 @@ def get_node_env(node_extra: dict[str, Any]) -> dict[str, str] | None:
 def build_action_context(
     graph_extra: dict[str, Any],
     node_name: str | None = None,
-    node_id: str | None = None,
     node_extra: dict[str, Any] | None = None,
     net_file_path: str | None = None,
     project_root: str | None = None,
@@ -148,7 +147,6 @@ def build_action_context(
 
     return ActionContext(
         node_name=node_name,
-        node_id=node_id,
         net_file_path=net_file_path,
         project_root=project_root or ui.get("projectRoot"),
         default_cmd=default_cmd,
