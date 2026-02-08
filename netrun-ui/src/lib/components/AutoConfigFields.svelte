@@ -68,7 +68,7 @@
 	{@const val = getValue(field)}
 
 	{#if field.category === 'bool'}
-		<label class="checkbox-field">
+		<label class="checkbox-field" title={field.description ?? undefined}>
 			<input
 				type="checkbox"
 				checked={val === true}
@@ -78,10 +78,11 @@
 				}}
 			/>
 			<span>{formatLabel(field.name)}</span>
+			{#if field.description}<span class="has-tooltip-icon">?</span>{/if}
 		</label>
 
 	{:else if field.category === 'bool_or_null'}
-		<div class="tri-state-row">
+		<div class="tri-state-row" title={field.description ?? undefined}>
 			<button
 				class="tri-state-btn"
 				onclick={() => {
@@ -89,14 +90,20 @@
 					pushHistory();
 				}}
 			>
-				<span class="tri-state-label">{formatLabel(field.name)}</span>
+				<span class="tri-state-label">
+					{formatLabel(field.name)}
+					{#if field.description}<span class="has-tooltip-icon">?</span>{/if}
+				</span>
 				<span class="tri-state-value tri-state-{triStateClass(val)}">{triStateLabel(val)}</span>
 			</button>
 		</div>
 
 	{:else if field.category === 'str' || field.category === 'str_or_null'}
-		<div class="field">
-			<label>{formatLabel(field.name)}</label>
+		<div class="field" title={field.description ?? undefined}>
+			<label>
+				{formatLabel(field.name)}
+				{#if field.description}<span class="has-tooltip-icon">?</span>{/if}
+			</label>
 			<input
 				type="text"
 				value={val ?? ''}
@@ -110,8 +117,11 @@
 		</div>
 
 	{:else if field.category === 'int' || field.category === 'int_or_null'}
-		<div class="field">
-			<label>{formatLabel(field.name)}</label>
+		<div class="field" title={field.description ?? undefined}>
+			<label>
+				{formatLabel(field.name)}
+				{#if field.description}<span class="has-tooltip-icon">?</span>{/if}
+			</label>
 			<input
 				type="number"
 				step="1"
@@ -126,8 +136,11 @@
 		</div>
 
 	{:else if field.category === 'float' || field.category === 'float_or_null'}
-		<div class="field">
-			<label>{formatLabel(field.name)}</label>
+		<div class="field" title={field.description ?? undefined}>
+			<label>
+				{formatLabel(field.name)}
+				{#if field.description}<span class="has-tooltip-icon">?</span>{/if}
+			</label>
 			<input
 				type="number"
 				step="any"
@@ -142,8 +155,11 @@
 		</div>
 
 	{:else if field.category === 'enum'}
-		<div class="field">
-			<label>{formatLabel(field.name)}</label>
+		<div class="field" title={field.description ?? undefined}>
+			<label>
+				{formatLabel(field.name)}
+				{#if field.description}<span class="has-tooltip-icon">?</span>{/if}
+			</label>
 			<select
 				value={val ?? ''}
 				onchange={(e) => {
@@ -158,8 +174,11 @@
 		</div>
 
 	{:else if field.category === 'enum_or_null'}
-		<div class="field">
-			<label>{formatLabel(field.name)}</label>
+		<div class="field" title={field.description ?? undefined}>
+			<label>
+				{formatLabel(field.name)}
+				{#if field.description}<span class="has-tooltip-icon">?</span>{/if}
+			</label>
 			<select
 				value={val ?? '__default__'}
 				onchange={(e) => {
@@ -214,6 +233,22 @@
 
 	.field select {
 		cursor: pointer;
+	}
+
+	.has-tooltip-icon {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 13px;
+		height: 13px;
+		margin-left: 4px;
+		border-radius: 50%;
+		background: var(--border-color, #404040);
+		color: var(--text-secondary, #a0a0a0);
+		font-size: 9px;
+		font-weight: 600;
+		vertical-align: middle;
+		cursor: help;
 	}
 
 	.checkbox-field {

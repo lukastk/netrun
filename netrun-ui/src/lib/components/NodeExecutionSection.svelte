@@ -1,7 +1,11 @@
 <script lang="ts">
 	import { pushHistory } from '$lib/stores/flowStore';
-	import { configSchema } from '$lib/stores/schemaStore';
+	import { configSchema, getFieldDescription } from '$lib/stores/schemaStore';
 	import AutoConfigFields from './AutoConfigFields.svelte';
+
+	function desc(field: string): string | undefined {
+		return getFieldDescription($configSchema, 'NodeExecutionConfig', field);
+	}
 
 	interface NodeExecutionConfig {
 		pools?: string[];
@@ -103,7 +107,7 @@
 
 <div class="execution-section">
 	<!-- Pools Selection (custom) -->
-	<div class="field">
+	<div class="field" title={desc('pools')}>
 		<label>Pools</label>
 		<div class="pools-selection">
 			{#each availablePools as poolName}
@@ -162,7 +166,7 @@
 	<!-- Execution Functions (custom) -->
 	<div class="field-group">
 		<div class="field-group-header">Execution Functions</div>
-		<div class="field">
+		<div class="field" title={desc('exec_node_func')}>
 			<label>{isFactory ? 'Exec Function Override' : 'Exec Function'}</label>
 			<input
 				type="text"
@@ -175,7 +179,7 @@
 				onblur={() => pushHistory()}
 			/>
 		</div>
-		<div class="field">
+		<div class="field" title={desc('start_node_func')}>
 			<label>Start Function</label>
 			<input
 				type="text"
@@ -188,7 +192,7 @@
 				onblur={() => pushHistory()}
 			/>
 		</div>
-		<div class="field">
+		<div class="field" title={desc('stop_node_func')}>
 			<label>Stop Function</label>
 			<input
 				type="text"
@@ -201,7 +205,7 @@
 				onblur={() => pushHistory()}
 			/>
 		</div>
-		<div class="field">
+		<div class="field" title={desc('on_node_failure')}>
 			<label>On Failure Function</label>
 			<input
 				type="text"

@@ -51,7 +51,15 @@
 	} from '$lib/stores/variablesStore';
 	import NodeVariablesSection from './NodeVariablesSection.svelte';
 	import AllNodeVariablesSection from './AllNodeVariablesSection.svelte';
-	import { unregisteredFields } from '$lib/stores/schemaStore';
+	import { unregisteredFields, configSchema, getFieldDescription } from '$lib/stores/schemaStore';
+
+	function descNet(field: string): string | undefined {
+		return getFieldDescription($configSchema, 'NetConfig', field);
+	}
+
+	function descNode(field: string): string | undefined {
+		return getFieldDescription($configSchema, 'NodeConfig', field);
+	}
 
 	// Loading state for factory preview
 	let isRefreshing = $state(false);
@@ -529,7 +537,7 @@
 				</button>
 				{#if sectionsOpen.general}
 					<div class="section-content">
-						<div class="field">
+						<div class="field" title={descNode('name')}>
 							<label for="node-label">Name</label>
 							<input
 								id="node-label"
@@ -578,7 +586,7 @@
 					</button>
 					{#if sectionsOpen.factory}
 						<div class="section-content">
-							<div class="field">
+							<div class="field" title={descNode('factory')}>
 								<label for="factory-path">Factory Path</label>
 								<input
 									id="factory-path"
@@ -949,7 +957,7 @@
 								rows="3"
 							></textarea>
 						</div>
-						<div class="field">
+						<div class="field" title={descNet('project_root')}>
 							<label for="project-root">Project Root</label>
 							<input
 								id="project-root"
