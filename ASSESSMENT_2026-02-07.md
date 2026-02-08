@@ -117,7 +117,7 @@ If it is deprecated the definition itself should also be removed.
 
 ---
 
-### M4. `PacketStore.consume()` evaluates lazy values outside lock
+### M4. `PacketStore.consume()` evaluates lazy values outside lock ✅ FIXED
 
 **File:** `netrun/pts/netrun/01_storage.pct.py`, lines 183-193
 
