@@ -477,21 +477,7 @@ impl NetSim {
         };
 
         let in_port_names: Vec<PortName> = node.in_ports.keys().cloned().collect();
-        let in_ports_clone: HashMap<PortName, Port> = node
-            .in_ports
-            .iter()
-            .map(|(k, v)| {
-                (
-                    k.clone(),
-                    Port {
-                        slots_spec: match v.slots_spec {
-                            PortSlotSpec::Infinite => PortSlotSpec::Infinite,
-                            PortSlotSpec::Finite(n) => PortSlotSpec::Finite(n),
-                        },
-                    },
-                )
-            })
-            .collect();
+        let in_ports_clone: HashMap<PortName, Port> = node.in_ports.clone();
 
         // Collect salvo condition data
         struct SalvoConditionData {
