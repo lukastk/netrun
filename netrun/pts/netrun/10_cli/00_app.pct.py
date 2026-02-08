@@ -52,6 +52,12 @@ app.command("node")(node)
 
 # %%
 #|export
+from netrun.cli._download_agents import download_agents
+
+app.command("download-agents")(download_agents)
+
+# %%
+#|export
 from netrun.cli._actions import actions_app
 from netrun.cli._recipes import recipes_app
 

@@ -248,6 +248,151 @@ def test_recipes_run_not_found():
     assert result.exit_code == 1
 
 # %% [markdown]
+# ## Test download-agents
+
+# %%
+#|export
+from unittest.mock import patch, MagicMock
+import urllib.error
+
+
+def _make_mock_urlopen(tree_json: dict, file_contents: dict[str, bytes] | None = None):
+    """Create a mock for urllib.request.urlopen that serves tree API and raw file downloads."""
+    if file_contents is None:
+        file_contents = {}
+
+    def mock_urlopen(req_or_url, **kwargs):
+        url = req_or_url.full_url if hasattr(req_or_url, "full_url") else req_or_url
+        ctx = MagicMock()
+        if "api.github.com" in url:
+            ctx.__enter__ = lambda s: s
+            ctx.__exit__ = MagicMock(return_value=False)
+            ctx.status = 200
+            ctx.read.return_value = json.dumps(tree_json).encode()
+        elif "raw.githubusercontent.com" in url:
+            # Find matching file content by checking which path the URL ends with
+            content = b"default content"
+            for path, data in file_contents.items():
+                if url.endswith(path):
+                    content = data
+                    break
+            ctx.__enter__ = lambda s: s
+            ctx.__exit__ = MagicMock(return_value=False)
+            ctx.read.return_value = content
+        else:
+            raise urllib.error.URLError(f"unexpected URL: {url}")
+        return ctx
+
+    return mock_urlopen
+
+
+def test_download_agents_success(tmp_path):
+    tree = {
+        "tree": [
+            {"path": "agents/README.md", "type": "blob"},
+            {"path": "agents/skills/foo/SKILL.md", "type": "blob"},
+            {"path": "src/main.py", "type": "blob"},  # should be ignored
+            {"path": "agents/subdir", "type": "tree"},  # should be ignored (not a blob)
+        ]
+    }
+    file_contents = {
+        "agents/README.md": b"# Agents README",
+        "agents/skills/foo/SKILL.md": b"# Foo Skill",
+    }
+    mock_fn = _make_mock_urlopen(tree, file_contents)
+    out_dir = str(tmp_path / "agents")
+
+    with patch("netrun.cli._download_agents.urllib.request.urlopen", side_effect=mock_fn):
+        result = runner.invoke(app, ["download-agents", out_dir])
+
+    assert result.exit_code == 0
+    assert "Found 2 file(s)" in result.output
+    assert "Downloaded 2/2" in result.output
+
+    # Verify files written
+    assert (tmp_path / "agents" / "README.md").read_bytes() == b"# Agents README"
+    assert (tmp_path / "agents" / "skills" / "foo" / "SKILL.md").read_bytes() == b"# Foo Skill"
+
+
+def test_download_agents_no_files(tmp_path):
+    tree = {"tree": [{"path": "src/main.py", "type": "blob"}]}
+    mock_fn = _make_mock_urlopen(tree)
+    out_dir = str(tmp_path / "agents")
+
+    with patch("netrun.cli._download_agents.urllib.request.urlopen", side_effect=mock_fn):
+        result = runner.invoke(app, ["download-agents", out_dir])
+
+    assert result.exit_code == 1
+    assert "No files found" in result.output
+
+
+def test_download_agents_network_error(tmp_path):
+    out_dir = str(tmp_path / "agents")
+
+    with patch(
+        "netrun.cli._download_agents.urllib.request.urlopen",
+        side_effect=urllib.error.URLError("connection refused"),
+    ):
+        result = runner.invoke(app, ["download-agents", out_dir])
+
+    assert result.exit_code == 1
+    assert "failed to fetch tree" in result.output
+
+
+def test_download_agents_branch_option(tmp_path):
+    tree = {"tree": [{"path": "agents/INSTRUCTIONS.md", "type": "blob"}]}
+    mock_fn = _make_mock_urlopen(tree, {"agents/INSTRUCTIONS.md": b"instructions"})
+    out_dir = str(tmp_path / "agents")
+
+    with patch("netrun.cli._download_agents.urllib.request.urlopen", side_effect=mock_fn) as _:
+        result = runner.invoke(app, ["download-agents", out_dir, "-b", "dev"])
+
+    assert result.exit_code == 0
+    assert "branch: dev" in result.output
+    assert (tmp_path / "agents" / "INSTRUCTIONS.md").read_bytes() == b"instructions"
+
+
+def test_download_agents_partial_failure(tmp_path):
+    tree = {
+        "tree": [
+            {"path": "agents/good.md", "type": "blob"},
+            {"path": "agents/bad.md", "type": "blob"},
+        ]
+    }
+
+    call_count = 0
+
+    def mock_urlopen(req_or_url, **kwargs):
+        nonlocal call_count
+        url = req_or_url.full_url if hasattr(req_or_url, "full_url") else req_or_url
+        if "api.github.com" in url:
+            ctx = MagicMock()
+            ctx.__enter__ = lambda s: s
+            ctx.__exit__ = MagicMock(return_value=False)
+            ctx.status = 200
+            ctx.read.return_value = json.dumps(tree).encode()
+            return ctx
+        # First raw download succeeds, second fails
+        call_count += 1
+        if call_count == 1:
+            ctx = MagicMock()
+            ctx.__enter__ = lambda s: s
+            ctx.__exit__ = MagicMock(return_value=False)
+            ctx.read.return_value = b"good content"
+            return ctx
+        raise urllib.error.URLError("not found")
+
+    out_dir = str(tmp_path / "agents")
+
+    with patch("netrun.cli._download_agents.urllib.request.urlopen", side_effect=mock_urlopen):
+        result = runner.invoke(app, ["download-agents", out_dir])
+
+    assert result.exit_code == 0
+    assert "Downloaded 1/2" in result.output
+    assert "FAILED" in result.output
+    assert (tmp_path / "agents" / "good.md").read_bytes() == b"good content"
+
+# %% [markdown]
 # ## Test help
 
 # %%
@@ -264,3 +409,4 @@ def test_help():
     assert "node" in result.stdout
     assert "actions" in result.stdout
     assert "recipes" in result.stdout
+    assert "download-agents" in result.stdout

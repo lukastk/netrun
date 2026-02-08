@@ -1,0 +1,90 @@
+# ---
+# jupyter:
+#   kernelspec:
+#     display_name: .venv
+#     language: python
+#     name: python3
+# ---
+
+# %%
+#|default_exp cli._download_agents
+
+# %%
+#|hide
+from nblite import nbl_export; nbl_export();
+
+# %%
+#|export
+import json
+import urllib.request
+import urllib.error
+from pathlib import Path
+from typing import Annotated, Optional
+
+import typer
+
+# %% [markdown]
+# # download-agents Command
+#
+# Downloads the `agents/` directory from the netrun GitHub repository
+# into a local directory, giving AI agents (like Claude Code) the right context.
+
+# %%
+#|export
+_REPO_OWNER = "lukastk"
+_REPO_NAME = "netrun"
+
+
+def download_agents(
+    output_dir: Annotated[str, typer.Argument(help="Local directory to download agents into.")] = "./agents",
+    branch: Annotated[str, typer.Option("--branch", "-b", help="Branch to download from.")] = "main",
+) -> None:
+    """Download agent docs from the netrun GitHub repository."""
+    out = Path(output_dir).resolve()
+
+    # Fetch the repo tree from GitHub API
+    tree_url = f"https://api.github.com/repos/{_REPO_OWNER}/{_REPO_NAME}/git/trees/{branch}?recursive=1"
+    typer.echo(f"Fetching file list from {_REPO_OWNER}/{_REPO_NAME} (branch: {branch})...")
+
+    try:
+        req = urllib.request.Request(tree_url, headers={"Accept": "application/vnd.github+json"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            if resp.status != 200:
+                typer.echo(f"Error: GitHub API returned status {resp.status}", err=True)
+                raise typer.Exit(1)
+            tree_data = json.loads(resp.read().decode())
+    except urllib.error.URLError as e:
+        typer.echo(f"Error: failed to fetch tree from GitHub: {e}", err=True)
+        raise typer.Exit(1)
+
+    # Filter for files under agents/
+    agent_files = [
+        entry["path"]
+        for entry in tree_data.get("tree", [])
+        if entry["path"].startswith("agents/") and entry["type"] == "blob"
+    ]
+
+    if not agent_files:
+        typer.echo("No files found under agents/ in the repository.", err=True)
+        raise typer.Exit(1)
+
+    typer.echo(f"Found {len(agent_files)} file(s) to download.\n")
+
+    downloaded = 0
+    for path in agent_files:
+        # Strip the leading "agents/" prefix for the local relative path
+        rel = path[len("agents/"):]
+        dest = out / rel
+        dest.parent.mkdir(parents=True, exist_ok=True)
+
+        raw_url = f"https://raw.githubusercontent.com/{_REPO_OWNER}/{_REPO_NAME}/{branch}/{path}"
+        try:
+            with urllib.request.urlopen(raw_url, timeout=30) as resp:
+                content = resp.read()
+            dest.write_bytes(content)
+            typer.echo(f"  {rel}")
+            downloaded += 1
+        except urllib.error.URLError as e:
+            typer.echo(f"  FAILED {rel}: {e}", err=True)
+
+    typer.echo(f"\nDownloaded {downloaded}/{len(agent_files)} file(s) to {out}")
