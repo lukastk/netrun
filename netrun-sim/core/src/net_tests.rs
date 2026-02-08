@@ -2026,3 +2026,176 @@ fn test_undo_send_output_salvo_with_orphaned_packets() {
         diffs.join("\n")
     );
 }
+
+// ========== Regression Tests for stale from_index (H13) ==========
+
+#[test]
+fn test_input_salvo_from_index_is_fresh() {
+    // Regression test: when multiple packets are moved from an input port during
+    // try_trigger_input_salvo, the from_index in PacketMoved events must be computed
+    // fresh before each move (not captured upfront via enumerate).
+    // With shift_remove, after removing index 0 the next packet shifts to index 0.
+    let graph = linear_graph_3();
+    let mut net = NetSim::new(graph);
+
+    // Create 3 packets and place them directly at B's input port
+    let input_port_loc = PacketLocation::InputPort("B".to_string(), "in".to_string());
+
+    let p1 = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
+    let p2 = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
+    let p3 = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
+
+    for pid in [p1, p2, p3] {
+        net._packets.get_mut(&pid).unwrap().location = input_port_loc.clone();
+        net._packets_by_location
+            .get_mut(&PacketLocation::OutsideNet)
+            .unwrap()
+            .shift_remove(&pid);
+        net._packets_by_location
+            .get_mut(&input_port_loc)
+            .unwrap()
+            .insert(pid);
+    }
+
+    // Capture state before RunStep
+    let before = NetSimSnapshot::capture(&net);
+
+    // A single RunStep should trigger the input salvo for all 3 packets
+    let action = NetAction::RunStep;
+    let events = match net.do_action(&action) {
+        NetActionResponse::Success(_, events) => events,
+        other => panic!("Expected success, got: {:?}", other),
+    };
+
+    // An epoch should have been created
+    assert_eq!(net.startable_epoch_ids().len(), 1);
+
+    // Find PacketMoved events that move from InputPort to Node (the salvo trigger moves)
+    let salvo_moves: Vec<_> = events
+        .iter()
+        .filter(|e| matches!(e, NetEvent::PacketMoved(_, _, PacketLocation::InputPort(_, _), PacketLocation::Node(_), _)))
+        .collect();
+
+    assert_eq!(salvo_moves.len(), 3, "Expected 3 packets moved from input port to epoch");
+
+    // All from_index values should be 0 (each packet is at index 0 when removed)
+    for event in &salvo_moves {
+        if let NetEvent::PacketMoved(_, _pid, _, _, from_index) = event {
+            assert_eq!(
+                *from_index, 0,
+                "from_index should be 0 for each packet (shift_remove shifts next packet to 0)"
+            );
+        }
+    }
+
+    // Undo and verify state is restored correctly
+    net.undo_action(&action, &events)
+        .expect("Undo should succeed");
+
+    let after = NetSimSnapshot::capture(&net);
+    let diffs = before.diff(&after);
+    assert!(
+        diffs.is_empty(),
+        "State not exactly restored after undo:\n{}",
+        diffs.join("\n")
+    );
+
+    // Verify packets are back in the input port in correct order
+    let restored_packets = net.get_packets_at_location(&input_port_loc);
+    assert_eq!(restored_packets, vec![p1, p2, p3]);
+}
+
+#[test]
+fn test_send_output_salvo_from_index_is_fresh() {
+    // Regression test: when multiple packets are sent from an output port during
+    // send_output_salvo, the from_index in PacketMoved events must be computed
+    // fresh before each move. With shift_remove, after removing index 0 the next
+    // packet shifts to index 0.
+    let graph = linear_graph_3();
+    let mut net = NetSim::new(graph);
+
+    // Create 3 packets and set up an epoch on node B
+    let p1 = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
+    let p2 = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
+    let p3 = get_packet_id(&net.do_action(&NetAction::CreatePacket(None)));
+
+    // Place packets at B's input port
+    let input_port_loc = PacketLocation::InputPort("B".to_string(), "in".to_string());
+    for pid in [p1, p2, p3] {
+        net._packets.get_mut(&pid).unwrap().location = input_port_loc.clone();
+        net._packets_by_location
+            .get_mut(&PacketLocation::OutsideNet)
+            .unwrap()
+            .shift_remove(&pid);
+        net._packets_by_location
+            .get_mut(&input_port_loc)
+            .unwrap()
+            .insert(pid);
+    }
+
+    // Create and start epoch with all 3 packets
+    let salvo = Salvo {
+        salvo_condition: "default".to_string(),
+        packets: vec![
+            ("in".to_string(), p1),
+            ("in".to_string(), p2),
+            ("in".to_string(), p3),
+        ],
+    };
+    let epoch = get_created_epoch(&net.do_action(&NetAction::CreateEpoch("B".to_string(), salvo)));
+    let epoch_id = epoch.id;
+    net.do_action(&NetAction::StartEpoch(epoch_id));
+
+    // Load all 3 packets into the output port
+    for pid in [p1, p2, p3] {
+        net.do_action(&NetAction::LoadPacketIntoOutputPort(pid, "out".to_string()));
+    }
+
+    // Verify output port has 3 packets
+    let output_port_loc = PacketLocation::OutputPort(epoch_id, "out".to_string());
+    assert_eq!(net.packet_count_at(&output_port_loc), 3);
+
+    // Capture state before SendOutputSalvo
+    let before = NetSimSnapshot::capture(&net);
+
+    // Send output salvo
+    let action = NetAction::SendOutputSalvo(epoch_id, "default".to_string());
+    let events = match net.do_action(&action) {
+        NetActionResponse::Success(_, events) => events,
+        other => panic!("Expected success, got: {:?}", other),
+    };
+
+    // Find PacketMoved events
+    let moved_events: Vec<_> = events
+        .iter()
+        .filter(|e| matches!(e, NetEvent::PacketMoved(..)))
+        .collect();
+
+    assert_eq!(moved_events.len(), 3, "Expected 3 PacketMoved events");
+
+    // All from_index values should be 0
+    for event in &moved_events {
+        if let NetEvent::PacketMoved(_, _pid, _, _, from_index) = event {
+            assert_eq!(
+                *from_index, 0,
+                "from_index should be 0 for each packet (shift_remove shifts next packet to 0)"
+            );
+        }
+    }
+
+    // Undo and verify state is restored
+    net.undo_action(&action, &events)
+        .expect("Undo should succeed");
+
+    let after = NetSimSnapshot::capture(&net);
+    let diffs = before.diff(&after);
+    assert!(
+        diffs.is_empty(),
+        "State not exactly restored after undo:\n{}",
+        diffs.join("\n")
+    );
+
+    // Verify packets are back in the output port in correct order
+    let restored_packets = net.get_packets_at_location(&output_port_loc);
+    assert_eq!(restored_packets, vec![p1, p2, p3]);
+}
