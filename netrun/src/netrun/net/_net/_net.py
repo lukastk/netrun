@@ -32,6 +32,11 @@ from ...net._net._context import (
     _FactoryPlaceholder,
 )
 from ...net._net._info import NodeInfo, EdgeInfo
+from ...net._net._run_to_targets import (
+    TargetInputSalvo,
+    _compute_upstream_nodes,
+    _classify_epoch,
+)
 
 # %% pts/netrun/05_net/01_net/02_net.pct.py 4
 class _ServerLogCallback:
@@ -2103,6 +2108,111 @@ class Net:
                     print(f"  {edge.packet_count} packets in transit")
         """
         return [EdgeInfo(self, edge) for edge in self._graph.edges()]
+
+    async def run_to_targets(
+        self,
+        targets: 'str | list[str | tuple[str, str]]',
+        *,
+        max_iterations: int = 1000,
+    ) -> list[TargetInputSalvo]:
+        """Run upstream nodes and collect input salvos at target nodes.
+
+        Executes only the upstream nodes needed to deliver packets to the
+        target nodes, then returns the input salvos that would fire at
+        those targets without executing them. Useful for testing downstream
+        nodes by inspecting exactly what inputs they would receive.
+
+        Args:
+            targets: Target node specification. Can be:
+                - A single node name: ``"C"``
+                - A list of node names: ``["B", "C"]``
+                - A list mixing names and (name, salvo_condition) tuples:
+                  ``[("B", "cond_1"), "C"]``
+            max_iterations: Safety limit for the execution loop (for cyclic graphs).
+
+        Returns:
+            List of TargetInputSalvo objects, one per triggered input salvo
+            at a target node. Each includes the node name, salvo condition name,
+            epoch ID, and packet values by port.
+
+        Raises:
+            ValueError: If a target node name is not found in the graph.
+
+        Example:
+            async with Net(config) as net:
+                net.inject_data("Source", "in", [1, 2, 3])
+                salvos = await net.run_to_targets("Sink")
+                for salvo in salvos:
+                    print(f"{salvo.node_name}.{salvo.salvo_condition}: {salvo.packets}")
+        """
+        # 1. Normalize targets to set of (node_name, salvo_condition | None)
+        if isinstance(targets, str):
+            targets = [targets]
+        target_specs: set[tuple[str, str | None]] = set()
+        for t in targets:
+            if isinstance(t, str):
+                target_specs.add((t, None))
+            else:
+                target_specs.add(t)
+
+        # 2. Validate target node names exist
+        graph_node_names = set(self._graph.nodes().keys())
+        for node_name, _ in target_specs:
+            if node_name not in graph_node_names:
+                raise ValueError(f"Target node '{node_name}' not found in graph")
+
+        # 3. Compute upstream set
+        target_node_names = {spec[0] for spec in target_specs}
+        upstream_nodes = _compute_upstream_nodes(list(self._graph.edges()), target_node_names)
+        # Include specific-condition target nodes in upstream set
+        # so their non-targeted salvo conditions still execute
+        blanket_targets = {n for n, c in target_specs if c is None}
+        specific_targets = {n for n, c in target_specs if c is not None} - blanket_targets
+        upstream_nodes |= specific_targets
+
+        # 4. Execution loop
+        collected_salvos: list[TargetInputSalvo] = []
+        for _ in range(max_iterations):
+            await self.run_until_blocked(auto_start_epochs=False)
+            startable = self.get_startable_epochs()
+            if not startable:
+                break
+
+            upstream_epochs = []
+            for epoch_id in startable:
+                epoch = self._netsim.get_epoch(epoch_id)
+                classification = _classify_epoch(epoch, target_specs, upstream_nodes)
+                if classification == "target":
+                    # Collect salvo values
+                    packets, packet_values = self._get_input_packet_values(epoch_id)
+                    port_values: dict[str, list[Any]] = {}
+                    for port_name, pkt_ids in packets.items():
+                        port_values[port_name] = [packet_values[pid] for pid in pkt_ids]
+                    collected_salvos.append(TargetInputSalvo(
+                        node_name=epoch.node_name,
+                        salvo_condition=epoch.in_salvo.salvo_condition,
+                        epoch_id=epoch_id,
+                        packets=port_values,
+                    ))
+                elif classification == "upstream":
+                    upstream_epochs.append(epoch_id)
+
+            if not upstream_epochs:
+                break
+
+            # Execute upstream epochs (respecting max_parallel_epochs)
+            upstream_epochs = self._filter_by_max_parallel_epochs(upstream_epochs)
+            if not upstream_epochs:
+                break
+            tasks = [asyncio.create_task(self._execute_epoch(eid)) for eid in upstream_epochs]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            exceptions = [r for r in results if isinstance(r, Exception)]
+            if exceptions:
+                if len(exceptions) == 1:
+                    raise exceptions[0]
+                raise ExceptionGroup("Upstream epoch failures", exceptions)
+
+        return collected_salvos
 
     async def __aenter__(self) -> "Net":
         """Context manager entry - starts the Net."""

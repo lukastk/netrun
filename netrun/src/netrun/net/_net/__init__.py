@@ -23,6 +23,11 @@ from ._info import (
     EdgeInfo,
 )
 
+# Re-export from _run_to_targets
+from ._run_to_targets import (
+    TargetInputSalvo,
+)
+
 # Re-export from _net
 from ._net import (
     Net,
