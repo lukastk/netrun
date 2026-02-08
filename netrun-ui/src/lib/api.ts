@@ -171,7 +171,6 @@ export interface ValidationError {
 export interface ValidateConfigResponse {
 	valid: boolean;
 	errors: ValidationError[];
-	netrun_available: boolean;
 }
 
 export interface ServerConfigResponse {

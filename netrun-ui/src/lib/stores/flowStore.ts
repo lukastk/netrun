@@ -828,8 +828,6 @@ export async function validateAllNodes(): Promise<ValidationResult> {
 
 // Backend validation state
 export const backendValidationErrors = writable<{ loc: (string | number)[]; msg: string }[]>([]);
-export const backendValidationAvailable = writable<boolean>(true);
-
 // Debounce timer for backend validation
 let backendValidationTimer: ReturnType<typeof setTimeout> | null = null;
 
@@ -885,7 +883,6 @@ async function runBackendValidation(): Promise<BackendValidationResult> {
 			tab.filePath ?? undefined
 		);
 
-		backendValidationAvailable.set(response.netrun_available);
 		backendValidationErrors.set(response.errors);
 
 		// Collect per-node errors from Pydantic validation
@@ -944,7 +941,6 @@ async function runBackendValidation(): Promise<BackendValidationResult> {
 		return { nodeErrorCount: nodeErrorMap.size, configErrors };
 	} catch (e) {
 		// Backend not available - clear errors but note it's not available
-		backendValidationAvailable.set(false);
 		backendValidationErrors.set([]);
 		return { nodeErrorCount: 0, configErrors: [] };
 	}
