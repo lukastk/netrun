@@ -13,7 +13,7 @@ from netrun.net.config import (
 )
 
 
-def get_node_config(num_stages: int = 2) -> SubgraphConfig:
+def get_node_config(_net_config=None, *, num_stages: int = 2) -> SubgraphConfig:
     """Create a linear processing pipeline with N stages.
 
     Each stage has an 'in' input port and an 'out' output port.

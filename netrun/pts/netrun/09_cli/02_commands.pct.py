@@ -232,6 +232,9 @@ def factory_info(
     sig = inspect.signature(get_node_config_fn)
     params = []
     for name, param in sig.parameters.items():
+        # Skip internal parameters (e.g. _net_config) injected by the system
+        if name.startswith("_"):
+            continue
         p: dict[str, Any] = {"name": name}
         if param.annotation != inspect.Parameter.empty:
             p["type"] = str(param.annotation)

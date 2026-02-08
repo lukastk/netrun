@@ -2223,7 +2223,7 @@ def test_node_config_resolve_factory_file_path():
         factory_file.write_text(textwrap.dedent("""\
             from netrun.net.config import NodeConfig, PortConfig
 
-            def get_node_config(name="FileFactoryNode"):
+            def get_node_config(_net_config=None, *, name="FileFactoryNode"):
                 return NodeConfig(
                     name=name,
                     in_ports={"input": PortConfig()},
@@ -2236,7 +2236,8 @@ def test_node_config_resolve_factory_file_path():
             factory=str(factory_file),
         )
 
-        resolved = config.resolve(project_root=tmp)
+        _nc = NetConfig(project_root=str(tmp), graph=GraphConfig(nodes=[]))
+        resolved = config.resolve(net_config=_nc)
 
         assert resolved.name == "TestNode"
         assert "input" in resolved.in_ports
@@ -2256,14 +2257,14 @@ def test_node_config_from_factory_file_path():
         factory_file.write_text(textwrap.dedent("""\
             from netrun.net.config import NodeConfig, PortConfig
 
-            def get_node_config():
+            def get_node_config(_net_config=None):
                 return NodeConfig(
                     name="FromFactoryNode",
                     in_ports={"in": PortConfig()},
                     out_ports={"out": PortConfig()},
                 )
 
-            def get_node_funcs():
+            def get_node_funcs(_net_config=None):
                 def exec_fn(ctx):
                     pass
                 return exec_fn, None, None, None
@@ -2295,7 +2296,7 @@ def test_graph_config_resolve_with_project_root():
         factory_file.write_text(textwrap.dedent("""\
             from netrun.net.config import NodeConfig, PortConfig
 
-            def get_node_config():
+            def get_node_config(_net_config=None):
                 return NodeConfig(
                     name="GraphFactoryNode",
                     in_ports={"in": PortConfig()},
@@ -2309,7 +2310,8 @@ def test_graph_config_resolve_with_project_root():
             ],
         )
 
-        resolved = graph.resolve(project_root=tmp)
+        _nc = NetConfig(project_root=str(tmp), graph=GraphConfig(nodes=[]))
+        resolved = graph.resolve(net_config=_nc)
 
         # The factory node should have been resolved
         factory_node = next(n for n in resolved.nodes if n.name == "FactoryNode")
@@ -2330,7 +2332,7 @@ def test_net_config_resolve_with_file_path_factory():
         factory_file.write_text(textwrap.dedent("""\
             from netrun.net.config import NodeConfig, PortConfig
 
-            def get_node_config():
+            def get_node_config(_net_config=None):
                 return NodeConfig(
                     name="NetFactoryNode",
                     in_ports={"data": PortConfig()},
@@ -2375,7 +2377,7 @@ def test_net_config_resolve_relative_factory_path():
         factory_file.write_text(textwrap.dedent("""\
             from netrun.net.config import NodeConfig, PortConfig
 
-            def get_node_config():
+            def get_node_config(_net_config=None):
                 return NodeConfig(
                     name="RelativeNode",
                     in_ports={"in": PortConfig()},
@@ -2507,7 +2509,7 @@ def test_factory_returns_subgraph_basic():
                 PortConfig, ExposedPortConfig,
             )
 
-            def get_node_config(num_stages=2):
+            def get_node_config(_net_config=None, *, num_stages=2):
                 nodes = [
                     NodeConfig(
                         name=f"stage_{i}",
@@ -2542,7 +2544,8 @@ def test_factory_returns_subgraph_basic():
             ],
         )
 
-        resolved = graph.resolve(project_root=tmp)
+        _nc = NetConfig(project_root=str(tmp), graph=GraphConfig(nodes=[]))
+        resolved = graph.resolve(net_config=_nc)
 
         # Should have 2 flattened nodes
         assert len(resolved.nodes) == 2
@@ -2573,7 +2576,7 @@ def test_factory_returns_subgraph_exposed_ports():
                 PortConfig, ExposedPortConfig,
             )
 
-            def get_node_config():
+            def get_node_config(_net_config=None):
                 return SubgraphConfig(
                     name="inner",
                     nodes=[
@@ -2610,7 +2613,8 @@ def test_factory_returns_subgraph_exposed_ports():
             ],
         )
 
-        resolved = graph.resolve(project_root=tmp)
+        _nc = NetConfig(project_root=str(tmp), graph=GraphConfig(nodes=[]))
+        resolved = graph.resolve(net_config=_nc)
 
         # 4 nodes: Source, middle.A, middle.B, Sink
         assert len(resolved.nodes) == 4
@@ -2648,7 +2652,7 @@ def test_factory_returns_subgraph_name_override():
                 NodeConfig, SubgraphConfig, PortConfig, ExposedPortConfig,
             )
 
-            def get_node_config():
+            def get_node_config(_net_config=None):
                 return SubgraphConfig(
                     name="default_name",
                     nodes=[
@@ -2659,16 +2663,18 @@ def test_factory_returns_subgraph_name_override():
                 )
         """))
 
+        _nc = NetConfig(project_root=str(tmp), graph=GraphConfig(nodes=[]))
+
         # NodeConfig has explicit name that overrides factory's
         node = NodeConfig(name="custom_name", factory=str(factory_file))
-        resolved = node.resolve(project_root=tmp)
+        resolved = node.resolve(net_config=_nc)
 
         assert isinstance(resolved, SubgraphConfig)
         assert resolved.name == "custom_name"
 
         # If name is empty, factory name is used
         node2 = NodeConfig(factory=str(factory_file))
-        resolved2 = node2.resolve(project_root=tmp)
+        resolved2 = node2.resolve(net_config=_nc)
         assert isinstance(resolved2, SubgraphConfig)
         assert resolved2.name == "default_name"
 
@@ -2688,7 +2694,7 @@ def test_factory_returns_subgraph_extra_merge():
                 NodeConfig, SubgraphConfig, PortConfig, ExposedPortConfig,
             )
 
-            def get_node_config():
+            def get_node_config(_net_config=None):
                 return SubgraphConfig(
                     name="sg",
                     nodes=[
@@ -2704,7 +2710,8 @@ def test_factory_returns_subgraph_extra_merge():
             factory=str(factory_file),
             extra={"node_key": "node_value", "shared_key": "from_node"},
         )
-        resolved = node.resolve(project_root=tmp)
+        _nc = NetConfig(project_root=str(tmp), graph=GraphConfig(nodes=[]))
+        resolved = node.resolve(net_config=_nc)
 
         assert isinstance(resolved, SubgraphConfig)
         assert resolved.extra["factory_key"] == "factory_value"
@@ -2728,14 +2735,14 @@ def test_factory_returns_subgraph_from_factory_raises():
                 NodeConfig, SubgraphConfig, PortConfig, ExposedPortConfig,
             )
 
-            def get_node_config():
+            def get_node_config(_net_config=None):
                 return SubgraphConfig(
                     name="sg",
                     nodes=[NodeConfig(name="A", in_ports={"in": PortConfig()})],
                     exposed_in_ports={"in": ExposedPortConfig(internal_node="A", internal_port="in")},
                 )
 
-            def get_node_funcs():
+            def get_node_funcs(_net_config=None):
                 return None, None, None, None
         """))
 
@@ -2758,7 +2765,7 @@ def test_factory_returns_subgraph_serialization():
                 NodeConfig, SubgraphConfig, PortConfig, ExposedPortConfig,
             )
 
-            def get_node_config():
+            def get_node_config(_net_config=None):
                 return SubgraphConfig(
                     name="sg",
                     nodes=[
@@ -2780,7 +2787,8 @@ def test_factory_returns_subgraph_serialization():
         assert loaded.factory == str(factory_file)
 
         # Resolve produces subgraph
-        resolved = loaded.resolve(project_root=tmp)
+        _nc = NetConfig(project_root=str(tmp), graph=GraphConfig(nodes=[]))
+        resolved = loaded.resolve(net_config=_nc)
         assert isinstance(resolved, SubgraphConfig)
         assert resolved.name == "my_sg"
 
@@ -2798,7 +2806,7 @@ def test_factory_nodes_inside_subgraph_resolved():
         factory_file.write_text(textwrap.dedent("""\
             from netrun.net.config import NodeConfig, PortConfig
 
-            def get_node_config():
+            def get_node_config(_net_config=None):
                 return NodeConfig(
                     name="FactoryNode",
                     in_ports={"data": PortConfig()},
@@ -2828,7 +2836,8 @@ def test_factory_nodes_inside_subgraph_resolved():
             ],
         )
 
-        resolved = graph.resolve(project_root=tmp)
+        _nc = NetConfig(project_root=str(tmp), graph=GraphConfig(nodes=[]))
+        resolved = graph.resolve(net_config=_nc)
 
         # The factory node inside the subgraph should have been resolved
         worker = next(n for n in resolved.nodes if n.name == "sg.Worker")

@@ -30,6 +30,7 @@ from nblite import nbl_export; nbl_export();
 
 # %%
 from netrun.net.config import (
+    NetConfig,
     NodeConfig,
     SubgraphConfig,
     GraphConfig,
@@ -128,7 +129,7 @@ factory_file.write_text(textwrap.dedent("""\
         PortConfig, ExposedPortConfig,
     )
 
-    def get_node_config(num_stages=3):
+    def get_node_config(_net_config=None, *, num_stages=3):
         nodes = [
             NodeConfig(
                 name=f"stage_{i}",
@@ -182,7 +183,8 @@ for node in graph.nodes:
 print()
 
 # After resolve: the factory is expanded into prefixed nodes
-resolved = graph.resolve(project_root=Path(tmp_dir))
+_nc = NetConfig(project_root=str(tmp_dir), graph=GraphConfig(nodes=[]))
+resolved = graph.resolve(net_config=_nc)
 
 print("After resolve:")
 for node in resolved.nodes:
@@ -220,7 +222,8 @@ node_with_override = NodeConfig(
     extra={"description": "My custom pipeline"},
 )
 
-resolved_sg = node_with_override.resolve(project_root=Path(tmp_dir))
+_nc = NetConfig(project_root=str(tmp_dir), graph=GraphConfig(nodes=[]))
+resolved_sg = node_with_override.resolve(net_config=_nc)
 print(f"Subgraph name: {resolved_sg.name}")
 print(f"Extra: {resolved_sg.extra}")
 print(f"Type: {type(resolved_sg).__name__}")
@@ -234,7 +237,7 @@ node_no_name = NodeConfig(
     factory_args={"num_stages": 2},
 )
 
-resolved_sg2 = node_no_name.resolve(project_root=Path(tmp_dir))
+resolved_sg2 = node_no_name.resolve(net_config=_nc)
 print(f"Subgraph name (factory default): {resolved_sg2.name}")
 
 # %% [markdown]
@@ -261,7 +264,7 @@ print()
 
 # Deserialize and resolve
 loaded = NodeConfig.model_validate_json(json_str)
-resolved = loaded.resolve(project_root=Path(tmp_dir))
+resolved = loaded.resolve(net_config=_nc)
 print(f"After deserialize + resolve: {type(resolved).__name__} named '{resolved.name}'")
 
 # %% [markdown]

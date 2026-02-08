@@ -240,6 +240,9 @@ async def get_factory_signature(request: FactorySignatureRequest) -> FactorySign
         parameters = []
 
         for name, param in sig.parameters.items():
+            # Skip internal parameters (e.g. _net_config) injected by the system
+            if name.startswith("_"):
+                continue
             # Get type annotation as string
             type_str = None
             if param.annotation != inspect.Parameter.empty:

@@ -732,6 +732,10 @@ class NetFuncPreprocessorNodeConfig:
     type_checking_enabled: bool = True
     """Whether type checking is enabled for this node."""
 
+    net_config_data: dict | None = None
+    """Serialized NetConfig data (model_dump()) for reconstructing NetConfig on workers.
+    Used to pass _net_config to factory get_node_funcs() during lazy resolution."""
+
     @classmethod
     def from_node_config(
         cls,
@@ -741,6 +745,7 @@ class NetFuncPreprocessorNodeConfig:
         factory_args: dict[str, Any],
         node_vars: dict[str, dict[str, str]] | None = None,
         type_checking_enabled: bool = True,
+        net_config_data: dict | None = None,
     ) -> "NetFuncPreprocessorNodeConfig":
         """Create from execution config, port configs, and factory info."""
         return cls(
@@ -756,6 +761,7 @@ class NetFuncPreprocessorNodeConfig:
             timeout=exec_config.timeout,
             node_vars=node_vars,
             type_checking_enabled=type_checking_enabled,
+            net_config_data=net_config_data,
         )
 
 
@@ -791,10 +797,16 @@ class NetFuncPreprocessor:
         if config is None or config.factory is None:
             return None
 
+        # Reconstruct NetConfig from serialized data for _net_config
+        net_config = None
+        if config.net_config_data is not None:
+            from netrun.net.config import NetConfig
+            net_config = NetConfig.model_validate(config.net_config_data)
+
         # Import factory module and call get_node_funcs
         module = importlib.import_module(config.factory)
         get_node_funcs = getattr(module, "get_node_funcs")
-        exec_func, _, _, _ = get_node_funcs(**config.factory_args)
+        exec_func, _, _, _ = get_node_funcs(_net_config=net_config, **config.factory_args)
 
         self._resolved_funcs[node_name] = exec_func
         return exec_func
@@ -913,6 +925,7 @@ def create_net_func_preprocessor(
     node_factories: dict[str, tuple[str, dict[str, Any]]] | None = None,
     net_node_vars: dict[str, NodeVariable] | None = None,
     net_type_checking_enabled: bool = True,
+    net_config_data: dict | None = None,
 ) -> NetFuncPreprocessor:
     """Create a func_preprocessor for Net execution.
 
@@ -929,6 +942,8 @@ def create_net_func_preprocessor(
             factory-based nodes. Factory functions are resolved lazily on workers.
         net_node_vars: Net-level default node variables.
         net_type_checking_enabled: Net-level default for type checking (can be overridden per-node).
+        net_config_data: Serialized NetConfig (model_dump()) for reconstructing on workers.
+            Passed to factory get_node_funcs() as _net_config during lazy resolution.
 
     Returns:
         A picklable NetFuncPreprocessor instance.
@@ -965,6 +980,7 @@ def create_net_func_preprocessor(
             config, out_ports, factory, factory_args,
             node_vars=merged_vars,
             type_checking_enabled=type_checking_enabled,
+            net_config_data=net_config_data,
         )
 
     return NetFuncPreprocessor(node_configs)

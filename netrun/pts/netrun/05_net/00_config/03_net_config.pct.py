@@ -345,7 +345,7 @@ class NetConfig(BaseModel):
 
         # Resolve graph (includes subgraph flattening)
         project_root = self.project_root_path
-        resolved_graph = self.graph.resolve(base_path=base_path, project_root=project_root)
+        resolved_graph = self.graph.resolve(base_path=base_path, net_config=self)
         if resolved_graph is not self.graph:
             updates["graph"] = resolved_graph
 

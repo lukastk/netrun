@@ -86,7 +86,7 @@ def test_get_node_config_with_types():
     def typed_func(a: int, b: str) -> float:
         return float(a) + len(b)
 
-    config = get_node_config(typed_func)
+    config = get_node_config(func=typed_func)
     assert config.in_ports["a"].port_type == int
     assert config.in_ports["b"].port_type == str
     assert config.out_ports["out"].port_type == float
@@ -100,7 +100,7 @@ def test_get_node_config_without_types():
     def typed_func(a: int, b: str) -> float:
         return float(a) + len(b)
 
-    config = get_node_config(typed_func, include_port_types=False)
+    config = get_node_config(func=typed_func, include_port_types=False)
     assert config.in_ports["a"].port_type is None
     assert config.in_ports["b"].port_type is None
     assert config.out_ports["out"].port_type is None
@@ -115,7 +115,7 @@ def test_get_node_funcs_accepts_include_port_types():
         return a * 2
 
     # Should not raise - parameter accepted for consistency
-    funcs = get_node_funcs(typed_func, include_port_types=False)
+    funcs = get_node_funcs(func=typed_func, include_port_types=False)
     assert len(funcs) == 4
     assert funcs[0] is not None  # exec_func
     assert funcs[1] is None  # start_func
@@ -150,7 +150,7 @@ def test_generic_type_stored_as_type_object_not_string():
     def func(data: list[int]) -> list[str]:
         return [str(x) for x in data]
 
-    config = get_node_config(func)
+    config = get_node_config(func=func)
 
     # Should be the actual generic alias, not a string
     in_type = config.in_ports["data"].port_type
@@ -295,7 +295,7 @@ def test_manual_output_get_node_funcs():
     def my_func(x: int, ctx):
         pass
 
-    exec_func, start, stop, on_fail = get_node_funcs(my_func, manual_output=True)
+    exec_func, start, stop, on_fail = get_node_funcs(func=my_func, manual_output=True)
     assert callable(exec_func)
     assert start is None
     assert stop is None
@@ -308,7 +308,7 @@ def test_manual_output_get_node_config():
     def my_func(x: int, ctx):
         pass
 
-    config = get_node_config(my_func, manual_output=True)
+    config = get_node_config(func=my_func, manual_output=True)
     # execution_config should be stripped per factory protocol
     assert config.execution_config is None
     assert "x" in config.in_ports

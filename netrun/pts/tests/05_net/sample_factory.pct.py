@@ -27,7 +27,7 @@ from netrun.net.config import (
 
 # %%
 #|export
-def get_node_config(name: str, threshold: float = 0.5) -> NodeConfig:
+def get_node_config(_net_config=None, *, name: str, threshold: float = 0.5) -> NodeConfig:
     """Returns graph structure: name, ports, salvo conditions.
 
     Must NOT set execution_config - that comes from get_node_funcs().
@@ -58,7 +58,7 @@ def get_node_config(name: str, threshold: float = 0.5) -> NodeConfig:
 
 # %%
 #|export
-def get_node_funcs(name: str, threshold: float = 0.5) -> tuple:
+def get_node_funcs(_net_config=None, *, name: str, threshold: float = 0.5) -> tuple:
     """Returns execution functions.
 
     Arguments can be captured in closures for use in the functions.

@@ -251,15 +251,22 @@ Node factories provide a way to create `NodeConfig` objects dynamically. This en
 
 A factory module must export exactly **two functions**:
 
-**`get_node_config(**factory_args) -> NodeConfig`**
+**`get_node_config(_net_config=None, *, **factory_args) -> NodeConfig`**
+- `_net_config` is a mandatory first parameter, always injected by the system (never by users)
+- The `*` makes all factory_args keyword-only
 - Returns the graph structure (ports, salvo conditions, metadata)
 - **Must NOT include `execution_config`** (it will be stripped/ignored)
 - Cannot return closures or unpickleable objects
+- Subgraph factories may return `SubgraphConfig` instead of `NodeConfig`
 
-**`get_node_funcs(**factory_args) -> tuple[exec_func, start_func, stop_func, on_failure_func]`**
+**`get_node_funcs(_net_config=None, *, **factory_args) -> tuple[exec_func, start_func, stop_func, on_failure_func]`**
+- `_net_config` is injected the same way as above
 - Returns the execution functions as a 4-tuple
 - Typically: `(exec_func, None, None, None)`
 - Can capture `factory_args` in closures (functions are resolved on each worker)
+- Not needed for subgraph factories
+
+The `_net_config` parameter provides access to the full `NetConfig`, enabling factories to resolve relative file paths against `project_root`. The underscore prefix signals it is internal and not user-facing. It is filtered from CLI `factory-info` output and UI parameter displays.
 
 #### Resolution Lifecycle
 
@@ -269,14 +276,15 @@ A factory module must export exactly **two functions**:
    → Factory and args stored, execution_config is None
 
 2. RESOLUTION (in Net.__init__)
-   NodeConfig.resolve() calls get_node_config(**factory_args)
+   NodeConfig.resolve(net_config=...) calls get_node_config(_net_config=net_config, **factory_args)
    → Returns config with ports/salvos, execution_config still None
    → Factory and factory_args preserved for worker-level resolution
 
 3. WORKER EXECUTION
    NetFuncPreprocessor._resolve_factory(node_name)
    → Imports factory module on worker
-   → Calls get_node_funcs(**factory_args)
+   → Reconstructs NetConfig from serialized net_config_data
+   → Calls get_node_funcs(_net_config=net_config, **factory_args)
    → Gets actual exec_func, caches for reuse
 ```
 

@@ -225,6 +225,7 @@ class Net:
             self._node_factories,
             net_node_vars=self._config_resolved.node_vars,
             net_type_checking_enabled=self._config_resolved.type_checking_enabled,
+            net_config_data=self._config.model_dump(),
         )
         func_done_callback = create_net_func_done_callback()
 
@@ -336,6 +337,7 @@ class Net:
             node_factories,
             net_node_vars=config_resolved.node_vars,
             net_type_checking_enabled=config_resolved.type_checking_enabled,
+            net_config_data=config_resolved.model_dump(),
         )
 
     @classmethod
@@ -1949,7 +1951,7 @@ class Net:
             module = importlib.import_module(factory_path)
             get_node_funcs = getattr(module, "get_node_funcs", None)
             if get_node_funcs is not None:
-                _, start_func, _, _ = get_node_funcs(**factory_args)
+                _, start_func, _, _ = get_node_funcs(_net_config=self._config, **factory_args)
                 return start_func
 
         return None
@@ -1980,7 +1982,7 @@ class Net:
             module = importlib.import_module(factory_path)
             get_node_funcs = getattr(module, "get_node_funcs", None)
             if get_node_funcs is not None:
-                _, _, stop_func, _ = get_node_funcs(**factory_args)
+                _, _, stop_func, _ = get_node_funcs(_net_config=self._config, **factory_args)
                 return stop_func
 
         return None
