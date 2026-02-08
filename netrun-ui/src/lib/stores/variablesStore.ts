@@ -15,15 +15,28 @@ import {
 import { updateActiveTab } from './tabsStore';
 
 export interface NodeVariable {
-	value: string;
+	value: string | { $env: string; default?: unknown };
 	type?: string; // "str" (default), "int", "float", "bool", "json"
+}
+
+/**
+ * Get the display string from a variable value.
+ * Returns '' for EnvVar values (no string validation needed).
+ */
+export function getVarValueString(value: string | { $env: string; default?: unknown }): string {
+	if (typeof value === 'object' && value !== null && '$env' in value) {
+		return '';
+	}
+	return value;
 }
 
 /**
  * Validate a variable value against its declared type.
  * Returns null if valid, or an error message string if invalid.
+ * EnvVar objects always pass validation (returns null).
  */
-export function validateVarValue(value: string, type: string | undefined): string | null {
+export function validateVarValue(value: string | { $env: string; default?: unknown }, type: string | undefined): string | null {
+	if (typeof value === 'object' && value !== null && '$env' in value) return null;
 	const t = type || 'str';
 	if (value === '') return null; // empty is ok
 	switch (t) {
