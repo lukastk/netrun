@@ -195,7 +195,7 @@ The pattern `ulid::Ulid::from_string(id).map_err(...)` is duplicated ~20 times. 
 
 ---
 
-### M14. Test fixture duplication between unit and integration tests (netrun-sim)
+### M14. Test fixture duplication between unit and integration tests (netrun-sim) ⏭️ SKIPPED
 
 **Files:** `netrun-sim/core/src/test_fixtures.rs` (281 lines) and `netrun-sim/core/tests/common/mod.rs` (187 lines)
 
@@ -203,7 +203,7 @@ Near-identical helper functions: `infinite_port()`, `finite_port()`, `simple_nod
 
 ---
 
-### M15. `PyPortStateNumeric` uses fragile string-based dispatch (netrun-sim)
+### M15. `PyPortStateNumeric` uses fragile string-based dispatch (netrun-sim) ✅ FIXED
 
 **File:** `netrun-sim/python/src/graph.rs`, lines 278-306
 

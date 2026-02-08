@@ -294,14 +294,16 @@ impl PyPortStateNumeric {
 }
 
 impl PyPortStateNumeric {
-    pub fn to_core(&self) -> CorePortState {
+    pub fn to_core(&self) -> PyResult<CorePortState> {
         match self.kind.as_str() {
-            "equals" => CorePortState::Equals(self.value),
-            "less_than" => CorePortState::LessThan(self.value),
-            "greater_than" => CorePortState::GreaterThan(self.value),
-            "equals_or_less_than" => CorePortState::EqualsOrLessThan(self.value),
-            "equals_or_greater_than" => CorePortState::EqualsOrGreaterThan(self.value),
-            _ => panic!("Invalid port state kind: {}", self.kind),
+            "equals" => Ok(CorePortState::Equals(self.value)),
+            "less_than" => Ok(CorePortState::LessThan(self.value)),
+            "greater_than" => Ok(CorePortState::GreaterThan(self.value)),
+            "equals_or_less_than" => Ok(CorePortState::EqualsOrLessThan(self.value)),
+            "equals_or_greater_than" => Ok(CorePortState::EqualsOrGreaterThan(self.value)),
+            _ => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
+                format!("Invalid port state kind: {}", self.kind),
+            )),
         }
     }
 }
@@ -472,7 +474,7 @@ fn extract_port_state(obj: &Bound<'_, PyAny>) -> PyResult<CorePortState> {
         return Ok(state.to_core());
     }
     if let Ok(numeric) = obj.extract::<PyPortStateNumeric>() {
-        return Ok(numeric.to_core());
+        return numeric.to_core();
     }
     Err(PyErr::new::<pyo3::exceptions::PyTypeError, _>(
         "Expected PortState or PortStateNumeric",
