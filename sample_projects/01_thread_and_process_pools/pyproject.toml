@@ -1,7 +1,7 @@
 [project]
-name = "basic-net-project"
+name = "thread-and-process-pools"
 version = "0.1.0"
-description = "A basic example of using netrun"
+description = "Thread and process pool examples for netrun"
 requires-python = ">=3.11"
 dependencies = [
     "ipykernel>=7.1.0",
