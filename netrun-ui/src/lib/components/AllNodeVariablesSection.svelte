@@ -2,6 +2,7 @@
 	import { validateVarValue, type NodeVariable } from '$lib/stores/variablesStore';
 	import { updateNodeNodeVars, projectNodeVars } from '$lib/stores/variablesStore';
 	import { pushHistory } from '$lib/stores/flowStore';
+	import { isEnvVar, makeEnvVar, getEnvVarName, getEnvVarDefault } from '$lib/utils/envvar';
 
 	const VAR_TYPES = ['str', 'int', 'float', 'bool', 'json'] as const;
 
@@ -17,9 +18,64 @@
 
 	let { allNodesVars }: Props = $props();
 
+	// Track which variables are in env var mode, keyed by `${nodeId}:${varName}`
+	let envVarMode: Record<string, boolean> = $state({});
+
+	// Initialize env var mode from current values
+	$effect(() => {
+		const newMode: Record<string, boolean> = {};
+		for (const entry of allNodesVars) {
+			for (const [name, variable] of Object.entries(entry.vars)) {
+				const key = `${entry.nodeId}:${name}`;
+				if (isEnvVar(variable.value)) {
+					newMode[key] = true;
+				}
+			}
+		}
+		envVarMode = newMode;
+	});
+
+	function toggleEnvVarMode(nodeId: string, vars: Record<string, NodeVariable>, name: string) {
+		const key = `${nodeId}:${name}`;
+		const wasEnvVar = envVarMode[key] || false;
+		envVarMode[key] = !wasEnvVar;
+
+		const updated = { ...vars };
+		const existing = updated[name];
+		if (!existing) return;
+
+		if (wasEnvVar) {
+			const defaultVal = isEnvVar(existing.value) ? getEnvVarDefault(existing.value) : null;
+			updated[name] = { ...existing, value: defaultVal != null ? String(defaultVal) : '' };
+		} else {
+			const literalVal = typeof existing.value === 'string' ? existing.value : '';
+			updated[name] = { ...existing, value: makeEnvVar('', literalVal || undefined) };
+		}
+		updateNodeNodeVars(nodeId, updated);
+		pushHistory();
+	}
+
 	function updateVarValue(nodeId: string, vars: Record<string, NodeVariable>, name: string, value: string) {
 		const updated = { ...vars };
 		updated[name] = { ...updated[name], value };
+		updateNodeNodeVars(nodeId, updated);
+	}
+
+	function updateVarEnvName(nodeId: string, vars: Record<string, NodeVariable>, name: string, envName: string) {
+		const updated = { ...vars };
+		const existing = updated[name];
+		if (!existing) return;
+		const currentDefault = isEnvVar(existing.value) ? getEnvVarDefault(existing.value) : null;
+		updated[name] = { ...existing, value: makeEnvVar(envName, currentDefault) };
+		updateNodeNodeVars(nodeId, updated);
+	}
+
+	function updateVarEnvDefault(nodeId: string, vars: Record<string, NodeVariable>, name: string, defaultVal: string) {
+		const updated = { ...vars };
+		const existing = updated[name];
+		if (!existing) return;
+		const currentName = isEnvVar(existing.value) ? getEnvVarName(existing.value) : '';
+		updated[name] = { ...existing, value: makeEnvVar(currentName, defaultVal || undefined) };
 		updateNodeNodeVars(nodeId, updated);
 	}
 
@@ -31,6 +87,7 @@
 
 	function removeVar(nodeId: string, vars: Record<string, NodeVariable>, name: string) {
 		const { [name]: _, ...rest } = vars;
+		delete envVarMode[`${nodeId}:${name}`];
 		updateNodeNodeVars(nodeId, rest);
 		pushHistory();
 	}
@@ -45,6 +102,8 @@
 				<div class="node-group-header">{entry.nodeName}</div>
 				{#each Object.entries(entry.vars) as [name, variable] (name)}
 					{@const isNetDefault = name in $projectNodeVars}
+					{@const key = `${entry.nodeId}:${name}`}
+					{@const inEnvMode = envVarMode[key] || false}
 					{@const error = validateVarValue(variable.value, variable.type)}
 					<div class="var-row">
 						<div class="var-header">
@@ -53,38 +112,91 @@
 							{#if isNetDefault}
 								<span class="var-badge override">override</span>
 							{/if}
-						</div>
-						<div class="var-edit-row">
-							<input
-								type="text"
-								value={variable.value}
-								placeholder="value"
-								class:invalid={error !== null}
-								title={error || ''}
-								oninput={(e) => updateVarValue(entry.nodeId, entry.vars, name, (e.target as HTMLInputElement).value)}
-								onblur={() => pushHistory()}
-							/>
-							<select
-								value={variable.type || 'str'}
-								onchange={(e) => {
-									updateVarType(entry.nodeId, entry.vars, name, (e.target as HTMLSelectElement).value);
-									pushHistory();
-								}}
-							>
-								{#each VAR_TYPES as t}
-									<option value={t}>{t}</option>
-								{/each}
-							</select>
 							<button
-								class="remove-btn"
-								onclick={() => removeVar(entry.nodeId, entry.vars, name)}
-								title="Remove variable"
-							>
-								&times;
-							</button>
+								class="envvar-toggle"
+								class:active={inEnvMode}
+								title={inEnvMode ? 'Switch to literal value' : 'Switch to environment variable'}
+								onclick={() => toggleEnvVarMode(entry.nodeId, entry.vars, name)}
+							>$</button>
 						</div>
-						{#if error}
-							<div class="var-error">{error}</div>
+						{#if inEnvMode}
+							<div class="envvar-input-group">
+								<div class="envvar-name-row">
+									<span class="envvar-prefix">$</span>
+									<input
+										type="text"
+										class="envvar-name-input"
+										value={getEnvVarName(variable.value)}
+										placeholder="ENV_VAR_NAME"
+										oninput={(e) => updateVarEnvName(entry.nodeId, entry.vars, name, (e.target as HTMLInputElement).value)}
+										onblur={() => pushHistory()}
+									/>
+								</div>
+								<div class="envvar-default-row">
+									<span class="envvar-default-label">default:</span>
+									<input
+										type="text"
+										class="envvar-default-input"
+										value={getEnvVarDefault(variable.value) ?? ''}
+										placeholder="(none)"
+										oninput={(e) => updateVarEnvDefault(entry.nodeId, entry.vars, name, (e.target as HTMLInputElement).value)}
+										onblur={() => pushHistory()}
+									/>
+								</div>
+							</div>
+							<div class="var-edit-row envvar-controls">
+								<select
+									value={variable.type || 'str'}
+									onchange={(e) => {
+										updateVarType(entry.nodeId, entry.vars, name, (e.target as HTMLSelectElement).value);
+										pushHistory();
+									}}
+								>
+									{#each VAR_TYPES as t}
+										<option value={t}>{t}</option>
+									{/each}
+								</select>
+								<button
+									class="remove-btn"
+									onclick={() => removeVar(entry.nodeId, entry.vars, name)}
+									title="Remove variable"
+								>
+									&times;
+								</button>
+							</div>
+						{:else}
+							<div class="var-edit-row">
+								<input
+									type="text"
+									value={typeof variable.value === 'string' ? variable.value : ''}
+									placeholder="value"
+									class:invalid={error !== null}
+									title={error || ''}
+									oninput={(e) => updateVarValue(entry.nodeId, entry.vars, name, (e.target as HTMLInputElement).value)}
+									onblur={() => pushHistory()}
+								/>
+								<select
+									value={variable.type || 'str'}
+									onchange={(e) => {
+										updateVarType(entry.nodeId, entry.vars, name, (e.target as HTMLSelectElement).value);
+										pushHistory();
+									}}
+								>
+									{#each VAR_TYPES as t}
+										<option value={t}>{t}</option>
+									{/each}
+								</select>
+								<button
+									class="remove-btn"
+									onclick={() => removeVar(entry.nodeId, entry.vars, name)}
+									title="Remove variable"
+								>
+									&times;
+								</button>
+							</div>
+							{#if error}
+								<div class="var-error">{error}</div>
+							{/if}
 						{/if}
 					</div>
 				{/each}
@@ -235,5 +347,116 @@
 
 	.remove-btn:hover {
 		color: var(--error-color, #ef4444);
+	}
+
+	/* Env var toggle button */
+	.envvar-toggle {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 16px;
+		height: 16px;
+		margin-left: auto;
+		padding: 0;
+		border: 1px solid var(--border-color, #404040);
+		border-radius: 3px;
+		background: transparent;
+		color: var(--text-secondary, #666);
+		font-family: 'SF Mono', Monaco, Consolas, monospace;
+		font-size: 10px;
+		font-weight: 700;
+		cursor: pointer;
+		line-height: 1;
+		flex-shrink: 0;
+	}
+
+	.envvar-toggle:hover {
+		border-color: var(--accent-color, #3b82f6);
+		color: var(--accent-color, #3b82f6);
+	}
+
+	.envvar-toggle.active {
+		background: var(--accent-color, #3b82f6);
+		border-color: var(--accent-color, #3b82f6);
+		color: #fff;
+	}
+
+	.envvar-toggle.active:hover {
+		background: var(--accent-hover, #2563eb);
+		border-color: var(--accent-hover, #2563eb);
+	}
+
+	/* Env var input group */
+	.envvar-input-group {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.envvar-name-row {
+		display: flex;
+		align-items: center;
+		background: var(--bg-tertiary, #2d2d2d);
+		border: 1px solid rgba(59, 130, 246, 0.4);
+		border-radius: 3px;
+		overflow: hidden;
+	}
+
+	.envvar-prefix {
+		padding: 3px 4px 3px 6px;
+		color: var(--accent-color, #3b82f6);
+		font-family: 'SF Mono', Monaco, Consolas, monospace;
+		font-size: 11px;
+		font-weight: 700;
+		user-select: none;
+	}
+
+	.envvar-name-input {
+		flex: 1;
+		padding: 3px 6px 3px 0;
+		background: transparent;
+		border: none;
+		color: var(--text-primary, #fff);
+		font-family: 'SF Mono', Monaco, Consolas, monospace;
+		font-size: 11px;
+	}
+
+	.envvar-name-input:focus {
+		outline: none;
+	}
+
+	.envvar-default-row {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.envvar-default-label {
+		font-size: 10px;
+		color: var(--text-secondary, #666);
+		white-space: nowrap;
+		flex-shrink: 0;
+	}
+
+	.envvar-default-input {
+		flex: 1;
+		padding: 2px 6px;
+		background: var(--bg-tertiary, #2d2d2d);
+		border: 1px solid var(--border-color, #404040);
+		border-radius: 3px;
+		color: var(--text-secondary, #a0a0a0);
+		font-size: 10px;
+		min-width: 0;
+	}
+
+	.envvar-default-input:focus {
+		outline: none;
+		border-color: var(--accent-color, #3b82f6);
+		color: var(--text-primary, #fff);
+	}
+
+	.envvar-controls {
+		margin-top: 4px;
+		justify-content: flex-end;
 	}
 </style>
