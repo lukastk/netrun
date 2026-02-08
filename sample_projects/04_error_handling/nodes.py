@@ -3,24 +3,19 @@
 import time
 
 
-def flaky_node(data: str, print) -> str:
+def flaky_node(data: str, print, ctx) -> str:
     """A node that fails on the first two attempts, then succeeds.
 
     Demonstrates retries with retry_wait.
     """
-    # Use a module-level counter to track attempts across retries
-    if not hasattr(flaky_node, "_attempts"):
-        flaky_node._attempts = 0
-    flaky_node._attempts += 1
+    attempt = ctx.retry_count + 1
 
-    if flaky_node._attempts <= 2:
-        print(f"Attempt {flaky_node._attempts}: failing...")
-        raise ValueError(f"Transient error (attempt {flaky_node._attempts})")
+    if attempt <= 2:
+        print(f"Attempt {attempt}: failing...")
+        raise ValueError(f"Transient error (attempt {attempt})")
 
-    print(f"Attempt {flaky_node._attempts}: success!")
-    result = data.upper()
-    flaky_node._attempts = 0  # Reset for next run
-    return result
+    print(f"Attempt {attempt}: success!")
+    return data.upper()
 
 
 def on_failure(ctx):
