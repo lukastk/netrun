@@ -188,9 +188,20 @@ export async function closeTab(tabId: string, confirmUnsaved: boolean = true): P
 		}
 	}
 
-	// If this is the last tab, shut down the app
+	// If this is the last tab:
+	// - If it's an empty untitled tab, shut down the app
+	// - Otherwise, replace it with a fresh untitled tab
 	if (tabList.length === 1) {
-		await api.shutdown();
+		const isEmptyUntitled = !tabToClose.filePath && !tabToClose.isDirty && tabToClose.nodes.length === 0 && !tabToClose.isNewFile;
+		if (isEmptyUntitled) {
+			await api.shutdown();
+			return true;
+		}
+		// Replace with a fresh untitled tab
+		const newTab = createEmptyTabState();
+		tabs.set([newTab]);
+		activeTabId.set(newTab.id);
+		updateUrlWithFile(null);
 		return true;
 	}
 
