@@ -11,7 +11,9 @@
 	import Modal from '$lib/components/Modal.svelte';
 	import FactorySelectorModal from '$lib/components/FactorySelectorModal.svelte';
 	import RecipeModal from '$lib/components/RecipeModal.svelte';
+	import '$lib/configFieldRegistrations';
 	import { api } from '$lib/api';
+	import { loadConfigSchema } from '$lib/stores/schemaStore';
 	import { nodes, currentFilePath, activeTab, recentFiles, loadFromFile, clearFlow, isNewFile, saveToFile, selectNodeByName, extraData, hasUnsavedChanges } from '$lib/stores/flowStore';
 	import { factorySelectorState, closeFactorySelector } from '$lib/stores/factorySelectorStore';
 	import { recipeModalState } from '$lib/stores/recipeStore';
@@ -40,6 +42,7 @@
 	// Initialize command system and process URL parameters
 	onMount(async () => {
 		initializeCommands();
+		loadConfigSchema();
 
 		// Fetch working directory from server
 		let firstNetrunFile: string | null = null;

@@ -51,6 +51,7 @@
 	} from '$lib/stores/variablesStore';
 	import NodeVariablesSection from './NodeVariablesSection.svelte';
 	import AllNodeVariablesSection from './AllNodeVariablesSection.svelte';
+	import { unregisteredFields } from '$lib/stores/schemaStore';
 
 	// Loading state for factory preview
 	let isRefreshing = $state(false);
@@ -507,6 +508,13 @@
 	<div class="sidebar-header">
 		<h2>Properties</h2>
 	</div>
+
+	{#if $unregisteredFields.length > 0}
+		<div class="unregistered-warning">
+			<span class="warning-badge">DEV</span>
+			Unregistered fields: {$unregisteredFields.join(', ')}
+		</div>
+	{/if}
 
 	<div class="sidebar-content">
 		{#if $selectedNode}
@@ -1406,6 +1414,28 @@
 		background: var(--bg-tertiary, #2d2d2d);
 		border-color: var(--accent-color, #3b82f6);
 		color: var(--accent-color, #3b82f6);
+	}
+
+	.unregistered-warning {
+		padding: 6px 12px;
+		background: rgba(239, 146, 68, 0.15);
+		border-bottom: 1px solid rgba(239, 146, 68, 0.3);
+		color: #ef9244;
+		font-size: 10px;
+		line-height: 1.4;
+		word-break: break-all;
+	}
+
+	.warning-badge {
+		display: inline-block;
+		padding: 1px 4px;
+		background: #ef9244;
+		color: #000;
+		font-size: 9px;
+		font-weight: 700;
+		border-radius: 2px;
+		margin-right: 4px;
+		vertical-align: middle;
 	}
 
 	.sidebar-content {
