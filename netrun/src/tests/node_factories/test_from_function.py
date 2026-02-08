@@ -4,6 +4,7 @@ __all__ = ['test_from_function_with_types', 'test_from_function_without_types', 
 
 # %% pts/tests/06_node_factories/test_from_function.pct.py 2
 import pytest
+from pydantic import ValidationError
 from netrun.node_factories.from_function import (
     _from_function,
     _parse_function_signature,
@@ -154,10 +155,10 @@ def test_port_config_accepts_generic_types():
 # %% pts/tests/06_node_factories/test_from_function.pct.py 14
 def test_port_config_rejects_invalid_types():
     """Test that PortConfig rejects truly invalid port_type values."""
-    with pytest.raises(Exception):  # Pydantic ValidationError
+    with pytest.raises(ValidationError):
         PortConfig(port_type=42)
 
-    with pytest.raises(Exception):
+    with pytest.raises(ValidationError):
         PortConfig(port_type=[1, 2, 3])
 
 # %% pts/tests/06_node_factories/test_from_function.pct.py 15

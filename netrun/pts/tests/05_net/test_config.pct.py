@@ -1909,7 +1909,7 @@ def test_node_variable_resolve_errors():
         NodeVariable(value="maybe", type="bool").resolve_value()
 
     # Invalid json
-    with pytest.raises(Exception):  # json.JSONDecodeError
+    with pytest.raises(json.JSONDecodeError):
         NodeVariable(value="not json", type="json").resolve_value()
 
     # Unsupported type

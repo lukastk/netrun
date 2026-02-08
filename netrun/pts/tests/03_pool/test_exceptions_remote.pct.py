@@ -381,7 +381,7 @@ async def test_connection_error_no_server():
     """connect() raises error when server is not available."""
     client = RemotePoolClient("ws://127.0.0.1:29999")  # No server
 
-    with pytest.raises(Exception):  # May be ConnectionError or OSError
+    with pytest.raises(OSError):
         await client.connect()
 
 # %%
