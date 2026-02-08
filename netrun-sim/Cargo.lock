@@ -136,6 +136,7 @@ dependencies = [
 name = "netrun-sim-python"
 version = "0.1.0"
 dependencies = [
+ "indexmap",
  "netrun-sim",
  "pyo3",
  "ulid",

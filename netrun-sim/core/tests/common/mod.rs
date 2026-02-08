@@ -8,6 +8,7 @@ use netrun_sim::graph::{
     Edge, Graph, MaxSalvos, Node, PacketCount, Port, PortName, PortRef, PortSlotSpec, PortState,
     PortType, SalvoCondition, SalvoConditionTerm,
 };
+use indexmap::IndexMap;
 use std::collections::HashMap;
 
 /// Creates a simple port with infinite capacity.
@@ -85,7 +86,7 @@ pub fn simple_node(name: &str, in_ports: Vec<&str>, out_ports: Vec<&str>) -> Nod
         .collect();
 
     // Create default input salvo condition (all input ports non-empty)
-    let mut in_salvo_conditions = HashMap::new();
+    let mut in_salvo_conditions = IndexMap::new();
     if !in_ports.is_empty() {
         in_salvo_conditions.insert(
             "default".to_string(),
@@ -94,7 +95,7 @@ pub fn simple_node(name: &str, in_ports: Vec<&str>, out_ports: Vec<&str>) -> Nod
     }
 
     // Create default output salvo condition (all output ports non-empty)
-    let mut out_salvo_conditions = HashMap::new();
+    let mut out_salvo_conditions = IndexMap::new();
     if !out_ports.is_empty() {
         out_salvo_conditions.insert(
             "default".to_string(),

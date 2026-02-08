@@ -18,7 +18,7 @@ fn simple_node(name: &str, in_ports: Vec<&str>, out_ports: Vec<&str>) -> Node {
         .collect();
 
     // Default input salvo condition
-    let mut in_salvo_conditions = HashMap::new();
+    let mut in_salvo_conditions = IndexMap::new();
     if !in_ports.is_empty() {
         in_salvo_conditions.insert(
             "default".to_string(),
@@ -41,7 +41,7 @@ fn simple_node(name: &str, in_ports: Vec<&str>, out_ports: Vec<&str>) -> Node {
         in_ports: in_ports_map,
         out_ports: out_ports_map,
         in_salvo_conditions,
-        out_salvo_conditions: HashMap::new(),
+        out_salvo_conditions: IndexMap::new(),
     }
 }
 
@@ -354,8 +354,8 @@ fn test_node_without_ports_is_valid() {
         name: "A".to_string(),
         in_ports: HashMap::new(),
         out_ports: HashMap::new(),
-        in_salvo_conditions: HashMap::new(),
-        out_salvo_conditions: HashMap::new(),
+        in_salvo_conditions: IndexMap::new(),
+        out_salvo_conditions: IndexMap::new(),
     };
     let graph = Graph::new(vec![node], vec![]);
     let errors = graph.validate();

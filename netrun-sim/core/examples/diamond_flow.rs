@@ -19,6 +19,7 @@ use netrun_sim::graph::{
 use netrun_sim::net::{
     NetAction, NetActionResponse, NetActionResponseData, NetSim, PacketLocation,
 };
+use indexmap::IndexMap;
 use std::collections::HashMap;
 
 fn main() {
@@ -138,8 +139,8 @@ fn create_diamond_graph() -> Graph {
             ),
         ]
         .into(),
-        in_salvo_conditions: HashMap::new(),
-        out_salvo_conditions: HashMap::new(),
+        in_salvo_conditions: IndexMap::new(),
+        out_salvo_conditions: IndexMap::new(),
     };
 
     // Node B: one input, one output
@@ -167,7 +168,7 @@ fn create_diamond_graph() -> Graph {
         ]
         .into(),
         out_ports: HashMap::new(),
-        in_salvo_conditions: [(
+        in_salvo_conditions: IndexMap::from([(
             "default".to_string(),
             SalvoCondition {
                 max_salvos: MaxSalvos::Finite(1),
@@ -189,9 +190,8 @@ fn create_diamond_graph() -> Graph {
                     },
                 ]),
             },
-        )]
-        .into(),
-        out_salvo_conditions: HashMap::new(),
+        )]),
+        out_salvo_conditions: IndexMap::new(),
     };
 
     let edges = vec![
@@ -223,7 +223,7 @@ fn create_simple_node(name: &str) -> Node {
             },
         )]
         .into(),
-        in_salvo_conditions: [(
+        in_salvo_conditions: IndexMap::from([(
             "default".to_string(),
             SalvoCondition {
                 max_salvos: MaxSalvos::Finite(1),
@@ -233,9 +233,8 @@ fn create_simple_node(name: &str) -> Node {
                     state: PortState::NonEmpty,
                 },
             },
-        )]
-        .into(),
-        out_salvo_conditions: [(
+        )]),
+        out_salvo_conditions: IndexMap::from([(
             "default".to_string(),
             SalvoCondition {
                 max_salvos: MaxSalvos::Infinite,
@@ -247,8 +246,7 @@ fn create_simple_node(name: &str) -> Node {
                     state: PortState::NonEmpty,
                 },
             },
-        )]
-        .into(),
+        )]),
     }
 }
 

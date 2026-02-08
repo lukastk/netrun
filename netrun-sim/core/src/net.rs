@@ -1558,14 +1558,15 @@ impl NetSim {
     /// ```
     /// use netrun_sim::net::{NetSim, NetAction, NetActionResponse, NetActionResponseData};
     /// use netrun_sim::graph::{Graph, Node, Port, PortSlotSpec};
+    /// use indexmap::IndexMap;
     /// use std::collections::HashMap;
     ///
     /// let node = Node {
     ///     name: "A".to_string(),
     ///     in_ports: HashMap::new(),
     ///     out_ports: HashMap::new(),
-    ///     in_salvo_conditions: HashMap::new(),
-    ///     out_salvo_conditions: HashMap::new(),
+    ///     in_salvo_conditions: IndexMap::new(),
+    ///     out_salvo_conditions: IndexMap::new(),
     /// };
     /// let graph = Graph::new(vec![node], vec![]);
     /// let mut net = NetSim::new(graph);

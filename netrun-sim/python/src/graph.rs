@@ -1,5 +1,6 @@
 use pyo3::prelude::*;
 use pyo3::types::PyList;
+use indexmap::IndexMap;
 use std::collections::HashMap;
 
 use crate::errors::GraphValidationError as PyGraphValidationError;
@@ -794,12 +795,12 @@ impl Node {
             .into_iter()
             .map(|(k, v)| (k, v.to_core()))
             .collect();
-        let in_salvo_core: HashMap<String, CoreSalvoCondition> = in_salvo_conditions
+        let in_salvo_core: IndexMap<String, CoreSalvoCondition> = in_salvo_conditions
             .unwrap_or_default()
             .into_iter()
             .map(|(k, v)| (k, v.to_core()))
             .collect();
-        let out_salvo_core: HashMap<String, CoreSalvoCondition> = out_salvo_conditions
+        let out_salvo_core: IndexMap<String, CoreSalvoCondition> = out_salvo_conditions
             .unwrap_or_default()
             .into_iter()
             .map(|(k, v)| (k, v.to_core()))

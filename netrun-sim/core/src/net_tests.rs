@@ -1,5 +1,6 @@
 use super::*;
 use crate::test_fixtures::*;
+use indexmap::IndexMap;
 use std::collections::HashMap;
 
 // ========== State Snapshot Helpers for Exact Undo Verification ==========
@@ -466,8 +467,8 @@ fn test_run_until_blocked_respects_port_capacity() {
             ports
         },
         out_ports: HashMap::new(),
-        in_salvo_conditions: HashMap::new(), // No salvo conditions = packets wait at input port
-        out_salvo_conditions: HashMap::new(),
+        in_salvo_conditions: IndexMap::new(), // No salvo conditions = packets wait at input port
+        out_salvo_conditions: IndexMap::new(),
     };
 
     let nodes = vec![simple_node("A", vec![], vec!["out"]), node_b];
