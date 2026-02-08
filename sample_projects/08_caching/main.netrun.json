@@ -1,0 +1,46 @@
+{
+  "extra": {
+    "description": "A data pipeline demonstrating caching/memoization features"
+  },
+  "cache": {
+    "enabled": true,
+    "include_all_nodes": true
+  },
+  "output_queues": {
+    "reports": {
+      "ports": [["format_report", "out"]]
+    }
+  },
+  "graph": {
+    "nodes": [
+      {
+        "name": "fetch_data",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {"func": "nodes.fetch_data"},
+        "extra": {
+          "ui": {"position": {"x": 100, "y": 150}}
+        }
+      },
+      {
+        "name": "process",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {"func": "nodes.process"},
+        "extra": {
+          "ui": {"position": {"x": 400, "y": 150}}
+        }
+      },
+      {
+        "name": "format_report",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {"func": "nodes.format_report"},
+        "extra": {
+          "ui": {"position": {"x": 700, "y": 150}}
+        }
+      }
+    ],
+    "edges": [
+      {"source_str": "fetch_data.out", "target_str": "process.data"},
+      {"source_str": "process.out", "target_str": "format_report.stats"}
+    ]
+  }
+}
