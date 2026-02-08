@@ -84,23 +84,22 @@ class SyncThreadChannel:
         """
         self._send_queue = send_queue
         self._recv_queue = recv_queue
-        self._closed = False
-        self._lock = threading.Lock()
+        self._closed = threading.Event()
 
     def send(self, key: str, data: Any) -> None:
         """Send a message."""
-        if self._closed:
+        if self._closed.is_set():
             raise ChannelClosed("Channel is closed")
 
         try:
             self._send_queue.put((key, data))
         except Exception as e:
-            self._closed = True
+            self._closed.set()
             raise ChannelBroken(f"Channel broken: {e}")
 
     def recv(self, timeout: float | None = None) -> tuple[str, Any]:
         """Receive a message with optional timeout."""
-        if self._closed:
+        if self._closed.is_set():
             raise ChannelClosed("Channel is closed")
 
         try:
@@ -108,18 +107,18 @@ class SyncThreadChannel:
         except queue.Empty:
             raise RecvTimeout(f"Receive timed out after {timeout}s")
         except Exception as e:
-            self._closed = True
+            self._closed.set()
             raise ChannelBroken(f"Channel broken: {e}")
 
         if result[0] == RPC_KEY_SHUTDOWN:
-            self._closed = True
+            self._closed.set()
             raise ChannelClosed("Channel was shut down")
 
         return result
 
     def try_recv(self) -> tuple[str, Any] | None:
         """Non-blocking receive."""
-        if self._closed:
+        if self._closed.is_set():
             raise ChannelClosed("Channel is closed")
 
         try:
@@ -127,28 +126,27 @@ class SyncThreadChannel:
         except queue.Empty:
             return None
         except Exception as e:
-            self._closed = True
+            self._closed.set()
             raise ChannelBroken(f"Channel broken: {e}")
 
         if result[0] == RPC_KEY_SHUTDOWN:
-            self._closed = True
+            self._closed.set()
             raise ChannelClosed("Channel was shut down")
 
         return result
 
     def close(self) -> None:
         """Close the channel."""
-        with self._lock:
-            if not self._closed:
-                self._closed = True
-                try:
-                    self._send_queue.put_nowait((RPC_KEY_SHUTDOWN, None))
-                except Exception:
-                    pass
+        if not self._closed.is_set():
+            self._closed.set()
+            try:
+                self._send_queue.put_nowait((RPC_KEY_SHUTDOWN, None))
+            except Exception:
+                pass
 
     @property
     def is_closed(self) -> bool:
-        return self._closed
+        return self._closed.is_set()
 
 # %% [markdown]
 # ## ThreadChannel
@@ -180,12 +178,11 @@ class ThreadChannel:
         self._recv_queue = recv_queue
         self._executor = executor or ThreadPoolExecutor(max_workers=2)
         self._owns_executor = executor is None
-        self._closed = False
-        self._lock = threading.Lock()
+        self._closed = threading.Event()
 
     async def send(self, key: str, data: Any) -> None:
         """Send a message."""
-        if self._closed:
+        if self._closed.is_set():
             raise ChannelClosed("Channel is closed")
 
         loop = asyncio.get_running_loop()
@@ -196,12 +193,12 @@ class ThreadChannel:
                 (key, data),
             )
         except Exception as e:
-            self._closed = True
+            self._closed.set()
             raise ChannelBroken(f"Channel broken: {e}")
 
     async def recv(self, timeout: float | None = None) -> tuple[str, Any]:
         """Receive a message with optional timeout."""
-        if self._closed:
+        if self._closed.is_set():
             raise ChannelClosed("Channel is closed")
 
         loop = asyncio.get_running_loop()
@@ -217,18 +214,18 @@ class ThreadChannel:
         except RecvTimeout:
             raise
         except Exception as e:
-            self._closed = True
+            self._closed.set()
             raise ChannelBroken(f"Channel broken: {e}")
 
         if result[0] == RPC_KEY_SHUTDOWN:
-            self._closed = True
+            self._closed.set()
             raise ChannelClosed("Channel was shut down")
 
         return result
 
     async def try_recv(self) -> tuple[str, Any] | None:
         """Non-blocking receive."""
-        if self._closed:
+        if self._closed.is_set():
             raise ChannelClosed("Channel is closed")
 
         try:
@@ -236,37 +233,36 @@ class ThreadChannel:
         except queue.Empty:
             return None
         except Exception as e:
-            self._closed = True
+            self._closed.set()
             raise ChannelBroken(f"Channel broken: {e}")
 
         if result[0] == RPC_KEY_SHUTDOWN:
-            self._closed = True
+            self._closed.set()
             raise ChannelClosed("Channel was shut down")
 
         return result
 
     async def close(self) -> None:
         """Close the channel."""
-        with self._lock:
-            if not self._closed:
-                self._closed = True
-                # Send shutdown to worker
-                try:
-                    self._send_queue.put_nowait((RPC_KEY_SHUTDOWN, None))
-                except Exception:
-                    pass
-                # Also put shutdown on recv queue to unblock any recv() calls
-                try:
-                    self._recv_queue.put_nowait((RPC_KEY_SHUTDOWN, None))
-                except Exception:
-                    pass
+        if not self._closed.is_set():
+            self._closed.set()
+            # Send shutdown to worker
+            try:
+                self._send_queue.put_nowait((RPC_KEY_SHUTDOWN, None))
+            except Exception:
+                pass
+            # Also put shutdown on recv queue to unblock any recv() calls
+            try:
+                self._recv_queue.put_nowait((RPC_KEY_SHUTDOWN, None))
+            except Exception:
+                pass
 
-                if self._owns_executor:
-                    self._executor.shutdown(wait=False)
+            if self._owns_executor:
+                self._executor.shutdown(wait=False)
 
     @property
     def is_closed(self) -> bool:
-        return self._closed
+        return self._closed.is_set()
 
 # %% [markdown]
 # ## create_thread_channel_pair
