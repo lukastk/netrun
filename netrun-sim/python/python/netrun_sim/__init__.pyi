@@ -40,8 +40,8 @@ class UnsentOutputSalvoError(NetrunError):
 
     ...
 
-class PacketNotInNodeError(NetrunError):
-    """Packet is not inside the specified epoch's node location."""
+class PacketNotInAnyNodeError(NetrunError):
+    """Packet is not inside any epoch (not at a Node location)."""
 
     ...
 
@@ -860,7 +860,7 @@ __all__ = [
     "EpochNotStartableError",
     "CannotFinishNonEmptyEpochError",
     "UnsentOutputSalvoError",
-    "PacketNotInNodeError",
+    "PacketNotInAnyNodeError",
     "OutputPortNotFoundError",
     "OutputPortFullError",
     "SalvoConditionNotFoundError",
