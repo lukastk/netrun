@@ -9,6 +9,7 @@ repository = "https://github.com/lukastk/netrun/"
 [features]
 default = []
 python = ["pyo3"]
+test-fixtures = []
 
 [dependencies]
 indexmap = "2.12.1"
@@ -16,3 +17,6 @@ thiserror = "2.0"
 ulid = "=1.1.0"
 utcnow = "0.2.7"
 pyo3 = { version = "0.23", features = ["abi3-py38"], optional = true }
+
+[dev-dependencies]
+netrun-sim = { path = ".", features = ["test-fixtures"] }
