@@ -334,7 +334,7 @@ Iterates over `self.edges` (a `HashSet`) using a `seen_edges` HashSet. Since edg
 
 ---
 
-### L7. `load_packet_into_output_port` takes `&String` instead of `&str` (netrun-sim)
+### L7. `load_packet_into_output_port` takes `&String` instead of `&str` (netrun-sim) ✅ FIXED
 
 **File:** `netrun-sim/core/src/net.rs`, line 1124
 
