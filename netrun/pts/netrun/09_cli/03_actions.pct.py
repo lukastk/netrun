@@ -20,7 +20,7 @@ from typing import Annotated, Optional
 
 import typer
 
-from netrun.cli._helpers import load_config, output_json, get_node_by_name
+from netrun.cli._helpers import ConfigOpt, PrettyOpt, load_config, output_json, get_node_by_name
 from netrun.tools._helpers import (
     get_available_actions,
     build_action_context,
@@ -37,8 +37,6 @@ from netrun.tools._models import ActionConfig
 #|export
 actions_app = typer.Typer(help="List and run actions.", no_args_is_help=True)
 
-ConfigOpt = Annotated[Optional[str], typer.Option("--config", "-c", help="Path to netrun config file.")]
-PrettyOpt = Annotated[bool, typer.Option("--pretty/--compact", help="Pretty-print or compact JSON output.")]
 NodeOpt = Annotated[Optional[str], typer.Option("--node", "-n", help="Node name for node-level actions.")]
 
 
