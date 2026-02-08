@@ -373,8 +373,11 @@ class NodeConfig(BaseModel):
     """Factory module or import path. If set, generates base config from factory.
 
     The factory module must contain two functions:
-    - get_node_config(**args) -> NodeConfig (without execution_config)
-    - get_node_funcs(**args) -> tuple[exec_func, start_func, stop_func, on_failure_func]
+    - get_node_config(_net_config, **args) -> NodeConfig (without execution_config)
+    - get_node_funcs(_net_config, **args) -> tuple[exec_func, start_func, stop_func, on_failure_func]
+
+    ``_net_config`` is always injected by the system (a ``NetConfig`` instance or
+    ``None``). Factory authors should accept it as the first parameter.
     """
 
     factory_args: dict[str, Any] = Field(default_factory=dict)
@@ -409,6 +412,7 @@ class NodeConfig(BaseModel):
         args: dict[str, Any] | None = None,
         name: str | None = None,
         project_root: 'Path | None' = None,
+        net_config: Any = None,
     ) -> "NodeConfig":
         """Create a NodeConfig from a factory module.
 
@@ -419,6 +423,7 @@ class NodeConfig(BaseModel):
             name: Optional explicit node name. If provided, overrides the
                   factory-generated name. If None, uses the factory's default name.
             project_root: Base path for resolving relative file-path references.
+            net_config: NetConfig instance passed to factory functions as _net_config.
 
         Returns:
             Complete NodeConfig with execution_config populated.
@@ -443,7 +448,7 @@ class NodeConfig(BaseModel):
         get_node_funcs = getattr(module, "get_node_funcs")
 
         # Call factories
-        base_config = get_node_config(**args)
+        base_config = get_node_config(_net_config=net_config, **args)
 
         if isinstance(base_config, SubgraphConfig):
             raise ValueError(
@@ -451,7 +456,7 @@ class NodeConfig(BaseModel):
                 "Use the 'factory' field in config instead."
             )
 
-        exec_func, start_func, stop_func, on_failure_func = get_node_funcs(**args)
+        exec_func, start_func, stop_func, on_failure_func = get_node_funcs(_net_config=net_config, **args)
 
         # Build execution config from functions
         execution_config = NodeExecutionConfig(
@@ -475,7 +480,7 @@ class NodeConfig(BaseModel):
             extra=base_config.extra,
         )
 
-    def resolve(self, project_root: 'Path | None' = None) -> "NodeConfig | SubgraphConfig":
+    def resolve(self, net_config: Any = None) -> "NodeConfig | SubgraphConfig":
         """Return a resolved copy with factory expanded and imports resolved.
 
         If this node has a factory set, expands it to generate the full config.
@@ -485,13 +490,15 @@ class NodeConfig(BaseModel):
         NodeConfig's name and extra applied.
 
         Args:
-            project_root: Base path for resolving relative file-path references.
+            net_config: NetConfig instance for resolving project root and passed
+                        to factory functions as _net_config.
 
         Returns:
             A NodeConfig with factory expanded and functions resolved,
             or a SubgraphConfig if the factory returned one.
             If no resolution is needed, returns self.
         """
+        project_root = net_config.project_root_path if net_config is not None else None
         result = self
 
         # If factory is set, expand it
@@ -512,7 +519,7 @@ class NodeConfig(BaseModel):
 
             # Call get_node_config only (NOT get_node_funcs - that's resolved lazily on workers)
             # This avoids creating closures that can't be pickled for multiprocess pools.
-            base_config = get_node_config_fn(**self.factory_args)
+            base_config = get_node_config_fn(_net_config=net_config, **self.factory_args)
 
             # If factory returned a SubgraphConfig, return it with name/extra applied
             if isinstance(base_config, SubgraphConfig):

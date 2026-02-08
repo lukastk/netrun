@@ -628,10 +628,10 @@ def _from_function(func: Callable|str, include_port_types: bool = True, manual_o
 
     return config
 
-def _get_func_from_import_path(func_path: str) -> Callable:
+def _get_func_from_import_path(func_path: str, project_root=None) -> Callable:
     from netrun.net.config import _import_from_path
     try:
-        return _import_from_path(func_path)
+        return _import_from_path(func_path, project_root=project_root)
     except Exception as e:
         raise ValueError(f"Error importing function from path: {func_path}") from e
 
@@ -640,7 +640,7 @@ def _get_func_from_import_path(func_path: str) -> Callable:
 
 # %%
 #|exporti
-def get_node_config(func: Callable | str, include_port_types: bool = True, manual_output: bool = False) -> NodeConfig:
+def get_node_config(_net_config=None, *, func: Callable | str, include_port_types: bool = True, manual_output: bool = False) -> NodeConfig:
     """Factory function to get NodeConfig from a function.
 
     This implements the factory module protocol.  See ``_factory_desc`` for
@@ -649,6 +649,7 @@ def get_node_config(func: Callable | str, include_port_types: bool = True, manua
     ``PreCreatedPacket`` annotation).
 
     Args:
+        _net_config: NetConfig instance injected by the system (not user-facing).
         func: The function or its import path (e.g. ``"mymodule.my_func"``).
         include_port_types: If True (default), port configs will include type
             information from function annotations for runtime type checking.
@@ -663,8 +664,9 @@ def get_node_config(func: Callable | str, include_port_types: bool = True, manua
         The node name is always derived from ``func.__name__``. To override
         the name, use ``NodeConfig.from_factory()`` with the name parameter.
     """
+    project_root = _net_config.project_root_path if _net_config is not None else None
     if isinstance(func, str):
-        func = _get_func_from_import_path(func)
+        func = _get_func_from_import_path(func, project_root=project_root)
 
     # Get full config and strip execution_config
     config = _from_function(func, include_port_types, manual_output=manual_output)
@@ -672,12 +674,13 @@ def get_node_config(func: Callable | str, include_port_types: bool = True, manua
     return config
 
 
-def get_node_funcs(func: Callable | str, include_port_types: bool = True, manual_output: bool = False) -> tuple:
+def get_node_funcs(_net_config=None, *, func: Callable | str, include_port_types: bool = True, manual_output: bool = False) -> tuple:
     """Factory function to get execution functions.
 
     This implements the factory module protocol.
 
     Args:
+        _net_config: NetConfig instance injected by the system (not user-facing).
         func: The function or its import path.
         include_port_types: Accepted for consistency with get_node_config but
             not used (type checking is a config concern, not execution).
@@ -687,8 +690,9 @@ def get_node_funcs(func: Callable | str, include_port_types: bool = True, manual
     Returns:
         Tuple of (exec_func, start_func, stop_func, on_failure_func).
     """
+    project_root = _net_config.project_root_path if _net_config is not None else None
     if isinstance(func, str):
-        func = _get_func_from_import_path(func)
+        func = _get_func_from_import_path(func, project_root=project_root)
 
     parsed_sig = _parse_function_signature(func)
     exec_func = _create_exec_func(func, parsed_sig, manual_output=manual_output)
@@ -851,7 +855,7 @@ print("include_port_types test passed")
 
 # %%
 # Test get_node_config with include_port_types
-config_via_factory = get_node_config(typed_func, include_port_types=False)
+config_via_factory = get_node_config(func=typed_func, include_port_types=False)
 assert config_via_factory.in_ports["a"].port_type is None
 assert config_via_factory.out_ports["out"].port_type is None
 assert config_via_factory.execution_config is None  # Factory protocol strips this

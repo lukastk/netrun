@@ -79,7 +79,7 @@ class GraphConfig(BaseModel):
     tool-specific data that should be preserved across serialization.
     """
 
-    def resolve(self, base_path: Path | None = None, project_root: 'Path | None' = None) -> "GraphConfig":
+    def resolve(self, base_path: Path | None = None, net_config: 'Any | None' = None) -> "GraphConfig":
         """Return a resolved copy with all subgraphs flattened and nodes resolved.
 
         This method:
@@ -91,8 +91,8 @@ class GraphConfig(BaseModel):
 
         Args:
             base_path: Base path for resolving relative file paths in subgraphs.
-            project_root: Base path for resolving relative file-path references
-                          in factories and function imports.
+            net_config: NetConfig instance for resolving project root and passed
+                        to factory functions.
 
         Returns:
             A new GraphConfig with only NodeConfig (no SubgraphConfig) and all
@@ -114,17 +114,17 @@ class GraphConfig(BaseModel):
                 # Resolve subgraph to flat nodes and edges
                 sg_nodes, sg_edges, in_mapping, out_mapping = node.resolve(base_path=base_path)
                 # Resolve factory nodes inside subgraphs (bug fix)
-                resolved_nodes.extend(n.resolve(project_root=project_root) for n in sg_nodes)
+                resolved_nodes.extend(n.resolve(net_config=net_config) for n in sg_nodes)
                 resolved_edges.extend(sg_edges)
                 subgraph_in_mappings[node.name] = in_mapping
                 subgraph_out_mappings[node.name] = out_mapping
             else:
                 # Regular node - resolve factories
-                resolved = node.resolve(project_root=project_root)
+                resolved = node.resolve(net_config=net_config)
                 if isinstance(resolved, SubgraphConfig):
                     # Factory returned a subgraph — flatten it
                     sg_nodes, sg_edges, in_mapping, out_mapping = resolved.resolve(base_path=base_path)
-                    resolved_nodes.extend(n.resolve(project_root=project_root) for n in sg_nodes)
+                    resolved_nodes.extend(n.resolve(net_config=net_config) for n in sg_nodes)
                     resolved_edges.extend(sg_edges)
                     subgraph_in_mappings[resolved.name] = in_mapping
                     subgraph_out_mappings[resolved.name] = out_mapping
