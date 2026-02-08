@@ -412,7 +412,7 @@ Converts errors to strings, losing node/port names and error variant.
 
 ---
 
-### L19. Graph not validated on construction (netrun-sim) ⏭️ SKIPPED
+### L19. Graph not validated on construction (netrun-sim) ✅ FIXED
 
 **File:** `netrun-sim/core/src/graph.rs`, lines 432-457
 
