@@ -3,17 +3,15 @@ use pyo3::types::PyList;
 use indexmap::IndexMap;
 use std::collections::HashMap;
 
-use crate::errors::GraphValidationError as PyGraphValidationError;
-
 // Re-export core types that have pyclass directly
 pub use netrun_sim::graph::{Edge, PortRef, PortType};
 
 // Import core types with aliases for internal use
 use netrun_sim::graph::{
-    Graph as CoreGraph, MaxSalvos as CoreMaxSalvos, Node as CoreNode,
-    PacketCount as CorePacketCount, Port as CorePort, PortName, PortSlotSpec as CorePortSlotSpec,
-    PortState as CorePortState, SalvoCondition as CoreSalvoCondition,
-    SalvoConditionTerm as CoreSalvoConditionTerm,
+    Graph as CoreGraph, GraphValidationError as CoreGraphValidationError,
+    MaxSalvos as CoreMaxSalvos, Node as CoreNode, PacketCount as CorePacketCount,
+    Port as CorePort, PortName, PortSlotSpec as CorePortSlotSpec, PortState as CorePortState,
+    SalvoCondition as CoreSalvoCondition, SalvoConditionTerm as CoreSalvoConditionTerm,
 };
 
 /// Specifies how many packets to take from a port in a salvo.
@@ -877,6 +875,146 @@ impl Node {
     }
 }
 
+/// Structured validation error from graph validation.
+///
+/// Provides access to the error variant name, human-readable message,
+/// and a dict of variant-specific fields (node names, port refs, etc.).
+#[pyclass(frozen, name = "GraphValidationErrorInfo")]
+#[derive(Clone)]
+pub struct PyGraphValidationErrorInfo {
+    inner: CoreGraphValidationError,
+}
+
+#[pymethods]
+impl PyGraphValidationErrorInfo {
+    /// The error variant name (e.g., "MultipleEdgesFromOutputPort").
+    #[getter]
+    fn kind(&self) -> &str {
+        use CoreGraphValidationError::*;
+        match &self.inner {
+            MultipleEdgesFromOutputPort { .. } => "MultipleEdgesFromOutputPort",
+            EdgeReferencesNonexistentNode { .. } => "EdgeReferencesNonexistentNode",
+            EdgeReferencesNonexistentPort { .. } => "EdgeReferencesNonexistentPort",
+            EdgeSourceNotOutputPort { .. } => "EdgeSourceNotOutputPort",
+            EdgeTargetNotInputPort { .. } => "EdgeTargetNotInputPort",
+            SalvoConditionReferencesNonexistentPort { .. } => {
+                "SalvoConditionReferencesNonexistentPort"
+            }
+            SalvoConditionTermReferencesNonexistentPort { .. } => {
+                "SalvoConditionTermReferencesNonexistentPort"
+            }
+            InputSalvoConditionInvalidMaxSalvos { .. } => "InputSalvoConditionInvalidMaxSalvos",
+        }
+    }
+
+    /// The human-readable error message.
+    #[getter]
+    fn message(&self) -> String {
+        format!("{}", self.inner)
+    }
+
+    /// Dict of variant-specific fields (node names, port refs, counts, etc.).
+    #[getter]
+    fn details(&self, py: Python<'_>) -> PyResult<PyObject> {
+        use CoreGraphValidationError::*;
+        let dict = pyo3::types::PyDict::new(py);
+        match &self.inner {
+            MultipleEdgesFromOutputPort {
+                output_port,
+                edge_count,
+            } => {
+                dict.set_item("output_port", output_port.clone())?;
+                dict.set_item("edge_count", *edge_count)?;
+            }
+            EdgeReferencesNonexistentNode {
+                edge_source,
+                edge_target,
+                missing_node,
+            } => {
+                dict.set_item("edge_source", edge_source.clone())?;
+                dict.set_item("edge_target", edge_target.clone())?;
+                dict.set_item("missing_node", missing_node.as_str())?;
+            }
+            EdgeReferencesNonexistentPort {
+                edge_source,
+                edge_target,
+                missing_port,
+            } => {
+                dict.set_item("edge_source", edge_source.clone())?;
+                dict.set_item("edge_target", edge_target.clone())?;
+                dict.set_item("missing_port", missing_port.clone())?;
+            }
+            EdgeSourceNotOutputPort {
+                edge_source,
+                edge_target,
+            } => {
+                dict.set_item("edge_source", edge_source.clone())?;
+                dict.set_item("edge_target", edge_target.clone())?;
+            }
+            EdgeTargetNotInputPort {
+                edge_source,
+                edge_target,
+            } => {
+                dict.set_item("edge_source", edge_source.clone())?;
+                dict.set_item("edge_target", edge_target.clone())?;
+            }
+            SalvoConditionReferencesNonexistentPort {
+                node_name,
+                condition_name,
+                is_input_condition,
+                missing_port,
+            } => {
+                dict.set_item("node_name", node_name.as_str())?;
+                dict.set_item("condition_name", condition_name.as_str())?;
+                dict.set_item("is_input_condition", *is_input_condition)?;
+                dict.set_item("missing_port", missing_port.as_str())?;
+            }
+            SalvoConditionTermReferencesNonexistentPort {
+                node_name,
+                condition_name,
+                is_input_condition,
+                missing_port,
+            } => {
+                dict.set_item("node_name", node_name.as_str())?;
+                dict.set_item("condition_name", condition_name.as_str())?;
+                dict.set_item("is_input_condition", *is_input_condition)?;
+                dict.set_item("missing_port", missing_port.as_str())?;
+            }
+            InputSalvoConditionInvalidMaxSalvos {
+                node_name,
+                condition_name,
+                max_salvos,
+            } => {
+                dict.set_item("node_name", node_name.as_str())?;
+                dict.set_item("condition_name", condition_name.as_str())?;
+                let py_max_salvos: PyObject = match max_salvos {
+                    CoreMaxSalvos::Infinite => {
+                        MaxSalvos::Infinite.into_pyobject(py)?.unbind().into_any()
+                    }
+                    CoreMaxSalvos::Finite(n) => PyMaxSalvosFinite { max: *n }
+                        .into_pyobject(py)?
+                        .unbind()
+                        .into_any(),
+                };
+                dict.set_item("max_salvos", py_max_salvos)?;
+            }
+        }
+        Ok(dict.into())
+    }
+
+    fn __str__(&self) -> String {
+        format!("{}", self.inner)
+    }
+
+    fn __repr__(&self) -> String {
+        format!(
+            "GraphValidationErrorInfo(kind='{}', message='{}')",
+            self.kind(),
+            self.inner
+        )
+    }
+}
+
 /// The static topology of a flow-based network.
 #[pyclass]
 pub struct Graph {
@@ -913,13 +1051,12 @@ impl Graph {
         Ok(list.unbind())
     }
 
-    /// Validate the graph and return a list of errors.
+    /// Validate the graph and return a list of structured validation errors.
     fn validate(&self, py: Python<'_>) -> PyResult<Py<PyList>> {
         let errors = self.inner.validate();
         let list = PyList::empty(py);
         for err in errors {
-            let msg = format!("{}", err);
-            list.append(PyGraphValidationError::new_err(msg))?;
+            list.append(PyGraphValidationErrorInfo { inner: err })?;
         }
         Ok(list.unbind())
     }
@@ -961,6 +1098,7 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<Edge>()?;
     m.add_class::<SalvoCondition>()?;
     m.add_class::<Node>()?;
+    m.add_class::<PyGraphValidationErrorInfo>()?;
     m.add_class::<Graph>()?;
     Ok(())
 }

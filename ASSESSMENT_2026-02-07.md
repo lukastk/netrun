@@ -404,7 +404,7 @@ All ULID conversions go through string serialization. Raw 128-bit integer conver
 
 ---
 
-### L18. `Graph.validate()` loses structured error information (netrun-sim) ⏭️ SKIPPED
+### L18. `Graph.validate()` loses structured error information (netrun-sim) ✅ FIXED
 
 **File:** `netrun-sim/python/src/graph.rs`, lines 914-922
 
