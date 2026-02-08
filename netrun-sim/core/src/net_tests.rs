@@ -2073,10 +2073,25 @@ fn test_input_salvo_from_index_is_fresh() {
     // Find PacketMoved events that move from InputPort to Node (the salvo trigger moves)
     let salvo_moves: Vec<_> = events
         .iter()
-        .filter(|e| matches!(e, NetEvent::PacketMoved(_, _, PacketLocation::InputPort(_, _), PacketLocation::Node(_), _)))
+        .filter(|e| {
+            matches!(
+                e,
+                NetEvent::PacketMoved(
+                    _,
+                    _,
+                    PacketLocation::InputPort(_, _),
+                    PacketLocation::Node(_),
+                    _
+                )
+            )
+        })
         .collect();
 
-    assert_eq!(salvo_moves.len(), 3, "Expected 3 packets moved from input port to epoch");
+    assert_eq!(
+        salvo_moves.len(),
+        3,
+        "Expected 3 packets moved from input port to epoch"
+    );
 
     // All from_index values should be 0 (each packet is at index 0 when removed)
     for event in &salvo_moves {

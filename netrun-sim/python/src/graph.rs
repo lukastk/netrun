@@ -1,6 +1,6 @@
+use indexmap::IndexMap;
 use pyo3::prelude::*;
 use pyo3::types::PyList;
-use indexmap::IndexMap;
 use std::collections::HashMap;
 
 // Re-export core types that have pyclass directly
@@ -9,8 +9,8 @@ pub use netrun_sim::graph::{Edge, PortRef, PortType};
 // Import core types with aliases for internal use
 use netrun_sim::graph::{
     Graph as CoreGraph, GraphValidationError as CoreGraphValidationError,
-    MaxSalvos as CoreMaxSalvos, Node as CoreNode, PacketCount as CorePacketCount,
-    Port as CorePort, PortName, PortSlotSpec as CorePortSlotSpec, PortState as CorePortState,
+    MaxSalvos as CoreMaxSalvos, Node as CoreNode, PacketCount as CorePacketCount, Port as CorePort,
+    PortName, PortSlotSpec as CorePortSlotSpec, PortState as CorePortState,
     SalvoCondition as CoreSalvoCondition, SalvoConditionTerm as CoreSalvoConditionTerm,
 };
 
@@ -299,9 +299,10 @@ impl PyPortStateNumeric {
             "greater_than" => Ok(CorePortState::GreaterThan(self.value)),
             "equals_or_less_than" => Ok(CorePortState::EqualsOrLessThan(self.value)),
             "equals_or_greater_than" => Ok(CorePortState::EqualsOrGreaterThan(self.value)),
-            _ => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(
-                format!("Invalid port state kind: {}", self.kind),
-            )),
+            _ => Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                "Invalid port state kind: {}",
+                self.kind
+            ))),
         }
     }
 }

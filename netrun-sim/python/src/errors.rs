@@ -161,11 +161,9 @@ pub fn net_action_error_to_py_err(err: netrun_sim::net::NetActionError) -> PyErr
             "Cannot finish epoch {}: output port '{}' has unsent packets",
             epoch_id, port_name
         )),
-        NetActionError::PacketNotInAnyNode {
-            packet_id,
-        } => {
-            PacketNotInAnyNodeError::new_err(format!("Packet {} is not inside any epoch", packet_id))
-        }
+        NetActionError::PacketNotInAnyNode { packet_id } => PacketNotInAnyNodeError::new_err(
+            format!("Packet {} is not inside any epoch", packet_id),
+        ),
         NetActionError::OutputPortNotFound {
             epoch_id,
             port_name,

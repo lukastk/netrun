@@ -228,9 +228,7 @@ pub enum NetActionError {
 
     /// Packet is not inside any epoch (not at a Node location)
     #[error("packet {packet_id} is not inside any epoch")]
-    PacketNotInAnyNode {
-        packet_id: PacketID,
-    },
+    PacketNotInAnyNode { packet_id: PacketID },
 
     /// Output port does not exist on the node
     #[error("output port '{port_name}' not found on node for epoch {epoch_id}")]
@@ -416,7 +414,10 @@ impl NetSim {
         let errors = graph.validate();
         if !errors.is_empty() {
             let msgs: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
-            panic!("Cannot create NetSim with invalid graph:\n  - {}", msgs.join("\n  - "));
+            panic!(
+                "Cannot create NetSim with invalid graph:\n  - {}",
+                msgs.join("\n  - ")
+            );
         }
 
         let mut packets_by_location: HashMap<PacketLocation, IndexSet<PacketID>> = HashMap::new();
@@ -1256,13 +1257,8 @@ impl NetSim {
 
         // Get the locations to send packets to
         // Tuple: (packet_id, port_name, from_location, to_location, is_orphaned)
-        let mut packets_to_move: Vec<(
-            PacketID,
-            PortName,
-            PacketLocation,
-            PacketLocation,
-            bool,
-        )> = Vec::new();
+        let mut packets_to_move: Vec<(PacketID, PortName, PacketLocation, PacketLocation, bool)> =
+            Vec::new();
         for (port_name, packet_count) in &salvo_condition.ports {
             let from_location = PacketLocation::OutputPort(*epoch_id, port_name.clone());
             let packets = self
@@ -1324,9 +1320,7 @@ impl NetSim {
         let mut net_events = Vec::new();
         let mut orphaned_infos: Vec<OrphanedPacketInfo> = Vec::new();
 
-        for (packet_id, port_name, from_location, to_location, is_orphaned) in
-            packets_to_move
-        {
+        for (packet_id, port_name, from_location, to_location, is_orphaned) in packets_to_move {
             if is_orphaned {
                 // Emit PacketOrphaned event for unconnected port
                 net_events.push(NetEvent::PacketOrphaned(

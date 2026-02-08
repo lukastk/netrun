@@ -32,6 +32,7 @@ KNOWN_FIELDS: dict[str, set[str]] = {
         "type_checking_enabled",
         "propagate_exceptions",
         "print_exceptions",
+        "cache",
     },
     "NodeConfig": {
         "type",
@@ -68,6 +69,7 @@ KNOWN_FIELDS: dict[str, set[str]] = {
         "type_checking_enabled",
         "propagate_exceptions",
         "print_exceptions",
+        "cache",
     },
 }
 

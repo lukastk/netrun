@@ -7,6 +7,7 @@
 //! - Starting epochs and processing packets
 //! - Sending output salvos to continue flow
 
+use indexmap::IndexMap;
 use netrun_sim::graph::{
     Edge, Graph, MaxSalvos, Node, PacketCount, Port, PortRef, PortSlotSpec, PortState, PortType,
     SalvoCondition, SalvoConditionTerm,
@@ -14,7 +15,6 @@ use netrun_sim::graph::{
 use netrun_sim::net::{
     NetAction, NetActionResponse, NetActionResponseData, NetSim, PacketLocation,
 };
-use indexmap::IndexMap;
 use std::collections::HashMap;
 
 fn main() {

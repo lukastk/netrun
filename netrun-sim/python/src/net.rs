@@ -373,7 +373,11 @@ impl Epoch {
             id,
             node_name: self.node_name.clone(),
             in_salvo: self.in_salvo.to_core()?,
-            out_salvos: self.out_salvos.iter().map(|s| s.to_core()).collect::<PyResult<Vec<_>>>()?,
+            out_salvos: self
+                .out_salvos
+                .iter()
+                .map(|s| s.to_core())
+                .collect::<PyResult<Vec<_>>>()?,
             state: self.state.clone(),
             orphaned_packets: orphaned_packets?,
         })
@@ -580,9 +584,10 @@ impl NetAction {
                 let ulid = str_to_ulid(id)?;
                 Ok(CoreNetSimAction::CancelEpoch(ulid))
             }
-            NetActionKind::CreateEpoch(name, salvo) => {
-                Ok(CoreNetSimAction::CreateEpoch(name.clone(), salvo.to_core()?))
-            }
+            NetActionKind::CreateEpoch(name, salvo) => Ok(CoreNetSimAction::CreateEpoch(
+                name.clone(),
+                salvo.to_core()?,
+            )),
             NetActionKind::LoadPacketIntoOutputPort(pid, port) => {
                 let ulid = str_to_ulid(pid)?;
                 Ok(CoreNetSimAction::LoadPacketIntoOutputPort(
