@@ -342,7 +342,7 @@ Non-idiomatic Rust. Only method in the file using `&String`.
 
 ---
 
-### L8. `EventUTC` type is `i128` but timestamps are always positive (netrun-sim)
+### L8. `EventUTC` type is `i128` but timestamps are always positive (netrun-sim) ⏭️ SKIPPED
 
 **File:** `netrun-sim/core/src/net.rs`, line 134
 
@@ -350,7 +350,7 @@ Non-idiomatic Rust. Only method in the file using `&String`.
 
 ---
 
-### L9. `Graph.edges()` returns `HashSet`, losing insertion order (netrun-sim)
+### L9. `Graph.edges()` returns `HashSet`, losing insertion order (netrun-sim) ⏭️ SKIPPED
 
 **File:** `netrun-sim/core/src/graph.rs`, lines 464-467
 
@@ -358,13 +358,13 @@ If deterministic ordering is ever needed, this would need to be `IndexSet`.
 
 ---
 
-### L11. No `Display` implementation for most netrun-sim types
+### L11. No `Display` implementation for most netrun-sim types ⏭️ SKIPPED
 
 Only `PortRef`, `Edge`, and error types have `Display`. Makes debugging harder.
 
 ---
 
-### L12. `evaluate_salvo_condition` silently treats missing ports as count 0 (netrun-sim)
+### L12. `evaluate_salvo_condition` silently treats missing ports as count 0 (netrun-sim) ⏭️ SKIPPED
 
 **File:** `netrun-sim/core/src/graph.rs`, line 109
 
@@ -372,7 +372,7 @@ A typo in a condition name would silently evaluate as "empty port" rather than e
 
 ---
 
-### L13. `_node_to_epochs` accumulates empty Vec entries (netrun-sim)
+### L13. `_node_to_epochs` accumulates empty Vec entries (netrun-sim) ⏭️ SKIPPED
 
 **File:** `netrun-sim/core/src/net.rs`, lines 933-935
 
@@ -380,7 +380,7 @@ When epochs finish, the Vec is retained in HashMap even when empty. Minor memory
 
 ---
 
-### L14. `UnconnectedOutputPortError` exception is never raised (netrun-sim)
+### L14. `UnconnectedOutputPortError` exception is never raised (netrun-sim) ✅ FIXED
 
 **File:** `netrun-sim/python/src/errors.rs`, line 36
 

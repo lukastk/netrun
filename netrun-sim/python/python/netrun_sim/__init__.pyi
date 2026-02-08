@@ -105,11 +105,6 @@ class EdgeNotFoundError(NetrunError):
 
     ...
 
-class UnconnectedOutputPortError(NetrunError):
-    """Output port is not connected to any edge."""
-
-    ...
-
 class GraphValidationError(NetrunError):
     """Graph validation failed."""
 
@@ -873,7 +868,6 @@ __all__ = [
     "CannotMovePacketFromRunningEpochError",
     "CannotMovePacketIntoRunningEpochError",
     "EdgeNotFoundError",
-    "UnconnectedOutputPortError",
     "GraphValidationError",
     # Graph types
     "PacketCount",

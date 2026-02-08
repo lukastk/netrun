@@ -23,7 +23,6 @@ __all__ = [
     "CannotMovePacketFromRunningEpochError",
     "CannotMovePacketIntoRunningEpochError",
     "EdgeNotFoundError",
-    "UnconnectedOutputPortError",
     "GraphValidationError",
     # Graph types
     "PacketCount",
@@ -39,7 +38,6 @@ __all__ = [
     "PortType",
     "PortRef",
     "Edge",
-    "EdgeRef",
     "SalvoCondition",
     "Node",
     "Graph",

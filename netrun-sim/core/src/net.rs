@@ -267,13 +267,6 @@ pub enum NetActionError {
         epoch_id: EpochID,
     },
 
-    /// Cannot send packets to an output port that has no connected edge
-    #[error("output port '{port_name}' on node '{node_name}' is not connected to any edge")]
-    CannotPutPacketIntoUnconnectedOutputPort {
-        port_name: PortName,
-        node_name: NodeName,
-    },
-
     /// Node with the given name was not found in the graph
     #[error("node not found: '{node_name}'")]
     NodeNotFound { node_name: NodeName },
