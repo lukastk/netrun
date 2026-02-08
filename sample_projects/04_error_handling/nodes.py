@@ -29,7 +29,7 @@ def on_failure(ctx):
     Demonstrates on_node_failure — receives a NodeFailureContext with
     epoch_id, node_name, exception, retry_count, etc.
     """
-    print(f"[on_failure] Node '{ctx.node_name}' failed on attempt {ctx.retry_count + 1}: {ctx.exception}")
+    ctx.print(f"[on_failure] Node '{ctx.node_name}' failed on attempt {ctx.retry_count + 1}: {ctx.exception}")
 
 
 def run_once(data: str, print) -> str:
