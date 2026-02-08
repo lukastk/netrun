@@ -29,7 +29,6 @@ from ...net._net._context import (
     NodeFailureContext,
     ConsumedOutputPacket,
     create_net_func_preprocessor,
-    create_net_func_done_callback,
     _FactoryPlaceholder,
 )
 from ...net._net._info import NodeInfo, EdgeInfo
@@ -203,8 +202,6 @@ class Net:
             net_type_checking_enabled=self._config_resolved.type_checking_enabled,
             net_config_data=self._config.model_dump(),
         )
-        func_done_callback = create_net_func_done_callback()
-
         # Validate RemotePoolConfig fields are set before constructing pools
         for pool_name, pool_config in self._config_resolved.pools.items():
             spec = pool_config.spec
@@ -238,7 +235,6 @@ class Net:
             _init_kwargs = pool_config.spec.model_dump()
             _init_kwargs.pop("type")
             _init_kwargs["func_preprocessor"] = func_preprocessor
-            _init_kwargs["func_done_callback"] = func_done_callback
             _exec_manager_config[pool_name] = (pool_type, _init_kwargs)
 
         self._execution_manager = ExecutionManager(_exec_manager_config)
