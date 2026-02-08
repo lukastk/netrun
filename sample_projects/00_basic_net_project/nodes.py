@@ -10,9 +10,6 @@ Special parameters:
 - print: A captured print function that logs output with timestamps
 """
 
-from netrun.net.config import PortConfig
-
-
 def double(x: int, print) -> int:
     """Double the input value."""
     print(f"Doubling {x}")
