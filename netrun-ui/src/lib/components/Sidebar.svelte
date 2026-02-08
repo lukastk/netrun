@@ -53,6 +53,7 @@
 	import AllNodeVariablesSection from './AllNodeVariablesSection.svelte';
 	import { unregisteredFields, configSchema, getFieldDescription } from '$lib/stores/schemaStore';
 	import { tooltip } from '$lib/utils/tooltip';
+	import { isEnvVar, makeEnvVar, getEnvVarName, getEnvVarDefault } from '$lib/utils/envvar';
 
 	function descNet(field: string): string | undefined {
 		return getFieldDescription($configSchema, 'NetConfig', field);
@@ -139,6 +140,26 @@
 		netNodeVariables: false,
 		allNodeVariables: false,
 	});
+
+	// Env var mode for project_root
+	let projectRootEnvMode = $state(false);
+	$effect(() => {
+		const ed = $extraData as Record<string, unknown> | null;
+		projectRootEnvMode = isEnvVar(ed?.project_root);
+	});
+
+	function toggleProjectRootEnvMode() {
+		const ed = ($extraData as Record<string, unknown>) ?? {};
+		if (projectRootEnvMode) {
+			const def = isEnvVar(ed.project_root) ? getEnvVarDefault(ed.project_root) : null;
+			updateExtraDataLive({ project_root: def || undefined });
+		} else {
+			const current = typeof ed.project_root === 'string' ? ed.project_root : null;
+			updateExtraDataLive({ project_root: makeEnvVar('', current) });
+		}
+		projectRootEnvMode = !projectRootEnvMode;
+		pushHistory();
+	}
 
 	// Sidebar resize state
 	const MIN_WIDTH = 200;
@@ -959,16 +980,59 @@
 							></textarea>
 						</div>
 						<div class="field">
-							<label for="project-root">Project Root{#if descNet('project_root')}<span class="has-tooltip-icon" use:tooltip={descNet('project_root')}>?</span>{/if}</label>
-							<input
-								id="project-root"
-								type="text"
-								value={String(($extraData as Record<string, unknown>)?.project_root ?? '')}
-								oninput={(e) => updateExtraDataLive({ project_root: (e.target as HTMLInputElement).value || undefined })}
-								onblur={() => pushHistory()}
-								placeholder="./ (relative to net file)"
-								class="mono"
-							/>
+							<label for="project-root">Project Root{#if descNet('project_root')}<span class="has-tooltip-icon" use:tooltip={descNet('project_root')}>?</span>{/if}
+								<button
+									class="envvar-toggle"
+									class:active={projectRootEnvMode}
+									title={projectRootEnvMode ? 'Switch to literal value' : 'Switch to environment variable'}
+									onclick={toggleProjectRootEnvMode}
+								>$</button>
+							</label>
+							{#if projectRootEnvMode}
+								{@const prVal = ($extraData as Record<string, unknown>)?.project_root}
+								<div class="envvar-input-group">
+									<div class="envvar-name-row">
+										<span class="envvar-prefix">$</span>
+										<input
+											type="text"
+											class="envvar-name-input"
+											value={getEnvVarName(prVal)}
+											placeholder="ENV_VAR_NAME"
+											oninput={(e) => {
+												const name = (e.target as HTMLInputElement).value;
+												const def = isEnvVar(prVal) ? getEnvVarDefault(prVal) : null;
+												updateExtraDataLive({ project_root: makeEnvVar(name, def) });
+											}}
+											onblur={() => pushHistory()}
+										/>
+									</div>
+									<div class="envvar-default-row">
+										<span class="envvar-default-label">default:</span>
+										<input
+											type="text"
+											class="envvar-default-input"
+											value={getEnvVarDefault(prVal) ?? ''}
+											placeholder="./ (relative to net file)"
+											oninput={(e) => {
+												const def = (e.target as HTMLInputElement).value || null;
+												const name = isEnvVar(prVal) ? getEnvVarName(prVal) : '';
+												updateExtraDataLive({ project_root: makeEnvVar(name, def) });
+											}}
+											onblur={() => pushHistory()}
+										/>
+									</div>
+								</div>
+							{:else}
+								<input
+									id="project-root"
+									type="text"
+									value={String(($extraData as Record<string, unknown>)?.project_root ?? '')}
+									oninput={(e) => updateExtraDataLive({ project_root: (e.target as HTMLInputElement).value || undefined })}
+									onblur={() => pushHistory()}
+									placeholder="./ (relative to net file)"
+									class="mono"
+								/>
+							{/if}
 							<div class="field-hint">
 								Base path for file references. Relative paths resolve from the net file location.
 							</div>
@@ -1501,7 +1565,8 @@
 	}
 
 	.field label {
-		display: block;
+		display: flex;
+		align-items: center;
 		font-size: 11px;
 		color: var(--text-secondary, #a0a0a0);
 		margin-bottom: 4px;
@@ -1920,6 +1985,106 @@
 		font-weight: 600;
 		vertical-align: middle;
 		cursor: help;
+	}
+
+	/* Env var toggle and inputs */
+	.envvar-toggle {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 16px;
+		height: 16px;
+		margin-left: auto;
+		padding: 0;
+		border: 1px solid var(--border-color, #404040);
+		border-radius: 3px;
+		background: transparent;
+		color: var(--text-secondary, #666);
+		font-family: 'SF Mono', Monaco, Consolas, monospace;
+		font-size: 10px;
+		font-weight: 700;
+		cursor: pointer;
+		line-height: 1;
+		flex-shrink: 0;
+	}
+
+	.envvar-toggle:hover {
+		border-color: var(--accent-color, #3b82f6);
+		color: var(--accent-color, #3b82f6);
+	}
+
+	.envvar-toggle.active {
+		background: var(--accent-color, #3b82f6);
+		border-color: var(--accent-color, #3b82f6);
+		color: #fff;
+	}
+
+	.envvar-input-group {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.envvar-name-row {
+		display: flex;
+		align-items: center;
+		background: var(--bg-tertiary, #2d2d2d);
+		border: 1px solid rgba(59, 130, 246, 0.4);
+		border-radius: 3px;
+		overflow: hidden;
+	}
+
+	.envvar-prefix {
+		padding: 6px 4px 6px 8px;
+		color: var(--accent-color, #3b82f6);
+		font-family: 'SF Mono', Monaco, Consolas, monospace;
+		font-size: 12px;
+		font-weight: 700;
+		user-select: none;
+	}
+
+	.envvar-name-input {
+		flex: 1;
+		padding: 6px 8px 6px 0;
+		background: transparent;
+		border: none;
+		color: var(--text-primary, #fff);
+		font-family: 'SF Mono', Monaco, Consolas, monospace;
+		font-size: 12px;
+	}
+
+	.envvar-name-input:focus {
+		outline: none;
+	}
+
+	.envvar-default-row {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.envvar-default-label {
+		font-size: 10px;
+		color: var(--text-secondary, #666);
+		white-space: nowrap;
+		flex-shrink: 0;
+	}
+
+	.envvar-default-input {
+		flex: 1;
+		padding: 3px 6px;
+		background: var(--bg-tertiary, #2d2d2d);
+		border: 1px solid var(--border-color, #404040);
+		border-radius: 3px;
+		color: var(--text-secondary, #a0a0a0);
+		font-size: 11px;
+		min-width: 0;
+	}
+
+	.envvar-default-input:focus {
+		outline: none;
+		border-color: var(--accent-color, #3b82f6);
+		color: var(--text-primary, #fff);
 	}
 
 </style>

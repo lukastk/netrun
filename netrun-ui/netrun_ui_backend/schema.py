@@ -34,6 +34,7 @@ class FieldSchema(BaseModel):
     description: str | None = None
     enum_values: list[str] | None = None
     required: bool = False
+    env_var_supported: bool = False
 
 
 class ModelSchema(BaseModel):
@@ -83,6 +84,38 @@ def _has_callable_or_module(annotation: Any) -> bool:
     if annotation is Callable or annotation is types.ModuleType:
         return True
     return False
+
+
+def _strip_envvar(annotation: Any) -> tuple[Any, bool]:
+    """Remove EnvVar from a union type annotation.
+
+    Returns (stripped_annotation, had_envvar).
+    For ``int | EnvVar`` → ``(int, True)``.
+    For ``bool | EnvVar | None`` → ``(bool | None, True)``.
+    For non-union types or unions without EnvVar → ``(annotation, False)``.
+    """
+    from netrun.net.config import EnvVar
+
+    origin = get_origin(annotation)
+    if origin is not types.UnionType and origin is not typing.Union:
+        return annotation, False
+
+    args = get_args(annotation)
+    has_envvar = any(a is EnvVar for a in args)
+    if not has_envvar:
+        return annotation, False
+
+    remaining = [a for a in args if a is not EnvVar]
+    if len(remaining) == 0:
+        # Degenerate: union was only EnvVar
+        return annotation, True
+    if len(remaining) == 1:
+        return remaining[0], True
+    # Rebuild union from remaining types
+    rebuilt = remaining[0]
+    for t in remaining[1:]:
+        rebuilt = rebuilt | t
+    return rebuilt, True
 
 
 def _classify_type(annotation: Any) -> tuple[FieldCategory, list[str] | None]:
@@ -175,7 +208,8 @@ def get_model_schema(model_cls: type[BaseModel], model_name: str) -> ModelSchema
 
     for name, field_info in model_cls.model_fields.items():
         annotation = field_info.annotation
-        category, enum_values = _classify_type(annotation)
+        stripped_annotation, env_var_supported = _strip_envvar(annotation)
+        category, enum_values = _classify_type(stripped_annotation)
 
         required = (
             field_info.default is PydanticUndefined
@@ -192,6 +226,7 @@ def get_model_schema(model_cls: type[BaseModel], model_name: str) -> ModelSchema
             description=description,
             enum_values=enum_values,
             required=required,
+            env_var_supported=env_var_supported,
         ))
 
     return ModelSchema(model_name=model_name, fields=fields)

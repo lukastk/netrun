@@ -1,5 +1,6 @@
 <script lang="ts">
 	import { pushHistory, renamePoolInAllNodes } from '$lib/stores/flowStore';
+	import { isEnvVar, makeEnvVar, getEnvVarName, getEnvVarDefault } from '$lib/utils/envvar';
 
 	// Pool spec types
 	type PoolSpecType = 'main' | 'thread' | 'multiprocess' | 'remote';
@@ -183,6 +184,89 @@
 		multiprocess: 'Multiprocess',
 		remote: 'Remote',
 	};
+
+	// Env var mode tracking: "poolName.fieldName" → boolean
+	let poolEnvModes: Record<string, boolean> = $state({});
+
+	// Initialize from current values
+	$effect(() => {
+		const modes: Record<string, boolean> = {};
+		for (const [name, config] of poolEntries) {
+			const spec = config.spec as unknown as Record<string, unknown>;
+			if (spec) {
+				for (const [key, val] of Object.entries(spec)) {
+					if (key !== 'type' && isEnvVar(val)) {
+						modes[`${name}.${key}`] = true;
+					}
+				}
+			}
+		}
+		poolEnvModes = modes;
+	});
+
+	function togglePoolFieldEnvVar(poolName: string, fieldName: string, currentValue: unknown) {
+		const key = `${poolName}.${fieldName}`;
+		const wasEnv = poolEnvModes[key] || false;
+		poolEnvModes[key] = !wasEnv;
+
+		const current = getTypedPools() || {};
+		const poolConfig = current[poolName];
+		if (!poolConfig) return;
+
+		const spec = { ...poolConfig.spec } as Record<string, unknown>;
+		if (wasEnv) {
+			// env → value
+			const def = isEnvVar(currentValue) ? getEnvVarDefault(currentValue) : null;
+			spec[fieldName] = def ?? getPoolFieldDefault(fieldName);
+		} else {
+			// value → env
+			spec[fieldName] = makeEnvVar('', currentValue);
+		}
+		onUpdate({
+			...current,
+			[poolName]: { ...poolConfig, spec },
+		} as Record<string, unknown>);
+		pushHistory();
+	}
+
+	function getPoolFieldDefault(fieldName: string): unknown {
+		const defaults: Record<string, unknown> = {
+			num_workers: 4,
+			num_processes: 2,
+			threads_per_process: 2,
+			url: 'ws://localhost:8765',
+			worker_name: 'worker',
+		};
+		return defaults[fieldName] ?? null;
+	}
+
+	function updatePoolSpecFieldEnvVar(poolName: string, fieldName: string, spec: Record<string, unknown>, envName: string) {
+		const current = getTypedPools() || {};
+		const poolConfig = current[poolName];
+		if (!poolConfig) return;
+
+		const currentVal = spec[fieldName];
+		const def = isEnvVar(currentVal) ? getEnvVarDefault(currentVal) : null;
+		const newSpec = { ...spec, [fieldName]: makeEnvVar(envName, def) };
+		onUpdate({
+			...current,
+			[poolName]: { ...poolConfig, spec: newSpec },
+		} as Record<string, unknown>);
+	}
+
+	function updatePoolSpecFieldEnvDefault(poolName: string, fieldName: string, spec: Record<string, unknown>, defaultVal: unknown) {
+		const current = getTypedPools() || {};
+		const poolConfig = current[poolName];
+		if (!poolConfig) return;
+
+		const currentVal = spec[fieldName];
+		const name = isEnvVar(currentVal) ? getEnvVarName(currentVal) : '';
+		const newSpec = { ...spec, [fieldName]: makeEnvVar(name, defaultVal) };
+		onUpdate({
+			...current,
+			[poolName]: { ...poolConfig, spec: newSpec },
+		} as Record<string, unknown>);
+	}
 </script>
 
 <div class="pools-section">
@@ -259,80 +343,175 @@
 
 						{#if spec.type === 'thread'}
 							<div class="field">
-								<label>Workers</label>
-								<input
-									type="number"
-									min="1"
-									value={spec.num_workers}
-									oninput={(e) => updatePoolSpecLive(name, { ...spec, num_workers: parseInt((e.target as HTMLInputElement).value) || 1 })}
-									onblur={() => pushHistory()}
-								/>
+								<label>Workers
+									<button class="envvar-toggle" class:active={poolEnvModes[`${name}.num_workers`]}
+										title={poolEnvModes[`${name}.num_workers`] ? 'Switch to literal' : 'Switch to env var'}
+										onclick={() => togglePoolFieldEnvVar(name, 'num_workers', spec.num_workers)}>$</button>
+								</label>
+								{#if poolEnvModes[`${name}.num_workers`]}
+									<div class="envvar-input-group">
+										<div class="envvar-name-row">
+											<span class="envvar-prefix">$</span>
+											<input type="text" class="envvar-name-input" value={getEnvVarName(spec.num_workers)} placeholder="ENV_VAR"
+												oninput={(e) => updatePoolSpecFieldEnvVar(name, 'num_workers', spec as any, (e.target as HTMLInputElement).value)} onblur={() => pushHistory()} />
+										</div>
+										<div class="envvar-default-row">
+											<span class="envvar-default-label">default:</span>
+											<input type="number" class="envvar-default-input" value={getEnvVarDefault(spec.num_workers) ?? ''} placeholder="4"
+												oninput={(e) => updatePoolSpecFieldEnvDefault(name, 'num_workers', spec as any, parseInt((e.target as HTMLInputElement).value) || null)} onblur={() => pushHistory()} />
+										</div>
+									</div>
+								{:else}
+									<input type="number" min="1" value={spec.num_workers}
+										oninput={(e) => updatePoolSpecLive(name, { ...spec, num_workers: parseInt((e.target as HTMLInputElement).value) || 1 })}
+										onblur={() => pushHistory()} />
+								{/if}
 							</div>
 						{:else if spec.type === 'multiprocess'}
-							<div class="field-row">
-								<div class="field">
-									<label>Processes</label>
-									<input
-										type="number"
-										min="1"
-										value={spec.num_processes}
+							<div class="field">
+								<label>Processes
+									<button class="envvar-toggle" class:active={poolEnvModes[`${name}.num_processes`]}
+										onclick={() => togglePoolFieldEnvVar(name, 'num_processes', spec.num_processes)}>$</button>
+								</label>
+								{#if poolEnvModes[`${name}.num_processes`]}
+									<div class="envvar-input-group">
+										<div class="envvar-name-row">
+											<span class="envvar-prefix">$</span>
+											<input type="text" class="envvar-name-input" value={getEnvVarName(spec.num_processes)} placeholder="ENV_VAR"
+												oninput={(e) => updatePoolSpecFieldEnvVar(name, 'num_processes', spec as any, (e.target as HTMLInputElement).value)} onblur={() => pushHistory()} />
+										</div>
+										<div class="envvar-default-row">
+											<span class="envvar-default-label">default:</span>
+											<input type="number" class="envvar-default-input" value={getEnvVarDefault(spec.num_processes) ?? ''} placeholder="2"
+												oninput={(e) => updatePoolSpecFieldEnvDefault(name, 'num_processes', spec as any, parseInt((e.target as HTMLInputElement).value) || null)} onblur={() => pushHistory()} />
+										</div>
+									</div>
+								{:else}
+									<input type="number" min="1" value={spec.num_processes}
 										oninput={(e) => updatePoolSpecLive(name, { ...spec, num_processes: parseInt((e.target as HTMLInputElement).value) || 1 })}
-										onblur={() => pushHistory()}
-									/>
-								</div>
-								<div class="field">
-									<label>Threads/Process</label>
-									<input
-										type="number"
-										min="1"
-										value={spec.threads_per_process}
+										onblur={() => pushHistory()} />
+								{/if}
+							</div>
+							<div class="field">
+								<label>Threads/Process
+									<button class="envvar-toggle" class:active={poolEnvModes[`${name}.threads_per_process`]}
+										onclick={() => togglePoolFieldEnvVar(name, 'threads_per_process', spec.threads_per_process)}>$</button>
+								</label>
+								{#if poolEnvModes[`${name}.threads_per_process`]}
+									<div class="envvar-input-group">
+										<div class="envvar-name-row">
+											<span class="envvar-prefix">$</span>
+											<input type="text" class="envvar-name-input" value={getEnvVarName(spec.threads_per_process)} placeholder="ENV_VAR"
+												oninput={(e) => updatePoolSpecFieldEnvVar(name, 'threads_per_process', spec as any, (e.target as HTMLInputElement).value)} onblur={() => pushHistory()} />
+										</div>
+										<div class="envvar-default-row">
+											<span class="envvar-default-label">default:</span>
+											<input type="number" class="envvar-default-input" value={getEnvVarDefault(spec.threads_per_process) ?? ''} placeholder="2"
+												oninput={(e) => updatePoolSpecFieldEnvDefault(name, 'threads_per_process', spec as any, parseInt((e.target as HTMLInputElement).value) || null)} onblur={() => pushHistory()} />
+										</div>
+									</div>
+								{:else}
+									<input type="number" min="1" value={spec.threads_per_process}
 										oninput={(e) => updatePoolSpecLive(name, { ...spec, threads_per_process: parseInt((e.target as HTMLInputElement).value) || 1 })}
-										onblur={() => pushHistory()}
-									/>
-								</div>
+										onblur={() => pushHistory()} />
+								{/if}
 							</div>
 						{:else if spec.type === 'remote'}
 							<div class="field">
-								<label>URL</label>
-								<input
-									type="text"
-									value={spec.url}
-									placeholder="ws://localhost:8765"
-									oninput={(e) => updatePoolSpecLive(name, { ...spec, url: (e.target as HTMLInputElement).value })}
-									onblur={() => pushHistory()}
-								/>
+								<label>URL
+									<button class="envvar-toggle" class:active={poolEnvModes[`${name}.url`]}
+										onclick={() => togglePoolFieldEnvVar(name, 'url', spec.url)}>$</button>
+								</label>
+								{#if poolEnvModes[`${name}.url`]}
+									<div class="envvar-input-group">
+										<div class="envvar-name-row">
+											<span class="envvar-prefix">$</span>
+											<input type="text" class="envvar-name-input" value={getEnvVarName(spec.url)} placeholder="ENV_VAR"
+												oninput={(e) => updatePoolSpecFieldEnvVar(name, 'url', spec as any, (e.target as HTMLInputElement).value)} onblur={() => pushHistory()} />
+										</div>
+										<div class="envvar-default-row">
+											<span class="envvar-default-label">default:</span>
+											<input type="text" class="envvar-default-input" value={getEnvVarDefault(spec.url) ?? ''} placeholder="ws://localhost:8765"
+												oninput={(e) => updatePoolSpecFieldEnvDefault(name, 'url', spec as any, (e.target as HTMLInputElement).value || null)} onblur={() => pushHistory()} />
+										</div>
+									</div>
+								{:else}
+									<input type="text" value={spec.url} placeholder="ws://localhost:8765"
+										oninput={(e) => updatePoolSpecLive(name, { ...spec, url: (e.target as HTMLInputElement).value })}
+										onblur={() => pushHistory()} />
+								{/if}
 							</div>
 							<div class="field">
-								<label>Worker Name</label>
-								<input
-									type="text"
-									value={spec.worker_name}
-									placeholder="worker"
-									oninput={(e) => updatePoolSpecLive(name, { ...spec, worker_name: (e.target as HTMLInputElement).value })}
-									onblur={() => pushHistory()}
-								/>
+								<label>Worker Name
+									<button class="envvar-toggle" class:active={poolEnvModes[`${name}.worker_name`]}
+										onclick={() => togglePoolFieldEnvVar(name, 'worker_name', spec.worker_name)}>$</button>
+								</label>
+								{#if poolEnvModes[`${name}.worker_name`]}
+									<div class="envvar-input-group">
+										<div class="envvar-name-row">
+											<span class="envvar-prefix">$</span>
+											<input type="text" class="envvar-name-input" value={getEnvVarName(spec.worker_name)} placeholder="ENV_VAR"
+												oninput={(e) => updatePoolSpecFieldEnvVar(name, 'worker_name', spec as any, (e.target as HTMLInputElement).value)} onblur={() => pushHistory()} />
+										</div>
+										<div class="envvar-default-row">
+											<span class="envvar-default-label">default:</span>
+											<input type="text" class="envvar-default-input" value={getEnvVarDefault(spec.worker_name) ?? ''} placeholder="worker"
+												oninput={(e) => updatePoolSpecFieldEnvDefault(name, 'worker_name', spec as any, (e.target as HTMLInputElement).value || null)} onblur={() => pushHistory()} />
+										</div>
+									</div>
+								{:else}
+									<input type="text" value={spec.worker_name} placeholder="worker"
+										oninput={(e) => updatePoolSpecLive(name, { ...spec, worker_name: (e.target as HTMLInputElement).value })}
+										onblur={() => pushHistory()} />
+								{/if}
 							</div>
-							<div class="field-row">
-								<div class="field">
-									<label>Processes</label>
-									<input
-										type="number"
-										min="1"
-										value={spec.num_processes}
+							<div class="field">
+								<label>Processes
+									<button class="envvar-toggle" class:active={poolEnvModes[`${name}.num_processes`]}
+										onclick={() => togglePoolFieldEnvVar(name, 'num_processes', spec.num_processes)}>$</button>
+								</label>
+								{#if poolEnvModes[`${name}.num_processes`]}
+									<div class="envvar-input-group">
+										<div class="envvar-name-row">
+											<span class="envvar-prefix">$</span>
+											<input type="text" class="envvar-name-input" value={getEnvVarName(spec.num_processes)} placeholder="ENV_VAR"
+												oninput={(e) => updatePoolSpecFieldEnvVar(name, 'num_processes', spec as any, (e.target as HTMLInputElement).value)} onblur={() => pushHistory()} />
+										</div>
+										<div class="envvar-default-row">
+											<span class="envvar-default-label">default:</span>
+											<input type="number" class="envvar-default-input" value={getEnvVarDefault(spec.num_processes) ?? ''} placeholder="1"
+												oninput={(e) => updatePoolSpecFieldEnvDefault(name, 'num_processes', spec as any, parseInt((e.target as HTMLInputElement).value) || null)} onblur={() => pushHistory()} />
+										</div>
+									</div>
+								{:else}
+									<input type="number" min="1" value={spec.num_processes}
 										oninput={(e) => updatePoolSpecLive(name, { ...spec, num_processes: parseInt((e.target as HTMLInputElement).value) || 1 })}
-										onblur={() => pushHistory()}
-									/>
-								</div>
-								<div class="field">
-									<label>Threads/Process</label>
-									<input
-										type="number"
-										min="1"
-										value={spec.threads_per_process}
+										onblur={() => pushHistory()} />
+								{/if}
+							</div>
+							<div class="field">
+								<label>Threads/Process
+									<button class="envvar-toggle" class:active={poolEnvModes[`${name}.threads_per_process`]}
+										onclick={() => togglePoolFieldEnvVar(name, 'threads_per_process', spec.threads_per_process)}>$</button>
+								</label>
+								{#if poolEnvModes[`${name}.threads_per_process`]}
+									<div class="envvar-input-group">
+										<div class="envvar-name-row">
+											<span class="envvar-prefix">$</span>
+											<input type="text" class="envvar-name-input" value={getEnvVarName(spec.threads_per_process)} placeholder="ENV_VAR"
+												oninput={(e) => updatePoolSpecFieldEnvVar(name, 'threads_per_process', spec as any, (e.target as HTMLInputElement).value)} onblur={() => pushHistory()} />
+										</div>
+										<div class="envvar-default-row">
+											<span class="envvar-default-label">default:</span>
+											<input type="number" class="envvar-default-input" value={getEnvVarDefault(spec.threads_per_process) ?? ''} placeholder="1"
+												oninput={(e) => updatePoolSpecFieldEnvDefault(name, 'threads_per_process', spec as any, parseInt((e.target as HTMLInputElement).value) || null)} onblur={() => pushHistory()} />
+										</div>
+									</div>
+								{:else}
+									<input type="number" min="1" value={spec.threads_per_process}
 										oninput={(e) => updatePoolSpecLive(name, { ...spec, threads_per_process: parseInt((e.target as HTMLInputElement).value) || 1 })}
-										onblur={() => pushHistory()}
-									/>
-								</div>
+										onblur={() => pushHistory()} />
+								{/if}
 							</div>
 						{/if}
 						<!-- main type has no additional fields -->
@@ -471,6 +650,8 @@
 	}
 
 	.field label {
+		display: flex;
+		align-items: center;
 		font-size: 10px;
 		color: var(--text-secondary, #a0a0a0);
 		text-transform: uppercase;
@@ -533,5 +714,105 @@
 	.add-btn:hover {
 		border-color: var(--accent-color, #3b82f6);
 		color: var(--accent-color, #3b82f6);
+	}
+
+	/* Env var toggle and inputs */
+	.envvar-toggle {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 16px;
+		height: 16px;
+		margin-left: auto;
+		padding: 0;
+		border: 1px solid var(--border-color, #404040);
+		border-radius: 3px;
+		background: transparent;
+		color: var(--text-secondary, #666);
+		font-family: 'SF Mono', Monaco, Consolas, monospace;
+		font-size: 10px;
+		font-weight: 700;
+		cursor: pointer;
+		line-height: 1;
+		flex-shrink: 0;
+	}
+
+	.envvar-toggle:hover {
+		border-color: var(--accent-color, #3b82f6);
+		color: var(--accent-color, #3b82f6);
+	}
+
+	.envvar-toggle.active {
+		background: var(--accent-color, #3b82f6);
+		border-color: var(--accent-color, #3b82f6);
+		color: #fff;
+	}
+
+	.envvar-input-group {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.envvar-name-row {
+		display: flex;
+		align-items: center;
+		background: var(--bg-tertiary, #2d2d2d);
+		border: 1px solid rgba(59, 130, 246, 0.4);
+		border-radius: 3px;
+		overflow: hidden;
+	}
+
+	.envvar-prefix {
+		padding: 6px 4px 6px 8px;
+		color: var(--accent-color, #3b82f6);
+		font-family: 'SF Mono', Monaco, Consolas, monospace;
+		font-size: 12px;
+		font-weight: 700;
+		user-select: none;
+	}
+
+	.envvar-name-input {
+		flex: 1;
+		padding: 6px 8px 6px 0;
+		background: transparent;
+		border: none;
+		color: var(--text-primary, #fff);
+		font-family: 'SF Mono', Monaco, Consolas, monospace;
+		font-size: 12px;
+	}
+
+	.envvar-name-input:focus {
+		outline: none;
+	}
+
+	.envvar-default-row {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+	}
+
+	.envvar-default-label {
+		font-size: 10px;
+		color: var(--text-secondary, #666);
+		white-space: nowrap;
+		flex-shrink: 0;
+	}
+
+	.envvar-default-input {
+		flex: 1;
+		padding: 3px 6px;
+		background: var(--bg-tertiary, #2d2d2d);
+		border: 1px solid var(--border-color, #404040);
+		border-radius: 3px;
+		color: var(--text-secondary, #a0a0a0);
+		font-size: 11px;
+		min-width: 0;
+	}
+
+	.envvar-default-input:focus {
+		outline: none;
+		border-color: var(--accent-color, #3b82f6);
+		color: var(--text-primary, #fff);
 	}
 </style>
