@@ -106,7 +106,6 @@ def test_build_action_context():
     ctx = build_action_context(
         graph_extra,
         node_name="MyNode",
-        node_id="n1",
         node_extra=node_extra,
         net_file_path="/tmp/test.json",
         project_root="/tmp",

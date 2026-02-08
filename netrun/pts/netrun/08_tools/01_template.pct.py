@@ -71,7 +71,6 @@ def build_template_variables(context: ActionContext) -> dict[str, str]:
 
     # 1. Built-in variables
     variables["NODE_NAME"] = context.node_name or ""
-    variables["NODE_ID"] = context.node_id or ""
     variables["NET_FILE_PATH"] = context.net_file_path or ""
     variables["NET_FILE_DIR"] = net_file_dir or ""
     variables["PROJECT_ROOT"] = context.project_root or net_file_dir or ""

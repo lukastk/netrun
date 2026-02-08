@@ -228,7 +228,6 @@ export async function executeAction(action: Action): Promise<void> {
 		const result = await api.executeAction({
 			command: action.command,
 			node_name: node?.data.label,
-			node_id: node?.id,
 			net_file_path: filePath || undefined,
 			project_root: settings.projectRoot,
 			default_cmd: settings.defaultCmd,
@@ -309,7 +308,6 @@ export async function resolveCommand(command: string): Promise<string> {
 
 		const result = await api.resolveTemplate(command, {
 			node_name: node?.data.label,
-			node_id: node?.id,
 			net_file_path: filePath || undefined,
 			project_root: settings.projectRoot,
 			default_cmd: settings.defaultCmd,

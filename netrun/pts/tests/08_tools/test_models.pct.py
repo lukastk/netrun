@@ -45,7 +45,6 @@ def test_action_context_defaults():
 def test_action_context_full():
     ctx = ActionContext(
         node_name="MyNode",
-        node_id="node-1",
         net_file_path="/tmp/test.netrun.json",
         project_root="/tmp",
         default_cmd="python",

@@ -35,7 +35,6 @@ class ActionConfig(BaseModel):
 class ActionContext(BaseModel):
     """Variables available during action template resolution and execution."""
     node_name: str | None = None
-    node_id: str | None = None
     net_file_path: str | None = None
     project_root: str | None = None
     default_cmd: str | None = None

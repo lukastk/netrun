@@ -107,7 +107,6 @@ def actions_run(
     context = build_action_context(
         graph_extra=net_config.graph.extra,
         node_name=node_name,
-        node_id=node_name,
         node_extra=node_extra,
         net_file_path=str(config_path),
         project_root=str(net_config.project_root_path),
