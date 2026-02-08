@@ -13,4 +13,5 @@ from ..net import (
     PacketCountAllConfig,
     PortStateNonEmptyConfig,
     OutputQueueConfig,
+    TargetInputSalvo,
 )

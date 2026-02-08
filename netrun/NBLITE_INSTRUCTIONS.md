@@ -426,6 +426,14 @@ from my_package.core import something  # Becomes: from ..core import something
 
 ---
 
+## `__init__.py` Management
+
+nblite auto-generates `__init__.py` files for packages that contain non-underscore-prefixed modules. However, packages with only underscore-prefixed modules (e.g., `_context.py`, `_net.py`) do **not** get an auto-generated `__init__.py`.
+
+In this project, **`__init__.py` files are usually manually managed** — they contain explicit re-exports to control the public API of each package. When adding a new module to a package, you must manually update its `__init__.py` to re-export any new public symbols. The `nbl export` command will not overwrite manually managed `__init__.py` files.
+
+---
+
 ## Common Mistakes to Avoid
 
 1. **Editing the Python module directly** - Changes will be overwritten. This should only be done if you want to quickly test something, or add a debug `print` statement, and if it is not a concern that it may get overwritten.
