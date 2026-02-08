@@ -30,13 +30,16 @@ fn ulid_to_python(py: Python<'_>, ulid: &ulid::Ulid) -> PyResult<PyObject> {
 fn python_to_ulid(obj: &Bound<'_, PyAny>) -> PyResult<ulid::Ulid> {
     // Try to get as string first
     if let Ok(s) = obj.extract::<String>() {
-        return ulid::Ulid::from_string(&s).map_err(|e| {
-            PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID string: {}", e))
-        });
+        return str_to_ulid(&s);
     }
     // Try to call str() on the object (for ulid.ULID objects)
     let s = obj.str()?.to_string();
-    ulid::Ulid::from_string(&s).map_err(|e| {
+    str_to_ulid(&s)
+}
+
+/// Parse a ULID from a string, returning a PyResult
+fn str_to_ulid(s: &str) -> PyResult<ulid::Ulid> {
+    ulid::Ulid::from_string(s).map_err(|e| {
         PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
     })
 }
@@ -180,9 +183,7 @@ pub struct Packet {
 #[pymethods]
 impl Packet {
     fn get_id(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let ulid = ulid::Ulid::from_string(&self.id).map_err(|e| {
-            PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
-        })?;
+        let ulid = str_to_ulid(&self.id)?;
         ulid_to_python(py, &ulid)
     }
 
@@ -233,18 +234,19 @@ impl Salvo {
 }
 
 impl Salvo {
-    pub fn to_core(&self) -> CoreSalvo {
-        CoreSalvo {
+    pub fn to_core(&self) -> PyResult<CoreSalvo> {
+        let packets: PyResult<Vec<_>> = self
+            .packets
+            .iter()
+            .map(|(port, pid)| {
+                let ulid = str_to_ulid(pid)?;
+                Ok((port.clone(), ulid))
+            })
+            .collect();
+        Ok(CoreSalvo {
             salvo_condition: self.salvo_condition.clone(),
-            packets: self
-                .packets
-                .iter()
-                .map(|(port, pid)| {
-                    let ulid = ulid::Ulid::from_string(pid).expect("Invalid ULID in salvo");
-                    (port.clone(), ulid)
-                })
-                .collect(),
-        }
+            packets: packets?,
+        })
     }
 
     pub fn from_core(salvo: &CoreSalvo) -> Self {
@@ -291,9 +293,7 @@ impl OrphanedPacketInfo {
     }
 
     pub fn to_core(&self) -> PyResult<CoreOrphanedPacketInfo> {
-        let packet_id = ulid::Ulid::from_string(&self.packet_id).map_err(|e| {
-            PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
-        })?;
+        let packet_id = str_to_ulid(&self.packet_id)?;
         Ok(CoreOrphanedPacketInfo {
             packet_id,
             from_port: self.from_port.clone(),
@@ -323,16 +323,12 @@ pub struct Epoch {
 #[pymethods]
 impl Epoch {
     fn get_id(&self, py: Python<'_>) -> PyResult<PyObject> {
-        let ulid = ulid::Ulid::from_string(&self.id).map_err(|e| {
-            PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
-        })?;
+        let ulid = str_to_ulid(&self.id)?;
         ulid_to_python(py, &ulid)
     }
 
     fn start_time(&self) -> PyResult<u64> {
-        let ulid = ulid::Ulid::from_string(&self.id).map_err(|e| {
-            PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
-        })?;
+        let ulid = str_to_ulid(&self.id)?;
         Ok(ulid.timestamp_ms())
     }
 
@@ -367,9 +363,7 @@ impl Epoch {
     }
 
     pub fn to_core(&self) -> PyResult<CoreEpoch> {
-        let id = ulid::Ulid::from_string(&self.id).map_err(|e| {
-            PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
-        })?;
+        let id = str_to_ulid(&self.id)?;
         let orphaned_packets: Result<Vec<_>, _> = self
             .orphaned_packets
             .iter()
@@ -378,8 +372,8 @@ impl Epoch {
         Ok(CoreEpoch {
             id,
             node_name: self.node_name.clone(),
-            in_salvo: self.in_salvo.to_core(),
-            out_salvos: self.out_salvos.iter().map(|s| s.to_core()).collect(),
+            in_salvo: self.in_salvo.to_core()?,
+            out_salvos: self.out_salvos.iter().map(|s| s.to_core()).collect::<PyResult<Vec<_>>>()?,
             state: self.state.clone(),
             orphaned_packets: orphaned_packets?,
         })
@@ -561,68 +555,47 @@ impl NetAction {
             NetActionKind::RunStep => Ok(CoreNetSimAction::RunStep),
             NetActionKind::CreatePacket(opt_id) => {
                 let ulid_opt = match opt_id {
-                    Some(s) => Some(ulid::Ulid::from_string(s).map_err(|e| {
-                        PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
-                            "Invalid ULID: {}",
-                            e
-                        ))
-                    })?),
+                    Some(s) => Some(str_to_ulid(s)?),
                     None => None,
                 };
                 Ok(CoreNetSimAction::CreatePacket(ulid_opt))
             }
             NetActionKind::ConsumePacket(id) => {
-                let ulid = ulid::Ulid::from_string(id).map_err(|e| {
-                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
-                })?;
+                let ulid = str_to_ulid(id)?;
                 Ok(CoreNetSimAction::ConsumePacket(ulid))
             }
             NetActionKind::DestroyPacket(id) => {
-                let ulid = ulid::Ulid::from_string(id).map_err(|e| {
-                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
-                })?;
+                let ulid = str_to_ulid(id)?;
                 Ok(CoreNetSimAction::DestroyPacket(ulid))
             }
             NetActionKind::StartEpoch(id) => {
-                let ulid = ulid::Ulid::from_string(id).map_err(|e| {
-                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
-                })?;
+                let ulid = str_to_ulid(id)?;
                 Ok(CoreNetSimAction::StartEpoch(ulid))
             }
             NetActionKind::FinishEpoch(id) => {
-                let ulid = ulid::Ulid::from_string(id).map_err(|e| {
-                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
-                })?;
+                let ulid = str_to_ulid(id)?;
                 Ok(CoreNetSimAction::FinishEpoch(ulid))
             }
             NetActionKind::CancelEpoch(id) => {
-                let ulid = ulid::Ulid::from_string(id).map_err(|e| {
-                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
-                })?;
+                let ulid = str_to_ulid(id)?;
                 Ok(CoreNetSimAction::CancelEpoch(ulid))
             }
             NetActionKind::CreateEpoch(name, salvo) => {
-                Ok(CoreNetSimAction::CreateEpoch(name.clone(), salvo.to_core()))
+                Ok(CoreNetSimAction::CreateEpoch(name.clone(), salvo.to_core()?))
             }
             NetActionKind::LoadPacketIntoOutputPort(pid, port) => {
-                let ulid = ulid::Ulid::from_string(pid).map_err(|e| {
-                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
-                })?;
+                let ulid = str_to_ulid(pid)?;
                 Ok(CoreNetSimAction::LoadPacketIntoOutputPort(
                     ulid,
                     port.clone(),
                 ))
             }
             NetActionKind::SendOutputSalvo(eid, cond) => {
-                let ulid = ulid::Ulid::from_string(eid).map_err(|e| {
-                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
-                })?;
+                let ulid = str_to_ulid(eid)?;
                 Ok(CoreNetSimAction::SendOutputSalvo(ulid, cond.clone()))
             }
             NetActionKind::TransportPacketToLocation(pid, loc) => {
-                let ulid = ulid::Ulid::from_string(pid).map_err(|e| {
-                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
-                })?;
+                let ulid = str_to_ulid(pid)?;
                 Ok(CoreNetSimAction::TransportPacketToLocation(
                     ulid,
                     loc.to_core(),
@@ -933,33 +906,23 @@ impl NetEvent {
     pub fn to_core(&self) -> PyResult<CoreNetSimEvent> {
         match &self.inner {
             NetEventKind::PacketCreated(ts, id) => {
-                let ulid = ulid::Ulid::from_string(id).map_err(|e| {
-                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
-                })?;
+                let ulid = str_to_ulid(id)?;
                 Ok(CoreNetSimEvent::PacketCreated(*ts, ulid))
             }
             NetEventKind::PacketConsumed(ts, id, loc) => {
-                let ulid = ulid::Ulid::from_string(id).map_err(|e| {
-                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
-                })?;
+                let ulid = str_to_ulid(id)?;
                 Ok(CoreNetSimEvent::PacketConsumed(*ts, ulid, loc.to_core()))
             }
             NetEventKind::PacketDestroyed(ts, id, loc) => {
-                let ulid = ulid::Ulid::from_string(id).map_err(|e| {
-                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
-                })?;
+                let ulid = str_to_ulid(id)?;
                 Ok(CoreNetSimEvent::PacketDestroyed(*ts, ulid, loc.to_core()))
             }
             NetEventKind::EpochCreated(ts, id) => {
-                let ulid = ulid::Ulid::from_string(id).map_err(|e| {
-                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
-                })?;
+                let ulid = str_to_ulid(id)?;
                 Ok(CoreNetSimEvent::EpochCreated(*ts, ulid))
             }
             NetEventKind::EpochStarted(ts, id) => {
-                let ulid = ulid::Ulid::from_string(id).map_err(|e| {
-                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
-                })?;
+                let ulid = str_to_ulid(id)?;
                 Ok(CoreNetSimEvent::EpochStarted(*ts, ulid))
             }
             NetEventKind::EpochFinished(ts, epoch) => {
@@ -969,9 +932,7 @@ impl NetEvent {
                 Ok(CoreNetSimEvent::EpochCancelled(*ts, epoch.to_core()?))
             }
             NetEventKind::PacketMoved(ts, id, from_loc, to_loc, from_index) => {
-                let ulid = ulid::Ulid::from_string(id).map_err(|e| {
-                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
-                })?;
+                let ulid = str_to_ulid(id)?;
                 Ok(CoreNetSimEvent::PacketMoved(
                     *ts,
                     ulid,
@@ -981,9 +942,7 @@ impl NetEvent {
                 ))
             }
             NetEventKind::InputSalvoTriggered(ts, id, cond) => {
-                let ulid = ulid::Ulid::from_string(id).map_err(|e| {
-                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
-                })?;
+                let ulid = str_to_ulid(id)?;
                 Ok(CoreNetSimEvent::InputSalvoTriggered(
                     *ts,
                     ulid,
@@ -991,9 +950,7 @@ impl NetEvent {
                 ))
             }
             NetEventKind::OutputSalvoTriggered(ts, id, cond) => {
-                let ulid = ulid::Ulid::from_string(id).map_err(|e| {
-                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
-                })?;
+                let ulid = str_to_ulid(id)?;
                 Ok(CoreNetSimEvent::OutputSalvoTriggered(
                     *ts,
                     ulid,
@@ -1001,12 +958,8 @@ impl NetEvent {
                 ))
             }
             NetEventKind::PacketOrphaned(ts, packet_id, epoch_id, node_name, port_name, cond) => {
-                let packet_ulid = ulid::Ulid::from_string(packet_id).map_err(|e| {
-                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
-                })?;
-                let epoch_ulid = ulid::Ulid::from_string(epoch_id).map_err(|e| {
-                    PyErr::new::<pyo3::exceptions::PyValueError, _>(format!("Invalid ULID: {}", e))
-                })?;
+                let packet_ulid = str_to_ulid(packet_id)?;
+                let epoch_ulid = str_to_ulid(epoch_id)?;
                 Ok(CoreNetSimEvent::PacketOrphaned(
                     *ts,
                     packet_ulid,

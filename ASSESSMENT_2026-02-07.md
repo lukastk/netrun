@@ -125,7 +125,7 @@ Lock released before lazy evaluation. If `_evaluate_lazy_value` raises, the pack
 
 ---
 
-### M5. Massive `test_exception_hierarchy` duplication (8 files)
+### M5. Massive `test_exception_hierarchy` duplication (8 files) ⏭️ SKIPPED
 
 **Files:** Duplicated across `test_exceptions_aio.pct.py`, `test_exceptions_thread.pct.py`, `test_exceptions_multiprocess.pct.py`, `test_exceptions_remote.pct.py` in both `02_rpc/` and `03_pool/` directories.
 
@@ -133,7 +133,7 @@ Same test copy-pasted 8 times. If the exception hierarchy changes, 8 files need 
 
 ---
 
-### M6. Tests accessing private attributes extensively
+### M6. Tests accessing private attributes extensively ⏭️ SKIPPED
 
 **Files:** Throughout `tests/04_execution_manager/` and `tests/03_pool/`
 
@@ -147,7 +147,7 @@ Tight coupling to private implementation. Tests should verify observable behavio
 
 ---
 
-### M7. Hardcoded port numbers in remote/WebSocket tests
+### M7. Hardcoded port numbers in remote/WebSocket tests ⏭️ SKIPPED
 
 **Files:** `tests/02_rpc/test_remote.pct.py` (18881-18890), `tests/03_pool/test_remote.pct.py` (19001-19027), and exception test variants (29801-29913).
 
@@ -155,7 +155,7 @@ Will fail with "address already in use" if ports are occupied. Should bind to po
 
 ---
 
-### M8. Global mutable state for port allocation in tests
+### M8. Global mutable state for port allocation in tests ⏭️ SKIPPED
 
 **Files:** `tests/04_execution_manager/test_execution_manager_remote.pct.py` (line 62), `tests/05_net/test_net.pct.py` (line 3506)
 
@@ -171,7 +171,7 @@ Not safe with `pytest-xdist` parallel execution.
 
 ---
 
-### M10. Duplicated worker function definitions between workers modules and test files
+### M10. Duplicated worker function definitions between workers modules and test files ⏭️ SKIPPED
 
 **Files:** `tests/03_pool/test_thread.pct.py` and `tests/03_pool/workers.pct.py` define identical workers. Same in exception test files.
 
@@ -179,7 +179,7 @@ Divergence between copies would introduce subtle bugs.
 
 ---
 
-### M12. Panics in production code paths (netrun-sim, 7 instances)
+### M12. Panics in production code paths (netrun-sim, 7 instances) ⏭️ SKIPPED
 
 **File:** `netrun-sim/core/src/net.rs`, various locations
 
@@ -187,7 +187,7 @@ Divergence between copies would introduce subtle bugs.
 
 ---
 
-### M13. Massive ULID parsing code duplication in Python bindings (netrun-sim)
+### M13. Massive ULID parsing code duplication in Python bindings (netrun-sim) ✅ FIXED
 
 **File:** `netrun-sim/python/src/net.rs`, lines 559-631, 933-1020
 
@@ -211,7 +211,7 @@ The `kind` field is a public `String` that must match one of five values. `to_co
 
 ---
 
-### M16. `Salvo::to_core()` panics instead of returning PyResult (netrun-sim)
+### M16. `Salvo::to_core()` panics instead of returning PyResult (netrun-sim) ✅ FIXED
 
 **File:** `netrun-sim/python/src/net.rs`, line 243
 
