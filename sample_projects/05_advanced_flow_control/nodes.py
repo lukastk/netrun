@@ -4,8 +4,8 @@
 def batch_processor(data: list[str], print) -> str:
     """Processes a batch of items.
 
-    Has a custom input salvo condition: fires only when the 'data' port
-    has exactly 3 packets accumulated (uses equals(3) predicate).
+    Has a custom input salvo condition: fires when the 'data' port
+    has 3 or more packets accumulated (uses equals_or_greater_than(3) predicate).
     The port config also uses finite slots to limit buffering.
     """
     print(f"Processing batch of {len(data)} items: {data}")
@@ -28,8 +28,8 @@ def rate_limited_worker(data: str, print) -> str:
 def multi_output(value: int, print) -> {"main_out": str, "debug_out": str, "extra_out": str}:
     """A node with multiple output ports.
 
-    Only 'main_out' is configured in a named output queue.
-    'debug_out' and 'extra_out' go to the catch-all queue.
+    'main_out' goes to the 'results' output queue.
+    'debug_out' and 'extra_out' go to the 'other_outputs' queue.
     """
     print(f"Processing value: {value}")
     return {
