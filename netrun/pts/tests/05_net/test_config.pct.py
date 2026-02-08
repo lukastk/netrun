@@ -2846,3 +2846,293 @@ def test_factory_nodes_inside_subgraph_resolved():
 
 # %%
 test_factory_nodes_inside_subgraph_resolved()
+
+# %% [markdown]
+# ## EnvVar Tests
+
+# %%
+#|export
+from netrun.net.config._base import EnvVar, EnvVarResolvableModel, _cast_env_var_value, _extract_target_type
+from netrun.execution_manager import RunAllocationMethod
+from netrun.net.config import RemotePoolConfig, MultiprocessPoolConfig
+
+# %%
+#|export
+def test_env_var_model_basics():
+    """EnvVar creation, serialisation with $env alias, model_dump(by_alias=True)."""
+    ev = EnvVar(env="MY_VAR")
+    assert ev.env == "MY_VAR"
+    assert ev.default is None
+
+    ev2 = EnvVar(env="MY_VAR", default=42)
+    assert ev2.default == 42
+
+    dumped = ev2.model_dump(by_alias=True)
+    assert dumped == {"$env": "MY_VAR", "default": 42}
+
+    # Without by_alias
+    dumped2 = ev2.model_dump()
+    assert dumped2 == {"env": "MY_VAR", "default": 42}
+
+# %%
+test_env_var_model_basics()
+
+# %%
+#|export
+def test_env_var_model_from_json():
+    """Parsing {"$env": "VAR"} and {"$env": "VAR", "default": 42}."""
+    ev = EnvVar.model_validate({"$env": "MY_VAR"})
+    assert ev.env == "MY_VAR"
+    assert ev.default is None
+
+    ev2 = EnvVar.model_validate({"$env": "MY_VAR", "default": 42})
+    assert ev2.env == "MY_VAR"
+    assert ev2.default == 42
+
+# %%
+test_env_var_model_from_json()
+
+# %%
+#|export
+def test_cast_env_var_value_scalars():
+    """int, float, str, bool casting."""
+    assert _cast_env_var_value("42", int) == 42
+    assert _cast_env_var_value("3.14", float) == 3.14
+    assert _cast_env_var_value("hello", str) == "hello"
+    assert _cast_env_var_value("true", bool) is True
+    assert _cast_env_var_value("false", bool) is False
+
+# %%
+test_cast_env_var_value_scalars()
+
+# %%
+#|export
+def test_cast_env_var_value_bool_parsing():
+    """'true'/'false'/'1'/'0'/'yes'/'no' and invalid."""
+    assert _cast_env_var_value("true", bool) is True
+    assert _cast_env_var_value("True", bool) is True
+    assert _cast_env_var_value("TRUE", bool) is True
+    assert _cast_env_var_value("1", bool) is True
+    assert _cast_env_var_value("yes", bool) is True
+    assert _cast_env_var_value("YES", bool) is True
+
+    assert _cast_env_var_value("false", bool) is False
+    assert _cast_env_var_value("False", bool) is False
+    assert _cast_env_var_value("0", bool) is False
+    assert _cast_env_var_value("no", bool) is False
+    assert _cast_env_var_value("NO", bool) is False
+
+    with pytest.raises(ValueError, match="Cannot parse"):
+        _cast_env_var_value("maybe", bool)
+
+# %%
+test_cast_env_var_value_bool_parsing()
+
+# %%
+#|export
+def test_cast_env_var_value_json_complex():
+    """JSON parsing for lists, dicts."""
+    result = _cast_env_var_value('[1, 2, 3]', list)
+    assert result == [1, 2, 3]
+
+    result = _cast_env_var_value('{"a": 1}', dict)
+    assert result == {"a": 1}
+
+# %%
+test_cast_env_var_value_json_complex()
+
+# %%
+#|export
+def test_cast_env_var_value_enum():
+    """RunAllocationMethod enum resolution."""
+    result = _cast_env_var_value("round-robin", RunAllocationMethod)
+    assert result == RunAllocationMethod.ROUND_ROBIN
+
+    result = _cast_env_var_value("random", RunAllocationMethod)
+    assert result == RunAllocationMethod.RANDOM
+
+# %%
+test_cast_env_var_value_enum()
+
+# %%
+#|export
+def test_resolve_env_vars_simple_field(monkeypatch):
+    """ThreadPoolConfig with EnvVar in num_workers resolves from os.environ."""
+    monkeypatch.setenv("NUM_WORKERS", "8")
+    cfg = ThreadPoolConfig(num_workers=EnvVar(env="NUM_WORKERS"))
+    resolved = cfg.resolve_env_vars()
+    assert resolved.num_workers == 8
+    assert resolved is not cfg
+
+# %%
+test_resolve_env_vars_simple_field()
+
+# %%
+#|export
+def test_resolve_env_vars_with_default(monkeypatch):
+    """EnvVar with default when env var is not set."""
+    monkeypatch.delenv("MISSING_VAR", raising=False)
+    cfg = ThreadPoolConfig(num_workers=EnvVar(env="MISSING_VAR", default=4))
+    resolved = cfg.resolve_env_vars()
+    assert resolved.num_workers == 4
+
+# %%
+test_resolve_env_vars_with_default()
+
+# %%
+#|export
+def test_resolve_env_vars_missing_no_default(monkeypatch):
+    """ValueError when env var missing and no default."""
+    monkeypatch.delenv("MISSING_VAR", raising=False)
+    cfg = ThreadPoolConfig(num_workers=EnvVar(env="MISSING_VAR"))
+    with pytest.raises(ValueError, match="Environment variable 'MISSING_VAR' is not set"):
+        cfg.resolve_env_vars()
+
+# %%
+test_resolve_env_vars_missing_no_default()
+
+# %%
+#|export
+def test_resolve_env_vars_nested_models(monkeypatch):
+    """PoolConfig containing ThreadPoolConfig with EnvVar."""
+    monkeypatch.setenv("FLUSH_INTERVAL", "0.5")
+    cfg = PoolConfig(
+        print_flush_interval=EnvVar(env="FLUSH_INTERVAL"),
+        spec=ThreadPoolConfig(num_workers=2),
+    )
+    resolved = cfg.resolve_env_vars()
+    assert resolved.print_flush_interval == 0.5
+
+# %%
+test_resolve_env_vars_nested_models()
+
+# %%
+#|export
+def test_resolve_env_vars_in_dict(monkeypatch):
+    """NetConfig.node_vars with NodeVariable containing EnvVar."""
+    monkeypatch.setenv("MY_SECRET", "secret_value")
+    nc = NetConfig(
+        graph=GraphConfig(nodes=[]),
+        node_vars={
+            "api_key": NodeVariable(value=EnvVar(env="MY_SECRET")),
+        },
+    )
+    resolved = nc.resolve_env_vars()
+    assert resolved.node_vars["api_key"].value == "secret_value"
+
+# %%
+test_resolve_env_vars_in_dict()
+
+# %%
+#|export
+def test_resolve_env_vars_in_list(monkeypatch):
+    """GraphConfig.nodes containing NodeConfig with EnvVar fields."""
+    monkeypatch.setenv("NODE_MAX_EPOCHS", "10")
+    graph = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="A",
+                execution_config=NodeExecutionConfig(
+                    max_epochs=EnvVar(env="NODE_MAX_EPOCHS"),
+                ),
+            ),
+        ],
+    )
+    resolved = graph.resolve_env_vars()
+    node = resolved.nodes[0]
+    assert node.execution_config.max_epochs == 10
+
+# %%
+test_resolve_env_vars_in_list()
+
+# %%
+#|export
+def test_resolve_env_vars_idempotent(monkeypatch):
+    """Calling resolve_env_vars twice returns same result."""
+    monkeypatch.setenv("NUM_WORKERS", "4")
+    cfg = ThreadPoolConfig(num_workers=EnvVar(env="NUM_WORKERS"))
+    resolved1 = cfg.resolve_env_vars()
+    resolved2 = resolved1.resolve_env_vars()
+    assert resolved1.num_workers == resolved2.num_workers == 4
+    # Second call should return self since no EnvVars remain
+    assert resolved2 is resolved1
+
+# %%
+test_resolve_env_vars_idempotent()
+
+# %%
+#|export
+def test_resolve_env_vars_no_envvars_returns_self():
+    """No EnvVar instances -> returns self (identity)."""
+    cfg = ThreadPoolConfig(num_workers=4)
+    resolved = cfg.resolve_env_vars()
+    assert resolved is cfg
+
+# %%
+test_resolve_env_vars_no_envvars_returns_self()
+
+# %%
+#|export
+def test_netconfig_resolve_env_vars_before_imports(monkeypatch):
+    """Full NetConfig.resolve() with env var in dead_letter_callback."""
+    monkeypatch.setenv("DL_CALLBACK", "json.loads")
+    nc = NetConfig(
+        graph=GraphConfig(nodes=[]),
+        dead_letter_callback=EnvVar(env="DL_CALLBACK"),
+    )
+    resolved = nc.resolve()
+    import json as json_mod
+    assert resolved.dead_letter_callback is json_mod.loads
+
+# %%
+test_netconfig_resolve_env_vars_before_imports()
+
+# %%
+#|export
+def test_node_execution_config_resolve_with_env_var(monkeypatch):
+    """EnvVar in exec_node_func resolves to import path string then to callable."""
+    monkeypatch.setenv("EXEC_FUNC", "json.loads")
+    cfg = NodeExecutionConfig(exec_node_func=EnvVar(env="EXEC_FUNC"))
+    resolved = cfg.resolve()
+    import json as json_mod
+    assert resolved.exec_node_func is json_mod.loads
+
+# %%
+test_node_execution_config_resolve_with_env_var()
+
+# %%
+#|export
+def test_env_var_json_roundtrip():
+    """NetConfig with EnvVar fields -> model_dump_json -> model_validate_json -> same EnvVar."""
+    nc = NetConfig(
+        graph=GraphConfig(nodes=[]),
+        project_root=EnvVar(env="PROJECT_ROOT"),
+        type_checking_enabled=EnvVar(env="TYPE_CHECK", default=True),
+    )
+    json_str = nc.model_dump_json()
+    restored = NetConfig.model_validate_json(json_str)
+    assert isinstance(restored.project_root, EnvVar)
+    assert restored.project_root.env == "PROJECT_ROOT"
+    assert isinstance(restored.type_checking_enabled, EnvVar)
+    assert restored.type_checking_enabled.env == "TYPE_CHECK"
+    assert restored.type_checking_enabled.default is True
+
+# %%
+test_env_var_json_roundtrip()
+
+# %%
+#|export
+def test_env_var_in_graph_topology_with_default(monkeypatch):
+    """PortSlotSpecFiniteConfig.capacity as EnvVar with default."""
+    monkeypatch.delenv("PORT_CAPACITY", raising=False)
+    cfg = PortSlotSpecFiniteConfig(capacity=EnvVar(env="PORT_CAPACITY", default=10))
+    resolved = cfg.resolve_env_vars()
+    assert resolved.capacity == 10
+
+    # Now set the env var and verify it takes precedence
+    monkeypatch.setenv("PORT_CAPACITY", "20")
+    resolved2 = cfg.resolve_env_vars()
+    assert resolved2.capacity == 20
+
+# %%
+test_env_var_in_graph_topology_with_default()

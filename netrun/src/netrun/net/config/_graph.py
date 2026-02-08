@@ -12,6 +12,7 @@ from ...net.config._nodes import (
     SubgraphConfig,
     EdgeConfig,
     PortRefConfig,
+    EnvVarResolvableModel,
 )
 import netrun_sim
 
@@ -36,7 +37,7 @@ GraphNodeConfig = Annotated[
 ]
 
 # %% pts/netrun/05_net/00_config/02_graph.pct.py 5
-class GraphConfig(BaseModel):
+class GraphConfig(EnvVarResolvableModel):
     """Configuration for a complete flow-based network graph.
 
     Example:

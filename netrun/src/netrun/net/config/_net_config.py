@@ -14,13 +14,15 @@ import tomllib
 from ...net.config._base import (
     _get_callable_import_path,
     _import_from_path,
+    EnvVar,
+    EnvVarResolvableModel,
 )
 from ...net.config._nodes import NodeVariable
 from ...net.config._graph import GraphConfig
 from ...execution_manager import RunAllocationMethod
 
 # %% pts/netrun/05_net/00_config/03_net_config.pct.py 5
-class OutputQueueConfig(BaseModel):
+class OutputQueueConfig(EnvVarResolvableModel):
     """Configuration for an output queue.
 
     Output queues collect packets that are sent from unconnected output ports
@@ -28,29 +30,29 @@ class OutputQueueConfig(BaseModel):
     final results are collected from sink nodes.
     """
 
-    ports: list[tuple[str, str]]
+    ports: list[tuple[str, str]] | EnvVar
     """List of (node_name, port_name) tuples that feed this queue."""
 
 # %% pts/netrun/05_net/00_config/03_net_config.pct.py 7
-class MainPoolConfig(BaseModel):
+class MainPoolConfig(EnvVarResolvableModel):
     """Configuration for running in the main thread/event loop."""
     type: Literal["main"] = "main"
 
 
-class ThreadPoolConfig(BaseModel):
+class ThreadPoolConfig(EnvVarResolvableModel):
     """Configuration for a thread pool."""
     type: Literal["thread"] = "thread"
-    num_workers: int = 1
+    num_workers: int | EnvVar = 1
 
 
-class MultiprocessPoolConfig(BaseModel):
+class MultiprocessPoolConfig(EnvVarResolvableModel):
     """Configuration for a multiprocess pool."""
     type: Literal["multiprocess"] = "multiprocess"
-    num_processes: int = 1
-    threads_per_process: int = 1
+    num_processes: int | EnvVar = 1
+    threads_per_process: int | EnvVar = 1
 
 
-class RemotePoolConfig(BaseModel):
+class RemotePoolConfig(EnvVarResolvableModel):
     """Configuration for a remote pool.
 
     ``url`` and ``worker_name`` may be left as ``None`` when building a
@@ -59,10 +61,10 @@ class RemotePoolConfig(BaseModel):
     is raised at pool-construction time.
     """
     type: Literal["remote"] = "remote"
-    url: str | None = None
-    worker_name: str | None = None
-    num_processes: int = 1
-    threads_per_process: int = 1
+    url: str | EnvVar | None = None
+    worker_name: str | EnvVar | None = None
+    num_processes: int | EnvVar = 1
+    threads_per_process: int | EnvVar = 1
 
 
 PoolSpecConfig = Annotated[
@@ -71,10 +73,10 @@ PoolSpecConfig = Annotated[
 ]
 
 
-class PoolConfig(BaseModel):
+class PoolConfig(EnvVarResolvableModel):
     """Configuration for a pool of workers."""
-    print_flush_interval: float = 0.1
-    capture_prints: bool = True
+    print_flush_interval: float | EnvVar = 0.1
+    capture_prints: bool | EnvVar = True
     spec: PoolSpecConfig = Field(default_factory=MainPoolConfig)
 
 # %% pts/netrun/05_net/00_config/03_net_config.pct.py 9
@@ -112,11 +114,11 @@ def _generate_default_output_queues(graph: "GraphConfig") -> dict[str, "OutputQu
     return queues
 
 
-class NetConfig(BaseModel):
+class NetConfig(EnvVarResolvableModel):
     """Configuration for a Net."""
     model_config = {"arbitrary_types_allowed": True}
 
-    project_root: str | None = Field(default=None, description="Project root path. Relative paths resolve from the config file's directory.")
+    project_root: str | EnvVar | None = Field(default=None, description="Project root path. Relative paths resolve from the config file's directory.")
 
     _file_path: Path | None = PrivateAttr(default=None)
 
@@ -178,36 +180,39 @@ class NetConfig(BaseModel):
 
     extra: dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data (descriptions, version info, tool-specific data).")
 
-    default_pool_allocation_method: RunAllocationMethod = Field(default=RunAllocationMethod.ROUND_ROBIN, description="Default worker allocation method for nodes with multiple pools.")
+    default_pool_allocation_method: RunAllocationMethod | EnvVar = Field(default=RunAllocationMethod.ROUND_ROBIN, description="Default worker allocation method for nodes with multiple pools.")
 
     node_vars: dict[str, NodeVariable] | None = Field(default=None, description="Global default node variables, accessible via ctx.vars.")
 
-    dead_letter_queue: bool = Field(default=True, description="Enable dead letter queue for undeliverable packets.")
-    dead_letter_path: str | None = Field(default=None, description="File path for dead letter queue storage.")
-    dead_letter_callback: Callable | str | None = Field(default=None, description="Callback function or import path for dead letter handling.")
+    dead_letter_queue: bool | EnvVar = Field(default=True, description="Enable dead letter queue for undeliverable packets.")
+    dead_letter_path: str | EnvVar | None = Field(default=None, description="File path for dead letter queue storage.")
+    dead_letter_callback: Callable | str | EnvVar | None = Field(default=None, description="Callback function or import path for dead letter handling.")
 
     # Output queue configuration
     output_queues: dict[str, OutputQueueConfig] | None = Field(default=None, description="Output queue configurations. None auto-generates queues for unconnected output ports.")
 
-    error_on_undeclared_output: bool = Field(default=False, description="Raise an error when a packet is sent from an unconnected output port with no queue.")
+    error_on_undeclared_output: bool | EnvVar = Field(default=False, description="Raise an error when a packet is sent from an unconnected output port with no queue.")
 
-    type_checking_enabled: bool = Field(default=True, description="Enable runtime type checking for packet values. Can be overridden per-node.")
+    type_checking_enabled: bool | EnvVar = Field(default=True, description="Enable runtime type checking for packet values. Can be overridden per-node.")
 
-    propagate_exceptions: bool = Field(default=True, description="Propagate epoch exceptions immediately from run_step/run_until_blocked. Can be overridden per-node.")
+    propagate_exceptions: bool | EnvVar = Field(default=True, description="Propagate epoch exceptions immediately from run_step/run_until_blocked. Can be overridden per-node.")
 
-    print_exceptions: bool = Field(default=False, description="Print epoch exceptions to stderr when they occur. Can be overridden per-node.")
+    print_exceptions: bool | EnvVar = Field(default=False, description="Print epoch exceptions to stderr when they occur. Can be overridden per-node.")
 
     @field_serializer("dead_letter_callback", when_used='json')
-    def serialize_dead_letter_callback(self, callback: Callable | str | None) -> str | None:
+    def serialize_dead_letter_callback(self, callback: Callable | str | EnvVar | None) -> str | dict | None:
         """Serialize dead_letter_callback to import path for JSON.
 
         Note: Only called during JSON serialization (model_dump_json).
+        EnvVar instances are serialized to their dict form.
 
         Raises:
             ValueError: If callback is defined in __main__, is a lambda, or is a closure.
         """
         if callback is None:
             return None
+        if isinstance(callback, EnvVar):
+            return callback.model_dump(by_alias=True)
         if isinstance(callback, str):
             return callback
         return _get_callable_import_path(callback)
@@ -229,6 +234,7 @@ class NetConfig(BaseModel):
         """Return a resolved copy with all factories and imports resolved.
 
         Resolves:
+        - All EnvVar fields from os.environ (first)
         - All subgraphs in the graph (flattening to regular nodes)
         - All node factories in the graph
         - All string import paths to callables
@@ -242,33 +248,39 @@ class NetConfig(BaseModel):
         Returns:
             A new NetConfig ready for execution by Net.
         """
+        # Resolve env vars FIRST (before any other resolution)
+        resolved = self.resolve_env_vars()
+        # Preserve PrivateAttr
+        if resolved is not self:
+            resolved._file_path = self._file_path
+
         # Auto-derive base_path from _file_path when not provided
-        if base_path is None and self._file_path is not None:
-            base_path = self._file_path.parent
+        if base_path is None and resolved._file_path is not None:
+            base_path = resolved._file_path.parent
 
         updates = {}
 
         # Generate default pools if None
-        if self.pools is None:
+        if resolved.pools is None:
             updates["pools"] = _default_pools()
 
         # Resolve graph (includes subgraph flattening)
-        project_root = self.project_root_path
-        resolved_graph = self.graph.resolve(base_path=base_path, net_config=self)
-        if resolved_graph is not self.graph:
+        project_root = resolved.project_root_path
+        resolved_graph = resolved.graph.resolve(base_path=base_path, net_config=resolved)
+        if resolved_graph is not resolved.graph:
             updates["graph"] = resolved_graph
 
         # Generate default output queues for unconnected output ports
-        if self.output_queues is None:
+        if resolved.output_queues is None:
             updates["output_queues"] = _generate_default_output_queues(resolved_graph)
 
         # Resolve dead_letter_callback
-        if isinstance(self.dead_letter_callback, str):
-            updates["dead_letter_callback"] = _import_from_path(self.dead_letter_callback, project_root=project_root)
+        if isinstance(resolved.dead_letter_callback, str):
+            updates["dead_letter_callback"] = _import_from_path(resolved.dead_letter_callback, project_root=project_root)
 
         if updates:
-            result = self.model_copy(update=updates)
+            result = resolved.model_copy(update=updates)
             # Pydantic v2 model_copy() does not copy PrivateAttr - preserve it
-            result._file_path = self._file_path
+            result._file_path = resolved._file_path
             return result
-        return self
+        return resolved

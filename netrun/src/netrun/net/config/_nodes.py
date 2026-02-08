@@ -16,6 +16,8 @@ from ...net.config._base import (
     _is_file_path_ref,
     _import_from_file_path,
     _import_from_path,
+    EnvVar,
+    EnvVarResolvableModel,
     PortConfig,
     SalvoConditionConfig,
     _generate_default_in_salvo_conditions,
@@ -26,7 +28,7 @@ import netrun_sim
 import json as _json_module
 
 # %% pts/netrun/05_net/00_config/01_nodes.pct.py 4
-class PortRefConfig(BaseModel):
+class PortRefConfig(EnvVarResolvableModel):
     """Reference to a specific port on a node."""
     node_name: str
     port_type: Literal["input", "output"]
@@ -37,7 +39,7 @@ class PortRefConfig(BaseModel):
         return netrun_sim.PortRef(self.node_name, port_type, self.port_name)
 
 
-class EdgeConfig(BaseModel):
+class EdgeConfig(EnvVarResolvableModel):
     """A connection between an output port and an input port.
 
     Can be specified as:
@@ -121,9 +123,9 @@ Args:
 """;
 
 # %% pts/netrun/05_net/00_config/01_nodes.pct.py 8
-class NodeVariable(BaseModel):
+class NodeVariable(EnvVarResolvableModel):
     """A typed variable accessible to nodes via ctx.vars."""
-    value: str
+    value: str | EnvVar
     type: str = "str"  # "str", "int", "float", "bool", "json"
 
     def resolve_value(self) -> Any:
@@ -148,55 +150,56 @@ class NodeVariable(BaseModel):
                 raise ValueError(f"Unsupported NodeVariable type: '{self.type}'")
 
 # %% pts/netrun/05_net/00_config/01_nodes.pct.py 9
-class NodeExecutionConfig(BaseModel):
+class NodeExecutionConfig(EnvVarResolvableModel):
     """Runtime configuration for a node's execution behavior."""
     model_config = {"arbitrary_types_allowed": True}
 
-    pools: list[str] = Field(default_factory=lambda: ["main"], description="Which pools can execute this node.")
-    exec_node_func: NodeExecutionFunc | str | None = Field(default=None, description="Function to execute the node. Can be a callable or import path string.")
+    pools: list[str] | EnvVar = Field(default_factory=lambda: ["main"], description="Which pools can execute this node.")
+    exec_node_func: NodeExecutionFunc | str | EnvVar | None = Field(default=None, description="Function to execute the node. Can be a callable or import path string.")
 
-    start_node_func: NodeStartFunc | str | None = Field(default=None, description="Function called when the node starts up.")
-    stop_node_func: NodeStopFunc | str | None = Field(default=None, description="Function called when the node shuts down.")
-    on_node_failure: OnNodeFailureFunc | str | None = Field(default=None, description="Callback when node execution fails.")
+    start_node_func: NodeStartFunc | str | EnvVar | None = Field(default=None, description="Function called when the node starts up.")
+    stop_node_func: NodeStopFunc | str | EnvVar | None = Field(default=None, description="Function called when the node shuts down.")
+    on_node_failure: OnNodeFailureFunc | str | EnvVar | None = Field(default=None, description="Callback when node execution fails.")
 
     # Additional execution options (from PROJECT_SPEC.md)
-    defer_startup: bool = Field(default=False, description="Defer start_node_func until the node's first epoch instead of during Net.start().")
+    defer_startup: bool | EnvVar = Field(default=False, description="Defer start_node_func until the node's first epoch instead of during Net.start().")
 
-    max_parallel_epochs: int | None = Field(default=None, description="Maximum concurrent epochs for this node.")
-    max_epochs: int | None = Field(default=None, description="Maximum total epochs across this node's lifetime. None = unlimited.")
+    max_parallel_epochs: int | EnvVar | None = Field(default=None, description="Maximum concurrent epochs for this node.")
+    max_epochs: int | EnvVar | None = Field(default=None, description="Maximum total epochs across this node's lifetime. None = unlimited.")
 
-    rate_limit_per_second: float | None = Field(default=None, description="Maximum epoch triggers per second.")
+    rate_limit_per_second: float | EnvVar | None = Field(default=None, description="Maximum epoch triggers per second.")
 
-    defer_net_actions: bool|None = Field(default=None, description="Defer net action notifications until epoch completes successfully. Required if retries enabled.")
+    defer_net_actions: bool | EnvVar | None = Field(default=None, description="Defer net action notifications until epoch completes successfully. Required if retries enabled.")
 
-    retries: int = Field(default=0, description="Number of retry attempts on failure.")
-    retry_wait: float = Field(default=0.0, description="Wait time in seconds between retries.")
-    timeout: float | None = Field(default=None, description="Epoch execution timeout in seconds.")
+    retries: int | EnvVar = Field(default=0, description="Number of retry attempts on failure.")
+    retry_wait: float | EnvVar = Field(default=0.0, description="Wait time in seconds between retries.")
+    timeout: float | EnvVar | None = Field(default=None, description="Epoch execution timeout in seconds.")
 
-    capture_prints: bool = Field(default=True, description="Capture print statements in the node.")
+    capture_prints: bool | EnvVar = Field(default=True, description="Capture print statements in the node.")
 
-    print_flush_interval: float = Field(default=0.1, description="How often to flush the print buffer in seconds.")
+    print_flush_interval: float | EnvVar = Field(default=0.1, description="How often to flush the print buffer in seconds.")
 
-    print_buffer_max_size: int | None = Field(default=None, description="Max print buffer size before forced flush. None = unlimited.")
+    print_buffer_max_size: int | EnvVar | None = Field(default=None, description="Max print buffer size before forced flush. None = unlimited.")
 
-    print_echo_stdout: bool = Field(default=False, description="Also print to actual stdout when ctx.print() is called.")
+    print_echo_stdout: bool | EnvVar = Field(default=False, description="Also print to actual stdout when ctx.print() is called.")
 
-    pool_allocation_method: RunAllocationMethod | None = Field(default=None, description="Worker selection method when node has multiple pools. None inherits Net default.")
+    pool_allocation_method: RunAllocationMethod | EnvVar | None = Field(default=None, description="Worker selection method when node has multiple pools. None inherits Net default.")
 
     node_vars: dict[str, NodeVariable] | None = Field(default=None, description="Per-node variables, override net-level vars with the same name.")
 
-    type_checking_enabled: bool | None = Field(default=None, description="Enable/disable type checking for this node. None inherits from NetConfig.")
+    type_checking_enabled: bool | EnvVar | None = Field(default=None, description="Enable/disable type checking for this node. None inherits from NetConfig.")
 
-    propagate_exceptions: bool | None = Field(default=None, description="Override NetConfig.propagate_exceptions for this node. None inherits.")
+    propagate_exceptions: bool | EnvVar | None = Field(default=None, description="Override NetConfig.propagate_exceptions for this node. None inherits.")
 
-    print_exceptions: bool | None = Field(default=None, description="Override NetConfig.print_exceptions for this node. None inherits.")
+    print_exceptions: bool | EnvVar | None = Field(default=None, description="Override NetConfig.print_exceptions for this node. None inherits.")
 
     @field_serializer("exec_node_func", "start_node_func", "stop_node_func", "on_node_failure", when_used='json')
-    def serialize_func(self, func: Callable | str | None) -> str | None:
+    def serialize_func(self, func: Callable | str | EnvVar | None) -> str | dict | None:
         """Serialize functions to their import path for JSON.
 
         Function objects are serialized to their full import path
         (e.g., "myapp.nodes.process_data") for JSON roundtripping.
+        EnvVar instances are serialized to their dict form.
 
         Note: Only called during JSON serialization (model_dump_json), not
         during Python serialization (model_dump). This allows factories to
@@ -207,12 +210,16 @@ class NodeExecutionConfig(BaseModel):
         """
         if func is None:
             return None
+        if isinstance(func, EnvVar):
+            return func.model_dump(by_alias=True)
         if isinstance(func, str):
             return func
         return _get_callable_import_path(func)
 
     def resolve(self, project_root: 'Path | None' = None) -> "NodeExecutionConfig":
         """Return a resolved copy with string import paths converted to callables.
+
+        Resolves env vars first, then resolves string import paths.
 
         Args:
             project_root: Base path for resolving relative file-path references.
@@ -221,6 +228,9 @@ class NodeExecutionConfig(BaseModel):
             A new NodeExecutionConfig with all string function references
             resolved to actual callable objects.
         """
+        # Resolve env vars first
+        self = self.resolve_env_vars()
+
         updates = {}
 
         for field_name in ("exec_node_func", "start_node_func", "stop_node_func", "on_node_failure"):
@@ -233,7 +243,7 @@ class NodeExecutionConfig(BaseModel):
         return self
 
 # %% pts/netrun/05_net/00_config/01_nodes.pct.py 10
-class NodeConfig(BaseModel):
+class NodeConfig(EnvVarResolvableModel):
     """Configuration for a node's graph structure (ports and salvo conditions).
 
     Can be created directly or from a factory module using the `factory` field
@@ -503,7 +513,7 @@ class NodeConfig(BaseModel):
         )
 
 # %% pts/netrun/05_net/00_config/01_nodes.pct.py 13
-class ExposedPortConfig(BaseModel):
+class ExposedPortConfig(EnvVarResolvableModel):
     """Maps an exposed port to an internal node's port.
 
     When a subgraph exposes a port, this config defines which internal
@@ -531,7 +541,7 @@ class ExposedPortConfig(BaseModel):
         return self.rename if self.rename is not None else self.internal_port
 
 # %% pts/netrun/05_net/00_config/01_nodes.pct.py 15
-class SubgraphConfig(BaseModel):
+class SubgraphConfig(EnvVarResolvableModel):
     """A group of nodes that acts as a single node.
 
     Subgraphs can be defined in two ways:
