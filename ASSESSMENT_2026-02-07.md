@@ -396,7 +396,7 @@ Would fail with `AttributeError` on import.
 
 ---
 
-### L16. Heavy string-based ULID conversion in Python bindings (netrun-sim)
+### L16. Heavy string-based ULID conversion in Python bindings (netrun-sim) ⏭️ SKIPPED
 
 **File:** `netrun-sim/python/src/net.rs`, lines 20-42
 
@@ -404,7 +404,7 @@ All ULID conversions go through string serialization. Raw 128-bit integer conver
 
 ---
 
-### L18. `Graph.validate()` loses structured error information (netrun-sim)
+### L18. `Graph.validate()` loses structured error information (netrun-sim) ⏭️ SKIPPED
 
 **File:** `netrun-sim/python/src/graph.rs`, lines 914-922
 
@@ -412,7 +412,7 @@ Converts errors to strings, losing node/port names and error variant.
 
 ---
 
-### L19. Graph not validated on construction (netrun-sim)
+### L19. Graph not validated on construction (netrun-sim) ⏭️ SKIPPED
 
 **File:** `netrun-sim/core/src/graph.rs`, lines 432-457
 
@@ -420,7 +420,7 @@ Converts errors to strings, losing node/port names and error variant.
 
 ---
 
-### L20. Verbose manual Port cloning in `try_trigger_input_salvo` (netrun-sim)
+### L20. Verbose manual Port cloning in `try_trigger_input_salvo` (netrun-sim) ✅ FIXED
 
 **File:** `netrun-sim/core/src/net.rs`, lines 488-502
 
