@@ -292,7 +292,7 @@ Please remove.
 
 ## 4. LOW Issues
 
-### L2. Redundant `Path` import in config base
+### L2. Redundant `Path` import in config base ✅ ALREADY FIXED
 
 **File:** `netrun/pts/netrun/05_net/00_config/00_base.pct.py`, line 642
 
@@ -300,7 +300,7 @@ Imported twice in separate `#|export` cells.
 
 ---
 
-### L3. `ConfigOpt`/`PrettyOpt` type aliases duplicated across 3 CLI modules
+### L3. `ConfigOpt`/`PrettyOpt` type aliases duplicated across 3 CLI modules ⏭️ SKIPPED
 
 **Files:** `pts/netrun/09_cli/02_commands.pct.py`, `03_actions.pct.py`, `04_recipes.pct.py`
 
@@ -308,7 +308,7 @@ Could be defined once in `_helpers`.
 
 ---
 
-### L4. No-op callback stubs are dead code
+### L4. No-op callback stubs are dead code ⏭️ SKIPPED
 
 **File:** `netrun/pts/netrun/05_net/01_net/02_net.pct.py`
 
@@ -316,7 +316,7 @@ Could be defined once in `_helpers`.
 
 ---
 
-### L5. `node_id=node_name` conflation in actions CLI
+### L5. `node_id=node_name` conflation in actions CLI ⏭️ SKIPPED
 
 **File:** `netrun/pts/netrun/09_cli/03_actions.pct.py`, line 112
 
@@ -326,7 +326,7 @@ Just use `node_name`. This must be changed across all the sample projects as wel
 
 ---
 
-### L6. Duplicate edge detection in `Graph::validate()` is dead code (netrun-sim)
+### L6. Duplicate edge detection in `Graph::validate()` is dead code (netrun-sim) ✅ FIXED
 
 **File:** `netrun-sim/core/src/graph.rs`, lines 490-504
 
