@@ -84,6 +84,12 @@ class _ServerLogCallback:
             for _ts, msg in result.print_buffer:
                 self._log(f"[{node_name}] {msg}")
 
+    def close(self):
+        """Close the file handle if open."""
+        if self._fh is not None:
+            self._fh.close()
+            self._fh = None
+
     def __getstate__(self):
         # Don't pickle the file handle — each process opens its own
         state = self.__dict__.copy()
@@ -98,13 +104,14 @@ class _PoolServerContext:
     Wraps RemotePoolServer.serve_background() and adds optional log file output.
     """
 
-    def __init__(self, server, host, port, log_file=None):
+    def __init__(self, server, host, port, log_file=None, done_callback=None):
         self._server = server
         self._host = host
         self._port = port
         self._log_file = log_file
         self._log_fh = None
         self._inner_ctx = None
+        self._done_callback = done_callback
 
     def _log(self, message: str):
         if self._log_fh:
@@ -130,6 +137,8 @@ class _PoolServerContext:
             if self._log_fh:
                 self._log_fh.close()
                 self._log_fh = None
+            if self._done_callback is not None:
+                self._done_callback.close()
 
     async def wait_until_stopped(self) -> None:
         """Wait until a client requests shutdown via Net.request_pool_shutdown()."""
@@ -381,8 +390,8 @@ class Net:
 
         func_preprocessor = cls._create_func_preprocessor_from_config(config_resolved)
 
-        ctx = _PoolServerContext(None, host, port, log_file)
         done_callback = _ServerLogCallback(log_file) if log_file else None
+        ctx = _PoolServerContext(None, host, port, log_file, done_callback)
 
         server = _create_em_server(
             worker_name=worker_name,
