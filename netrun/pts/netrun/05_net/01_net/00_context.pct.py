@@ -549,6 +549,22 @@ class NodeFailureContext:
     input_salvo: dict[str, list[str]] = field(default_factory=dict)  # port_name -> list[packet_id]
     pool_id: str | None = None
     worker_id: int | None = None
+    _print_buffer: list[tuple[datetime, str]] = field(default_factory=list, repr=False)
+
+    def print(self, *args, sep: str = " ", end: str = "\n") -> None:
+        """Capture print output from the failure callback.
+
+        Behaves like the built-in print() but captures output with timestamps.
+        Captured output is appended to the epoch's logs after the callback returns.
+
+        Args:
+            *args: Values to print (same as builtin print).
+            sep: Separator between values (default: " ").
+            end: String to append at end (default: "\\n").
+        """
+        timestamp = get_timestamp_utc()
+        message = sep.join(str(arg) for arg in args) + end
+        self._print_buffer.append((timestamp, message))
 
 # %% [markdown]
 # ## ConsumedOutputPacket
