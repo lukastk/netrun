@@ -143,9 +143,3 @@ RPC_KEY_BROKEN = "__rpc:broken"
 #|export
 RPC_KEYS = [RPC_KEY_SHUTDOWN, RPC_KEY_ERROR, RPC_KEY_BROKEN]
 """All RPC layer keys."""
-
-# %%
-#|export
-# Backwards compatibility alias
-SHUTDOWN_KEY = RPC_KEY_SHUTDOWN
-"""Deprecated: Use RPC_KEY_SHUTDOWN instead."""

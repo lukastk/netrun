@@ -5,7 +5,6 @@ __all__ = ['ExecutionManager', 'ExecutionManagerProtocolKeys', 'JobResult', 'Poo
 # %% pts/netrun/04_execution_manager.pct.py 3
 from typing import Any
 from collections.abc import Callable, Awaitable
-import datetime
 from ._iutils import get_timestamp_utc
 from datetime import datetime
 import asyncio

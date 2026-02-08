@@ -4,7 +4,6 @@ from netrun.rpc.aio import (
     create_async_channel_pair,
 )
 from netrun.rpc.base import (
-    SHUTDOWN_KEY,
     ChannelBroken,
     ChannelClosed,
     RecvTimeout,
@@ -39,7 +38,6 @@ __all__ = [
     "RecvTimeout",
     "RPCChannel",
     "SyncRPCChannel",
-    "SHUTDOWN_KEY",
     # Async (coroutine-to-coroutine, same event loop)
     "AsyncChannel",
     "create_async_channel_pair",

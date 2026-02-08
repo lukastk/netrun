@@ -55,7 +55,7 @@ from netrun.rpc.base import (
     ChannelClosed,
     ChannelBroken,
     RecvTimeout,
-    SHUTDOWN_KEY,
+    RPC_KEY_SHUTDOWN,
 )
 
 # %% [markdown]
@@ -111,7 +111,7 @@ class SyncThreadChannel:
             self._closed = True
             raise ChannelBroken(f"Channel broken: {e}")
 
-        if result[0] == SHUTDOWN_KEY:
+        if result[0] == RPC_KEY_SHUTDOWN:
             self._closed = True
             raise ChannelClosed("Channel was shut down")
 
@@ -130,7 +130,7 @@ class SyncThreadChannel:
             self._closed = True
             raise ChannelBroken(f"Channel broken: {e}")
 
-        if result[0] == SHUTDOWN_KEY:
+        if result[0] == RPC_KEY_SHUTDOWN:
             self._closed = True
             raise ChannelClosed("Channel was shut down")
 
@@ -142,7 +142,7 @@ class SyncThreadChannel:
             if not self._closed:
                 self._closed = True
                 try:
-                    self._send_queue.put_nowait((SHUTDOWN_KEY, None))
+                    self._send_queue.put_nowait((RPC_KEY_SHUTDOWN, None))
                 except Exception:
                     pass
 
@@ -220,7 +220,7 @@ class ThreadChannel:
             self._closed = True
             raise ChannelBroken(f"Channel broken: {e}")
 
-        if result[0] == SHUTDOWN_KEY:
+        if result[0] == RPC_KEY_SHUTDOWN:
             self._closed = True
             raise ChannelClosed("Channel was shut down")
 
@@ -239,7 +239,7 @@ class ThreadChannel:
             self._closed = True
             raise ChannelBroken(f"Channel broken: {e}")
 
-        if result[0] == SHUTDOWN_KEY:
+        if result[0] == RPC_KEY_SHUTDOWN:
             self._closed = True
             raise ChannelClosed("Channel was shut down")
 
@@ -252,12 +252,12 @@ class ThreadChannel:
                 self._closed = True
                 # Send shutdown to worker
                 try:
-                    self._send_queue.put_nowait((SHUTDOWN_KEY, None))
+                    self._send_queue.put_nowait((RPC_KEY_SHUTDOWN, None))
                 except Exception:
                     pass
                 # Also put shutdown on recv queue to unblock any recv() calls
                 try:
-                    self._recv_queue.put_nowait((SHUTDOWN_KEY, None))
+                    self._recv_queue.put_nowait((RPC_KEY_SHUTDOWN, None))
                 except Exception:
                     pass
 

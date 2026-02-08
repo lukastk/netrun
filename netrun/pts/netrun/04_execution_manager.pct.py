@@ -24,7 +24,6 @@ from nblite import nbl_export; nbl_export();
 #|export
 from typing import Any
 from collections.abc import Callable, Awaitable
-import datetime
 from netrun._iutils import get_timestamp_utc
 from datetime import datetime
 import asyncio
