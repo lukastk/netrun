@@ -33,7 +33,6 @@ create_exception!(
     NetrunError
 );
 create_exception!(netrun_sim, EdgeNotFoundError, NetrunError);
-create_exception!(netrun_sim, UnconnectedOutputPortError, NetrunError);
 create_exception!(netrun_sim, GraphValidationError, NetrunError);
 
 // Undo-related exceptions
@@ -115,10 +114,6 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
         m.py().get_type::<CannotMovePacketIntoRunningEpochError>(),
     )?;
     m.add("EdgeNotFoundError", m.py().get_type::<EdgeNotFoundError>())?;
-    m.add(
-        "UnconnectedOutputPortError",
-        m.py().get_type::<UnconnectedOutputPortError>(),
-    )?;
     m.add(
         "GraphValidationError",
         m.py().get_type::<GraphValidationError>(),
@@ -248,13 +243,6 @@ pub fn net_action_error_to_py_err(err: netrun_sim::net::NetActionError) -> PyErr
         NetActionError::EdgeNotFound { edge } => {
             EdgeNotFoundError::new_err(format!("Edge not found: {}", edge))
         }
-        NetActionError::CannotPutPacketIntoUnconnectedOutputPort {
-            port_name,
-            node_name,
-        } => UnconnectedOutputPortError::new_err(format!(
-            "Output port '{}' on node '{}' is not connected to any edge",
-            port_name, node_name
-        )),
     }
 }
 
