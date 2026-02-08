@@ -4,7 +4,6 @@ __all__ = ['test_execute_recipe_bad_return', 'test_execute_recipe_basic', 'test_
 
 # %% pts/tests/08_tools/test_recipes.pct.py 2
 import pytest
-import tempfile
 from pathlib import Path
 from netrun.tools._recipes import (
     load_recipe_module,
@@ -18,70 +17,59 @@ def test_load_recipe_module_not_found():
         load_recipe_module("/nonexistent/recipe.py")
 
 
-def test_load_recipe_module_not_python():
-    with tempfile.NamedTemporaryFile(suffix=".txt") as f:
-        with pytest.raises(ValueError, match=".py"):
-            load_recipe_module(f.name)
+def test_load_recipe_module_not_python(tmp_path):
+    f = tmp_path / "test.txt"
+    f.write_text("")
+    with pytest.raises(ValueError, match=".py"):
+        load_recipe_module(str(f))
 
 
-def test_load_recipe_module_basic():
-    with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False) as f:
-        f.write("VALUE = 42\n")
-        f.flush()
-        module = load_recipe_module(f.name)
-        assert module.VALUE == 42
-    Path(f.name).unlink()
+def test_load_recipe_module_basic(tmp_path):
+    f = tmp_path / "test_module.py"
+    f.write_text("VALUE = 42\n")
+    module = load_recipe_module(str(f))
+    assert module.VALUE == 42
 
 
-def test_get_recipe_prompts_no_function():
-    with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False) as f:
-        f.write("# no get_prompts\n")
-        f.flush()
-        prompts = get_recipe_prompts(f.name, {})
-        assert prompts == []
-    Path(f.name).unlink()
+def test_get_recipe_prompts_no_function(tmp_path):
+    f = tmp_path / "no_prompts.py"
+    f.write_text("# no get_prompts\n")
+    prompts = get_recipe_prompts(str(f), {})
+    assert prompts == []
 
 
-def test_get_recipe_prompts_with_function():
-    with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False) as f:
-        f.write(
-            "def get_prompts(config):\n"
-            "    return [{'name': 'count', 'label': 'Count'}]\n"
-        )
-        f.flush()
-        prompts = get_recipe_prompts(f.name, {})
-        assert len(prompts) == 1
-        assert prompts[0].name == "count"
-    Path(f.name).unlink()
+def test_get_recipe_prompts_with_function(tmp_path):
+    f = tmp_path / "with_prompts.py"
+    f.write_text(
+        "def get_prompts(config):\n"
+        "    return [{'name': 'count', 'label': 'Count'}]\n"
+    )
+    prompts = get_recipe_prompts(str(f), {})
+    assert len(prompts) == 1
+    assert prompts[0].name == "count"
 
 
-def test_execute_recipe_basic():
-    with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False) as f:
-        f.write(
-            "def run(config, inputs):\n"
-            "    config['modified'] = True\n"
-            "    return config\n"
-        )
-        f.flush()
-        result = execute_recipe(f.name, {"nodes": []}, {})
-        assert result["modified"] is True
-        assert result["nodes"] == []
-    Path(f.name).unlink()
+def test_execute_recipe_basic(tmp_path):
+    f = tmp_path / "basic_recipe.py"
+    f.write_text(
+        "def run(config, inputs):\n"
+        "    config['modified'] = True\n"
+        "    return config\n"
+    )
+    result = execute_recipe(str(f), {"nodes": []}, {})
+    assert result["modified"] is True
+    assert result["nodes"] == []
 
 
-def test_execute_recipe_no_run():
-    with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False) as f:
-        f.write("# no run function\n")
-        f.flush()
-        with pytest.raises(AttributeError, match="run"):
-            execute_recipe(f.name, {}, {})
-    Path(f.name).unlink()
+def test_execute_recipe_no_run(tmp_path):
+    f = tmp_path / "no_run.py"
+    f.write_text("# no run function\n")
+    with pytest.raises(AttributeError, match="run"):
+        execute_recipe(str(f), {}, {})
 
 
-def test_execute_recipe_bad_return():
-    with tempfile.NamedTemporaryFile(suffix=".py", mode="w", delete=False) as f:
-        f.write("def run(config, inputs): return 42\n")
-        f.flush()
-        with pytest.raises(TypeError, match="dict"):
-            execute_recipe(f.name, {}, {})
-    Path(f.name).unlink()
+def test_execute_recipe_bad_return(tmp_path):
+    f = tmp_path / "bad_return.py"
+    f.write_text("def run(config, inputs): return 42\n")
+    with pytest.raises(TypeError, match="dict"):
+        execute_recipe(str(f), {}, {})
