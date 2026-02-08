@@ -439,10 +439,13 @@ impl Graph {
     ///
     /// Builds internal indexes for efficient edge lookups by source (tail) and target (head) ports.
     pub fn new(nodes: Vec<Node>, edges: Vec<Edge>) -> Self {
-        let nodes_map: HashMap<NodeName, Node> = nodes
-            .into_iter()
-            .map(|node| (node.name.clone(), node))
-            .collect();
+        let mut nodes_map: HashMap<NodeName, Node> = HashMap::with_capacity(nodes.len());
+        for node in nodes {
+            if nodes_map.contains_key(&node.name) {
+                panic!("Duplicate node name: '{}'", node.name);
+            }
+            nodes_map.insert(node.name.clone(), node);
+        }
 
         let mut edges_set: HashSet<Edge> = HashSet::new();
         let mut edges_by_tail: HashMap<PortRef, Edge> = HashMap::new();
