@@ -424,9 +424,6 @@ async def serve_background(
 import websockets
 
 # %%
-!uv pip install pandas
-
-# %%
 async def example_echo_server():
     """Example: echo server with a single client."""
     print("=" * 50)
