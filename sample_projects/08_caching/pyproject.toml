@@ -1,0 +1,13 @@
+[project]
+name = "caching-example"
+version = "0.1.0"
+description = "Demonstrates netrun's node caching and memoization features"
+requires-python = ">=3.11"
+dependencies = [
+    "netrun",
+    "netrun-ui",
+]
+
+[tool.uv.sources]
+netrun = { path = "../../netrun", editable = true }
+netrun-ui = { path = "../../netrun-ui", editable = true }
