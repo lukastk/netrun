@@ -188,7 +188,12 @@ class PacketStore:
                 del self._hashes[packet_id]
 
         if isinstance(value_or_lazy, LazyPacketValueSpec):
-            return self._evaluate_lazy_value(value_or_lazy, packet_id)
+            try:
+                return self._evaluate_lazy_value(value_or_lazy, packet_id)
+            except:
+                with self._lock:
+                    self._store[packet_id] = value_or_lazy
+                raise
 
         return value_or_lazy
 
