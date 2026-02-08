@@ -219,7 +219,7 @@ The `kind` field is a public `String` that must match one of five values. `to_co
 
 ---
 
-### M17. `Graph::new()` silently discards duplicate nodes (netrun-sim)
+### M17. `Graph::new()` silently discards duplicate nodes (netrun-sim) ⏭️ SKIPPED
 
 **File:** `netrun-sim/core/src/graph.rs`, lines 432-436
 
@@ -227,7 +227,7 @@ When two nodes share the same name, `.collect()` into HashMap silently overwrite
 
 ---
 
-### M18. `NetActionResponse` is not a standard Result type (netrun-sim)
+### M18. `NetActionResponse` is not a standard Result type (netrun-sim) ⏭️ SKIPPED
 
 **File:** `netrun-sim/core/src/net.rs`, lines 392-398
 
@@ -235,7 +235,7 @@ Custom `Success | Error` enum instead of `Result<T, E>`, preventing use of `?` o
 
 ---
 
-### M19. Recipes feature uses UI data model, not NetConfig model
+### M19. Recipes feature uses UI data model, not NetConfig model ⏭️ SKIPPED
 
 **Files:** `sample_projects/01_thread_and_process_pools/recipes/add_node.py`, `sample_projects/06_actions_and_recipes/recipes/`
 
@@ -243,7 +243,7 @@ Recipe `run()` functions operate on raw dicts with UI-specific keys (`"id"`, `"p
 
 ---
 
-### M20. Project 05 batch_processor salvo condition docs/behavior mismatch
+### M20. Project 05 batch_processor salvo condition docs/behavior mismatch ✅ FIXED
 
 **File:** `sample_projects/05_advanced_flow_control/nodes.py` (line 4)
 
@@ -251,7 +251,7 @@ Docstring says "fires only when the 'data' port has exactly 3 packets" but the s
 
 ---
 
-### M22. Project 05 nodes.py comment references removed feature
+### M22. Project 05 nodes.py comment references removed feature ✅ FIXED
 
 **File:** `sample_projects/05_advanced_flow_control/nodes.py`, line 32
 
