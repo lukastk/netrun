@@ -152,97 +152,44 @@ class NodeExecutionConfig(BaseModel):
     """Runtime configuration for a node's execution behavior."""
     model_config = {"arbitrary_types_allowed": True}
 
-    pools: list[str] = Field(default_factory=lambda: ["main"])
-    exec_node_func: NodeExecutionFunc | str | None = None
-    """
-    The function to execute the node with.
-    If a string, it is interpreted as the import path of the function.
-    """
+    pools: list[str] = Field(default_factory=lambda: ["main"], description="Which pools can execute this node.")
+    exec_node_func: NodeExecutionFunc | str | None = Field(default=None, description="Function to execute the node. Can be a callable or import path string.")
 
-    start_node_func: NodeStartFunc | str | None = None
-    stop_node_func: NodeStopFunc | str | None = None
-    on_node_failure: OnNodeFailureFunc | str | None = None
+    start_node_func: NodeStartFunc | str | None = Field(default=None, description="Function called when the node starts up.")
+    stop_node_func: NodeStopFunc | str | None = Field(default=None, description="Function called when the node shuts down.")
+    on_node_failure: OnNodeFailureFunc | str | None = Field(default=None, description="Callback when node execution fails.")
 
     # Additional execution options (from PROJECT_SPEC.md)
-    defer_startup: bool = False
-    """
-    If True, the node's `start_node_func` will not be called during Net.start(),
-    but instead will be called before the node's first epoch executes.
-    """
+    defer_startup: bool = Field(default=False, description="Defer start_node_func until the node's first epoch instead of during Net.start().")
 
-    max_parallel_epochs: int | None = None
-    max_epochs: int | None = None
-    """Maximum total epochs this node can have across its entire lifetime.
-    None = unlimited (default). If a salvo triggers beyond this limit,
-    the epoch is cancelled and MaxEpochsExceeded is raised."""
+    max_parallel_epochs: int | None = Field(default=None, description="Maximum concurrent epochs for this node.")
+    max_epochs: int | None = Field(default=None, description="Maximum total epochs across this node's lifetime. None = unlimited.")
 
-    rate_limit_per_second: float | None = None
+    rate_limit_per_second: float | None = Field(default=None, description="Maximum epoch triggers per second.")
 
-    defer_net_actions: bool|None = None
-    """
-    This must be True or None if retries are enabled. If None, then the node will defer if retires are enabled, or not if retries are not enabled.
-    Deferring entails that the net will only be notified of the NetActions transpiring during a node's epochs
-    (e.g. creating, consuming packets, etc) if the epoch successfully completes.
-    """
+    defer_net_actions: bool|None = Field(default=None, description="Defer net action notifications until epoch completes successfully. Required if retries enabled.")
 
-    retries: int = 0
-    retry_wait: float = 0.0
-    timeout: float | None = None
+    retries: int = Field(default=0, description="Number of retry attempts on failure.")
+    retry_wait: float = Field(default=0.0, description="Wait time in seconds between retries.")
+    timeout: float | None = Field(default=None, description="Epoch execution timeout in seconds.")
 
-    capture_prints: bool = True
-    """
-    If True, 'print' statements in the node will be captured.
-    """
+    capture_prints: bool = Field(default=True, description="Capture print statements in the node.")
 
-    print_flush_interval: float = 0.1
-    """
-    How often to flush the print buffer back to Net (in seconds). Default is 100ms.
-    """
+    print_flush_interval: float = Field(default=0.1, description="How often to flush the print buffer in seconds.")
 
-    print_buffer_max_size: int | None = None
-    """
-    Max buffer size before forced flush. None = unlimited (default).
-    """
+    print_buffer_max_size: int | None = Field(default=None, description="Max print buffer size before forced flush. None = unlimited.")
 
-    print_echo_stdout: bool = False
-    """
-    If True, also print to actual stdout when ctx.print() is called.
-    """
+    print_echo_stdout: bool = Field(default=False, description="Also print to actual stdout when ctx.print() is called.")
 
-    pool_allocation_method: RunAllocationMethod | None = None
-    """
-    How to select a worker when node has multiple pools. None = use Net default.
-    """
+    pool_allocation_method: RunAllocationMethod | None = Field(default=None, description="Worker selection method when node has multiple pools. None inherits Net default.")
 
-    node_vars: dict[str, NodeVariable] | None = None
-    """Per-node variables. Override net-level vars with the same name."""
+    node_vars: dict[str, NodeVariable] | None = Field(default=None, description="Per-node variables, override net-level vars with the same name.")
 
-    type_checking_enabled: bool | None = None
-    """
-    Enable/disable runtime type checking for this node's packets.
+    type_checking_enabled: bool | None = Field(default=None, description="Enable/disable type checking for this node. None inherits from NetConfig.")
 
-    - None: Inherit from NetConfig.type_checking_enabled (default)
-    - True: Enable type checking for this node
-    - False: Disable type checking for this node
-    """
+    propagate_exceptions: bool | None = Field(default=None, description="Override NetConfig.propagate_exceptions for this node. None inherits.")
 
-    propagate_exceptions: bool | None = None
-    """
-    Override NetConfig.propagate_exceptions for this node.
-
-    - None: Inherit from NetConfig (default)
-    - True: Propagate exceptions from this node
-    - False: Queue exceptions from this node
-    """
-
-    print_exceptions: bool | None = None
-    """
-    Override NetConfig.print_exceptions for this node.
-
-    - None: Inherit from NetConfig (default)
-    - True: Print exceptions from this node to stderr
-    - False: Don't print exceptions from this node
-    """
+    print_exceptions: bool | None = Field(default=None, description="Override NetConfig.print_exceptions for this node. None inherits.")
 
     @field_serializer("exec_node_func", "start_node_func", "stop_node_func", "on_node_failure", when_used='json')
     def serialize_func(self, func: Callable | str | None) -> str | None:
@@ -307,49 +254,22 @@ class NodeConfig(BaseModel):
     """
     model_config = {"arbitrary_types_allowed": True}
 
-    type: Literal["node"] = "node"
-    """Discriminator field to distinguish from SubgraphConfig."""
+    type: Literal["node"] = Field(default="node", description="Discriminator to distinguish from SubgraphConfig.")
 
-    name: str = ""
-    in_ports: dict[str, PortConfig] = Field(default_factory=dict)
-    out_ports: dict[str, PortConfig] = Field(default_factory=dict)
-    in_salvo_conditions: dict[str, SalvoConditionConfig] | None = None
-    """Input salvo conditions. None = generate defaults on resolve(), {} = no conditions."""
-    out_salvo_conditions: dict[str, SalvoConditionConfig] | None = None
-    """Output salvo conditions. None = generate defaults on resolve(), {} = no conditions."""
+    name: str = Field(default="", description="Node name, unique within the graph.")
+    in_ports: dict[str, PortConfig] = Field(default_factory=dict, description="Input port configurations.")
+    out_ports: dict[str, PortConfig] = Field(default_factory=dict, description="Output port configurations.")
+    in_salvo_conditions: dict[str, SalvoConditionConfig] | None = Field(default=None, description="Input salvo conditions. None generates defaults on resolve().")
+    out_salvo_conditions: dict[str, SalvoConditionConfig] | None = Field(default=None, description="Output salvo conditions. None generates defaults on resolve().")
 
-    execution_config: NodeExecutionConfig | None = None
+    execution_config: NodeExecutionConfig | None = Field(default=None, description="Runtime execution configuration for this node.")
 
-    extra: dict[str, Any] = Field(default_factory=dict)
-    """Arbitrary extra data for this node.
-
-    Can be used to store UI position, custom tags, documentation, or any
-    other tool-specific data that should be preserved across serialization.
-
-    Example:
-        NodeConfig(
-            name="Processor",
-            extra={
-                "ui": {"id": "node-1", "position": {"x": 100, "y": 200}},
-                "description": "Processes incoming data",
-            }
-        )
-    """
+    extra: dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data (UI position, tags, documentation).")
 
     # Factory support
-    factory: str | ModuleType | None = None
-    """Factory module or import path. If set, generates base config from factory.
+    factory: str | ModuleType | None = Field(default=None, description="Factory module or import path for dynamic node config generation.")
 
-    The factory module must contain two functions:
-    - get_node_config(_net_config, **args) -> NodeConfig (without execution_config)
-    - get_node_funcs(_net_config, **args) -> tuple[exec_func, start_func, stop_func, on_failure_func]
-
-    ``_net_config`` is always injected by the system (a ``NetConfig`` instance or
-    ``None``). Factory authors should accept it as the first parameter.
-    """
-
-    factory_args: dict[str, Any] = Field(default_factory=dict)
-    """Arguments passed to factory functions."""
+    factory_args: dict[str, Any] = Field(default_factory=dict, description="Arguments passed to factory functions.")
 
     @field_serializer("factory", when_used='json')
     def serialize_factory(self, factory: str | ModuleType | None) -> str | None:

@@ -116,8 +116,7 @@ class NetConfig(BaseModel):
     """Configuration for a Net."""
     model_config = {"arbitrary_types_allowed": True}
 
-    project_root: str | None = None
-    """Project root path. Relative paths resolve from the config file's directory."""
+    project_root: str | None = Field(default=None, description="Project root path. Relative paths resolve from the config file's directory.")
 
     _file_path: Path | None = PrivateAttr(default=None)
 
@@ -174,88 +173,29 @@ class NetConfig(BaseModel):
         config._file_path = path
         return config
 
-    pools: dict[str, PoolConfig] | None = None
-    """Pool configurations. None = generate default on resolve(), {} = no pools."""
+    pools: dict[str, PoolConfig] | None = Field(default=None, description="Pool configurations. None generates a default main pool on resolve().")
     graph: GraphConfig
 
-    extra: dict[str, Any] = Field(default_factory=dict)
-    """Arbitrary extra data for the net configuration.
+    extra: dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data (descriptions, version info, tool-specific data).")
 
-    Can be used to store descriptions, version info, or any other
-    tool-specific data that should be preserved across serialization.
-    """
+    default_pool_allocation_method: RunAllocationMethod = Field(default=RunAllocationMethod.ROUND_ROBIN, description="Default worker allocation method for nodes with multiple pools.")
 
-    default_pool_allocation_method: RunAllocationMethod = RunAllocationMethod.ROUND_ROBIN
-    """
-    Default allocation method for nodes with multiple pools.
-    """
+    node_vars: dict[str, NodeVariable] | None = Field(default=None, description="Global default node variables, accessible via ctx.vars.")
 
-    node_vars: dict[str, NodeVariable] | None = None
-    """Global default node variables, accessible via ctx.vars."""
-
-    dead_letter_queue: bool = True
-    dead_letter_path: str | None = None
-    dead_letter_callback: Callable | str | None = None
+    dead_letter_queue: bool = Field(default=True, description="Enable dead letter queue for undeliverable packets.")
+    dead_letter_path: str | None = Field(default=None, description="File path for dead letter queue storage.")
+    dead_letter_callback: Callable | str | None = Field(default=None, description="Callback function or import path for dead letter handling.")
 
     # Output queue configuration
-    output_queues: dict[str, OutputQueueConfig] | None = None
-    """
-    Map of queue_name -> OutputQueueConfig.
+    output_queues: dict[str, OutputQueueConfig] | None = Field(default=None, description="Output queue configurations. None auto-generates queues for unconnected output ports.")
 
-    If None (default), automatically generates output queues for all unconnected
-    output ports using the naming convention "NODE_NAME::PORT_NAME".
+    error_on_undeclared_output: bool = Field(default=False, description="Raise an error when a packet is sent from an unconnected output port with no queue.")
 
-    If set to an empty dict {}, no output queues are created.
+    type_checking_enabled: bool = Field(default=True, description="Enable runtime type checking for packet values. Can be overridden per-node.")
 
-    Example:
-        output_queues={
-            "results": OutputQueueConfig(ports=[("Sink", "out")]),
-            "logs": OutputQueueConfig(ports=[("Logger", "out"), ("ErrorLogger", "out")]),
-        }
-    """
+    propagate_exceptions: bool = Field(default=True, description="Propagate epoch exceptions immediately from run_step/run_until_blocked. Can be overridden per-node.")
 
-    error_on_undeclared_output: bool = False
-    """
-    If True, raise an error when a packet is sent from an unconnected output
-    port that has no configured output queue.  When False (default), such
-    packets are silently discarded.
-
-    This is useful for enforcing that all output ports are either connected
-    via an edge or explicitly collected by an output queue.
-    """
-
-    type_checking_enabled: bool = True
-    """
-    Enable runtime type checking for packet values.
-
-    When True, packets loaded into output ports are validated against the
-    port's declared type. When False, type checking is skipped for performance.
-
-    This can be overridden per-node via NodeExecutionConfig.type_checking_enabled.
-    """
-
-    propagate_exceptions: bool = True
-    """
-    Whether epoch exceptions propagate immediately from run_step/run_until_blocked.
-
-    When True (default), exceptions raised by node functions will propagate
-    from run_step/run_until_blocked after all concurrent epochs complete.
-
-    When False, exceptions are queued and can be raised manually via
-    Net.propagate_exceptions().
-
-    This can be overridden per-node via NodeExecutionConfig.propagate_exceptions.
-    """
-
-    print_exceptions: bool = False
-    """
-    Whether to print epoch exceptions to stderr when they occur.
-
-    When True, exceptions (with traceback) are printed to stderr.
-    When False (default), exceptions are only propagated or queued.
-
-    This can be overridden per-node via NodeExecutionConfig.print_exceptions.
-    """
+    print_exceptions: bool = Field(default=False, description="Print epoch exceptions to stderr when they occur. Can be overridden per-node.")
 
     @field_serializer("dead_letter_callback", when_used='json')
     def serialize_dead_letter_callback(self, callback: Callable | str | None) -> str | None:
