@@ -2,6 +2,7 @@
 	import { pushHistory } from '$lib/stores/flowStore';
 	import { configSchema, getFieldDescription } from '$lib/stores/schemaStore';
 	import AutoConfigFields from './AutoConfigFields.svelte';
+	import { tooltip } from '$lib/utils/tooltip';
 
 	function desc(field: string): string | undefined {
 		return getFieldDescription($configSchema, 'NodeExecutionConfig', field);
@@ -107,8 +108,8 @@
 
 <div class="execution-section">
 	<!-- Pools Selection (custom) -->
-	<div class="field" title={desc('pools')}>
-		<label>Pools</label>
+	<div class="field">
+		<label>Pools{#if desc('pools')}<span class="has-tooltip-icon" use:tooltip={desc('pools')}>?</span>{/if}</label>
 		<div class="pools-selection">
 			{#each availablePools as poolName}
 				<label class="pool-checkbox">
@@ -166,8 +167,8 @@
 	<!-- Execution Functions (custom) -->
 	<div class="field-group">
 		<div class="field-group-header">Execution Functions</div>
-		<div class="field" title={desc('exec_node_func')}>
-			<label>{isFactory ? 'Exec Function Override' : 'Exec Function'}</label>
+		<div class="field">
+			<label>{isFactory ? 'Exec Function Override' : 'Exec Function'}{#if desc('exec_node_func')}<span class="has-tooltip-icon" use:tooltip={desc('exec_node_func')}>?</span>{/if}</label>
 			<input
 				type="text"
 				value={getValue('exec_node_func') ?? ''}
@@ -179,8 +180,8 @@
 				onblur={() => pushHistory()}
 			/>
 		</div>
-		<div class="field" title={desc('start_node_func')}>
-			<label>Start Function</label>
+		<div class="field">
+			<label>Start Function{#if desc('start_node_func')}<span class="has-tooltip-icon" use:tooltip={desc('start_node_func')}>?</span>{/if}</label>
 			<input
 				type="text"
 				value={getValue('start_node_func') ?? ''}
@@ -192,8 +193,8 @@
 				onblur={() => pushHistory()}
 			/>
 		</div>
-		<div class="field" title={desc('stop_node_func')}>
-			<label>Stop Function</label>
+		<div class="field">
+			<label>Stop Function{#if desc('stop_node_func')}<span class="has-tooltip-icon" use:tooltip={desc('stop_node_func')}>?</span>{/if}</label>
 			<input
 				type="text"
 				value={getValue('stop_node_func') ?? ''}
@@ -205,8 +206,8 @@
 				onblur={() => pushHistory()}
 			/>
 		</div>
-		<div class="field" title={desc('on_node_failure')}>
-			<label>On Failure Function</label>
+		<div class="field">
+			<label>On Failure Function{#if desc('on_node_failure')}<span class="has-tooltip-icon" use:tooltip={desc('on_node_failure')}>?</span>{/if}</label>
 			<input
 				type="text"
 				value={getValue('on_node_failure') ?? ''}
@@ -449,5 +450,21 @@
 	.add-btn-small:disabled {
 		opacity: 0.5;
 		cursor: not-allowed;
+	}
+
+	.has-tooltip-icon {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 13px;
+		height: 13px;
+		margin-left: 4px;
+		border-radius: 50%;
+		background: var(--border-color, #404040);
+		color: var(--text-secondary, #a0a0a0);
+		font-size: 9px;
+		font-weight: 600;
+		vertical-align: middle;
+		cursor: help;
 	}
 </style>

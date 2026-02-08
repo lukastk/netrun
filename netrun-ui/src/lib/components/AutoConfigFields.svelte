@@ -2,6 +2,7 @@
 	import type { FieldSchema, ModelSchema } from '$lib/api';
 	import { getAutoFields } from '$lib/stores/schemaStore';
 	import { pushHistory } from '$lib/stores/flowStore';
+	import { tooltip } from '$lib/utils/tooltip';
 
 	interface Props {
 		modelName: string;
@@ -68,7 +69,7 @@
 	{@const val = getValue(field)}
 
 	{#if field.category === 'bool'}
-		<label class="checkbox-field" title={field.description ?? undefined}>
+		<label class="checkbox-field">
 			<input
 				type="checkbox"
 				checked={val === true}
@@ -78,11 +79,11 @@
 				}}
 			/>
 			<span>{formatLabel(field.name)}</span>
-			{#if field.description}<span class="has-tooltip-icon">?</span>{/if}
+			{#if field.description}<span class="has-tooltip-icon" use:tooltip={field.description}>?</span>{/if}
 		</label>
 
 	{:else if field.category === 'bool_or_null'}
-		<div class="tri-state-row" title={field.description ?? undefined}>
+		<div class="tri-state-row">
 			<button
 				class="tri-state-btn"
 				onclick={() => {
@@ -92,17 +93,17 @@
 			>
 				<span class="tri-state-label">
 					{formatLabel(field.name)}
-					{#if field.description}<span class="has-tooltip-icon">?</span>{/if}
+					{#if field.description}<span class="has-tooltip-icon" use:tooltip={field.description}>?</span>{/if}
 				</span>
 				<span class="tri-state-value tri-state-{triStateClass(val)}">{triStateLabel(val)}</span>
 			</button>
 		</div>
 
 	{:else if field.category === 'str' || field.category === 'str_or_null'}
-		<div class="field" title={field.description ?? undefined}>
+		<div class="field">
 			<label>
 				{formatLabel(field.name)}
-				{#if field.description}<span class="has-tooltip-icon">?</span>{/if}
+				{#if field.description}<span class="has-tooltip-icon" use:tooltip={field.description}>?</span>{/if}
 			</label>
 			<input
 				type="text"
@@ -117,10 +118,10 @@
 		</div>
 
 	{:else if field.category === 'int' || field.category === 'int_or_null'}
-		<div class="field" title={field.description ?? undefined}>
+		<div class="field">
 			<label>
 				{formatLabel(field.name)}
-				{#if field.description}<span class="has-tooltip-icon">?</span>{/if}
+				{#if field.description}<span class="has-tooltip-icon" use:tooltip={field.description}>?</span>{/if}
 			</label>
 			<input
 				type="number"
@@ -136,10 +137,10 @@
 		</div>
 
 	{:else if field.category === 'float' || field.category === 'float_or_null'}
-		<div class="field" title={field.description ?? undefined}>
+		<div class="field">
 			<label>
 				{formatLabel(field.name)}
-				{#if field.description}<span class="has-tooltip-icon">?</span>{/if}
+				{#if field.description}<span class="has-tooltip-icon" use:tooltip={field.description}>?</span>{/if}
 			</label>
 			<input
 				type="number"
@@ -155,10 +156,10 @@
 		</div>
 
 	{:else if field.category === 'enum'}
-		<div class="field" title={field.description ?? undefined}>
+		<div class="field">
 			<label>
 				{formatLabel(field.name)}
-				{#if field.description}<span class="has-tooltip-icon">?</span>{/if}
+				{#if field.description}<span class="has-tooltip-icon" use:tooltip={field.description}>?</span>{/if}
 			</label>
 			<select
 				value={val ?? ''}
@@ -174,10 +175,10 @@
 		</div>
 
 	{:else if field.category === 'enum_or_null'}
-		<div class="field" title={field.description ?? undefined}>
+		<div class="field">
 			<label>
 				{formatLabel(field.name)}
-				{#if field.description}<span class="has-tooltip-icon">?</span>{/if}
+				{#if field.description}<span class="has-tooltip-icon" use:tooltip={field.description}>?</span>{/if}
 			</label>
 			<select
 				value={val ?? '__default__'}

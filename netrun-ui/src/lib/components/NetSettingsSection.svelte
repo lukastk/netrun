@@ -2,6 +2,7 @@
 	import { pushHistory } from '$lib/stores/flowStore';
 	import { configSchema, getFieldDescription } from '$lib/stores/schemaStore';
 	import AutoConfigFields from './AutoConfigFields.svelte';
+	import { tooltip } from '$lib/utils/tooltip';
 
 	function desc(field: string): string | undefined {
 		return getFieldDescription($configSchema, 'NetConfig', field);
@@ -51,8 +52,8 @@
 	{#if deadLetterQueue}
 		<div class="subsection">
 			<div class="subsection-header">Dead Letter Callback</div>
-			<div class="field" title={desc('dead_letter_callback')}>
-				<label for="dead-letter-callback">Callback Import Path</label>
+			<div class="field">
+				<label for="dead-letter-callback">Callback Import Path{#if desc('dead_letter_callback')}<span class="has-tooltip-icon" use:tooltip={desc('dead_letter_callback')}>?</span>{/if}</label>
 				<input
 					id="dead-letter-callback"
 					type="text"
@@ -131,5 +132,21 @@
 		font-size: 10px;
 		color: var(--text-secondary, #666);
 		margin-top: 4px;
+	}
+
+	.has-tooltip-icon {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 13px;
+		height: 13px;
+		margin-left: 4px;
+		border-radius: 50%;
+		background: var(--border-color, #404040);
+		color: var(--text-secondary, #a0a0a0);
+		font-size: 9px;
+		font-weight: 600;
+		vertical-align: middle;
+		cursor: help;
 	}
 </style>

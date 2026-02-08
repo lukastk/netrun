@@ -52,6 +52,7 @@
 	import NodeVariablesSection from './NodeVariablesSection.svelte';
 	import AllNodeVariablesSection from './AllNodeVariablesSection.svelte';
 	import { unregisteredFields, configSchema, getFieldDescription } from '$lib/stores/schemaStore';
+	import { tooltip } from '$lib/utils/tooltip';
 
 	function descNet(field: string): string | undefined {
 		return getFieldDescription($configSchema, 'NetConfig', field);
@@ -537,8 +538,8 @@
 				</button>
 				{#if sectionsOpen.general}
 					<div class="section-content">
-						<div class="field" title={descNode('name')}>
-							<label for="node-label">Name</label>
+						<div class="field">
+							<label for="node-label">Name{#if descNode('name')}<span class="has-tooltip-icon" use:tooltip={descNode('name')}>?</span>{/if}</label>
 							<input
 								id="node-label"
 								type="text"
@@ -586,8 +587,8 @@
 					</button>
 					{#if sectionsOpen.factory}
 						<div class="section-content">
-							<div class="field" title={descNode('factory')}>
-								<label for="factory-path">Factory Path</label>
+							<div class="field">
+								<label for="factory-path">Factory Path{#if descNode('factory')}<span class="has-tooltip-icon" use:tooltip={descNode('factory')}>?</span>{/if}</label>
 								<input
 									id="factory-path"
 									type="text"
@@ -957,8 +958,8 @@
 								rows="3"
 							></textarea>
 						</div>
-						<div class="field" title={descNet('project_root')}>
-							<label for="project-root">Project Root</label>
+						<div class="field">
+							<label for="project-root">Project Root{#if descNet('project_root')}<span class="has-tooltip-icon" use:tooltip={descNet('project_root')}>?</span>{/if}</label>
 							<input
 								id="project-root"
 								type="text"
@@ -1903,6 +1904,22 @@
 		padding: 1px 3px;
 		border-radius: 2px;
 		font-size: 10px;
+	}
+
+	.has-tooltip-icon {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 13px;
+		height: 13px;
+		margin-left: 4px;
+		border-radius: 50%;
+		background: var(--border-color, #404040);
+		color: var(--text-secondary, #a0a0a0);
+		font-size: 9px;
+		font-weight: 600;
+		vertical-align: middle;
+		cursor: help;
 	}
 
 </style>
