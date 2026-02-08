@@ -7,7 +7,7 @@ import pytest
 from netrun.rpc.base import (
     ChannelClosed,
     RecvTimeout,
-    SHUTDOWN_KEY,
+    RPC_KEY_SHUTDOWN,
 )
 
 # %% pts/tests/02_rpc/test_base.pct.py 4
@@ -34,11 +34,11 @@ def test_recv_timeout_is_exception():
 
 # %% pts/tests/02_rpc/test_base.pct.py 13
 def test_shutdown_key_is_string():
-    """SHUTDOWN_KEY should be a string."""
-    assert isinstance(SHUTDOWN_KEY, str)
+    """RPC_KEY_SHUTDOWN should be a string."""
+    assert isinstance(RPC_KEY_SHUTDOWN, str)
 
 # %% pts/tests/02_rpc/test_base.pct.py 15
 def test_shutdown_key_follows_convention():
-    """SHUTDOWN_KEY should follow __layer:name convention to avoid collisions."""
-    assert SHUTDOWN_KEY.startswith("__")
-    assert ":" in SHUTDOWN_KEY
+    """RPC_KEY_SHUTDOWN should follow __layer:name convention to avoid collisions."""
+    assert RPC_KEY_SHUTDOWN.startswith("__")
+    assert ":" in RPC_KEY_SHUTDOWN

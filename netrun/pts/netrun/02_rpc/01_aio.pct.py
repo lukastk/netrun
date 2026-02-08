@@ -31,7 +31,7 @@ from typing import Any
 from netrun.rpc.base import (
     ChannelClosed,
     RecvTimeout,
-    SHUTDOWN_KEY,
+    RPC_KEY_SHUTDOWN,
 )
 
 # %% [markdown]
@@ -86,7 +86,7 @@ class AsyncChannel:
         except TimeoutError:
             raise RecvTimeout(f"Receive timed out after {timeout}s")
 
-        if result[0] == SHUTDOWN_KEY:
+        if result[0] == RPC_KEY_SHUTDOWN:
             self._closed = True
             raise ChannelClosed("Channel was shut down")
 
@@ -102,7 +102,7 @@ class AsyncChannel:
         except asyncio.QueueEmpty:
             return None
 
-        if result[0] == SHUTDOWN_KEY:
+        if result[0] == RPC_KEY_SHUTDOWN:
             self._closed = True
             raise ChannelClosed("Channel was shut down")
 
@@ -113,7 +113,7 @@ class AsyncChannel:
         if not self._closed:
             self._closed = True
             try:
-                await self._send_queue.put((SHUTDOWN_KEY, None))
+                await self._send_queue.put((RPC_KEY_SHUTDOWN, None))
             except Exception:
                 pass
 
