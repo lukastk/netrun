@@ -21,7 +21,7 @@ from typing import Annotated, Optional
 
 import typer
 
-from netrun.cli._helpers import load_raw_data, output_json
+from netrun.cli._helpers import ConfigOpt, PrettyOpt, load_raw_data, output_json
 from netrun.tools._helpers import get_recipes
 from netrun.tools._recipes import execute_recipe, get_recipe_prompts
 
@@ -33,9 +33,6 @@ from netrun.tools._recipes import execute_recipe, get_recipe_prompts
 # %%
 #|export
 recipes_app = typer.Typer(help="List and run recipes.", no_args_is_help=True)
-
-ConfigOpt = Annotated[Optional[str], typer.Option("--config", "-c", help="Path to netrun config file.")]
-PrettyOpt = Annotated[bool, typer.Option("--pretty/--compact", help="Pretty-print or compact JSON output.")]
 
 
 @recipes_app.command("list")

@@ -26,6 +26,8 @@ from typing import Annotated, Any, Optional
 import typer
 
 from netrun.cli._helpers import (
+    ConfigOpt,
+    PrettyOpt,
     find_config,
     load_config,
     load_resolved_config,
@@ -44,10 +46,6 @@ from netrun.net.config._nodes import NodeConfig, SubgraphConfig
 
 # %%
 #|export
-ConfigOpt = Annotated[Optional[str], typer.Option("--config", "-c", help="Path to netrun config file.")]
-PrettyOpt = Annotated[bool, typer.Option("--pretty/--compact", help="Pretty-print or compact JSON output.")]
-
-
 def validate(
     config: ConfigOpt = None,
     pretty: PrettyOpt = True,

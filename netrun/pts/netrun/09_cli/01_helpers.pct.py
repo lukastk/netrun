@@ -19,7 +19,7 @@ import json
 import sys
 import tomllib
 from pathlib import Path
-from typing import Any
+from typing import Annotated, Any, Optional
 
 import typer
 
@@ -30,6 +30,11 @@ from netrun.net.config._nodes import NodeConfig
 # # CLI Helpers
 #
 # Shared utilities for the netrun CLI commands.
+
+# %%
+#|export
+ConfigOpt = Annotated[Optional[str], typer.Option("--config", "-c", help="Path to netrun config file.")]
+PrettyOpt = Annotated[bool, typer.Option("--pretty/--compact", help="Pretty-print or compact JSON output.")]
 
 # %%
 #|export
