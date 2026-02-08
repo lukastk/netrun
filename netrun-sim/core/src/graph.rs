@@ -3,6 +3,7 @@
 //! This module defines the static structure of a network: nodes, ports, edges,
 //! and the conditions that govern packet flow (salvo conditions).
 
+use indexmap::IndexMap;
 use std::collections::{HashMap, HashSet};
 
 /// The name of a port on a node.
@@ -273,9 +274,11 @@ pub struct Node {
     /// Output ports where packets can be sent.
     pub out_ports: HashMap<PortName, Port>,
     /// Conditions that trigger new epochs when satisfied by packets at input ports.
-    pub in_salvo_conditions: HashMap<SalvoConditionName, SalvoCondition>,
+    /// Uses IndexMap to preserve insertion order — first satisfied condition wins.
+    pub in_salvo_conditions: IndexMap<SalvoConditionName, SalvoCondition>,
     /// Conditions that must be satisfied to send packets from output ports.
-    pub out_salvo_conditions: HashMap<SalvoConditionName, SalvoCondition>,
+    /// Uses IndexMap to preserve insertion order — first satisfied condition wins.
+    pub out_salvo_conditions: IndexMap<SalvoConditionName, SalvoCondition>,
 }
 
 /// Whether a port is for input or output.
@@ -391,6 +394,7 @@ impl std::fmt::Display for Edge {
 ///
 /// ```
 /// use netrun_sim::graph::{Graph, Node, Edge, PortRef, PortType, Port, PortSlotSpec};
+/// use indexmap::IndexMap;
 /// use std::collections::HashMap;
 ///
 /// // Create a simple A -> B graph
@@ -398,15 +402,15 @@ impl std::fmt::Display for Edge {
 ///     name: "A".to_string(),
 ///     in_ports: HashMap::new(),
 ///     out_ports: [("out".to_string(), Port { slots_spec: PortSlotSpec::Infinite })].into(),
-///     in_salvo_conditions: HashMap::new(),
-///     out_salvo_conditions: HashMap::new(),
+///     in_salvo_conditions: IndexMap::new(),
+///     out_salvo_conditions: IndexMap::new(),
 /// };
 /// let node_b = Node {
 ///     name: "B".to_string(),
 ///     in_ports: [("in".to_string(), Port { slots_spec: PortSlotSpec::Infinite })].into(),
 ///     out_ports: HashMap::new(),
-///     in_salvo_conditions: HashMap::new(),
-///     out_salvo_conditions: HashMap::new(),
+///     in_salvo_conditions: IndexMap::new(),
+///     out_salvo_conditions: IndexMap::new(),
 /// };
 ///
 /// let edge = Edge {

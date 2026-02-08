@@ -14,6 +14,7 @@ use netrun_sim::graph::{
 use netrun_sim::net::{
     NetAction, NetActionResponse, NetActionResponseData, NetSim, PacketLocation,
 };
+use indexmap::IndexMap;
 use std::collections::HashMap;
 
 fn main() {
@@ -161,7 +162,7 @@ fn create_node(name: &str, in_ports: Vec<&str>, out_ports: Vec<&str>) -> Node {
         .collect();
 
     // Default input salvo condition: trigger when any input port is non-empty
-    let mut in_salvo_conditions = HashMap::new();
+    let mut in_salvo_conditions = IndexMap::new();
     if !in_ports.is_empty() {
         in_salvo_conditions.insert(
             "default".to_string(),
@@ -180,7 +181,7 @@ fn create_node(name: &str, in_ports: Vec<&str>, out_ports: Vec<&str>) -> Node {
     }
 
     // Default output salvo condition: can always send when port is non-empty
-    let mut out_salvo_conditions = HashMap::new();
+    let mut out_salvo_conditions = IndexMap::new();
     if !out_ports.is_empty() {
         out_salvo_conditions.insert(
             "default".to_string(),
