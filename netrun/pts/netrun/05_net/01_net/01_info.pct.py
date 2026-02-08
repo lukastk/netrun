@@ -49,6 +49,14 @@ class NodeInfo:
         """
         self._net = net
         self._name = node_name
+        # Cache the node config at init time (O(1) lookup thereafter)
+        self._cfg = None
+        for node_config in self._net._config_resolved.graph.nodes:
+            if node_config.name == self._name:
+                self._cfg = node_config
+                break
+        if self._cfg is None:
+            raise KeyError(f"Node '{self._name}' not found in config")
 
     @property
     def name(self) -> str:
@@ -61,11 +69,7 @@ class NodeInfo:
 
         Returns a copy to prevent accidental modifications.
         """
-        from netrun.net.config import NodeConfig
-        for node_config in self._net._config_resolved.graph.nodes:
-            if node_config.name == self._name:
-                return node_config.model_copy(deep=True)
-        raise KeyError(f"Node '{self._name}' not found in config")
+        return self._cfg.model_copy(deep=True)
 
     @property
     def in_ports(self) -> dict[str, "PortConfig"]:
