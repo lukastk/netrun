@@ -545,6 +545,24 @@ export function updateNodePositions(updates: Array<{ id: string; position: { x: 
 	});
 }
 
+// Update node dimensions (called when nodes are resized)
+export function updateNodeDimensions(
+	updates: Array<{ id: string; width: number; height: number; position: { x: number; y: number } }>
+) {
+	const tab = get(activeTab);
+	if (!tab) return;
+	updateActiveTab({
+		nodes: tab.nodes.map(node => {
+			const update = updates.find(u => u.id === node.id);
+			if (update) {
+				return { ...node, width: update.width, height: update.height, position: update.position };
+			}
+			return node;
+		}),
+		isDirty: true,
+	});
+}
+
 export function deleteNodes(ids: string[]) {
 	pushHistory();
 	const tab = get(activeTab);
@@ -1203,6 +1221,8 @@ export async function loadFromFile(path: string): Promise<void> {
 				id: node.id,
 				type: node.type as 'subgraphNode',
 				position: node.position,
+				...(node.width != null ? { width: node.width } : {}),
+				...(node.height != null ? { height: node.height } : {}),
 				data: {
 					label: node.data.label,
 					nodeType: 'subgraph' as const,
@@ -1221,6 +1241,8 @@ export async function loadFromFile(path: string): Promise<void> {
 				id: node.id,
 				type: node.type as 'netrunNode',
 				position: node.position,
+				...(node.width != null ? { width: node.width } : {}),
+				...(node.height != null ? { height: node.height } : {}),
 				data: {
 					label: node.data.label,
 					nodeType: node.data.nodeType as 'regular' | 'factory',
@@ -1433,6 +1455,8 @@ export async function saveToFile(path?: string): Promise<void> {
 				id: node.id,
 				type: node.type || 'netrunNode',
 				position: node.position,
+				...(node.width != null ? { width: node.width } : {}),
+				...(node.height != null ? { height: node.height } : {}),
 				data: {
 					...baseData,
 					factory: factoryData.factory,
@@ -1446,6 +1470,8 @@ export async function saveToFile(path?: string): Promise<void> {
 				id: node.id,
 				type: node.type || 'subgraphNode',
 				position: node.position,
+				...(node.width != null ? { width: node.width } : {}),
+				...(node.height != null ? { height: node.height } : {}),
 				data: {
 					...baseData,
 					source: subgraphData.source,
@@ -1459,6 +1485,8 @@ export async function saveToFile(path?: string): Promise<void> {
 				id: node.id,
 				type: node.type || 'netrunNode',
 				position: node.position,
+				...(node.width != null ? { width: node.width } : {}),
+				...(node.height != null ? { height: node.height } : {}),
 				data: {
 					...baseData,
 					_config: regularData._config as Record<string, unknown> | undefined,

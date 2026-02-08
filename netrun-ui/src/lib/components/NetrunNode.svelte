@@ -1,5 +1,7 @@
 <script lang="ts">
+	import { NodeResizer } from '@xyflow/svelte';
 	import type { NetrunNodeData } from '$lib/stores/flowStore';
+	import { updateNodeDimensions, pushHistory } from '$lib/stores/flowStore';
 	import PortList from './PortList.svelte';
 
 	interface Props {
@@ -9,6 +11,16 @@
 	}
 
 	let { id, data, selected = false }: Props = $props();
+
+	function handleResizeEnd(_event: unknown, params: { x: number; y: number; width: number; height: number }) {
+		updateNodeDimensions([{
+			id,
+			width: params.width,
+			height: params.height,
+			position: { x: params.x, y: params.y },
+		}]);
+		pushHistory();
+	}
 </script>
 
 <div
@@ -17,6 +29,13 @@
 	class:factory={data.nodeType === 'factory'}
 	class:invalid={data.isValid === false}
 >
+	<NodeResizer
+		minWidth={150}
+		minHeight={60}
+		isVisible={selected}
+		color="var(--node-selected, #3b82f6)"
+		onResizeEnd={handleResizeEnd}
+	/>
 	<!-- Header -->
 	<div class="node-header">
 		{#if data.nodeType === 'factory'}
@@ -48,6 +67,11 @@
 		border-radius: 8px;
 		min-width: 150px;
 		font-size: 12px;
+		width: 100%;
+		height: 100%;
+		box-sizing: border-box;
+		display: flex;
+		flex-direction: column;
 	}
 
 	.netrun-node.selected {
@@ -94,6 +118,7 @@
 		justify-content: space-between;
 		padding: 8px 0;
 		min-height: 40px;
+		flex: 1;
 	}
 
 	.validation-errors {
@@ -133,5 +158,16 @@
 		width: 12px;
 		height: 12px;
 		border-radius: 3px;
+	}
+
+	/* Resize control styling — z-index ensures controls sit above node content */
+	:global(.netrun-node .svelte-flow__resize-control) {
+		z-index: 10;
+	}
+	:global(.netrun-node .svelte-flow__resize-control.handle) {
+		width: 8px;
+		height: 8px;
+		border-radius: 2px;
+		border: 1px solid rgba(255, 255, 255, 0.5);
 	}
 </style>
