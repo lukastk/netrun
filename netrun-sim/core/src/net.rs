@@ -1128,7 +1128,7 @@ impl NetSim {
     fn load_packet_into_output_port(
         &mut self,
         packet_id: &PacketID,
-        port_name: &String,
+        port_name: &str,
     ) -> NetActionResponse {
         let (epoch_id, old_location) = if let Some(packet) = self._packets.get(packet_id) {
             if let PacketLocation::Node(epoch_id) = packet.location {
@@ -1158,13 +1158,13 @@ impl NetSim {
 
         if !node.out_ports.contains_key(port_name) {
             return NetActionResponse::Error(NetActionError::OutputPortNotFound {
-                port_name: port_name.clone(),
+                port_name: port_name.to_string(),
                 epoch_id,
             });
         }
 
         let port = node.out_ports.get(port_name).unwrap();
-        let output_port_location = PacketLocation::OutputPort(epoch_id, port_name.clone());
+        let output_port_location = PacketLocation::OutputPort(epoch_id, port_name.to_string());
         let port_packets = self
             ._packets_by_location
             .get(&output_port_location)
@@ -1175,7 +1175,7 @@ impl NetSim {
             && port_packets.len() as u64 >= num_slots
         {
             return NetActionResponse::Error(NetActionError::OutputPortFull {
-                port_name: port_name.clone(),
+                port_name: port_name.to_string(),
                 epoch_id,
             });
         }
