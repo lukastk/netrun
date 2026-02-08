@@ -259,7 +259,7 @@ Docstring says "'debug_out' and 'extra_out' go to the catch-all queue" but `catc
 
 ---
 
-### M23. Version dependency mismatch between netrun-ui and netrun
+### M23. Version dependency mismatch between netrun-ui and netrun ✅ FIXED
 
 **File:** `netrun-ui/pyproject.toml`, line 15
 
