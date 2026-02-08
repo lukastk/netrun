@@ -10,7 +10,7 @@ __all__ = [
     "EpochNotStartableError",
     "CannotFinishNonEmptyEpochError",
     "UnsentOutputSalvoError",
-    "PacketNotInNodeError",
+    "PacketNotInAnyNodeError",
     "OutputPortNotFoundError",
     "OutputPortFullError",
     "SalvoConditionNotFoundError",

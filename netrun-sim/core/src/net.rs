@@ -226,11 +226,10 @@ pub enum NetActionError {
         port_name: PortName,
     },
 
-    /// Packet is not inside the specified epoch's node location
-    #[error("packet {packet_id} is not inside epoch {epoch_id}")]
-    PacketNotInNode {
+    /// Packet is not inside any epoch (not at a Node location)
+    #[error("packet {packet_id} is not inside any epoch")]
+    PacketNotInAnyNode {
         packet_id: PacketID,
-        epoch_id: EpochID,
     },
 
     /// Output port does not exist on the node
@@ -1135,11 +1134,8 @@ impl NetSim {
             if let PacketLocation::Node(epoch_id) = packet.location {
                 (epoch_id, packet.location.clone())
             } else {
-                // We don't know the epoch_id since the packet isn't in a node
-                // Use a placeholder - this is an edge case where we can't provide full context
-                return NetActionResponse::Error(NetActionError::PacketNotInNode {
+                return NetActionResponse::Error(NetActionError::PacketNotInAnyNode {
                     packet_id: *packet_id,
-                    epoch_id: Ulid::nil(), // Placeholder since packet isn't in any epoch
                 });
             }
         } else {
