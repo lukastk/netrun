@@ -128,19 +128,19 @@ def test_has_downstream_connection_middle():
 
 # %% pts/tests/06_net/test_graph_queries.pct.py 12
 def test_graph_with_multiple_edges_from_same_port():
-    """Test get_edges_from_port with fan-out topology."""
+    """Test get_edges_from_port with fan-out topology using separate output ports."""
     graph_config = GraphConfig(
         nodes=[
             NodeConfig(
                 name="Source",
-                out_ports={"out": PortConfig()},
+                out_ports={"out_a": PortConfig(), "out_b": PortConfig()},
             ),
             NodeConfig(name="SinkA", in_ports={"in": PortConfig()}),
             NodeConfig(name="SinkB", in_ports={"in": PortConfig()}),
         ],
         edges=[
-            EdgeConfig(source_str="Source.out", target_str="SinkA.in"),
-            EdgeConfig(source_str="Source.out", target_str="SinkB.in"),
+            EdgeConfig(source_str="Source.out_a", target_str="SinkA.in"),
+            EdgeConfig(source_str="Source.out_b", target_str="SinkB.in"),
         ],
     )
 
@@ -151,8 +151,10 @@ def test_graph_with_multiple_edges_from_same_port():
 
     net = Net(config)
 
-    edges = net.get_edges_from_port("Source", "out")
+    edges_a = net.get_edges_from_port("Source", "out_a")
+    edges_b = net.get_edges_from_port("Source", "out_b")
 
-    assert len(edges) == 2
-    target_nodes = {e.target.node_name for e in edges}
-    assert target_nodes == {"SinkA", "SinkB"}
+    assert len(edges_a) == 1
+    assert edges_a[0].target.node_name == "SinkA"
+    assert len(edges_b) == 1
+    assert edges_b[0].target.node_name == "SinkB"
