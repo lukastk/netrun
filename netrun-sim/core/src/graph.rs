@@ -246,12 +246,6 @@ pub enum GraphValidationError {
         condition_name: SalvoConditionName,
         max_salvos: MaxSalvos,
     },
-    /// Duplicate edge (same source and target)
-    #[error("duplicate edge: {edge_source} -> {edge_target}")]
-    DuplicateEdge {
-        edge_source: PortRef,
-        edge_target: PortRef,
-    },
 }
 
 /// The name of a node in the graph.
@@ -490,22 +484,10 @@ impl Graph {
     pub fn validate(&self) -> Vec<GraphValidationError> {
         let mut errors = Vec::new();
 
-        // Track seen edges to detect duplicates
-        let mut seen_edges: HashSet<(&PortRef, &PortRef)> = HashSet::new();
-
-        // Validate edges
+        // Validate edges (edges is a HashSet, so duplicates are already impossible)
         for edge in &self.edges {
             let source = &edge.source;
             let target = &edge.target;
-
-            // Check for duplicate edges
-            if !seen_edges.insert((source, target)) {
-                errors.push(GraphValidationError::DuplicateEdge {
-                    edge_source: source.clone(),
-                    edge_target: target.clone(),
-                });
-                continue;
-            }
 
             // Validate source node exists
             let source_node = match self.nodes.get(&source.node_name) {
