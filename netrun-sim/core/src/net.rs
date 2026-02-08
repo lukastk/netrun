@@ -413,6 +413,12 @@ impl NetSim {
     ///
     /// Initializes packet location tracking for all edges and input ports.
     pub fn new(graph: Graph) -> Self {
+        let errors = graph.validate();
+        if !errors.is_empty() {
+            let msgs: Vec<String> = errors.iter().map(|e| e.to_string()).collect();
+            panic!("Cannot create NetSim with invalid graph:\n  - {}", msgs.join("\n  - "));
+        }
+
         let mut packets_by_location: HashMap<PacketLocation, IndexSet<PacketID>> = HashMap::new();
 
         // Initialize empty packet sets for all edges
