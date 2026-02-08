@@ -444,7 +444,7 @@ Sends 20 jobs to 3 workers and asserts all were used. ~0.003% chance of false fa
 
 ---
 
-### L25. Sample project 01 pyproject.toml has wrong project name
+### L25. Sample project 01 pyproject.toml has wrong project name ✅ FIXED
 
 **File:** `sample_projects/01_thread_and_process_pools/pyproject.toml`, line 2
 
