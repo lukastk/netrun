@@ -30,6 +30,7 @@ from netrun.net.config import (
     MaxSalvosFiniteConfig,
     MaxSalvosInfiniteConfig,
     PacketCountAllConfig,
+    PacketCountNConfig,
     PortStateNonEmptyConfig,
 )
 
@@ -53,8 +54,8 @@ def _make_passthrough_node(name: str, *, has_in: bool = True, has_out: bool = Tr
     if has_in:
         in_salvo_conditions = {
             "default": SalvoConditionConfig(
-                max_salvos=MaxSalvosInfiniteConfig(),
-                ports={"in": PacketCountAllConfig()},
+                max_salvos=MaxSalvosFiniteConfig(max=1),
+                ports={"in": PacketCountNConfig(count=1)},
                 term=SalvoConditionTermPortConfig(
                     port_name="in",
                     state=PortStateNonEmptyConfig(),
@@ -95,8 +96,8 @@ def _make_sink_node(name: str) -> NodeConfig:
         in_ports={"in": PortConfig()},
         in_salvo_conditions={
             "default": SalvoConditionConfig(
-                max_salvos=MaxSalvosInfiniteConfig(),
-                ports={"in": PacketCountAllConfig()},
+                max_salvos=MaxSalvosFiniteConfig(max=1),
+                ports={"in": PacketCountNConfig(count=1)},
                 term=SalvoConditionTermPortConfig(
                     port_name="in",
                     state=PortStateNonEmptyConfig(),
@@ -164,8 +165,8 @@ async def test_diamond():
         out_ports={"out_b": PortConfig(), "out_c": PortConfig()},
         in_salvo_conditions={
             "default": SalvoConditionConfig(
-                max_salvos=MaxSalvosInfiniteConfig(),
-                ports={"in": PacketCountAllConfig()},
+                max_salvos=MaxSalvosFiniteConfig(max=1),
+                ports={"in": PacketCountNConfig(count=1)},
                 term=SalvoConditionTermPortConfig(
                     port_name="in",
                     state=PortStateNonEmptyConfig(),
@@ -204,11 +205,12 @@ async def test_diamond():
         net.inject_data("A", "in", [10])
         salvos = await net.run_to_targets("D")
 
-        assert len(salvos) == 1
-        salvo = salvos[0]
-        assert salvo.node_name == "D"
-        # D should receive packets from both B and C (both forwarding the value 10)
-        assert sorted(salvo.packets["in"]) == [10, 10]
+        # D receives 2 separate salvos (one from B, one from C) since each
+        # input salvo condition takes 1 packet at a time.
+        assert len(salvos) == 2
+        for salvo in salvos:
+            assert salvo.node_name == "D"
+            assert salvo.packets["in"] == [10]
 
 # %% pts/tests/06_net/test_run_to_targets.pct.py 12
 @pytest.mark.asyncio
@@ -231,16 +233,16 @@ async def test_specific_salvo_condition():
                 in_ports={"in1": PortConfig(), "in2": PortConfig()},
                 in_salvo_conditions={
                     "cond_1": SalvoConditionConfig(
-                        max_salvos=MaxSalvosInfiniteConfig(),
-                        ports={"in1": PacketCountAllConfig()},
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"in1": PacketCountNConfig(count=1)},
                         term=SalvoConditionTermPortConfig(
                             port_name="in1",
                             state=PortStateNonEmptyConfig(),
                         ),
                     ),
                     "cond_2": SalvoConditionConfig(
-                        max_salvos=MaxSalvosInfiniteConfig(),
-                        ports={"in2": PacketCountAllConfig()},
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"in2": PacketCountNConfig(count=1)},
                         term=SalvoConditionTermPortConfig(
                             port_name="in2",
                             state=PortStateNonEmptyConfig(),
@@ -341,8 +343,8 @@ async def test_irrelevant_nodes_not_executed():
         if has_in:
             in_salvo_conditions = {
                 "default": SalvoConditionConfig(
-                    max_salvos=MaxSalvosInfiniteConfig(),
-                    ports={"in": PacketCountAllConfig()},
+                    max_salvos=MaxSalvosFiniteConfig(max=1),
+                    ports={"in": PacketCountNConfig(count=1)},
                     term=SalvoConditionTermPortConfig(
                         port_name="in",
                         state=PortStateNonEmptyConfig(),
@@ -425,8 +427,8 @@ async def test_cycle_handling():
             out_ports={"out": PortConfig()},
             in_salvo_conditions={
                 "default": SalvoConditionConfig(
-                    max_salvos=MaxSalvosInfiniteConfig(),
-                    ports={"in": PacketCountAllConfig()},
+                    max_salvos=MaxSalvosFiniteConfig(max=1),
+                    ports={"in": PacketCountNConfig(count=1)},
                     term=SalvoConditionTermPortConfig(
                         port_name="in",
                         state=PortStateNonEmptyConfig(),
@@ -686,8 +688,8 @@ async def test_multiple_targets():
         out_ports={"out_b": PortConfig(), "out_c": PortConfig()},
         in_salvo_conditions={
             "default": SalvoConditionConfig(
-                max_salvos=MaxSalvosInfiniteConfig(),
-                ports={"in": PacketCountAllConfig()},
+                max_salvos=MaxSalvosFiniteConfig(max=1),
+                ports={"in": PacketCountNConfig(count=1)},
                 term=SalvoConditionTermPortConfig(
                     port_name="in",
                     state=PortStateNonEmptyConfig(),

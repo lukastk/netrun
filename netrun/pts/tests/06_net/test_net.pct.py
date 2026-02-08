@@ -4696,7 +4696,7 @@ async def test_max_parallel_epochs_limits_concurrent_starts():
                 in_ports={"in": PortConfig()},
                 in_salvo_conditions={
                     "trigger": SalvoConditionConfig(
-                        max_salvos=MaxSalvosInfiniteConfig(),
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
                         ports={"in": PacketCountNConfig(count=1)},
                         term=SalvoConditionTermPortConfig(
                             port_name="in",
@@ -4763,7 +4763,7 @@ async def test_max_parallel_epochs_none_allows_all():
                 in_ports={"in": PortConfig()},
                 in_salvo_conditions={
                     "trigger": SalvoConditionConfig(
-                        max_salvos=MaxSalvosInfiniteConfig(),
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
                         ports={"in": PacketCountNConfig(count=1)},
                         term=SalvoConditionTermPortConfig(
                             port_name="in",
@@ -4829,7 +4829,7 @@ async def test_max_parallel_epochs_per_node():
                 in_ports={"in": PortConfig()},
                 in_salvo_conditions={
                     "trigger": SalvoConditionConfig(
-                        max_salvos=MaxSalvosInfiniteConfig(),
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
                         ports={"in": PacketCountNConfig(count=1)},
                         term=SalvoConditionTermPortConfig(
                             port_name="in",
@@ -4849,7 +4849,7 @@ async def test_max_parallel_epochs_per_node():
                 in_ports={"in": PortConfig()},
                 in_salvo_conditions={
                     "trigger": SalvoConditionConfig(
-                        max_salvos=MaxSalvosInfiniteConfig(),
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
                         ports={"in": PacketCountNConfig(count=1)},
                         term=SalvoConditionTermPortConfig(
                             port_name="in",
