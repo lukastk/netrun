@@ -5184,3 +5184,40 @@ async def test_stop_not_called_for_unstarted_deferred_node():
 
     # Neither start nor stop should have been called
     assert lifecycle == []
+
+# %% [markdown]
+# ### NodeFailureContext.print
+
+# %%
+#|export
+def test_node_failure_context_print():
+    """Test that NodeFailureContext.print() captures timestamped messages."""
+    ctx = NodeFailureContext(
+        epoch_id="ep-1",
+        node_name="test_node",
+        retry_count=0,
+        exception=RuntimeError("boom"),
+    )
+
+    # Initially empty
+    assert ctx._print_buffer == []
+
+    # Single print
+    ctx.print("hello")
+    assert len(ctx._print_buffer) == 1
+    ts, msg = ctx._print_buffer[0]
+    assert isinstance(ts, datetime)
+    assert msg == "hello\n"
+
+    # Multiple prints accumulate
+    ctx.print("world")
+    assert len(ctx._print_buffer) == 2
+    assert ctx._print_buffer[1][1] == "world\n"
+
+    # sep and end args work
+    ctx.print("a", "b", "c", sep="-", end="!\n")
+    assert ctx._print_buffer[2][1] == "a-b-c!\n"
+
+    # Timestamps are monotonically non-decreasing
+    timestamps = [ts for ts, _ in ctx._print_buffer]
+    assert timestamps == sorted(timestamps)

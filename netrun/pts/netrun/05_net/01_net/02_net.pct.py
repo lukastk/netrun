@@ -1879,6 +1879,10 @@ class Net:
         if asyncio.iscoroutine(result):
             await result
 
+        # Collect any prints from the failure callback into the epoch's logs
+        if failure_ctx._print_buffer:
+            self._handle_print_buffer(failure_ctx.epoch_id, failure_ctx._print_buffer)
+
     async def execute_startable_epochs(self) -> list[tuple[str, NodeExecutionResult | None]]:
         """Execute all currently startable epochs.
 
