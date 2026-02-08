@@ -436,7 +436,7 @@ Uses `delete=False` + manual `unlink()`. If assertion fails, temp file leaks.
 
 ---
 
-### L23. `test_random_allocation` statistical flakiness
+### L23. `test_random_allocation` statistical flakiness ✅ FIXED
 
 **File:** `netrun/pts/tests/04_execution_manager/test_execution_manager_thread.pct.py`
 

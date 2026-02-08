@@ -411,7 +411,7 @@ async def test_random_allocation():
 
         # Run many jobs with random allocation
         worker_ids = set()
-        for i in range(20):
+        for i in range(50):
             result = await manager.run_allocate(
                 pool_worker_ids=["pool"],
                 allocation_method=RunAllocationMethod.RANDOM,
@@ -422,7 +422,7 @@ async def test_random_allocation():
             )
             worker_ids.add(result.worker_id)
 
-        # With 20 jobs and 3 workers, we should see all workers
+        # With 50 jobs and 3 workers, we should see all workers
         assert len(worker_ids) == 3
 
 # %%
