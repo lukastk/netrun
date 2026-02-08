@@ -21,18 +21,13 @@ import logging
 
 from .import_utils import is_file_path_ref, import_module_from_ref, reload_module
 
-# Import netrun config types for model-based serialization
-try:
-    from netrun.net.config import (
-        NodeConfig as _NodeConfig,
-        SubgraphConfig as _SubgraphConfig,
-        EdgeConfig as _EdgeConfig,
-        GraphConfig as _GraphConfig,
-        PortConfig as _PortConfig,
-    )
-    NETRUN_AVAILABLE = True
-except ImportError:
-    NETRUN_AVAILABLE = False
+from netrun.net.config import (
+    NodeConfig as _NodeConfig,
+    SubgraphConfig as _SubgraphConfig,
+    EdgeConfig as _EdgeConfig,
+    GraphConfig as _GraphConfig,
+    PortConfig as _PortConfig,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -385,7 +380,7 @@ def ui_to_graph_config(
     ui_nodes: list[dict],
     ui_edges: list[dict],
     graph_extra: dict[str, Any] | None = None,
-) -> Any:
+) -> _GraphConfig:
     """Convert UI format to GraphConfig.
 
     Args:
@@ -394,12 +389,9 @@ def ui_to_graph_config(
         graph_extra: Optional graph-level extra data.
 
     Returns:
-        GraphConfig model when netrun is available, otherwise a dict.
+        GraphConfig model.
     """
-    if NETRUN_AVAILABLE:
-        return _ui_to_graph_config_model(ui_nodes, ui_edges, graph_extra)
-    else:
-        return _ui_to_graph_config_dict(ui_nodes, ui_edges, graph_extra)
+    return _ui_to_graph_config_model(ui_nodes, ui_edges, graph_extra)
 
 
 def _ui_to_graph_config_model(
@@ -494,99 +486,3 @@ def _ui_to_graph_config_model(
     )
 
 
-def _ui_to_graph_config_dict(
-    ui_nodes: list[dict],
-    ui_edges: list[dict],
-    graph_extra: dict[str, Any] | None = None,
-) -> dict[str, Any]:
-    """Fallback: build dict when netrun is not available."""
-    config_nodes = []
-    config_edges = []
-
-    for node in ui_nodes:
-        data = node.get("data", {})
-        position = node.get("position", {"x": 0, "y": 0})
-        node_type = data.get("nodeType")
-        node_name = node["id"]
-        extra_config = data.get("_config", {})
-        merged_extra = _build_merged_extra(data, position)
-
-        if node_type == "subgraph" or node.get("type") == "subgraphNode":
-            subgraph_config = data.get("_subgraphConfig", {})
-            config_node = {
-                "type": "subgraph",
-                "name": node_name,
-                **subgraph_config,
-                "extra": merged_extra,
-            }
-
-            in_ports = data.get("inPorts", [])
-            out_ports = data.get("outPorts", [])
-            if "exposed_in_ports" not in config_node and in_ports:
-                config_node["exposed_in_ports"] = {}
-            if "exposed_out_ports" not in config_node and out_ports:
-                config_node["exposed_out_ports"] = {}
-
-        elif node_type == "factory":
-            config_node = {
-                "type": "node",
-                "name": node_name,
-                "extra": merged_extra,
-            }
-            if data.get("factory"):
-                config_node["factory"] = data["factory"]
-            if data.get("factoryArgs"):
-                filtered_args = {
-                    k: v for k, v in data["factoryArgs"].items()
-                    if v != "" and v is not None
-                }
-                if filtered_args:
-                    config_node["factory_args"] = filtered_args
-            if "execution_config" in extra_config:
-                config_node["execution_config"] = extra_config["execution_config"]
-
-        else:
-            in_ports = {}
-            for port in data.get("inPorts", []):
-                port_config = {}
-                if port.get("type"):
-                    port_config["port_type"] = port["type"]
-                in_ports[port["name"]] = port_config
-
-            out_ports = {}
-            for port in data.get("outPorts", []):
-                port_config = {}
-                if port.get("type"):
-                    port_config["port_type"] = port["type"]
-                out_ports[port["name"]] = port_config
-
-            config_node = {
-                "type": "node",
-                "name": node_name,
-                "in_ports": in_ports,
-                "out_ports": out_ports,
-                "extra": merged_extra,
-            }
-            for key, value in extra_config.items():
-                if key not in ("extra",) and key not in config_node:
-                    config_node[key] = value
-
-        config_nodes.append(config_node)
-
-    for edge in ui_edges:
-        source_name = edge["source"]
-        target_name = edge["target"]
-        source_handle = edge.get("sourceHandle", "out")
-        target_handle = edge.get("targetHandle", "in")
-        config_edges.append({
-            "source_str": f"{source_name}.{source_handle}",
-            "target_str": f"{target_name}.{target_handle}",
-        })
-
-    result: dict[str, Any] = {
-        "nodes": config_nodes,
-        "edges": config_edges,
-    }
-    if graph_extra:
-        result["extra"] = graph_extra
-    return result

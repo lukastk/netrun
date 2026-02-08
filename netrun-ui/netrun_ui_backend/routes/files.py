@@ -14,22 +14,10 @@ from ..converter import (
     extract_graph_and_extras,
     merge_graph_with_extras,
     dump_graph_config,
-    NETRUN_AVAILABLE,
 )
 
-# Import netrun config types for validation
-try:
-    from netrun.net.config import NetConfig, GraphConfig
-    _NETRUN_VALIDATE_AVAILABLE = True
-except ImportError:
-    _NETRUN_VALIDATE_AVAILABLE = False
-
-# Import tool config types for validation
-try:
-    from netrun.tools._models import ActionConfig, RecipeConfig
-    _NETRUN_TOOLS_AVAILABLE = True
-except ImportError:
-    _NETRUN_TOOLS_AVAILABLE = False
+from netrun.net.config import NetConfig, GraphConfig
+from netrun.tools._models import ActionConfig, RecipeConfig
 
 router = APIRouter()
 
@@ -152,10 +140,7 @@ async def save_file(request: FileSaveRequest) -> FileSaveResponse:
         graph = ui_to_graph_config(request.nodes, request.edges, request.extra)
 
         # Serialize to dict
-        if NETRUN_AVAILABLE:
-            graph_dict = dump_graph_config(graph)
-        else:
-            graph_dict = graph  # already a dict
+        graph_dict = dump_graph_config(graph)
 
         # Merge graph with any extra data (pools, net-level settings)
         output_data = merge_graph_with_extras(
@@ -631,35 +616,10 @@ class ValidateResponse(BaseModel):
     """Response with validation results."""
     valid: bool
     errors: list[ValidationError_]
-    netrun_available: bool  # Whether netrun package is importable
-
-
-def _resolve_project_root(
-    project_root: str | None,
-    file_path: str | None,
-) -> Path | None:
-    """Resolve the project root path for factory/import resolution.
-
-    Mirrors NetConfig.project_root_path logic.
-    """
-    if project_root is not None:
-        p = Path(project_root)
-        if p.is_absolute():
-            return p
-        # Relative: resolve from config file dir or cwd
-        if file_path:
-            return (Path(file_path).resolve().parent / p).resolve()
-        return (Path.cwd() / p).resolve()
-    if file_path:
-        return Path(file_path).resolve().parent
-    return None
 
 
 def validate_tool_configs(graph: Any, extra_data: dict[str, Any]) -> list[ValidationError_]:
     """Validate ActionConfig and RecipeConfig within graph and extra_data."""
-    if not _NETRUN_TOOLS_AVAILABLE:
-        return []
-
     errors: list[ValidationError_] = []
 
     # Helper to extract extra dict from model or dict
@@ -730,13 +690,6 @@ async def validate_config(request: ValidateRequest) -> ValidateResponse:
     2. Full resolution (factory expansion, import resolution, subgraph flattening)
     3. Tool config validation (actions, recipes)
     """
-    if not _NETRUN_VALIDATE_AVAILABLE:
-        return ValidateResponse(
-            valid=True,  # Can't validate without netrun, assume valid
-            errors=[],
-            netrun_available=False,
-        )
-
     errors: list[ValidationError_] = []
 
     # Step 1: Build graph config (structural validation via pydantic models)
@@ -749,24 +702,21 @@ async def validate_config(request: ValidateRequest) -> ValidateResponse:
                 msg=err.get("msg", "Unknown error"),
                 type=err.get("type", "unknown"),
             ))
-        return ValidateResponse(valid=False, errors=errors, netrun_available=True)
+        return ValidateResponse(valid=False, errors=errors)
     except Exception as e:
         return ValidateResponse(
             valid=False,
             errors=[ValidationError_(loc=["_root_"], msg=str(e), type="validation_error")],
-            netrun_available=True,
         )
 
     try:
         # Step 2: Validate as NetConfig if extra_data present
+        net_config = None
         if request.extra_data:
-            if NETRUN_AVAILABLE:
-                graph_dict = dump_graph_config(graph)
-            else:
-                graph_dict = graph
+            graph_dict = dump_graph_config(graph)
             full_config = merge_graph_with_extras(graph_dict, request.extra_data or {})
             try:
-                NetConfig.model_validate(full_config)
+                net_config = NetConfig.model_validate(full_config)
             except ValidationError as e:
                 for err in e.errors():
                     errors.append(ValidationError_(
@@ -776,21 +726,16 @@ async def validate_config(request: ValidateRequest) -> ValidateResponse:
                     ))
 
         # Step 3: Resolve each node individually for per-node error attribution
-        if NETRUN_AVAILABLE and hasattr(graph, 'nodes'):
-            project_root = _resolve_project_root(
-                request.extra_data.get("project_root") if request.extra_data else None,
-                request.file_path,
-            )
-            for idx, node in enumerate(graph.nodes):
-                if hasattr(node, 'resolve'):
-                    try:
-                        node.resolve(project_root=project_root)
-                    except Exception as e:
-                        errors.append(ValidationError_(
-                            loc=["graph", "nodes", str(idx)],
-                            msg=str(e),
-                            type="resolve_error",
-                        ))
+        for idx, node in enumerate(graph.nodes):
+            if hasattr(node, 'resolve'):
+                try:
+                    node.resolve(net_config=net_config)
+                except Exception as e:
+                    errors.append(ValidationError_(
+                        loc=["graph", "nodes", str(idx)],
+                        msg=str(e),
+                        type="resolve_error",
+                    ))
 
         # Step 4: Validate tool configs (actions, recipes)
         errors.extend(validate_tool_configs(graph, request.extra_data or {}))
@@ -798,7 +743,6 @@ async def validate_config(request: ValidateRequest) -> ValidateResponse:
         return ValidateResponse(
             valid=len(errors) == 0,
             errors=errors,
-            netrun_available=True,
         )
 
     except Exception as e:
@@ -809,5 +753,4 @@ async def validate_config(request: ValidateRequest) -> ValidateResponse:
                 msg=str(e),
                 type="validation_error",
             )],
-            netrun_available=True,
         )
