@@ -107,7 +107,18 @@ pub fn evaluate_salvo_condition(
         SalvoConditionTerm::True => true,
         SalvoConditionTerm::False => false,
         SalvoConditionTerm::Port { port_name, state } => {
+            debug_assert!(
+                port_packet_counts.contains_key(port_name),
+                "Port '{}' not found in packet counts — Graph.validate() should have caught this",
+                port_name
+            );
             let count = *port_packet_counts.get(port_name).unwrap_or(&0);
+
+            debug_assert!(
+                ports.contains_key(port_name),
+                "Port '{}' not found in port definitions — Graph.validate() should have caught this",
+                port_name
+            );
             let port = ports.get(port_name);
 
             match state {
