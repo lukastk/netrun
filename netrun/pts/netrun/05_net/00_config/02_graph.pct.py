@@ -24,6 +24,7 @@ from netrun.net.config._nodes import (
     SubgraphConfig,
     EdgeConfig,
     PortRefConfig,
+    EnvVarResolvableModel,
 )
 import netrun_sim
 
@@ -55,7 +56,7 @@ GraphNodeConfig = Annotated[
 
 # %%
 #|export
-class GraphConfig(BaseModel):
+class GraphConfig(EnvVarResolvableModel):
     """Configuration for a complete flow-based network graph.
 
     Example:

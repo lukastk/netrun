@@ -16,9 +16,10 @@ from nblite import nbl_export; nbl_export();
 # %%
 #|export
 from pydantic import BaseModel, Field, PrivateAttr, model_validator, field_serializer, field_validator
-from typing import Annotated, Literal, NewType, Any, get_origin
-from types import ModuleType
+from typing import Annotated, Literal, NewType, Any, Union, get_origin, get_args
+from types import ModuleType, UnionType
 from collections.abc import Callable
+from enum import Enum
 import importlib
 import importlib.util
 import json as _json_module
@@ -179,6 +180,179 @@ def _import_from_path(import_path: str, project_root: 'Path | None' = None) -> A
     return getattr(module, name)
 
 # %% [markdown]
+# # EnvVar Model
+#
+# Allows config fields to reference environment variables for deployment flexibility.
+
+# %%
+#|export
+class EnvVar(BaseModel):
+    """Reference to an environment variable for config field resolution.
+
+    Serialised as ``{"$env": "VAR_NAME"}`` or ``{"$env": "VAR_NAME", "default": 42}``.
+    """
+    model_config = {"populate_by_name": True}
+    env: str = Field(alias="$env")
+    default: Any = None
+
+
+def _cast_env_var_value(raw: str, target_type: type, env_name: str = "") -> Any:
+    """Cast a raw string from os.environ to the target Python type.
+
+    Args:
+        raw: The raw string value from the environment.
+        target_type: The Python type to cast to.
+        env_name: Name of the env var (for error messages).
+
+    Returns:
+        The cast value.
+
+    Raises:
+        ValueError: If casting fails.
+    """
+    try:
+        if target_type is str or target_type is Any:
+            return raw
+        if target_type is int:
+            return int(raw)
+        if target_type is float:
+            return float(raw)
+        if target_type is bool:
+            lowered = raw.lower().strip()
+            if lowered in ("true", "1", "yes"):
+                return True
+            if lowered in ("false", "0", "no"):
+                return False
+            raise ValueError(
+                f"Cannot parse '{raw}' as bool. "
+                f"Expected one of: true/false, 1/0, yes/no"
+            )
+        if isinstance(target_type, type) and issubclass(target_type, Enum):
+            return target_type(raw)
+        # Fallback: try JSON parsing for complex types (list, dict, tuple, etc.)
+        parsed = _json_module.loads(raw)
+        return parsed
+    except (ValueError, TypeError, _json_module.JSONDecodeError) as exc:
+        raise ValueError(
+            f"Cannot cast env var '{env_name}' value {raw!r} to {target_type.__name__ if hasattr(target_type, '__name__') else target_type}: {exc}"
+        ) from exc
+
+
+def _extract_target_type(annotation: Any) -> type:
+    """Extract the actual target type from a union annotation, stripping EnvVar and None.
+
+    For ``Callable | str | EnvVar | None`` returns ``str`` (env vars provide import
+    path strings; callable resolution happens later).
+
+    Args:
+        annotation: The field type annotation.
+
+    Returns:
+        The target type for env var casting.
+    """
+    origin = get_origin(annotation)
+
+    # Handle Annotated[X, ...] — unwrap to X
+    if origin is Annotated:
+        inner_args = get_args(annotation)
+        if inner_args:
+            return _extract_target_type(inner_args[0])
+
+    # Handle Union / X | Y
+    if origin is Union or isinstance(annotation, UnionType):
+        args = get_args(annotation)
+        # Filter out EnvVar and NoneType
+        candidates = [
+            a for a in args
+            if a is not type(None) and a is not EnvVar
+        ]
+        if not candidates:
+            return str
+        # If Callable is among candidates alongside str, prefer str
+        # (env vars provide import path strings)
+        non_callable = [a for a in candidates if a is not Callable and not (isinstance(a, type) and issubclass(a, Callable))]
+        if non_callable:
+            # Prefer the simplest scalar type
+            for preferred in (str, int, float, bool):
+                if preferred in non_callable:
+                    return preferred
+            return non_callable[0]
+        return str  # All callable → return str
+
+    # Not a union — return as-is
+    if isinstance(annotation, type):
+        return annotation
+    return str
+
+
+def _resolve_env_vars_in_list(lst: list) -> tuple[list, bool]:
+    """Recursively resolve EnvVar instances in a list of EnvVarResolvableModel items."""
+    changed = False
+    new_list = []
+    for item in lst:
+        if isinstance(item, EnvVarResolvableModel):
+            resolved = item.resolve_env_vars()
+            if resolved is not item:
+                changed = True
+            new_list.append(resolved)
+        else:
+            new_list.append(item)
+    return new_list, changed
+
+
+def _resolve_env_vars_in_dict(d: dict) -> tuple[dict, bool]:
+    """Recursively resolve EnvVar instances in a dict of EnvVarResolvableModel values."""
+    changed = False
+    new_dict = {}
+    for key, value in d.items():
+        if isinstance(value, EnvVarResolvableModel):
+            resolved = value.resolve_env_vars()
+            if resolved is not value:
+                changed = True
+            new_dict[key] = resolved
+        else:
+            new_dict[key] = value
+    return new_dict, changed
+
+
+class EnvVarResolvableModel(BaseModel):
+    """Base class for config models that may contain EnvVar fields."""
+
+    def resolve_env_vars(self) -> "EnvVarResolvableModel":
+        """Return a copy with all EnvVar fields resolved from os.environ."""
+        updates = {}
+        for field_name, field_info in type(self).model_fields.items():
+            value = getattr(self, field_name)
+            if isinstance(value, EnvVar):
+                target_type = _extract_target_type(field_info.annotation)
+                raw = os.environ.get(value.env)
+                if raw is None:
+                    if value.default is not None:
+                        updates[field_name] = value.default
+                    else:
+                        raise ValueError(
+                            f"Environment variable '{value.env}' is not set "
+                            f"and no default provided (field: {type(self).__name__}.{field_name})"
+                        )
+                else:
+                    updates[field_name] = _cast_env_var_value(raw, target_type, env_name=value.env)
+            elif isinstance(value, EnvVarResolvableModel):
+                resolved = value.resolve_env_vars()
+                if resolved is not value:
+                    updates[field_name] = resolved
+            elif isinstance(value, list):
+                new_list, changed = _resolve_env_vars_in_list(value)
+                if changed:
+                    updates[field_name] = new_list
+            elif isinstance(value, dict):
+                new_dict, changed = _resolve_env_vars_in_dict(value)
+                if changed:
+                    updates[field_name] = new_dict
+        if updates:
+            return self.model_copy(update=updates)
+        return self
+
+# %% [markdown]
 # # Port Configuration
 #
 # These Pydantic models mirror the `netrun_sim` graph types, providing a serializable
@@ -191,7 +365,7 @@ def _import_from_path(import_path: str, project_root: 'Path | None' = None) -> A
 
 # %%
 #|export
-class PortSlotSpecInfiniteConfig(BaseModel):
+class PortSlotSpecInfiniteConfig(EnvVarResolvableModel):
     """Port can hold unlimited packets."""
     type: Literal["infinite"] = "infinite"
 
@@ -199,10 +373,10 @@ class PortSlotSpecInfiniteConfig(BaseModel):
         return netrun_sim.PortSlotSpec.infinite()
 
 
-class PortSlotSpecFiniteConfig(BaseModel):
+class PortSlotSpecFiniteConfig(EnvVarResolvableModel):
     """Port can hold at most `capacity` packets."""
     type: Literal["finite"] = "finite"
-    capacity: int
+    capacity: int | EnvVar
 
     def to_netrun_sim(self) -> netrun_sim.PortSlotSpecFinite:
         return netrun_sim.PortSlotSpec.finite(self.capacity)
@@ -220,15 +394,15 @@ PortSlotSpecConfig = Annotated[
 
 # %%
 #|export
-class PortTypeConfig(BaseModel):
+class PortTypeConfig(EnvVarResolvableModel):
     """Detailed port type configuration.
 
     Used when you need more control than a simple type name string.
     """
-    name: str
+    name: str | EnvVar
     """Type name to match (e.g., "DataFrame", "dict", "MyClass")."""
 
-    isinstance_check: bool = False
+    isinstance_check: bool | EnvVar = False
     """If True and a type object is available, use isinstance().
     If False, use type().__name__ match. Default is False (name match)."""
 
@@ -248,7 +422,7 @@ Can be:
 
 # %%
 #|export
-class PortConfig(BaseModel):
+class PortConfig(EnvVarResolvableModel):
     """Configuration for a port on a node."""
     model_config = {"arbitrary_types_allowed": True}
 
@@ -319,7 +493,7 @@ class PortConfig(BaseModel):
 
 # %%
 #|export
-class PortStateEmptyConfig(BaseModel):
+class PortStateEmptyConfig(EnvVarResolvableModel):
     """Port has zero packets."""
     type: Literal["empty"] = "empty"
 
@@ -327,7 +501,7 @@ class PortStateEmptyConfig(BaseModel):
         return netrun_sim.PortState.empty()
 
 
-class PortStateFullConfig(BaseModel):
+class PortStateFullConfig(EnvVarResolvableModel):
     """Port is at capacity (always false for infinite ports)."""
     type: Literal["full"] = "full"
 
@@ -335,7 +509,7 @@ class PortStateFullConfig(BaseModel):
         return netrun_sim.PortState.full()
 
 
-class PortStateNonEmptyConfig(BaseModel):
+class PortStateNonEmptyConfig(EnvVarResolvableModel):
     """Port has at least one packet."""
     type: Literal["non_empty"] = "non_empty"
 
@@ -343,7 +517,7 @@ class PortStateNonEmptyConfig(BaseModel):
         return netrun_sim.PortState.non_empty()
 
 
-class PortStateNonFullConfig(BaseModel):
+class PortStateNonFullConfig(EnvVarResolvableModel):
     """Port is below capacity (always true for infinite ports)."""
     type: Literal["non_full"] = "non_full"
 
@@ -351,46 +525,46 @@ class PortStateNonFullConfig(BaseModel):
         return netrun_sim.PortState.non_full()
 
 
-class PortStateEqualsConfig(BaseModel):
+class PortStateEqualsConfig(EnvVarResolvableModel):
     """Port has exactly `value` packets."""
     type: Literal["equals"] = "equals"
-    value: int
+    value: int | EnvVar
 
     def to_netrun_sim(self) -> netrun_sim.PortStateNumeric:
         return netrun_sim.PortState.equals(self.value)
 
 
-class PortStateLessThanConfig(BaseModel):
+class PortStateLessThanConfig(EnvVarResolvableModel):
     """Port has fewer than `value` packets."""
     type: Literal["less_than"] = "less_than"
-    value: int
+    value: int | EnvVar
 
     def to_netrun_sim(self) -> netrun_sim.PortStateNumeric:
         return netrun_sim.PortState.less_than(self.value)
 
 
-class PortStateGreaterThanConfig(BaseModel):
+class PortStateGreaterThanConfig(EnvVarResolvableModel):
     """Port has more than `value` packets."""
     type: Literal["greater_than"] = "greater_than"
-    value: int
+    value: int | EnvVar
 
     def to_netrun_sim(self) -> netrun_sim.PortStateNumeric:
         return netrun_sim.PortState.greater_than(self.value)
 
 
-class PortStateEqualsOrLessThanConfig(BaseModel):
+class PortStateEqualsOrLessThanConfig(EnvVarResolvableModel):
     """Port has at most `value` packets."""
     type: Literal["equals_or_less_than"] = "equals_or_less_than"
-    value: int
+    value: int | EnvVar
 
     def to_netrun_sim(self) -> netrun_sim.PortStateNumeric:
         return netrun_sim.PortState.equals_or_less_than(self.value)
 
 
-class PortStateEqualsOrGreaterThanConfig(BaseModel):
+class PortStateEqualsOrGreaterThanConfig(EnvVarResolvableModel):
     """Port has at least `value` packets."""
     type: Literal["equals_or_greater_than"] = "equals_or_greater_than"
-    value: int
+    value: int | EnvVar
 
     def to_netrun_sim(self) -> netrun_sim.PortStateNumeric:
         return netrun_sim.PortState.equals_or_greater_than(self.value)
@@ -411,7 +585,7 @@ PortStateConfig = Annotated[
 
 # %%
 #|export
-class PacketCountAllConfig(BaseModel):
+class PacketCountAllConfig(EnvVarResolvableModel):
     """Take all packets from the port."""
     type: Literal["all"] = "all"
 
@@ -419,10 +593,10 @@ class PacketCountAllConfig(BaseModel):
         return netrun_sim.PacketCount.all()
 
 
-class PacketCountNConfig(BaseModel):
+class PacketCountNConfig(EnvVarResolvableModel):
     """Take at most `count` packets (takes fewer if port has fewer)."""
     type: Literal["count"] = "count"
-    count: int
+    count: int | EnvVar
 
     def to_netrun_sim(self) -> netrun_sim.PacketCountN:
         return netrun_sim.PacketCount.count(self.count)
@@ -440,7 +614,7 @@ PacketCountConfig = Annotated[
 
 # %%
 #|export
-class MaxSalvosInfiniteConfig(BaseModel):
+class MaxSalvosInfiniteConfig(EnvVarResolvableModel):
     """No limit on how many times the condition can trigger."""
     type: Literal["infinite"] = "infinite"
 
@@ -448,10 +622,10 @@ class MaxSalvosInfiniteConfig(BaseModel):
         return netrun_sim.MaxSalvos.infinite()
 
 
-class MaxSalvosFiniteConfig(BaseModel):
+class MaxSalvosFiniteConfig(EnvVarResolvableModel):
     """Can trigger at most `max` times."""
     type: Literal["finite"] = "finite"
-    max: int
+    max: int | EnvVar
 
     def to_netrun_sim(self) -> netrun_sim.MaxSalvosFinite:
         return netrun_sim.MaxSalvos.finite(self.max)
@@ -469,7 +643,7 @@ MaxSalvosConfig = Annotated[
 
 # %%
 #|export
-class SalvoConditionTermTrueConfig(BaseModel):
+class SalvoConditionTermTrueConfig(EnvVarResolvableModel):
     """Always true. Useful for source nodes with no input ports."""
     type: Literal["true"] = "true"
 
@@ -477,7 +651,7 @@ class SalvoConditionTermTrueConfig(BaseModel):
         return netrun_sim.SalvoConditionTerm.true_()
 
 
-class SalvoConditionTermFalseConfig(BaseModel):
+class SalvoConditionTermFalseConfig(EnvVarResolvableModel):
     """Always false. Useful as a placeholder or with Not."""
     type: Literal["false"] = "false"
 
@@ -485,17 +659,17 @@ class SalvoConditionTermFalseConfig(BaseModel):
         return netrun_sim.SalvoConditionTerm.false_()
 
 
-class SalvoConditionTermPortConfig(BaseModel):
+class SalvoConditionTermPortConfig(EnvVarResolvableModel):
     """Check if a specific port matches a state predicate."""
     type: Literal["port"] = "port"
-    port_name: str
+    port_name: str | EnvVar
     state: PortStateConfig
 
     def to_netrun_sim(self) -> netrun_sim.SalvoConditionTerm:
         return netrun_sim.SalvoConditionTerm.port(self.port_name, self.state.to_netrun_sim())
 
 
-class SalvoConditionTermAndConfig(BaseModel):
+class SalvoConditionTermAndConfig(EnvVarResolvableModel):
     """All sub-terms must be true."""
     type: Literal["and"] = "and"
     terms: list["SalvoConditionTermConfig"]
@@ -504,7 +678,7 @@ class SalvoConditionTermAndConfig(BaseModel):
         return netrun_sim.SalvoConditionTerm.and_([t.to_netrun_sim() for t in self.terms])
 
 
-class SalvoConditionTermOrConfig(BaseModel):
+class SalvoConditionTermOrConfig(EnvVarResolvableModel):
     """At least one sub-term must be true."""
     type: Literal["or"] = "or"
     terms: list["SalvoConditionTermConfig"]
@@ -513,7 +687,7 @@ class SalvoConditionTermOrConfig(BaseModel):
         return netrun_sim.SalvoConditionTerm.or_([t.to_netrun_sim() for t in self.terms])
 
 
-class SalvoConditionTermNotConfig(BaseModel):
+class SalvoConditionTermNotConfig(EnvVarResolvableModel):
     """The sub-term must be false."""
     type: Literal["not"] = "not"
     term: "SalvoConditionTermConfig"
@@ -539,7 +713,7 @@ SalvoConditionTermNotConfig.model_rebuild()
 
 # %%
 #|export
-class SalvoConditionConfig(BaseModel):
+class SalvoConditionConfig(EnvVarResolvableModel):
     """A condition that defines when packets can trigger an epoch or be sent.
 
     Input salvo conditions must have max_salvos set to finite(1).

@@ -5,13 +5,14 @@ __all__ = ['ActionConfig', 'ActionContext', 'ActionResult', 'RecipeConfig', 'Rec
 # %% pts/netrun/08_tools/00_models.pct.py 2
 from pydantic import BaseModel
 from typing import Literal, Any
+from ..net.config._base import EnvVar, EnvVarResolvableModel
 
 # %% pts/netrun/08_tools/00_models.pct.py 4
-class ActionConfig(BaseModel):
+class ActionConfig(EnvVarResolvableModel):
     """A single action (shell command with template variables)."""
     id: str
     label: str
-    command: str
+    command: str | EnvVar
 
 
 class ActionContext(BaseModel):
@@ -39,10 +40,10 @@ class ActionResult(BaseModel):
     timed_out: bool = False
 
 
-class RecipeConfig(BaseModel):
+class RecipeConfig(EnvVarResolvableModel):
     """A recipe definition (stored in extra data)."""
-    path: str
-    description: str | None = None
+    path: str | EnvVar
+    description: str | EnvVar | None = None
 
 
 class RecipePrompt(BaseModel):
