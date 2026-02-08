@@ -267,7 +267,7 @@ Declares `netrun>=0.2.1` but actual version is `0.3.3`. Wide gap could mask comp
 
 ---
 
-### M24. netrun-ui has TODO comments for unimplemented context menus
+### M24. netrun-ui has TODO comments for unimplemented context menus ✅ FIXED
 
 **File:** `netrun-ui/src/lib/components/FlowEditor.svelte`, lines 244, 250
 

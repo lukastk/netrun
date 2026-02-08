@@ -241,13 +241,11 @@
 	// Handle context menu on pane
 	function onPaneContextMenu(event: { event: MouseEvent }) {
 		event.event.preventDefault();
-		// TODO: Show pane context menu
 	}
 
 	// Handle context menu on node
 	function onNodeContextMenu(event: { node: Node; event: MouseEvent }) {
 		event.event.preventDefault();
-		// TODO: Show node context menu
 	}
 
 	// Double-click detection for nodes
