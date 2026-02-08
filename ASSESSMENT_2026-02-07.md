@@ -428,7 +428,7 @@ Manual field-by-field clone when `Port` derives `Clone`.
 
 ---
 
-### L22. `tempfile` with manual cleanup instead of pytest fixtures in recipe tests
+### L22. `tempfile` with manual cleanup instead of pytest fixtures in recipe tests ✅ FIXED
 
 **File:** `netrun/pts/tests/08_tools/test_recipes.pct.py`, lines 35-100
 
