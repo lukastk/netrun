@@ -32,6 +32,7 @@ registerField('NetConfig', 'error_on_undeclared_output', 'auto');
 registerField('NetConfig', 'type_checking_enabled', 'auto');
 registerField('NetConfig', 'propagate_exceptions', 'auto');
 registerField('NetConfig', 'print_exceptions', 'auto');
+registerField('NetConfig', 'cache', 'ignore');
 
 // ==========================================================================
 // NodeConfig
@@ -74,3 +75,4 @@ registerField('NodeExecutionConfig', 'node_vars', 'custom', 'NodeVariablesSectio
 registerField('NodeExecutionConfig', 'type_checking_enabled', 'auto');
 registerField('NodeExecutionConfig', 'propagate_exceptions', 'auto');
 registerField('NodeExecutionConfig', 'print_exceptions', 'auto');
+registerField('NodeExecutionConfig', 'cache', 'ignore');

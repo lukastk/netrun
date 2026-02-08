@@ -12,6 +12,7 @@
 //! - Merging: D waits for packets from both B and C
 //! - Synchronization: D's epoch only triggers when both inputs are present
 
+use indexmap::IndexMap;
 use netrun_sim::graph::{
     Edge, Graph, MaxSalvos, Node, PacketCount, Port, PortRef, PortSlotSpec, PortState, PortType,
     SalvoCondition, SalvoConditionTerm,
@@ -19,7 +20,6 @@ use netrun_sim::graph::{
 use netrun_sim::net::{
     NetAction, NetActionResponse, NetActionResponseData, NetSim, PacketLocation,
 };
-use indexmap::IndexMap;
 use std::collections::HashMap;
 
 fn main() {

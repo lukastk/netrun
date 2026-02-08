@@ -38,9 +38,10 @@ class TestSubgraphConverter:
 
         # Convert back to config format
         result = ui_to_graph_config(ui_nodes, ui_edges)
+        result_dict = result.model_dump(mode="json")
 
         # Find the subgraph in the result
-        sg_node = next(n for n in result["nodes"] if n["name"] == "InlineProcessor")
+        sg_node = next(n for n in result_dict["nodes"] if n["name"] == "InlineProcessor")
         assert sg_node["type"] == "subgraph"
         assert "nodes" in sg_node
         assert len(sg_node["nodes"]) == 2
@@ -66,9 +67,10 @@ class TestSubgraphConverter:
 
         # Convert back to config format
         result = ui_to_graph_config(ui_nodes, ui_edges)
+        result_dict = result.model_dump(mode="json")
 
         # Find the subgraph in the result
-        sg_node = next(n for n in result["nodes"] if n["name"] == "FileProcessor")
+        sg_node = next(n for n in result_dict["nodes"] if n["name"] == "FileProcessor")
         assert sg_node["type"] == "subgraph"
         assert sg_node["path"] == "./subgraph_internal.netrun.json"
         assert "nodes" not in sg_node or sg_node.get("nodes") is None
@@ -287,9 +289,10 @@ class TestFullFileRoundtrip:
         from netrun_ui_backend.converter import ui_to_graph_config
 
         result = ui_to_graph_config(data["nodes"], data["edges"])
+        result_dict = result.model_dump(mode="json")
 
         # Verify the subgraphs are preserved
-        subgraphs = [n for n in result["nodes"] if n.get("type") == "subgraph"]
+        subgraphs = [n for n in result_dict["nodes"] if n.get("type") == "subgraph"]
         assert len(subgraphs) == 2
 
         inline = next(n for n in subgraphs if n["name"] == "InlineProcessor")
