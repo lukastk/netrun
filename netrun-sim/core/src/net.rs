@@ -543,9 +543,9 @@ impl NetSim {
                 let epoch_id = Ulid::new();
 
                 // Collect packets from the ports listed in salvo_condition.ports
-                // Store (packet_id, port_name, from_index) for each packet to move
+                // Store (packet_id, port_name) for each packet to move
                 let mut salvo_packets: Vec<(PortName, PacketID)> = Vec::new();
-                let mut packets_to_move: Vec<(PacketID, PortName, usize)> = Vec::new();
+                let mut packets_to_move: Vec<(PacketID, PortName)> = Vec::new();
 
                 for (port_name, packet_count) in &salvo_cond_data.ports {
                     let port_location =
@@ -555,9 +555,9 @@ impl NetSim {
                             PacketCount::All => packet_ids.len(),
                             PacketCount::Count(n) => std::cmp::min(*n as usize, packet_ids.len()),
                         };
-                        for (idx, pid) in packet_ids.iter().enumerate().take(take_count) {
+                        for pid in packet_ids.iter().take(take_count) {
                             salvo_packets.push((port_name.clone(), *pid));
-                            packets_to_move.push((*pid, port_name.clone(), idx));
+                            packets_to_move.push((*pid, port_name.clone()));
                         }
                     }
                 }
@@ -616,16 +616,24 @@ impl NetSim {
                 events.push(NetEvent::EpochCreated(get_utc_now(), epoch_id));
 
                 // Move packets from input ports into the epoch
-                for (pid, port_name, from_index) in &packets_to_move {
+                for (pid, port_name) in &packets_to_move {
                     let from_location =
                         PacketLocation::InputPort(node_name.clone(), port_name.clone());
+
+                    // Get the fresh index of this packet before moving (indices shift after each move)
+                    let from_index = self
+                        ._packets_by_location
+                        .get(&from_location)
+                        .and_then(|packets| packets.get_index_of(pid))
+                        .expect("Packet should exist at from_location");
+
                     self.move_packet(pid, epoch_location.clone());
                     events.push(NetEvent::PacketMoved(
                         get_utc_now(),
                         *pid,
                         from_location,
                         epoch_location.clone(),
-                        *from_index,
+                        from_index,
                     ));
                 }
 
@@ -1266,13 +1274,12 @@ impl NetSim {
         }
 
         // Get the locations to send packets to
-        // Tuple: (packet_id, port_name, from_location, to_location, from_index, is_orphaned)
+        // Tuple: (packet_id, port_name, from_location, to_location, is_orphaned)
         let mut packets_to_move: Vec<(
             PacketID,
             PortName,
             PacketLocation,
             PacketLocation,
-            usize,
             bool,
         )> = Vec::new();
         for (port_name, packet_count) in &salvo_condition.ports {
@@ -1307,14 +1314,12 @@ impl NetSim {
                 PacketCount::All => packets.len(),
                 PacketCount::Count(n) => std::cmp::min(*n as usize, packets.len()),
             };
-            // Capture index along with packet_id (enumerate gives us the index)
-            for (idx, packet_id) in packets.into_iter().enumerate().take(take_count) {
+            for packet_id in packets.into_iter().take(take_count) {
                 packets_to_move.push((
                     packet_id,
                     port_name.clone(),
                     from_location.clone(),
                     to_location.clone(),
-                    idx,
                     is_orphaned,
                 ));
             }
@@ -1325,7 +1330,7 @@ impl NetSim {
             salvo_condition: salvo_condition_name.clone(),
             packets: packets_to_move
                 .iter()
-                .map(|(packet_id, port_name, _, _, _, _)| (port_name.clone(), *packet_id))
+                .map(|(packet_id, port_name, _, _, _)| (port_name.clone(), *packet_id))
                 .collect(),
         };
         self._epochs
@@ -1338,7 +1343,7 @@ impl NetSim {
         let mut net_events = Vec::new();
         let mut orphaned_infos: Vec<OrphanedPacketInfo> = Vec::new();
 
-        for (packet_id, port_name, from_location, to_location, from_index, is_orphaned) in
+        for (packet_id, port_name, from_location, to_location, is_orphaned) in
             packets_to_move
         {
             if is_orphaned {
@@ -1357,6 +1362,13 @@ impl NetSim {
                     salvo_condition: salvo_condition_name.clone(),
                 });
             } else {
+                // Get the fresh index of this packet before moving (indices shift after each move)
+                let from_index = self
+                    ._packets_by_location
+                    .get(&from_location)
+                    .and_then(|packets| packets.get_index_of(&packet_id))
+                    .expect("Packet should exist at from_location");
+
                 // Emit PacketMoved event for connected port
                 net_events.push(NetEvent::PacketMoved(
                     get_utc_now(),
