@@ -36,8 +36,8 @@ from netrun.net.config import (
     PortStateNonEmptyConfig,
     OutputQueueConfig,
 )
-from netrun.caching.config import CacheConfig, CacheWhat, NodeCacheConfig
-from netrun.caching._store import CachedEpochData
+from netrun.storage.config import CacheConfig, CacheWhat, NodeCacheConfig, StorageConfig, NodeStorageConfig
+from netrun.storage._cache import CachedEpochData
 
 # %%
 #|export
@@ -65,6 +65,8 @@ def _make_node(name, in_ports, out_ports, exec_func, *, pools=None, cache=None):
             term=SalvoConditionTermTrueConfig(),
         )
 
+    storage = NodeStorageConfig(cache=cache) if cache is not None else None
+
     return NodeConfig(
         name=name,
         in_ports=in_port_cfgs,
@@ -75,20 +77,21 @@ def _make_node(name, in_ports, out_ports, exec_func, *, pools=None, cache=None):
             node_name=name,
             pools=pools or ["main"],
             exec_node_func=exec_func,
-            cache=cache,
+            storage=storage,
         ),
     )
 
 
 def _make_net(*nodes, edges=None, cache=None, output_queues=None):
     """Helper to create a Net."""
+    storage = StorageConfig(cache=cache) if cache is not None else None
     config = NetConfig(
         pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=GraphConfig(
             nodes=list(nodes),
             edges=edges or [],
         ),
-        cache=cache,
+        storage=storage,
         output_queues=output_queues,
     )
     return Net(config)

@@ -10,7 +10,7 @@ import netrun_sim
 if TYPE_CHECKING:
     from ...net._net._net import Net
     from ...net.config import NodeConfig, EdgeConfig, PortConfig, NodeExecutionConfig
-    from ...caching._store import CachedEpochData
+    from ...storage._cache import CachedEpochData
 
 # %% pts/netrun/06_net/01_net/01_info.pct.py 4
 class NodeInfo:

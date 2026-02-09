@@ -36,7 +36,7 @@ from netrun.net.config._base import (
     _generate_default_out_salvo_conditions,
 )
 from netrun.execution_manager import RunAllocationMethod
-from netrun.caching.config import NodeCacheConfig
+from netrun.storage.config import NodeStorageConfig
 import netrun_sim
 import json as _json_module
 
@@ -236,7 +236,7 @@ class NodeExecutionConfig(EnvVarResolvableModel):
 
     print_exceptions: bool | EnvVar | None = Field(default=None, description="Override NetConfig.print_exceptions for this node. None inherits.")
 
-    cache: NodeCacheConfig | None = Field(default=None, description="Per-node cache overrides.")
+    storage: NodeStorageConfig | None = Field(default=None, description="Per-node storage configuration (cache and/or file storage).")
 
     @field_serializer("exec_node_func", "start_node_func", "stop_node_func", "on_node_failure", when_used='json')
     def serialize_func(self, func: Callable | str | EnvVar | None) -> str | dict | None:

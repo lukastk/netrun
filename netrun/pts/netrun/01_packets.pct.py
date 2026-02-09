@@ -7,12 +7,12 @@
 # ---
 
 # %%
-#|default_exp storage
+#|default_exp packets
 
 # %%
 #|hide
 from nblite import nbl_export, show_doc; nbl_export();
-import netrun.storage as this_module
+import netrun.packets as this_module
 
 # %%
 #|export

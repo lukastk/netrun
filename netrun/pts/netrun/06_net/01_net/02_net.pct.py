@@ -25,6 +25,7 @@ from nblite import nbl_export; nbl_export();
 # %%
 #|export
 import asyncio
+import json as _json_module
 import signal
 import time
 from datetime import datetime
@@ -40,9 +41,12 @@ from netrun.pool.remote import RemotePoolClient
 from netrun.net.config import NetConfig, NodeExecutionConfig, PortConfig, RemotePoolConfig
 from netrun.execution_manager import ExecutionManager, PoolType, RunAllocationMethod
 from netrun._iutils import get_timestamp_utc
-from netrun.storage import PacketStore
-from netrun.caching._store import NetCacheStore, CachedEpochData
-from netrun.caching.config import CacheWhat
+from netrun.packets import PacketStore
+from netrun.storage._cache import NetCacheStore, CachedEpochData
+from netrun.storage.config import CacheWhat, OnHashChange, NodeFileStorageConfig
+from netrun.storage._file_storage import NetFileStorageStore, FileStorageManifest
+from netrun.storage._serialization import SerializationMethod, serialize, get_file_extension
+from netrun.storage._compression import CompressionMethod, compress, get_compression_extension
 
 from netrun.net._net._context import (
     EpochError,
@@ -299,13 +303,23 @@ class Net:
                 self._port_to_queue[(node_name, port_name)] = queue_name
 
         # Cache store
-        cache_config = self._config_resolved.cache
+        storage_config = self._config_resolved.storage
+        cache_config = storage_config.cache if storage_config else None
         self._cache_store = NetCacheStore(cache_config)
         for node_config in self._config_resolved.graph.nodes:
             node_cache = None
-            if node_config.execution_config and node_config.execution_config.cache:
-                node_cache = node_config.execution_config.cache
+            if node_config.execution_config and node_config.execution_config.storage:
+                node_cache = node_config.execution_config.storage.cache
             self._cache_store.register_node(node_config.name, node_cache)
+
+        # File storage store
+        file_storage_configs: dict[str, NodeFileStorageConfig] = {}
+        for node_config in self._config_resolved.graph.nodes:
+            if node_config.execution_config and node_config.execution_config.storage:
+                fs = node_config.execution_config.storage.file_storage
+                if fs is not None and fs.enabled:
+                    file_storage_configs[node_config.name] = fs
+        self._file_storage_store = NetFileStorageStore(storage_config, file_storage_configs)
 
 
     @classmethod
@@ -1168,6 +1182,7 @@ class Net:
 
         await self._execution_manager.close()
         self._cache_store.close()
+        self._file_storage_store.close()
         self._started = False
         self._stopping = False
 
@@ -1641,6 +1656,31 @@ class Net:
                 if cached is not None:
                     return await self._replay_cached_epoch(epoch_id, node_name, cached, packets)
 
+        # File storage check
+        fs_input_hash = None
+        if self._file_storage_store.is_enabled(node_name):
+            fs_config = self._file_storage_store.get_config(node_name)
+            fs_input_hash = self._file_storage_store.compute_input_hash(
+                node_name, packets, self._packet_store,
+            )
+
+            manifest = self._file_storage_store.lookup(node_name)
+            if manifest is not None:
+                if manifest.input_salvo_hash == fs_input_hash and manifest.version == fs_config.version:
+                    # Hash and version match — replay from file storage
+                    return await self._replay_file_storage_epoch(
+                        epoch_id, node_name, manifest, packets,
+                    )
+                elif manifest.input_salvo_hash != fs_input_hash:
+                    # Hash mismatch
+                    if fs_config.on_hash_change == OnHashChange.error:
+                        raise RuntimeError(
+                            f"File storage hash mismatch for node '{node_name}': "
+                            f"stored={manifest.input_salvo_hash}, current={fs_input_hash}. "
+                            f"Set on_hash_change='overwrite' to allow re-storing."
+                        )
+                    # on_hash_change == "overwrite": fall through to execution
+
         # Transition epoch to Running
         self._netsim.do_action(netrun_sim.NetAction.start_epoch(epoch_id))
         self._epochs[epoch_id].started_at = get_timestamp_utc()
@@ -1658,6 +1698,7 @@ class Net:
                 retry_timestamps=[],
                 retry_exceptions=[],
                 input_hash=input_hash,
+                fs_input_hash=fs_input_hash,
             )
         finally:
             self._running_epochs.discard(epoch_id)
@@ -1673,6 +1714,7 @@ class Net:
         retry_timestamps: list[datetime],
         retry_exceptions: list[Exception],
         input_hash: int | None = None,
+        fs_input_hash: int | None = None,
     ) -> NodeExecutionResult | None:
         """Execute an epoch with retry support.
 
@@ -1686,6 +1728,7 @@ class Net:
             retry_timestamps: Timestamps of previous retry attempts.
             retry_exceptions: Exceptions from previous retry attempts.
             input_hash: Hash of input salvo for caching (None if caching disabled).
+            fs_input_hash: Hash of input salvo for file storage (None if file storage disabled).
 
         Returns:
             The NodeExecutionResult if successful, None if cancelled.
@@ -1731,6 +1774,7 @@ class Net:
                 retry_timestamps=retry_timestamps,
                 retry_exceptions=retry_exceptions,
                 input_hash=input_hash,
+                fs_input_hash=fs_input_hash,
             )
 
         # Extract NodeExecutionResult from job result
@@ -1759,6 +1803,7 @@ class Net:
                 pool_id=job_result.pool_id,
                 worker_id=job_result.worker_id,
                 input_hash=input_hash,
+                fs_input_hash=fs_input_hash,
             )
 
         if execution_result.cancelled:
@@ -1782,6 +1827,12 @@ class Net:
         if input_hash is not None and self._cache_store.is_cache_enabled(node_name):
             self._store_epoch_in_cache(
                 epoch_id, node_name, input_hash, packets, packet_values, execution_result,
+            )
+
+        # File storage after successful execution
+        if fs_input_hash is not None and self._file_storage_store.is_enabled(node_name):
+            self._store_epoch_in_file_storage(
+                epoch_id, node_name, fs_input_hash, packets, packet_values, execution_result,
             )
 
         # Finish the epoch
@@ -1951,6 +2002,363 @@ class Net:
         )
         self._cache_store.store(cached_data)
 
+    async def _replay_file_storage_epoch(
+        self,
+        epoch_id: str,
+        node_name: str,
+        manifest: FileStorageManifest,
+        packets: dict[str, list[str]],
+    ) -> NodeExecutionResult:
+        """Replay an epoch from file storage without executing the node function.
+
+        Per-file mode: creates LazyPacketValueSpec for each output, so values
+        are only deserialized when consumed by a downstream node.
+
+        Args:
+            epoch_id: The epoch ID.
+            node_name: The node name.
+            manifest: The file storage manifest with file keys and replay info.
+            packets: Input packets by port name (current epoch's packets).
+
+        Returns:
+            A synthetic NodeExecutionResult representing the replayed epoch.
+        """
+        from netrun.packets import LazyPacketValueSpec
+
+        fs_config = self._file_storage_store.get_config(node_name)
+        project_root = Path(self._config_resolved.project_root) if self._config_resolved.project_root else None
+        backend = self._file_storage_store.resolve_backend(node_name, project_root=project_root)
+
+        # Build serialization kwargs for retrieval
+        ser_method = SerializationMethod(fs_config.serialization)
+        comp_method = CompressionMethod(fs_config.compression) if fs_config.compression else None
+        pickling_method = fs_config.pickling_method
+        pickling_args = fs_config.pickling_args if isinstance(fs_config.pickling_args, dict) else {}
+
+        # Build backend config JSON for lazy retrieval
+        backend_config = self._file_storage_store.resolve_backend_config(node_name)
+        backend_config_json = backend_config.model_dump_json()
+
+        # Start epoch in netsim
+        self._netsim.do_action(netrun_sim.NetAction.start_epoch(epoch_id))
+        self._epochs[epoch_id].started_at = get_timestamp_utc()
+        self._epochs[epoch_id].state = netrun_sim.EpochState.Running
+
+        # Consume input packets
+        for port_name in manifest.consumed_input_ports:
+            if port_name in packets:
+                for packet_id in packets[port_name]:
+                    self._packet_store.consume(packet_id)
+                    self._netsim.do_action(netrun_sim.NetAction.consume_packet(packet_id))
+
+        # Build common serialization kwargs JSON
+        ser_kwargs_json = _json_module.dumps({
+            "pickling_method": pickling_method.value if hasattr(pickling_method, 'value') else str(pickling_method),
+            **pickling_args,
+        })
+
+        if manifest.bundle_key is not None:
+            # --- Bundle mode: download archive, extract all entries eagerly ---
+            from netrun.storage._serialization import deserialize
+            import io
+
+            archive_bytes = backend.read(manifest.bundle_key)
+            bundle_format = fs_config.bundle_format if hasattr(fs_config, 'bundle_format') else "tar.gz"
+            bundle_format_str = bundle_format.value if hasattr(bundle_format, 'value') else str(bundle_format)
+
+            # Extract all entries from archive
+            extracted: dict[str, bytes] = {}
+            if bundle_format_str == "tar.gz":
+                import tarfile
+                with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r:gz") as tf:
+                    for member in tf.getmembers():
+                        if member.isfile():
+                            extracted[member.name] = tf.extractfile(member).read()
+            else:  # zip
+                import zipfile
+                with zipfile.ZipFile(io.BytesIO(archive_bytes)) as zf:
+                    for name in zf.namelist():
+                        extracted[name] = zf.read(name)
+
+            # Create output packets from extracted entries
+            if manifest.file_keys:
+                for salvo_name in manifest.output_salvo_names:
+                    salvo_file_keys = manifest.file_keys.get(salvo_name, [])
+                    for port_keys in salvo_file_keys:
+                        for port_name, entry_name in port_keys.items():
+                            data = extracted[entry_name]
+                            value = deserialize(data, ser_method, pickling_method=pickling_method, **pickling_args)
+                            response, _ = self._netsim.do_action(
+                                netrun_sim.NetAction.create_packet(epoch_id)
+                            )
+                            real_id = str(response.packet_id)
+                            self._packet_store.register(real_id, value)
+                            self._netsim.do_action(
+                                netrun_sim.NetAction.load_packet_into_output_port(real_id, port_name)
+                            )
+
+                    # Send the output salvo
+                    self._netsim.do_action(
+                        netrun_sim.NetAction.send_output_salvo(epoch_id, salvo_name)
+                    )
+                    epoch = self._netsim.get_epoch(epoch_id)
+                    if epoch.orphaned_packets:
+                        for orphaned_info in epoch.orphaned_packets:
+                            self._route_orphaned_packet(
+                                packet_id=orphaned_info.packet_id,
+                                from_node=node_name,
+                                from_port=orphaned_info.from_port,
+                                epoch_id=epoch_id,
+                            )
+
+        elif manifest.file_keys:
+            # --- Per-file mode: create lazy specs for each output ---
+            for salvo_name in manifest.output_salvo_names:
+                salvo_file_keys = manifest.file_keys.get(salvo_name, [])
+                for port_keys in salvo_file_keys:
+                    for port_name, file_key in port_keys.items():
+                        lazy_spec = LazyPacketValueSpec(
+                            func_import_path="netrun.storage._retrieval.retrieve_value",
+                            args=(),
+                            kwargs={
+                                "backend_config_json": backend_config_json,
+                                "key": file_key,
+                                "serialization": fs_config.serialization,
+                                "compression": fs_config.compression,
+                                "serialization_kwargs_json": ser_kwargs_json,
+                            },
+                        )
+                        response, _ = self._netsim.do_action(
+                            netrun_sim.NetAction.create_packet(epoch_id)
+                        )
+                        real_id = str(response.packet_id)
+                        self._packet_store.register(real_id, lazy_spec)
+                        self._netsim.do_action(
+                            netrun_sim.NetAction.load_packet_into_output_port(real_id, port_name)
+                        )
+
+                # Send the output salvo
+                self._netsim.do_action(
+                    netrun_sim.NetAction.send_output_salvo(epoch_id, salvo_name)
+                )
+                epoch = self._netsim.get_epoch(epoch_id)
+                if epoch.orphaned_packets:
+                    for orphaned_info in epoch.orphaned_packets:
+                        self._route_orphaned_packet(
+                            packet_id=orphaned_info.packet_id,
+                            from_node=node_name,
+                            from_port=orphaned_info.from_port,
+                            epoch_id=epoch_id,
+                        )
+
+        # Snapshot and finish
+        epoch_snapshot = self._netsim.get_epoch(epoch_id)
+        self._epochs[epoch_id].out_salvos = list(epoch_snapshot.out_salvos)
+        self._epochs[epoch_id].orphaned_packets = list(epoch_snapshot.orphaned_packets)
+        self._epochs[epoch_id].was_cache_hit = True  # Reuse flag for storage hits too
+
+        self._netsim.do_action(netrun_sim.NetAction.finish_epoch(epoch_id))
+        self._epochs[epoch_id].ended_at = get_timestamp_utc()
+        self._epochs[epoch_id].state = netrun_sim.EpochState.Finished
+
+        # Return a synthetic result
+        from netrun.net._net._context import DeferredActionQueue
+        return NodeExecutionResult(
+            cancelled=False,
+            deferred_actions=DeferredActionQueue(),
+            print_buffer=[],
+            created_packets=[],
+            consumed_packets=[],
+            exception=None,
+        )
+
+    def _store_epoch_in_file_storage(
+        self,
+        epoch_id: str,
+        node_name: str,
+        input_hash: int,
+        packets: dict[str, list[str]],
+        packet_values: dict[str, Any],
+        execution_result: NodeExecutionResult,
+    ) -> None:
+        """Serialize and store epoch outputs to file storage backend.
+
+        Per-file mode: each output port value is serialized individually and stored
+        as a separate file. A manifest is stored in the metadata cache for replay.
+
+        Args:
+            epoch_id: The epoch ID.
+            node_name: The node name.
+            input_hash: Hash of the input salvo.
+            packets: Input packets by port name.
+            packet_values: Packet ID to value mapping.
+            execution_result: The successful execution result.
+        """
+        fs_config = self._file_storage_store.get_config(node_name)
+        project_root = Path(self._config_resolved.project_root) if self._config_resolved.project_root else None
+        backend = self._file_storage_store.resolve_backend(node_name, project_root=project_root)
+
+        ser_method = SerializationMethod(fs_config.serialization)
+        comp_method = CompressionMethod(fs_config.compression) if fs_config.compression else None
+        pickling_method = fs_config.pickling_method
+        pickling_args = fs_config.pickling_args if isinstance(fs_config.pickling_args, dict) else {}
+        ser_ext = get_file_extension(ser_method)
+        comp_ext = get_compression_extension(comp_method) if comp_method else ""
+
+        # Extract outputs from deferred actions (same logic as cache store)
+        output_port_values: dict[str, list[Any]] = {}
+        output_salvo_names: list[str] = []
+        consumed_input_ports: set[str] = set()
+        deferred_packet_values: dict[str, Any] = {}
+
+        for action_type, args in execution_result.deferred_actions.actions:
+            if action_type == "create_packet":
+                deferred_id, value = args
+                deferred_packet_values[deferred_id] = value
+            elif action_type == "consume_packet":
+                packet_id, = args
+                for port_name, pkt_ids in packets.items():
+                    if packet_id in pkt_ids:
+                        consumed_input_ports.add(port_name)
+                        break
+            elif action_type == "load_output_port":
+                port_name, packet_id = args
+                if port_name not in output_port_values:
+                    output_port_values[port_name] = []
+                value = deferred_packet_values.get(packet_id, packet_values.get(packet_id))
+                output_port_values[port_name].append(value)
+            elif action_type == "send_output_salvo":
+                salvo_name, = args
+                output_salvo_names.append(salvo_name)
+
+        # Determine file key naming
+        num_salvos = len(output_salvo_names)
+
+        # Store inputs if configured (same for both modes)
+        input_file_keys = None
+        if fs_config.store_inputs:
+            input_file_keys = {}
+            for port_name, pkt_ids in packets.items():
+                for pkt_id in pkt_ids:
+                    value = packet_values.get(pkt_id)
+                    if value is not None:
+                        input_key = f"{node_name}/_inputs/{port_name}{ser_ext}{comp_ext}"
+                        data = serialize(value, ser_method, pickling_method=pickling_method, **pickling_args)
+                        if comp_method:
+                            data = compress(data, comp_method)
+                        backend.write(input_key, data)
+                        input_file_keys[port_name] = input_key
+
+        if fs_config.bundle:
+            # --- Bundle mode: all outputs go into a single archive ---
+            import io
+            from netrun.storage.config import BundleFormat
+
+            bundle_format = BundleFormat(fs_config.bundle_format) if isinstance(fs_config.bundle_format, str) else fs_config.bundle_format
+            bundle_ext = ".tar.gz" if bundle_format == BundleFormat.tar_gz else ".zip"
+            bundle_key = f"{node_name}/outputs{bundle_ext}"
+
+            # Collect serialized entries: (entry_name, data_bytes)
+            entries: list[tuple[str, bytes]] = []
+            # Also track file_keys for the manifest (for replay entry mapping)
+            file_keys: dict[str, list[dict[str, str]]] = {}
+
+            for salvo_name in output_salvo_names:
+                port_keys: dict[str, str] = {}
+                for port_name, values in output_port_values.items():
+                    for val_idx, value in enumerate(values):
+                        # Entry name inside the archive (no compression ext — archive is compressed)
+                        if num_salvos == 1 and len(values) == 1:
+                            entry_name = f"{salvo_name}/{port_name}{ser_ext}"
+                        elif num_salvos == 1:
+                            entry_name = f"{salvo_name}/{port_name}_{val_idx}{ser_ext}"
+                        else:
+                            entry_name = f"{salvo_name}/{port_name}_{val_idx}{ser_ext}"
+
+                        data = serialize(value, ser_method, pickling_method=pickling_method, **pickling_args)
+                        entries.append((entry_name, data))
+                        port_keys[port_name] = entry_name
+
+                file_keys[salvo_name] = [port_keys]
+
+            # Build archive
+            archive_buf = io.BytesIO()
+            if bundle_format == BundleFormat.tar_gz:
+                import tarfile
+                with tarfile.open(fileobj=archive_buf, mode="w:gz") as tf:
+                    for entry_name, data in entries:
+                        info = tarfile.TarInfo(name=entry_name)
+                        info.size = len(data)
+                        tf.addfile(info, io.BytesIO(data))
+            else:  # zip
+                import zipfile
+                with zipfile.ZipFile(archive_buf, "w", zipfile.ZIP_DEFLATED) as zf:
+                    for entry_name, data in entries:
+                        zf.writestr(entry_name, data)
+
+            backend.write(bundle_key, archive_buf.getvalue())
+
+            manifest = FileStorageManifest(
+                input_salvo_hash=input_hash,
+                version=fs_config.version,
+                node_name=node_name,
+                output_salvo_names=output_salvo_names,
+                consumed_input_ports=consumed_input_ports,
+                bundle_key=bundle_key,
+                file_keys=file_keys,
+                input_file_keys=input_file_keys,
+            )
+        else:
+            # --- Per-file mode: each output is a separate file ---
+            file_keys: dict[str, list[dict[str, str]]] = {}
+
+            for salvo_idx, salvo_name in enumerate(output_salvo_names):
+                salvo_file_keys: list[dict[str, str]] = []
+                port_keys: dict[str, str] = {}
+
+                for port_name, values in output_port_values.items():
+                    for val_idx, value in enumerate(values):
+                        # Build file key based on naming convention
+                        custom_name = None
+                        if fs_config.output_names and salvo_name in fs_config.output_names:
+                            custom_name = fs_config.output_names[salvo_name].get(port_name)
+                        base_name = custom_name or port_name
+
+                        if num_salvos == 1 and len(values) == 1:
+                            file_key = f"{node_name}/{base_name}{ser_ext}{comp_ext}"
+                        elif num_salvos == 1:
+                            file_key = f"{node_name}/{base_name}_{val_idx}{ser_ext}{comp_ext}"
+                        elif len(values) == 1:
+                            file_key = f"{node_name}/{salvo_name}/{base_name}{ser_ext}{comp_ext}"
+                        else:
+                            file_key = f"{node_name}/{salvo_name}/{base_name}_{val_idx}{ser_ext}{comp_ext}"
+
+                        # Serialize
+                        data = serialize(value, ser_method, pickling_method=pickling_method, **pickling_args)
+
+                        # Compress
+                        if comp_method:
+                            data = compress(data, comp_method)
+
+                        # Write
+                        backend.write(file_key, data)
+                        port_keys[port_name] = file_key
+
+                salvo_file_keys.append(port_keys)
+                file_keys[salvo_name] = salvo_file_keys
+
+            manifest = FileStorageManifest(
+                input_salvo_hash=input_hash,
+                version=fs_config.version,
+                node_name=node_name,
+                output_salvo_names=output_salvo_names,
+                consumed_input_ports=consumed_input_ports,
+                file_keys=file_keys,
+                input_file_keys=input_file_keys,
+            )
+
+        self._file_storage_store.store_manifest(node_name, manifest)
+
     async def _handle_epoch_failure(
         self,
         epoch_id: str,
@@ -1965,6 +2373,7 @@ class Net:
         pool_id: str | None = None,
         worker_id: int | None = None,
         input_hash: int | None = None,
+        fs_input_hash: int | None = None,
     ) -> NodeExecutionResult | None:
         """Handle a failed epoch execution with retry logic.
 
@@ -1981,6 +2390,7 @@ class Net:
             pool_id: The pool that ran the epoch.
             worker_id: The worker that ran the epoch.
             input_hash: Hash of input salvo for caching (None if caching disabled).
+            fs_input_hash: Hash of input salvo for file storage (None if file storage disabled).
 
         Returns:
             NodeExecutionResult if retry succeeds, None if max retries exceeded.
@@ -2024,6 +2434,7 @@ class Net:
                 retry_timestamps=new_retry_timestamps,
                 retry_exceptions=new_retry_exceptions,
                 input_hash=input_hash,
+                fs_input_hash=fs_input_hash,
             )
         else:
             # Max retries exceeded - cancel the epoch
@@ -2472,7 +2883,7 @@ class Net:
         if not self._cache_store.is_cache_enabled(node_name):
             return None
         # Build a fake packets dict and packet store for hashing
-        from netrun.storage import PacketStore
+        from netrun.packets import PacketStore
         temp_store = PacketStore()
         packets: dict[str, list[str]] = {}
         for port_name in sorted(input_values.keys()):
@@ -2510,7 +2921,7 @@ class Net:
         self, node_name: str, input_values: dict[str, list[Any]],
     ) -> None:
         """Clear the cached output for a specific input salvo."""
-        from netrun.storage import PacketStore
+        from netrun.packets import PacketStore
         temp_store = PacketStore()
         packets: dict[str, list[str]] = {}
         for port_name in sorted(input_values.keys()):

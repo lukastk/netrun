@@ -16,7 +16,7 @@ from beartype.door import is_bearable
 
 from ...net.config import NodeExecutionConfig, NodeVariable, PortConfig, PortTypeConfig
 from ..._iutils import get_timestamp_utc
-from ...storage import LazyPacketValueSpec
+from ...packets import LazyPacketValueSpec
 
 # %% pts/netrun/06_net/01_net/00_context.pct.py 5
 class NetProtocolKeys(Enum):

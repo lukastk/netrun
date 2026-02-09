@@ -1,0 +1,200 @@
+# ---
+# jupyter:
+#   kernelspec:
+#     display_name: .venv
+#     language: python
+#     name: python3
+# ---
+
+# %%
+#|default_exp storage._retrieval
+
+# %%
+#|hide
+from nblite import nbl_export; nbl_export();
+
+# %% [markdown]
+# # Retrieval Functions
+#
+# Top-level functions used as `LazyPacketValueSpec.func_import_path` for deferred
+# loading from file storage backends.  Every argument must be JSON-serializable
+# (strings, numbers, dicts) because `LazyPacketValueSpec` stores them for later
+# evaluation on workers.
+
+# %%
+#|export
+import json
+from typing import Any
+
+# %%
+#|export
+def _create_backend_from_json(backend_config_json: str):
+    """Reconstruct a StorageBackend from a JSON-serialized config.
+
+    Credentials are intentionally stripped before serialization, so the
+    backend relies on SDK defaults (boto3 credential chain, ssh-agent,
+    ADC, rclone.conf) at evaluation time.
+    """
+    config = json.loads(backend_config_json)
+    backend_type = config.pop("type")
+
+    from netrun.storage._backends import (
+        LocalBackend,
+        S3Backend,
+        GCSBackend,
+        SSHBackend,
+        RcloneBackend,
+    )
+
+    match backend_type:
+        case "local":
+            return LocalBackend(base_path=config["base_path"])
+        case "s3":
+            return S3Backend(
+                bucket=config["bucket"],
+                prefix=config.get("prefix", ""),
+                region=config.get("region"),
+                endpoint_url=config.get("endpoint_url"),
+            )
+        case "gcs":
+            return GCSBackend(
+                bucket=config["bucket"],
+                prefix=config.get("prefix", ""),
+            )
+        case "ssh":
+            return SSHBackend(
+                host=config["host"],
+                base_path=config["base_path"],
+                port=config.get("port", 22),
+                username=config.get("username"),
+            )
+        case "rclone":
+            return RcloneBackend(remote=config["remote"])
+        case _:
+            raise ValueError(f"Unknown backend type: {backend_type}")
+
+# %%
+#|export
+def retrieve_value(
+    backend_config_json: str,
+    key: str,
+    serialization: str,
+    compression: str | None = None,
+    serialization_kwargs_json: str = "{}",
+) -> Any:
+    """Read a value from a storage backend.
+
+    Pipeline: ``backend.read(key) -> decompress -> deserialize -> value``
+
+    All arguments are JSON-serializable strings so this function can be
+    referenced as a ``LazyPacketValueSpec.func_import_path``.
+
+    Args:
+        backend_config_json: JSON-serialized backend config (credentials stripped).
+        key: The storage key.
+        serialization: Serialization method name (e.g., "pickle", "json").
+        compression: Compression method name, or None.
+        serialization_kwargs_json: JSON-serialized kwargs for deserialization.
+
+    Returns:
+        The deserialized value.
+    """
+    backend = _create_backend_from_json(backend_config_json)
+    data = backend.read(key)
+
+    # Decompress if needed
+    if compression is not None:
+        from netrun.storage._compression import CompressionMethod, decompress
+        data = decompress(data, CompressionMethod(compression))
+
+    # Deserialize
+    from netrun.storage._serialization import SerializationMethod, deserialize
+    ser_kwargs = json.loads(serialization_kwargs_json)
+    return deserialize(data, SerializationMethod(serialization), **ser_kwargs)
+
+# %%
+#|export
+def retrieve_from_bundle(
+    backend_config_json: str,
+    bundle_key: str,
+    entry_name: str,
+    serialization: str,
+    compression: str | None = None,
+    bundle_format: str = "tar.gz",
+    serialization_kwargs_json: str = "{}",
+) -> Any:
+    """Read a value from an archive stored in a storage backend.
+
+    Downloads the archive, extracts the specified entry, decompresses,
+    and deserializes.
+
+    Args:
+        backend_config_json: JSON-serialized backend config (credentials stripped).
+        bundle_key: The storage key of the archive.
+        entry_name: The entry name within the archive.
+        serialization: Serialization method name.
+        compression: Compression method name for the entry data, or None.
+        bundle_format: Archive format ("tar.gz" or "zip").
+        serialization_kwargs_json: JSON-serialized kwargs for deserialization.
+
+    Returns:
+        The deserialized value.
+    """
+    import io
+
+    backend = _create_backend_from_json(backend_config_json)
+    archive_bytes = backend.read(bundle_key)
+
+    # Extract entry from archive
+    if bundle_format == "tar.gz":
+        import tarfile
+        with tarfile.open(fileobj=io.BytesIO(archive_bytes), mode="r:gz") as tf:
+            member = tf.getmember(entry_name)
+            data = tf.extractfile(member).read()
+    elif bundle_format == "zip":
+        import zipfile
+        with zipfile.ZipFile(io.BytesIO(archive_bytes)) as zf:
+            data = zf.read(entry_name)
+    else:
+        raise ValueError(f"Unknown bundle format: {bundle_format}")
+
+    # Decompress entry if needed
+    if compression is not None:
+        from netrun.storage._compression import CompressionMethod, decompress
+        data = decompress(data, CompressionMethod(compression))
+
+    # Deserialize
+    from netrun.storage._serialization import SerializationMethod, deserialize
+    ser_kwargs = json.loads(serialization_kwargs_json)
+    return deserialize(data, SerializationMethod(serialization), **ser_kwargs)
+
+# %% [markdown]
+# ## Quick validation
+
+# %%
+import tempfile
+
+# Test retrieve_value with local backend
+with tempfile.TemporaryDirectory() as tmpdir:
+    from netrun.storage._backends import LocalBackend
+    from netrun.storage._serialization import SerializationMethod, serialize
+
+    backend = LocalBackend(tmpdir)
+    value = {"test": [1, 2, 3]}
+    data = serialize(value, SerializationMethod.json)
+    backend.write("test/data.json", data)
+
+    # Retrieve via the function
+    config_json = json.dumps({"type": "local", "base_path": tmpdir})
+    result = retrieve_value(config_json, "test/data.json", "json")
+    assert result == value
+
+    # Test with compression
+    from netrun.storage._compression import CompressionMethod, compress
+    compressed = compress(data, CompressionMethod.gzip)
+    backend.write("test/data.json.gz", compressed)
+
+    result = retrieve_value(config_json, "test/data.json.gz", "json", compression="gzip")
+    assert result == value
+
+print("retrieve_value: OK")
