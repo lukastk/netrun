@@ -10,47 +10,20 @@ from typing import Any
 def _create_backend_from_json(backend_config_json: str):
     """Reconstruct a StorageBackend from a JSON-serialized config.
 
+    Deserializes through the config models and delegates to the shared
+    ``create_backend_instance()`` factory, ensuring a single construction path.
+
     Credentials are intentionally stripped before serialization, so the
     backend relies on SDK defaults (boto3 credential chain, ssh-agent,
     ADC, rclone.conf) at evaluation time.
     """
-    config = json.loads(backend_config_json)
-    backend_type = config.pop("type")
+    from pydantic import TypeAdapter
+    from ..storage.config import BackendConfig
+    from ..storage._file_storage import create_backend_instance
 
-    from ..storage._backends import (
-        LocalBackend,
-        S3Backend,
-        GCSBackend,
-        SSHBackend,
-        RcloneBackend,
-    )
-
-    match backend_type:
-        case "local":
-            return LocalBackend(base_path=config["base_path"])
-        case "s3":
-            return S3Backend(
-                bucket=config["bucket"],
-                prefix=config.get("prefix", ""),
-                region=config.get("region"),
-                endpoint_url=config.get("endpoint_url"),
-            )
-        case "gcs":
-            return GCSBackend(
-                bucket=config["bucket"],
-                prefix=config.get("prefix", ""),
-            )
-        case "ssh":
-            return SSHBackend(
-                host=config["host"],
-                base_path=config["base_path"],
-                port=config.get("port", 22),
-                username=config.get("username"),
-            )
-        case "rclone":
-            return RcloneBackend(remote=config["remote"], config_path=config.get("config_path"))
-        case _:
-            raise ValueError(f"Unknown backend type: {backend_type}")
+    adapter = TypeAdapter(BackendConfig)
+    config = adapter.validate_json(backend_config_json)
+    return create_backend_instance(config)
 
 # %% pts/netrun/02_storage/04__retrieval.pct.py 5
 def retrieve_value(

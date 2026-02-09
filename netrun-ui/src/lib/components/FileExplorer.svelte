@@ -284,7 +284,6 @@
 		border-radius: 4px;
 		padding: 6px 10px;
 		font-size: 11px;
-		font-family: 'SF Mono', Monaco, Consolas, monospace;
 		color: var(--text-secondary, #a0a0a0);
 		cursor: pointer;
 		overflow: hidden;

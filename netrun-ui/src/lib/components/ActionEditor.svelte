@@ -214,7 +214,6 @@
 	}
 
 	.field textarea {
-		font-family: 'SF Mono', Monaco, monospace;
 		resize: vertical;
 		min-height: 80px;
 	}
@@ -252,7 +251,6 @@
 	}
 
 	.preview-command {
-		font-family: 'SF Mono', Monaco, monospace;
 		font-size: 12px;
 		color: var(--text-primary, #fff);
 		word-break: break-all;

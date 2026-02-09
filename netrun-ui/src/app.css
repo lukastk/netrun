@@ -34,7 +34,7 @@
 html, body {
   height: 100%;
   width: 100%;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  font-family: 'SF Mono', Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
   font-size: 14px;
   color: var(--text-primary);
   background: var(--bg-primary);
@@ -47,6 +47,7 @@ button {
   color: var(--text-primary);
   padding: 8px 12px;
   border-radius: 4px;
+  font-family: inherit;
   font-size: 13px;
 }
 
@@ -60,6 +61,7 @@ input, select, textarea {
   color: var(--text-primary);
   padding: 6px 10px;
   border-radius: 4px;
+  font-family: inherit;
   font-size: 13px;
 }
 

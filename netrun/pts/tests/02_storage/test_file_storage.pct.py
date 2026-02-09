@@ -240,3 +240,68 @@ def test_compute_input_hash_different_values():
         pickling_args={},
     )
     assert h1 != h2
+
+# %% [markdown]
+# ## Backend caching
+
+# %%
+#|export
+def test_backend_caching_returns_same_instance():
+    """resolve_backend returns the same instance for repeated calls."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config = StorageConfig(file_storage_metadata_path=tmpdir + "/meta")
+        store = NetFileStorageStore(config, {
+            "A": NodeFileStorageConfig(backend=LocalBackendConfig(base_path=tmpdir)),
+        })
+
+        b1 = store.resolve_backend("A")
+        b2 = store.resolve_backend("A")
+        assert b1 is b2
+
+        store.close()
+
+
+def test_backend_close_clears_cache():
+    """close() clears the backend cache."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        config = StorageConfig(file_storage_metadata_path=tmpdir + "/meta")
+        store = NetFileStorageStore(config, {
+            "A": NodeFileStorageConfig(backend=LocalBackendConfig(base_path=tmpdir)),
+        })
+
+        _ = store.resolve_backend("A")
+        assert len(store._resolved_backends) == 1
+
+        store.close()
+        assert len(store._resolved_backends) == 0
+
+# %% [markdown]
+# ## Metadata path warning
+
+# %%
+#|export
+import warnings
+
+
+def test_no_metadata_path_warns():
+    """When file_storage_metadata_path is None and there are nodes, a warning is issued."""
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        store = NetFileStorageStore(
+            StorageConfig(),  # No file_storage_metadata_path
+            {"A": NodeFileStorageConfig(backend=LocalBackendConfig(base_path="/tmp"))},
+        )
+
+        assert len(w) == 1
+        assert "file_storage_metadata_path" in str(w[0].message)
+        store.close()
+
+
+def test_no_metadata_path_no_warn_when_no_nodes():
+    """No warning when there are no file-storage nodes."""
+    with warnings.catch_warnings(record=True) as w:
+        warnings.simplefilter("always")
+        store = NetFileStorageStore(StorageConfig(), {})
+
+        assert len(w) == 0
+        store.close()
