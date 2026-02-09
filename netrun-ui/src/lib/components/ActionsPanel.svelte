@@ -364,7 +364,6 @@
 		margin: 0;
 		padding: 8px;
 		font-size: 11px;
-		font-family: 'SF Mono', Monaco, monospace;
 		color: var(--text-secondary, #a0a0a0);
 		white-space: pre-wrap;
 		word-break: break-all;

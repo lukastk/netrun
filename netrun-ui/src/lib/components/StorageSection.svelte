@@ -398,7 +398,6 @@
 	}
 
 	.field input.mono {
-		font-family: 'SF Mono', Monaco, Consolas, monospace;
 		font-size: 11px;
 	}
 

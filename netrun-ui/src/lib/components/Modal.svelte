@@ -217,7 +217,6 @@
 	}
 
 	.modal-input.path {
-		font-family: 'SF Mono', Monaco, 'Cascadia Code', monospace;
 		font-size: 13px;
 	}
 
