@@ -561,6 +561,10 @@ def _from_function(func: Callable|str, include_port_types: bool = True, manual_o
         },
     }
 
+    # Auto-populate description from function docstring
+    if func.__doc__:
+        base_config_dict["description"] = inspect.cleandoc(func.__doc__)
+
     # Apply _node_config override if present
     if hasattr(func, "_node_config"):
         override = _parse_node_config_override(func._node_config)
