@@ -409,4 +409,5 @@
 		border: 1px solid var(--border-color, #404040);
 		border-radius: 4px;
 	}
+
 </style>
