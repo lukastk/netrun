@@ -505,11 +505,15 @@ class NodeConfig(EnvVarResolvableModel):
 
             # Merge execution configs if both exist
             if self.execution_config is not None:
-                # Override factory exec_config with explicit fields
-                exec_config_dict = factory_exec_config.model_dump()
-                for field_name, value in self.execution_config.model_dump(exclude_defaults=True).items():
-                    exec_config_dict[field_name] = value
-                merged_exec_config = NodeExecutionConfig.model_validate(exec_config_dict)
+                # Override factory exec_config with explicit fields.
+                # We use model_fields_set to find which fields were explicitly set,
+                # then copy their Python objects directly to avoid model_dump()
+                # dropping discriminator defaults (e.g. type="local" on BackendConfig).
+                update = {
+                    field_name: getattr(self.execution_config, field_name)
+                    for field_name in self.execution_config.model_fields_set
+                }
+                merged_exec_config = factory_exec_config.model_copy(update=update)
             else:
                 merged_exec_config = factory_exec_config
 

@@ -1455,8 +1455,13 @@ class Net:
                 if port_name not in packets:
                     packets[port_name] = []
                 packets[port_name].append(str(packet_id))
-                # Peek at the value from PacketStore (don't consume yet - that happens in _commit_epoch_result)
+                # Peek at the value from PacketStore (don't consume yet - that happens in _commit_epoch_result).
+                # Evaluate LazyPacketValueSpec so downstream nodes receive actual values.
+                from ...packets import LazyPacketValueSpec
                 value = self._packet_store._get(packet_id)
+                if isinstance(value, LazyPacketValueSpec):
+                    value = self._packet_store._evaluate_lazy_value(value, packet_id)
+                    self._packet_store._store[packet_id] = value
                 packet_values[str(packet_id)] = value
 
         return packets, packet_values

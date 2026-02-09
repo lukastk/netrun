@@ -1,0 +1,13 @@
+[project]
+name = "netrun-file-storage-example"
+version = "0.1.0"
+description = "A data pipeline demonstrating file storage features"
+requires-python = ">=3.11"
+dependencies = [
+    "netrun",
+    "netrun-ui",
+]
+
+[tool.uv.sources]
+netrun = { path = "../../netrun", editable = true }
+netrun-ui = { path = "../../netrun-ui", editable = true }
