@@ -344,17 +344,24 @@ class RcloneBackend:
 
     Args:
         remote: Rclone remote string (e.g., ``"myremote:bucket/path"``).
+        config_path: Path to rclone config file, or None for rclone default.
     """
 
-    def __init__(self, remote: str):
+    def __init__(self, remote: str, config_path: str | None = None):
         self._remote = remote.rstrip("/")
+        self._config_path = config_path
+
+    def _base_cmd(self) -> list[str]:
+        if self._config_path is not None:
+            return ["rclone", "--config", self._config_path]
+        return ["rclone"]
 
     def _target(self, key: str) -> str:
         return f"{self._remote}/{key}"
 
     def write(self, key: str, data: bytes) -> None:
         result = subprocess.run(
-            ["rclone", "rcat", self._target(key)],
+            [*self._base_cmd(), "rcat", self._target(key)],
             input=data,
             capture_output=True,
         )
@@ -363,7 +370,7 @@ class RcloneBackend:
 
     def read(self, key: str) -> bytes:
         result = subprocess.run(
-            ["rclone", "cat", self._target(key)],
+            [*self._base_cmd(), "cat", self._target(key)],
             capture_output=True,
         )
         if result.returncode != 0:
@@ -372,7 +379,7 @@ class RcloneBackend:
 
     def exists(self, key: str) -> bool:
         result = subprocess.run(
-            ["rclone", "lsf", self._target(key)],
+            [*self._base_cmd(), "lsf", self._target(key)],
             capture_output=True,
         )
         return result.returncode == 0 and len(result.stdout.strip()) > 0
@@ -381,7 +388,7 @@ class RcloneBackend:
         if not self.exists(key):
             raise FileNotFoundError(f"Key not found via rclone: {self._target(key)}")
         result = subprocess.run(
-            ["rclone", "delete", self._target(key)],
+            [*self._base_cmd(), "delete", self._target(key)],
             capture_output=True,
         )
         if result.returncode != 0:
