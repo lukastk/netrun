@@ -584,6 +584,7 @@
 									const value = (e.target as HTMLTextAreaElement).value || undefined;
 									updateNodeDataLive($selectedNode.id, { description: value });
 								}}
+								onkeydown={(e) => e.stopPropagation()}
 								onblur={() => pushHistory()}
 								placeholder="Node description..."
 								rows="3"
