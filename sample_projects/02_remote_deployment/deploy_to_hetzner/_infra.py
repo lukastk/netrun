@@ -159,6 +159,7 @@ def run_deployment(
     uv_extra_args: str,
     pre_commands: list[str] | None,
     setup_firewall: bool,
+    extra_files: dict[str, str] | None = None,
     watchdog_script: str | None = None,
     watchdog_service: str | None = None,
     watchdog_timer: str | None = None,
@@ -228,6 +229,15 @@ def run_deployment(
                 if git_branch:
                     branch_kwargs["branch"] = git_branch
                 git.repo(src=git_url, dest=remote_dir, **branch_kwargs)
+
+            # 3b. Extra files (e.g. .env, credentials)
+            if extra_files:
+                for local_path, rel_dest in extra_files.items():
+                    dest = f"{remote_dir}/{rel_dest}"
+                    parent = str(Path(dest).parent)
+                    if parent != remote_dir:
+                        server.shell(commands=[f"mkdir -p {shlex.quote(parent)}"])
+                    files.put(src=local_path, dest=dest)
 
             # 4. Install uv + set up Python environment
             server.shell(commands=[

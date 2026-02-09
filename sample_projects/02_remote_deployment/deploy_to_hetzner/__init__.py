@@ -144,6 +144,7 @@ def deploy_to_server(
     ssh_tunnel: bool = True,
     exclude: list[str] | None = None,
     exclude_dir: list[str] | None = None,
+    extra_files: dict[str, str] | None = None,
     enable_watchdog: bool = False,
     hcloud_api_token: str | None = None,
     auto_delete_idle_minutes: int = 10,
@@ -174,6 +175,19 @@ def deploy_to_server(
     if local_folder:
         local_folder = str(Path(local_folder).resolve())
 
+    # Validate extra_files: expand/resolve local paths, check they exist
+    resolved_extra: dict[str, str] | None = None
+    if extra_files:
+        resolved_extra = {}
+        for local_path, rel_dest in extra_files.items():
+            p = Path(local_path).expanduser().resolve()
+            if not p.is_file():
+                raise FileNotFoundError(
+                    f"extra_files: local file not found: {p} "
+                    f"(from {local_path!r})"
+                )
+            resolved_extra[str(p)] = rel_dest
+
     bind_host = "127.0.0.1" if ssh_tunnel else "0.0.0.0"
     serve_script = build_serve_script(
         net_source, bind_host, pool_server_port, worker_name, log_file,
@@ -198,6 +212,7 @@ def deploy_to_server(
         serve_script=serve_script, start_script=start_script,
         python_version=python_version, uv_extra_args=uv_extra_args,
         pre_commands=pre_commands, setup_firewall=setup_firewall,
+        extra_files=resolved_extra,
         watchdog_script=wd_script, watchdog_service=wd_service,
         watchdog_timer=wd_timer, hcloud_api_token=hcloud_api_token,
     )
