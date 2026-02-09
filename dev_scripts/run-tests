@@ -3,11 +3,7 @@ set -euo pipefail
 
 REPO_FOLDER="$(cd "$(dirname "$(dirname "$0")")" && pwd)"
 
-cd "$REPO_FOLDER/netrun-sim"
-cargo build -p netrun-sim
-
-cd "$REPO_FOLDER/netrun-sim/python"
-uvx maturin develop --release
+build-repo
 
 cd "$REPO_FOLDER/netrun-sim"
 cargo test --workspace --all-features
