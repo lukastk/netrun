@@ -908,8 +908,15 @@ async function runBackendValidation(): Promise<BackendValidationResult> {
 		const nodeErrorMap = new Map<string, string[]>();
 		const configErrors: string[] = [];
 
+		const addToNodeErrors = (nodeId: string, msg: string) => {
+			const existing = nodeErrorMap.get(nodeId) || [];
+			existing.push(msg);
+			nodeErrorMap.set(nodeId, existing);
+		};
+
 		for (const err of response.errors) {
 			const loc = err.loc;
+
 			// Match patterns: ["graph", "nodes", <idx>, ...] or ["nodes", <idx>, ...]
 			let nodeIdx: number | null = null;
 			if (loc.length >= 3 && loc[0] === 'graph' && loc[1] === 'nodes') {
@@ -922,13 +929,34 @@ async function runBackendValidation(): Promise<BackendValidationResult> {
 				const nodeId = tab.nodes[nodeIdx].id;
 				const fieldPath = loc.slice(loc.indexOf(String(nodeIdx)) + 1).join('.');
 				const msg = fieldPath ? `${fieldPath}: ${err.msg}` : err.msg;
-				const existing = nodeErrorMap.get(nodeId) || [];
-				existing.push(msg);
-				nodeErrorMap.set(nodeId, existing);
-			} else {
-				const locStr = loc.join('.');
-				configErrors.push(locStr ? `${locStr}: ${err.msg}` : err.msg);
+				addToNodeErrors(nodeId, msg);
+				continue;
 			}
+
+			// Match patterns: ["graph", "edges", <idx>] or ["edges", <idx>]
+			// Attribute edge errors to the relevant source/target node
+			let edgeIdx: number | null = null;
+			if (loc.length >= 3 && loc[0] === 'graph' && loc[1] === 'edges') {
+				edgeIdx = parseInt(String(loc[2]), 10);
+			} else if (loc.length >= 2 && loc[0] === 'edges') {
+				edgeIdx = parseInt(String(loc[1]), 10);
+			}
+
+			if (edgeIdx !== null && !isNaN(edgeIdx) && edgeIdx >= 0 && edgeIdx < tab.edges.length) {
+				const edge = tab.edges[edgeIdx];
+				const errMsg = err.msg;
+				// Attribute to target node if error mentions "target", otherwise to source node
+				if (errMsg.toLowerCase().includes('target')) {
+					addToNodeErrors(edge.target, errMsg);
+				} else {
+					addToNodeErrors(edge.source, errMsg);
+				}
+				continue;
+			}
+
+			// Fallback: config-level error
+			const locStr = loc.join('.');
+			configErrors.push(locStr ? `${locStr}: ${err.msg}` : err.msg);
 		}
 
 		// Merge all backend node errors into node state
@@ -978,11 +1006,11 @@ function triggerBackendValidation() {
 }
 
 // Auto-validation: Subscribe to tab changes and validate nodes
-let lastValidatedNodesJSON = '';
+let lastValidatedJSON = '';
 activeTab.subscribe((tab) => {
 	if (!tab) return;
 
-	// Create a simple hash of nodes to detect changes
+	// Create a simple hash of nodes and edges to detect changes
 	// Only include fields that affect validation
 	const nodesForValidation = tab.nodes.map(n => ({
 		id: n.id,
@@ -992,11 +1020,17 @@ activeTab.subscribe((tab) => {
 		inPorts: n.data.inPorts.map(p => p.name),
 		outPorts: n.data.outPorts.map(p => p.name),
 	}));
-	const nodesJSON = JSON.stringify(nodesForValidation);
+	const edgesForValidation = tab.edges.map(e => ({
+		source: e.source,
+		target: e.target,
+		sourceHandle: e.sourceHandle,
+		targetHandle: e.targetHandle,
+	}));
+	const validationJSON = JSON.stringify({ nodes: nodesForValidation, edges: edgesForValidation });
 
 	// Only revalidate if relevant data has changed
-	if (nodesJSON === lastValidatedNodesJSON) return;
-	lastValidatedNodesJSON = nodesJSON;
+	if (validationJSON === lastValidatedJSON) return;
+	lastValidatedJSON = validationJSON;
 
 	// Compute validation but check if it would change anything
 	const { nodes: validatedNodes, errorCount } = computeValidatedNodes(tab.nodes);
