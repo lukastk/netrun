@@ -50,10 +50,6 @@ cd "$REPO/netrun"
 echo "  uv sync"
 uv sync --all-extras
 
-echo "  Installing local netrun-sim"
-uv pip install --reinstall --no-deps "$NETRUN_SIM_WHEEL"
-echo ""
-
 # ── 3. netrun-ui ─────────────────────────────────────────────────────
 bold "── netrun-ui ──"
 
@@ -65,11 +61,6 @@ uv sync
 echo "  Building frontend"
 uv run python build_frontend.py
 
-echo "  Installing local netrun-sim + netrun"
-uv pip install --reinstall --no-deps "$NETRUN_SIM_WHEEL"
-uv pip install --reinstall --no-deps "$REPO/netrun"
-echo ""
-
 # ── 4. Sample projects ──────────────────────────────────────────────
 for dir in "$REPO"/sample_projects/*/; do
     [ -f "$dir/pyproject.toml" ] || continue
@@ -79,10 +70,6 @@ for dir in "$REPO"/sample_projects/*/; do
     cd "$dir"
     echo "  uv sync"
     uv sync
-
-    echo "  Installing local packages"
-    uv pip install --reinstall "$NETRUN_SIM_WHEEL" "$REPO/netrun" "$REPO/netrun-ui"
-    echo ""
 done
 
 echo "── .venv at repo root ──"
@@ -93,7 +80,8 @@ if [ ! -d ".venv" ]; then
     uv venv .venv
 fi
 uv pip install jupyterlab
-uv pip install --reinstall "$NETRUN_SIM_WHEEL" "$REPO/netrun" "$REPO/netrun-ui"
+uv pip install -e "$REPO/netrun"
+uv pip install -e "$REPO/netrun-ui"
 
 # netrun-ui/examples
 bold "── netrun-ui/examples ──"
