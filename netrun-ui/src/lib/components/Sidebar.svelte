@@ -576,6 +576,21 @@
 							/>
 						</div>
 						<div class="field">
+							<label for="node-description">Description{#if descNode('description')}<span class="has-tooltip-icon" use:tooltip={descNode('description')}>?</span>{/if}</label>
+							<textarea
+								id="node-description"
+								value={$selectedNode.data.description ?? ''}
+								oninput={(e) => {
+									const value = (e.target as HTMLTextAreaElement).value || undefined;
+									updateNodeDataLive($selectedNode.id, { description: value });
+								}}
+								onkeydown={(e) => e.stopPropagation()}
+								onblur={() => pushHistory()}
+								placeholder="Node description..."
+								rows="3"
+							></textarea>
+						</div>
+						<div class="field">
 							<label>Type</label>
 							<div class="readonly-value">
 								{#if $selectedNode.data.nodeType === 'factory'}

@@ -315,6 +315,7 @@ class NodeConfig(EnvVarResolvableModel):
     type: Literal["node"] = Field(default="node", description="Discriminator to distinguish from SubgraphConfig.")
 
     name: str = Field(default="", description="Node name, unique within the graph.")
+    description: str | None = Field(default=None, description="Human-readable description of this node's purpose.")
     in_ports: dict[str, PortConfig] = Field(default_factory=dict, description="Input port configurations.")
     out_ports: dict[str, PortConfig] = Field(default_factory=dict, description="Output port configurations.")
     in_salvo_conditions: dict[str, SalvoConditionConfig] | None = Field(default=None, description="Input salvo conditions. None generates defaults on resolve().")
@@ -418,6 +419,7 @@ class NodeConfig(EnvVarResolvableModel):
         # Return complete config (don't set factory/factory_args here - that's for the field-based path)
         return cls.model_construct(
             name=node_name,
+            description=base_config.description,
             in_ports=base_config.in_ports,
             out_ports=base_config.out_ports,
             in_salvo_conditions=base_config.in_salvo_conditions,
@@ -503,6 +505,9 @@ class NodeConfig(EnvVarResolvableModel):
             # Use explicit name if provided, else factory name
             name = self.name if self.name else base_config.name
 
+            # Use explicit description if provided, else factory description
+            description = self.description if self.description is not None else base_config.description
+
             # Merge execution configs if both exist
             if self.execution_config is not None:
                 # Override factory exec_config with explicit fields.
@@ -523,6 +528,7 @@ class NodeConfig(EnvVarResolvableModel):
             # Keep factory and factory_args in resolved config for lazy resolution on workers
             result = NodeConfig.model_construct(
                 name=name,
+                description=description,
                 in_ports=merged_in_ports,
                 out_ports=merged_out_ports,
                 in_salvo_conditions=merged_in_salvo,
@@ -685,6 +691,8 @@ class SubgraphConfig(EnvVarResolvableModel):
 
     name: str
     """Name of this subgraph in the parent graph."""
+
+    description: str | None = Field(default=None, description="Human-readable description of this subgraph.")
 
     # Either inline OR file reference (not both)
     nodes: list["NodeConfig | SubgraphConfig"] | None = None
