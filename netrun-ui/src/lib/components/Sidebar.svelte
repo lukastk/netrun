@@ -26,6 +26,9 @@
 	import PoolsSection from './PoolsSection.svelte';
 	import NodeExecutionSection from './NodeExecutionSection.svelte';
 	import NetSettingsSection from './NetSettingsSection.svelte';
+	import StorageSection from './StorageSection.svelte';
+	import NodeStorageSection from './NodeStorageSection.svelte';
+	import OutputQueuesSection from './OutputQueuesSection.svelte';
 	import type { SalvoConditionConfig } from '$lib/types/salvoConditions';
 	import { parseSalvoConditionsFromJSON, salvoConditionsToJSON } from '$lib/utils/salvoSerializer';
 	import { api, type FactoryParameter } from '$lib/api';
@@ -130,11 +133,14 @@
 		subgraph: true,
 		salvoConditions: false,
 		execution: false,
+		nodeStorage: false,
 		nodeVariables: false,
 		// Net-level sections
 		graphSettings: true,
 		pools: true,
 		netSettings: false,
+		storage: false,
+		outputQueues: false,
 		factories: true,
 		uiSettings: false,
 		netNodeVariables: false,
@@ -911,6 +917,37 @@
 				</section>
 			{/if}
 
+			<!-- Node Storage Section (for regular and factory nodes, not subgraph) -->
+			{#if $selectedNode.data.nodeType !== 'subgraph'}
+				<section class="section">
+					<button
+						class="section-header"
+						onclick={() => toggleSection('nodeStorage')}
+					>
+						<span class="section-title">Storage</span>
+						<span class="section-toggle">{sectionsOpen.nodeStorage ? '−' : '+'}</span>
+					</button>
+					{#if sectionsOpen.nodeStorage}
+						{@const nodeExecConfig = getNodeExecutionConfig($selectedNode)}
+						<div class="section-content">
+							<NodeStorageSection
+								storage={nodeExecConfig?.storage as Record<string, unknown> | null | undefined}
+								onUpdate={(storageVal: Record<string, unknown> | null) => {
+									const config = { ...(nodeExecConfig ?? {}) };
+									if (storageVal === null) {
+										delete config.storage;
+									} else {
+										config.storage = storageVal;
+									}
+									updateNodeExecutionConfig($selectedNode.id, config);
+									pushHistory();
+								}}
+							/>
+						</div>
+					{/if}
+				</section>
+			{/if}
+
 			<!-- Node Variables Section (for regular and factory nodes, not subgraph) -->
 			{#if $selectedNode.data.nodeType !== 'subgraph'}
 				<section class="section">
@@ -1078,6 +1115,44 @@
 							onUpdate={(updates) => {
 								updateExtraDataLive(updates);
 							}}
+						/>
+					</div>
+				{/if}
+			</section>
+
+			<!-- Storage Section -->
+			<section class="section">
+				<button
+					class="section-header"
+					onclick={() => toggleSection('storage')}
+				>
+					<span class="section-title">Storage</span>
+					<span class="section-toggle">{sectionsOpen.storage ? '−' : '+'}</span>
+				</button>
+				{#if sectionsOpen.storage}
+					<div class="section-content">
+						<StorageSection
+							storage={($extraData as Record<string, unknown>)?.storage as Record<string, unknown> | null | undefined}
+							onUpdate={(storage: Record<string, unknown> | null) => updateExtraDataLive({ storage })}
+						/>
+					</div>
+				{/if}
+			</section>
+
+			<!-- Output Queues Section -->
+			<section class="section">
+				<button
+					class="section-header"
+					onclick={() => toggleSection('outputQueues')}
+				>
+					<span class="section-title">Output Queues</span>
+					<span class="section-toggle">{sectionsOpen.outputQueues ? '−' : '+'}</span>
+				</button>
+				{#if sectionsOpen.outputQueues}
+					<div class="section-content">
+						<OutputQueuesSection
+							outputQueues={($extraData as Record<string, unknown>)?.output_queues as Record<string, Record<string, unknown>> | null | undefined}
+							onUpdate={(queues) => updateExtraDataLive({ output_queues: queues })}
 						/>
 					</div>
 				{/if}

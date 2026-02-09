@@ -27,12 +27,12 @@ registerField('NetConfig', 'node_vars', 'custom', 'NodeVariablesSection.svelte')
 registerField('NetConfig', 'dead_letter_queue', 'auto');
 registerField('NetConfig', 'dead_letter_path', 'auto');
 registerField('NetConfig', 'dead_letter_callback', 'custom', 'NetSettingsSection.svelte');
-registerField('NetConfig', 'output_queues', 'ignore');
+registerField('NetConfig', 'output_queues', 'custom', 'OutputQueuesSection.svelte');
 registerField('NetConfig', 'error_on_undeclared_output', 'auto');
 registerField('NetConfig', 'type_checking_enabled', 'auto');
 registerField('NetConfig', 'propagate_exceptions', 'auto');
 registerField('NetConfig', 'print_exceptions', 'auto');
-registerField('NetConfig', 'cache', 'ignore');
+registerField('NetConfig', 'storage', 'custom', 'StorageSection.svelte');
 
 // ==========================================================================
 // NodeConfig
@@ -75,4 +75,109 @@ registerField('NodeExecutionConfig', 'node_vars', 'custom', 'NodeVariablesSectio
 registerField('NodeExecutionConfig', 'type_checking_enabled', 'auto');
 registerField('NodeExecutionConfig', 'propagate_exceptions', 'auto');
 registerField('NodeExecutionConfig', 'print_exceptions', 'auto');
-registerField('NodeExecutionConfig', 'cache', 'ignore');
+registerField('NodeExecutionConfig', 'storage', 'custom', 'NodeStorageSection.svelte');
+registerField('NodeExecutionConfig', 'run_on_startup', 'auto');
+
+// ==========================================================================
+// StorageConfig
+// ==========================================================================
+
+registerField('StorageConfig', 'backends', 'custom', 'StorageSection.svelte');
+registerField('StorageConfig', 'cache', 'custom', 'StorageSection.svelte');
+registerField('StorageConfig', 'file_storage_metadata_path', 'auto');
+
+// ==========================================================================
+// CacheConfig
+// ==========================================================================
+
+registerField('CacheConfig', 'enabled', 'auto');
+registerField('CacheConfig', 'version', 'auto');
+registerField('CacheConfig', 'storage_path', 'auto');
+registerField('CacheConfig', 'include_nodes', 'custom', 'StorageSection.svelte');
+registerField('CacheConfig', 'exclude_nodes', 'custom', 'StorageSection.svelte');
+registerField('CacheConfig', 'include_all_nodes', 'auto');
+registerField('CacheConfig', 'cache_what', 'auto');
+registerField('CacheConfig', 'hash_method', 'auto');
+registerField('CacheConfig', 'pickling_method', 'auto');
+registerField('CacheConfig', 'pickling_args', 'custom', 'StorageSection.svelte');
+registerField('CacheConfig', 'evaluate_lazy_value_for_cache', 'auto');
+registerField('CacheConfig', 'sample_size', 'auto');
+
+// ==========================================================================
+// NodeStorageConfig
+// ==========================================================================
+
+registerField('NodeStorageConfig', 'cache', 'custom', 'NodeStorageSection.svelte');
+registerField('NodeStorageConfig', 'file_storage', 'custom', 'NodeStorageSection.svelte');
+
+// ==========================================================================
+// NodeCacheConfig
+// ==========================================================================
+
+registerField('NodeCacheConfig', 'enabled', 'auto');
+registerField('NodeCacheConfig', 'version', 'auto');
+registerField('NodeCacheConfig', 'cache_what', 'auto');
+registerField('NodeCacheConfig', 'hash_method', 'auto');
+registerField('NodeCacheConfig', 'pickling_method', 'auto');
+registerField('NodeCacheConfig', 'pickling_args', 'custom', 'NodeStorageSection.svelte');
+registerField('NodeCacheConfig', 'evaluate_lazy_value_for_cache', 'auto');
+registerField('NodeCacheConfig', 'sample_size', 'auto');
+
+// ==========================================================================
+// NodeFileStorageConfig
+// ==========================================================================
+
+registerField('NodeFileStorageConfig', 'enabled', 'auto');
+registerField('NodeFileStorageConfig', 'backend', 'custom', 'NodeStorageSection.svelte');
+registerField('NodeFileStorageConfig', 'serialization', 'auto');
+registerField('NodeFileStorageConfig', 'pickling_method', 'auto');
+registerField('NodeFileStorageConfig', 'pickling_args', 'custom', 'NodeStorageSection.svelte');
+registerField('NodeFileStorageConfig', 'compression', 'auto');
+registerField('NodeFileStorageConfig', 'on_hash_change', 'auto');
+registerField('NodeFileStorageConfig', 'store_inputs', 'auto');
+registerField('NodeFileStorageConfig', 'hash_method', 'auto');
+registerField('NodeFileStorageConfig', 'hash_pickling_method', 'auto');
+registerField('NodeFileStorageConfig', 'hash_pickling_args', 'custom', 'NodeStorageSection.svelte');
+registerField('NodeFileStorageConfig', 'evaluate_lazy_value_for_hash', 'auto');
+registerField('NodeFileStorageConfig', 'bundle', 'auto');
+registerField('NodeFileStorageConfig', 'bundle_format', 'auto');
+registerField('NodeFileStorageConfig', 'output_names', 'custom', 'NodeStorageSection.svelte');
+registerField('NodeFileStorageConfig', 'version', 'auto');
+
+// ==========================================================================
+// Backend configs
+// ==========================================================================
+
+registerField('LocalBackendConfig', 'type', 'ignore');
+registerField('LocalBackendConfig', 'base_path', 'auto');
+
+registerField('S3BackendConfig', 'type', 'ignore');
+registerField('S3BackendConfig', 'bucket', 'auto');
+registerField('S3BackendConfig', 'prefix', 'auto');
+registerField('S3BackendConfig', 'region', 'auto');
+registerField('S3BackendConfig', 'endpoint_url', 'auto');
+registerField('S3BackendConfig', 'access_key', 'auto');
+registerField('S3BackendConfig', 'secret_key', 'auto');
+
+registerField('GCSBackendConfig', 'type', 'ignore');
+registerField('GCSBackendConfig', 'bucket', 'auto');
+registerField('GCSBackendConfig', 'prefix', 'auto');
+registerField('GCSBackendConfig', 'credentials_path', 'auto');
+
+registerField('SSHBackendConfig', 'type', 'ignore');
+registerField('SSHBackendConfig', 'host', 'auto');
+registerField('SSHBackendConfig', 'base_path', 'auto');
+registerField('SSHBackendConfig', 'port', 'auto');
+registerField('SSHBackendConfig', 'username', 'auto');
+registerField('SSHBackendConfig', 'key_path', 'auto');
+registerField('SSHBackendConfig', 'password', 'auto');
+
+registerField('RcloneBackendConfig', 'type', 'ignore');
+registerField('RcloneBackendConfig', 'remote', 'auto');
+registerField('RcloneBackendConfig', 'config_path', 'auto');
+
+// ==========================================================================
+// OutputQueueConfig
+// ==========================================================================
+
+registerField('OutputQueueConfig', 'ports', 'custom', 'OutputQueuesSection.svelte');
