@@ -3,7 +3,14 @@
 	import { getAutoFields } from '$lib/stores/schemaStore';
 	import { pushHistory } from '$lib/stores/flowStore';
 	import { tooltip } from '$lib/utils/tooltip';
-	import { isEnvVar, makeEnvVar, getEnvVarName, getEnvVarDefault } from '$lib/utils/envvar';
+	import {
+		isEnvVar, isNodeVarRef, isVarRef,
+		makeEnvVar, makeNodeVarRef,
+		getVarRefName, getVarRefDefault, getVarRefSource,
+		getEnvVarName, getEnvVarDefault,
+	} from '$lib/utils/envvar';
+
+	type FieldMode = 'literal' | 'env' | 'var';
 
 	interface Props {
 		modelName: string;
@@ -11,47 +18,80 @@
 		values: Record<string, unknown>;
 		onUpdate: (updates: Record<string, unknown>) => void;
 		onUpdateLive?: (updates: Record<string, unknown>) => void;
+		availableVarNames?: string[];
 	}
 
-	let { modelName, schema, values, onUpdate, onUpdateLive }: Props = $props();
+	let { modelName, schema, values, onUpdate, onUpdateLive, availableVarNames = [] }: Props = $props();
 
 	let autoFields = $derived(getAutoFields(modelName, schema));
 
-	// Track which fields are in env var mode
-	let envVarMode: Record<string, boolean> = $state({});
+	// Track which fields are in which mode: literal, env, or var
+	let fieldMode: Record<string, FieldMode> = $state({});
 
-	// Initialize env var mode from current values
+	// Initialize field modes from current values
 	$effect(() => {
-		const newMode: Record<string, boolean> = {};
+		const newMode: Record<string, FieldMode> = {};
 		for (const field of autoFields) {
-			if (field.env_var_supported && isEnvVar(values[field.name])) {
-				newMode[field.name] = true;
+			if (field.env_var_supported) {
+				const val = values[field.name];
+				if (isEnvVar(val)) {
+					newMode[field.name] = 'env';
+				} else if (isNodeVarRef(val)) {
+					newMode[field.name] = 'var';
+				}
 			}
 		}
-		envVarMode = newMode;
+		fieldMode = newMode;
 	});
 
-	function isFieldEnvVar(field: FieldSchema): boolean {
-		return field.env_var_supported && (envVarMode[field.name] || false);
+	function getMode(field: FieldSchema): FieldMode {
+		return fieldMode[field.name] || 'literal';
 	}
 
-	function toggleEnvVarMode(field: FieldSchema) {
-		const wasEnvVar = envVarMode[field.name] || false;
-		envVarMode[field.name] = !wasEnvVar;
-
-		if (wasEnvVar) {
-			// Switching from env var → value: use the env var's default if available
-			const currentVal = values[field.name];
-			const defaultFromEnv = isEnvVar(currentVal) ? getEnvVarDefault(currentVal) : null;
-			const newVal = defaultFromEnv ?? field.default;
-			setValue(field.name, newVal);
+	function cycleFieldMode(field: FieldSchema) {
+		const current = getMode(field);
+		let next: FieldMode;
+		if (current === 'literal') {
+			next = 'env';
+		} else if (current === 'env') {
+			next = 'var';
 		} else {
-			// Switching from value → env var: preserve current value as default
-			const currentVal = values[field.name];
-			const literalVal = currentVal !== undefined ? currentVal : field.default;
-			onUpdate({ ...values, [field.name]: makeEnvVar('', literalVal) });
+			next = 'literal';
+		}
+		fieldMode[field.name] = next;
+
+		const currentVal = values[field.name];
+
+		if (next === 'literal') {
+			// Switching to literal: use the ref's default if available
+			const defaultFromRef = isVarRef(currentVal) ? getVarRefDefault(currentVal) : null;
+			const newVal = defaultFromRef ?? field.default;
+			setValue(field.name, newVal);
+		} else if (next === 'env') {
+			// Switching to $env
+			const literalVal = isVarRef(currentVal) ? getVarRefDefault(currentVal) : currentVal;
+			const defaultVal = literalVal !== undefined ? literalVal : field.default;
+			onUpdate({ ...values, [field.name]: makeEnvVar('', defaultVal) });
+		} else {
+			// Switching to $var
+			const literalVal = isVarRef(currentVal) ? getVarRefDefault(currentVal) : currentVal;
+			const defaultVal = literalVal !== undefined ? literalVal : field.default;
+			const firstVar = availableVarNames.length > 0 ? availableVarNames[0] : '';
+			onUpdate({ ...values, [field.name]: makeNodeVarRef(firstVar, defaultVal) });
 		}
 		pushHistory();
+	}
+
+	function getModeLabel(mode: FieldMode): string {
+		if (mode === 'env') return '$e';
+		if (mode === 'var') return '$v';
+		return '$';
+	}
+
+	function getModeTitle(mode: FieldMode): string {
+		if (mode === 'env') return 'Environment variable mode — click to switch to node variable';
+		if (mode === 'var') return 'Node variable mode — click to switch to literal value';
+		return 'Literal value — click to switch to environment variable';
 	}
 
 	function formatLabel(name: string): string {
@@ -100,6 +140,21 @@
 		fn({ ...values, [field.name]: makeEnvVar(currentName, defaultVal) });
 	}
 
+	// Node var ref input handlers
+	function updateNodeVarName(field: FieldSchema, varName: string) {
+		const currentVal = values[field.name];
+		const currentDefault = isNodeVarRef(currentVal) ? getVarRefDefault(currentVal) : null;
+		const fn = onUpdateLive ?? onUpdate;
+		fn({ ...values, [field.name]: makeNodeVarRef(varName, currentDefault) });
+	}
+
+	function updateNodeVarDefault(field: FieldSchema, defaultVal: unknown) {
+		const currentVal = values[field.name];
+		const currentName = isNodeVarRef(currentVal) ? getVarRefName(currentVal) : '';
+		const fn = onUpdateLive ?? onUpdate;
+		fn({ ...values, [field.name]: makeNodeVarRef(currentName, defaultVal) });
+	}
+
 	// Tri-state cycling for bool_or_null
 	function cycleTriState(val: unknown): boolean | null {
 		if (val === null || val === undefined) return true;
@@ -120,19 +175,19 @@
 
 {#each autoFields as field (field.name)}
 	{@const val = getValue(field)}
-	{@const inEnvMode = isFieldEnvVar(field)}
+	{@const mode = getMode(field)}
 
-	{#if inEnvMode}
+	{#if mode === 'env'}
 		<!-- Env var mode: show env var name + optional default -->
 		<div class="field">
 			<label>
 				{formatLabel(field.name)}
 				{#if field.description}<span class="has-tooltip-icon" use:tooltip={field.description}>?</span>{/if}
 				<button
-					class="envvar-toggle active"
-					title="Switch to literal value"
-					onclick={() => toggleEnvVarMode(field)}
-				>$</button>
+					class="varref-toggle active-env"
+					title={getModeTitle(mode)}
+					onclick={() => cycleFieldMode(field)}
+				>{getModeLabel(mode)}</button>
 			</label>
 			<div class="envvar-input-group">
 				<div class="envvar-name-row">
@@ -221,6 +276,121 @@
 			</div>
 		</div>
 
+	{:else if mode === 'var'}
+		<!-- Node var mode: show var name dropdown + optional default -->
+		<div class="field">
+			<label>
+				{formatLabel(field.name)}
+				{#if field.description}<span class="has-tooltip-icon" use:tooltip={field.description}>?</span>{/if}
+				<button
+					class="varref-toggle active-var"
+					title={getModeTitle(mode)}
+					onclick={() => cycleFieldMode(field)}
+				>{getModeLabel(mode)}</button>
+			</label>
+			<div class="envvar-input-group">
+				<div class="nodevar-name-row">
+					<span class="nodevar-prefix">var:</span>
+					{#if availableVarNames.length > 0}
+						<select
+							class="nodevar-name-select"
+							value={getVarRefName(val)}
+							onchange={(e) => {
+								updateNodeVarName(field, (e.target as HTMLSelectElement).value);
+								pushHistory();
+							}}
+						>
+							{#if !getVarRefName(val)}<option value="">-- select --</option>{/if}
+							{#each availableVarNames as name}
+								<option value={name}>{name}</option>
+							{/each}
+						</select>
+					{:else}
+						<input
+							type="text"
+							class="nodevar-name-input"
+							value={getVarRefName(val)}
+							placeholder="var_name"
+							oninput={(e) => updateNodeVarName(field, (e.target as HTMLInputElement).value)}
+							onblur={() => pushHistory()}
+						/>
+					{/if}
+				</div>
+				<div class="envvar-default-row">
+					<span class="envvar-default-label">default:</span>
+					{#if field.category === 'bool' || field.category === 'bool_or_null'}
+						<select
+							class="envvar-default-input"
+							value={String(getVarRefDefault(val) ?? '')}
+							onchange={(e) => {
+								const v = (e.target as HTMLSelectElement).value;
+								const parsed = v === 'true' ? true : v === 'false' ? false : null;
+								updateNodeVarDefault(field, parsed);
+								pushHistory();
+							}}
+						>
+							{#if field.category === 'bool_or_null'}<option value="">inherit</option>{/if}
+							<option value="true">true</option>
+							<option value="false">false</option>
+						</select>
+					{:else if field.category === 'int' || field.category === 'int_or_null'}
+						<input
+							type="number"
+							step="1"
+							class="envvar-default-input"
+							value={getVarRefDefault(val) ?? ''}
+							placeholder={field.category === 'int_or_null' ? 'none' : '0'}
+							oninput={(e) => {
+								const v = (e.target as HTMLInputElement).value;
+								updateNodeVarDefault(field, v ? parseInt(v) : null);
+							}}
+							onblur={() => pushHistory()}
+						/>
+					{:else if field.category === 'float' || field.category === 'float_or_null'}
+						<input
+							type="number"
+							step="any"
+							class="envvar-default-input"
+							value={getVarRefDefault(val) ?? ''}
+							placeholder={field.category === 'float_or_null' ? 'none' : '0'}
+							oninput={(e) => {
+								const v = (e.target as HTMLInputElement).value;
+								updateNodeVarDefault(field, v ? parseFloat(v) : null);
+							}}
+							onblur={() => pushHistory()}
+						/>
+					{:else if field.category === 'enum' || field.category === 'enum_or_null'}
+						<select
+							class="envvar-default-input"
+							value={String(getVarRefDefault(val) ?? '__default__')}
+							onchange={(e) => {
+								const v = (e.target as HTMLSelectElement).value;
+								updateNodeVarDefault(field, v === '__default__' ? null : v);
+								pushHistory();
+							}}
+						>
+							{#if field.category === 'enum_or_null'}<option value="__default__">None</option>{/if}
+							{#each field.enum_values ?? [] as opt}
+								<option value={opt}>{opt}</option>
+							{/each}
+						</select>
+					{:else}
+						<input
+							type="text"
+							class="envvar-default-input"
+							value={getVarRefDefault(val) ?? ''}
+							placeholder="(none)"
+							oninput={(e) => {
+								const v = (e.target as HTMLInputElement).value;
+								updateNodeVarDefault(field, v || null);
+							}}
+							onblur={() => pushHistory()}
+						/>
+					{/if}
+				</div>
+			</div>
+		</div>
+
 	{:else if field.category === 'bool'}
 		<label class="checkbox-field">
 			<input
@@ -235,10 +405,10 @@
 			{#if field.description}<span class="has-tooltip-icon" use:tooltip={field.description}>?</span>{/if}
 			{#if field.env_var_supported}
 				<button
-					class="envvar-toggle"
-					title="Switch to environment variable"
-					onclick={(e) => { e.stopPropagation(); toggleEnvVarMode(field); }}
-				>$</button>
+					class="varref-toggle"
+					title={getModeTitle(mode)}
+					onclick={(e) => { e.stopPropagation(); cycleFieldMode(field); }}
+				>{getModeLabel(mode)}</button>
 			{/if}
 		</label>
 
@@ -256,10 +426,10 @@
 					{#if field.description}<span class="has-tooltip-icon" use:tooltip={field.description}>?</span>{/if}
 					{#if field.env_var_supported}
 						<button
-							class="envvar-toggle"
-							title="Switch to environment variable"
-							onclick={(e) => { e.stopPropagation(); toggleEnvVarMode(field); }}
-						>$</button>
+							class="varref-toggle"
+							title={getModeTitle(mode)}
+							onclick={(e) => { e.stopPropagation(); cycleFieldMode(field); }}
+						>{getModeLabel(mode)}</button>
 					{/if}
 				</span>
 				<span class="tri-state-value tri-state-{triStateClass(val)}">{triStateLabel(val)}</span>
@@ -273,10 +443,10 @@
 				{#if field.description}<span class="has-tooltip-icon" use:tooltip={field.description}>?</span>{/if}
 				{#if field.env_var_supported}
 					<button
-						class="envvar-toggle"
-						title="Switch to environment variable"
-						onclick={() => toggleEnvVarMode(field)}
-					>$</button>
+						class="varref-toggle"
+						title={getModeTitle(mode)}
+						onclick={() => cycleFieldMode(field)}
+					>{getModeLabel(mode)}</button>
 				{/if}
 			</label>
 			<input
@@ -298,10 +468,10 @@
 				{#if field.description}<span class="has-tooltip-icon" use:tooltip={field.description}>?</span>{/if}
 				{#if field.env_var_supported}
 					<button
-						class="envvar-toggle"
-						title="Switch to environment variable"
-						onclick={() => toggleEnvVarMode(field)}
-					>$</button>
+						class="varref-toggle"
+						title={getModeTitle(mode)}
+						onclick={() => cycleFieldMode(field)}
+					>{getModeLabel(mode)}</button>
 				{/if}
 			</label>
 			<input
@@ -324,10 +494,10 @@
 				{#if field.description}<span class="has-tooltip-icon" use:tooltip={field.description}>?</span>{/if}
 				{#if field.env_var_supported}
 					<button
-						class="envvar-toggle"
-						title="Switch to environment variable"
-						onclick={() => toggleEnvVarMode(field)}
-					>$</button>
+						class="varref-toggle"
+						title={getModeTitle(mode)}
+						onclick={() => cycleFieldMode(field)}
+					>{getModeLabel(mode)}</button>
 				{/if}
 			</label>
 			<input
@@ -350,10 +520,10 @@
 				{#if field.description}<span class="has-tooltip-icon" use:tooltip={field.description}>?</span>{/if}
 				{#if field.env_var_supported}
 					<button
-						class="envvar-toggle"
-						title="Switch to environment variable"
-						onclick={() => toggleEnvVarMode(field)}
-					>$</button>
+						class="varref-toggle"
+						title={getModeTitle(mode)}
+						onclick={() => cycleFieldMode(field)}
+					>{getModeLabel(mode)}</button>
 				{/if}
 			</label>
 			<select
@@ -376,10 +546,10 @@
 				{#if field.description}<span class="has-tooltip-icon" use:tooltip={field.description}>?</span>{/if}
 				{#if field.env_var_supported}
 					<button
-						class="envvar-toggle"
-						title="Switch to environment variable"
-						onclick={() => toggleEnvVarMode(field)}
-					>$</button>
+						class="varref-toggle"
+						title={getModeTitle(mode)}
+						onclick={() => cycleFieldMode(field)}
+					>{getModeLabel(mode)}</button>
 				{/if}
 			</label>
 			<select
@@ -530,41 +700,52 @@
 		background: rgba(248, 113, 113, 0.1);
 	}
 
-	/* Env var toggle button */
-	.envvar-toggle {
+	/* VarRef toggle button (replaces envvar-toggle) */
+	.varref-toggle {
 		display: inline-flex;
 		align-items: center;
 		justify-content: center;
-		width: 16px;
+		min-width: 18px;
 		height: 16px;
 		margin-left: auto;
-		padding: 0;
+		padding: 0 2px;
 		border: 1px solid var(--border-color, #404040);
 		border-radius: 3px;
 		background: transparent;
 		color: var(--text-secondary, #666);
 		font-family: 'SF Mono', Monaco, Consolas, monospace;
-		font-size: 10px;
+		font-size: 9px;
 		font-weight: 700;
 		cursor: pointer;
 		line-height: 1;
 		flex-shrink: 0;
 	}
 
-	.envvar-toggle:hover {
+	.varref-toggle:hover {
 		border-color: var(--accent-color, #3b82f6);
 		color: var(--accent-color, #3b82f6);
 	}
 
-	.envvar-toggle.active {
+	.varref-toggle.active-env {
 		background: var(--accent-color, #3b82f6);
 		border-color: var(--accent-color, #3b82f6);
 		color: #fff;
 	}
 
-	.envvar-toggle.active:hover {
+	.varref-toggle.active-env:hover {
 		background: var(--accent-hover, #2563eb);
 		border-color: var(--accent-hover, #2563eb);
+	}
+
+	.varref-toggle.active-var {
+		background: #0d9488;
+		border-color: #0d9488;
+		color: #fff;
+	}
+
+	.varref-toggle.active-var:hover {
+		background: #0f766e;
+		border-color: #0f766e;
 	}
 
 	/* Env var input group */
@@ -603,6 +784,54 @@
 	}
 
 	.envvar-name-input:focus {
+		outline: none;
+	}
+
+	/* Node var name row */
+	.nodevar-name-row {
+		display: flex;
+		align-items: center;
+		background: var(--bg-tertiary, #2d2d2d);
+		border: 1px solid rgba(13, 148, 136, 0.4);
+		border-radius: 3px;
+		overflow: hidden;
+	}
+
+	.nodevar-prefix {
+		padding: 6px 4px 6px 8px;
+		color: #0d9488;
+		font-family: 'SF Mono', Monaco, Consolas, monospace;
+		font-size: 12px;
+		font-weight: 700;
+		user-select: none;
+	}
+
+	.nodevar-name-select {
+		flex: 1;
+		padding: 6px 8px 6px 0;
+		background: transparent;
+		border: none;
+		color: var(--text-primary, #fff);
+		font-family: 'SF Mono', Monaco, Consolas, monospace;
+		font-size: 12px;
+		cursor: pointer;
+	}
+
+	.nodevar-name-select:focus {
+		outline: none;
+	}
+
+	.nodevar-name-input {
+		flex: 1;
+		padding: 6px 8px 6px 0;
+		background: transparent;
+		border: none;
+		color: var(--text-primary, #fff);
+		font-family: 'SF Mono', Monaco, Consolas, monospace;
+		font-size: 12px;
+	}
+
+	.nodevar-name-input:focus {
 		outline: none;
 	}
 

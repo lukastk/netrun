@@ -2,6 +2,7 @@
 	import { pushHistory } from '$lib/stores/flowStore';
 	import { configSchema } from '$lib/stores/schemaStore';
 	import AutoConfigFields from './AutoConfigFields.svelte';
+	import { projectVarNames } from '$lib/stores/variablesStore';
 
 	type BackendType = 'local' | 's3' | 'gcs' | 'ssh' | 'rclone';
 
@@ -192,6 +193,7 @@
 				values={getStorage()}
 				onUpdate={(updates) => { onUpdate(updates); pushHistory(); }}
 				onUpdateLive={(updates) => onUpdate(updates)}
+				availableVarNames={$projectVarNames}
 			/>
 		{/if}
 
@@ -212,6 +214,7 @@
 						values={cacheData}
 						onUpdate={(updates) => { updateCache(updates); pushHistory(); }}
 						onUpdateLive={(updates) => updateCache(updates)}
+						availableVarNames={$projectVarNames}
 					/>
 				{/if}
 
@@ -300,6 +303,7 @@
 									values={config}
 									onUpdate={(updates) => { updateBackendConfig(name, updates); pushHistory(); }}
 									onUpdateLive={(updates) => updateBackendConfig(name, updates)}
+									availableVarNames={$projectVarNames}
 								/>
 							{/if}
 						</div>

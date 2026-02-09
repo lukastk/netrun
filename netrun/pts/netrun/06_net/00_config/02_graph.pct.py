@@ -204,6 +204,27 @@ class GraphConfig(EnvVarResolvableModel):
                     )
             seen_names.add(name)
 
+        # Resolve $var refs per-node with merged variables (net-level + node-level override)
+        net_vars = {}
+        if net_config is not None and getattr(net_config, 'node_vars', None):
+            net_vars = {
+                name: var.resolve_value()
+                for name, var in net_config.node_vars.items()
+            }
+
+        for i, node in enumerate(resolved_nodes):
+            node_exec_vars = {}
+            if node.execution_config and node.execution_config.node_vars:
+                node_exec_vars = {
+                    name: var.resolve_value()
+                    for name, var in node.execution_config.node_vars.items()
+                }
+            merged_vars = {**net_vars, **node_exec_vars}
+            if merged_vars:
+                new_node = node.resolve_var_refs(merged_vars)
+                if new_node is not node:
+                    resolved_nodes[i] = new_node
+
         return GraphConfig(nodes=resolved_nodes, edges=final_edges, extra=self.extra)
 
     def validate(self) -> list[ConfigValidationError]:

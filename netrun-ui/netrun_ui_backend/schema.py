@@ -34,7 +34,7 @@ class FieldSchema(BaseModel):
     description: str | None = None
     enum_values: list[str] | None = None
     required: bool = False
-    env_var_supported: bool = False
+    env_var_supported: bool = False  # True when field supports VarRef ($env or $var)
 
 
 class ModelSchema(BaseModel):
@@ -87,27 +87,27 @@ def _has_callable_or_module(annotation: Any) -> bool:
 
 
 def _strip_envvar(annotation: Any) -> tuple[Any, bool]:
-    """Remove EnvVar from a union type annotation.
+    """Remove VarRef (EnvVar) from a union type annotation.
 
-    Returns (stripped_annotation, had_envvar).
-    For ``int | EnvVar`` → ``(int, True)``.
-    For ``bool | EnvVar | None`` → ``(bool | None, True)``.
-    For non-union types or unions without EnvVar → ``(annotation, False)``.
+    Returns (stripped_annotation, had_varref).
+    For ``int | VarRef`` → ``(int, True)``.
+    For ``bool | VarRef | None`` → ``(bool | None, True)``.
+    For non-union types or unions without VarRef → ``(annotation, False)``.
     """
-    from netrun.net.config import EnvVar
+    from netrun._iutils.env_var import VarRef
 
     origin = get_origin(annotation)
     if origin is not types.UnionType and origin is not typing.Union:
         return annotation, False
 
     args = get_args(annotation)
-    has_envvar = any(a is EnvVar for a in args)
-    if not has_envvar:
+    has_varref = any(a is VarRef for a in args)
+    if not has_varref:
         return annotation, False
 
-    remaining = [a for a in args if a is not EnvVar]
+    remaining = [a for a in args if a is not VarRef]
     if len(remaining) == 0:
-        # Degenerate: union was only EnvVar
+        # Degenerate: union was only VarRef
         return annotation, True
     if len(remaining) == 1:
         return remaining[0], True

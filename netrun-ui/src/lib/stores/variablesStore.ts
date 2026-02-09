@@ -101,6 +101,23 @@ export const allNodesVars = derived(
 	}
 );
 
+// Derived: available variable names for the selected node (net + node merged)
+export const availableVarNames = derived(
+	[projectNodeVars, nodeNodeVars],
+	([$projectVars, $nodeVars]): string[] => {
+		const names = new Set<string>();
+		for (const name of Object.keys($projectVars)) names.add(name);
+		for (const name of Object.keys($nodeVars)) names.add(name);
+		return Array.from(names).sort();
+	}
+);
+
+// Derived: net-level variable names only (for net-level config fields)
+export const projectVarNames = derived(
+	projectNodeVars,
+	($projectVars): string[] => Object.keys($projectVars).sort()
+);
+
 /**
  * Update net-level node variables
  */
