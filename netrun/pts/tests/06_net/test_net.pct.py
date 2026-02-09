@@ -5221,3 +5221,503 @@ def test_node_failure_context_print():
     # Timestamps are monotonically non-decreasing
     timestamps = [ts for ts, _ in ctx._print_buffer]
     assert timestamps == sorted(timestamps)
+
+# %% [markdown]
+# ## execute_node Tests
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_execute_node_inside_net_basic():
+    """Test execute_node inside net with a simple node that has inputs."""
+    def simple_node(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                value = ctx.consume_packet(pid)
+                out_id = ctx.create_packet(value * 2)
+                ctx.load_output_port("out", out_id)
+        ctx.send_output_salvo("send")
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Doubler",
+                in_ports={"in": PortConfig()},
+                out_ports={"out": PortConfig()},
+                in_salvo_conditions={
+                    "default": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"in": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                out_salvo_conditions={
+                    "send": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"out": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="out",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="Doubler",
+                    pools=["main"],
+                    exec_node_func=simple_node,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        result = await net.execute_node("Doubler", inputs={"in": [21]})
+        assert result is not None
+        assert result.exception is None
+        assert len(net._epochs) == 1
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_execute_node_inside_net_source_node():
+    """Test execute_node for a source node with no inputs (True salvo condition)."""
+    def source_node(ctx, packets):
+        out_id = ctx.create_packet("hello")
+        ctx.load_output_port("out", out_id)
+        ctx.send_output_salvo("send")
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Source",
+                out_ports={"out": PortConfig()},
+                in_salvo_conditions={
+                    "trigger": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={},
+                        term=SalvoConditionTermTrueConfig(),
+                    ),
+                },
+                out_salvo_conditions={
+                    "send": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"out": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="out",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="Source",
+                    pools=["main"],
+                    exec_node_func=source_node,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        result = await net.execute_node("Source")
+        assert result is not None
+        assert result.exception is None
+        assert len(net._epochs) == 1
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_execute_node_salvo_condition_not_satisfied():
+    """Test execute_node raises ValueError when no salvo condition is satisfied."""
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="NeedsInput",
+                in_ports={"in": PortConfig()},
+                in_salvo_conditions={
+                    "default": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"in": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="NeedsInput",
+                    pools=["main"],
+                    exec_node_func=lambda ctx, packets: None,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        with pytest.raises(ValueError, match="No input salvo condition satisfied"):
+            await net.execute_node("NeedsInput", inputs={})
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_execute_node_outside_net():
+    """Test execute_node with outside_net=True returns dict of output values."""
+    def transform_node(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                value = ctx.consume_packet(pid)
+                out_id = ctx.create_packet(value + 10)
+                ctx.load_output_port("out", out_id)
+        ctx.send_output_salvo("send")
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Transform",
+                in_ports={"in": PortConfig()},
+                out_ports={"out": PortConfig()},
+                in_salvo_conditions={
+                    "default": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"in": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                out_salvo_conditions={
+                    "send": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"out": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="out",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="Transform",
+                    pools=["main"],
+                    exec_node_func=transform_node,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    net = Net(config)
+    result = await net.execute_node("Transform", inputs={"in": [5, 15]}, outside_net=True)
+    assert isinstance(result, dict)
+    assert "out" in result
+    assert result["out"] == [15, 25]
+    # No epochs should be created in netsim
+    assert len(net._epochs) == 0
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_execute_node_outside_net_async_func():
+    """Test execute_node outside net with an async exec function."""
+    async def async_node(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                value = ctx.consume_packet(pid)
+                out_id = ctx.create_packet(value * 3)
+                ctx.load_output_port("out", out_id)
+        ctx.send_output_salvo("send")
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="AsyncNode",
+                in_ports={"in": PortConfig()},
+                out_ports={"out": PortConfig()},
+                in_salvo_conditions={
+                    "default": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"in": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                out_salvo_conditions={
+                    "send": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"out": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="out",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="AsyncNode",
+                    pools=["main"],
+                    exec_node_func=async_node,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    net = Net(config)
+    result = await net.execute_node("AsyncNode", inputs={"in": [7]}, outside_net=True)
+    assert isinstance(result, dict)
+    assert result["out"] == [21]
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_execute_node_calls_start_node_func():
+    """Test that execute_node calls start_node_func if not yet called."""
+    lifecycle = []
+
+    def my_start(net):
+        lifecycle.append("started")
+
+    def my_exec(ctx, packets):
+        for pkt_ids in packets.values():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Worker",
+                in_ports={"in": PortConfig()},
+                execution_config=NodeExecutionConfig(
+                    node_name="Worker",
+                    pools=["main"],
+                    exec_node_func=my_exec,
+                    start_node_func=my_start,
+                    defer_startup=True,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        assert "started" not in lifecycle
+        await net.execute_node("Worker", inputs={"in": [42]})
+        assert "started" in lifecycle
+
+# %% [markdown]
+# ## run_on_startup Tests
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_run_on_startup_basic():
+    """Test that a node with run_on_startup=True is executed during Net.start()."""
+    execution_log = []
+
+    def source_node(ctx, packets):
+        execution_log.append("executed")
+        out_id = ctx.create_packet("startup_value")
+        ctx.load_output_port("out", out_id)
+        ctx.send_output_salvo("send")
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Source",
+                out_ports={"out": PortConfig()},
+                in_salvo_conditions={
+                    "trigger": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={},
+                        term=SalvoConditionTermTrueConfig(),
+                    ),
+                },
+                out_salvo_conditions={
+                    "send": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"out": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="out",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="Source",
+                    pools=["main"],
+                    exec_node_func=source_node,
+                    run_on_startup=True,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        # Node should have been executed during start()
+        assert execution_log == ["executed"]
+        assert len(net._epochs) == 1
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_run_on_startup_error_no_valid_condition():
+    """Test that run_on_startup raises ValueError if no salvo condition is satisfied with empty inputs."""
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="NeedsInput",
+                in_ports={"in": PortConfig()},
+                in_salvo_conditions={
+                    "default": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"in": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="NeedsInput",
+                    pools=["main"],
+                    exec_node_func=lambda ctx, packets: None,
+                    run_on_startup=True,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    with pytest.raises(ValueError, match="No input salvo condition satisfied"):
+        async with Net(config) as net:
+            pass
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_run_on_startup_outputs_flow_downstream():
+    """Test that run_on_startup node outputs flow to downstream nodes."""
+    execution_log = []
+
+    def source_node(ctx, packets):
+        execution_log.append("source")
+        out_id = ctx.create_packet(42)
+        ctx.load_output_port("out", out_id)
+        ctx.send_output_salvo("send")
+
+    def sink_node(ctx, packets):
+        execution_log.append("sink")
+        for pkt_ids in packets.values():
+            for pid in pkt_ids:
+                value = ctx.consume_packet(pid)
+                execution_log.append(f"consumed:{value}")
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Source",
+                out_ports={"out": PortConfig()},
+                in_salvo_conditions={
+                    "trigger": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={},
+                        term=SalvoConditionTermTrueConfig(),
+                    ),
+                },
+                out_salvo_conditions={
+                    "send": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"out": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="out",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="Source",
+                    pools=["main"],
+                    exec_node_func=source_node,
+                    run_on_startup=True,
+                ),
+            ),
+            NodeConfig(
+                name="Sink",
+                in_ports={"in": PortConfig()},
+                execution_config=NodeExecutionConfig(
+                    node_name="Sink",
+                    pools=["main"],
+                    exec_node_func=sink_node,
+                ),
+            ),
+        ],
+        edges=[
+            EdgeConfig(
+                source_str="Source.out",
+                target_str="Sink.in",
+            ),
+        ],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        # Source was executed during start()
+        assert "source" in execution_log
+
+        # Run until blocked to propagate packets to Sink
+        await net.run_until_blocked()
+
+        # Sink should have been executed
+        assert "sink" in execution_log
+        assert "consumed:42" in execution_log
