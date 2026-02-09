@@ -27,6 +27,7 @@ import {
 	isDirty,
 	loadFromFile,
 	saveToFile,
+	reloadFile,
 	clearFlow,
 	createTab,
 	closeActiveTab,
@@ -282,6 +283,16 @@ const fileCommands: Command[] = [
 				});
 			}
 		},
+	},
+	{
+		id: 'file.reload',
+		label: 'Reload File from Disk',
+		category: 'file',
+		keywords: ['reload', 'refresh', 'revert', 'discard'],
+		action: async () => {
+			await reloadFile();
+		},
+		enabled: () => get(currentFilePath) !== null,
 	},
 	{
 		id: 'file.closeTab',
@@ -626,6 +637,7 @@ const keyboardShortcuts: ShortcutBinding[] = [
 	{ key: 'o', metaKey: true, commandId: 'file.open' },
 	{ key: 's', metaKey: true, commandId: 'file.save' },
 	{ key: 's', metaKey: true, shiftKey: true, commandId: 'file.saveAs' },
+	{ key: 'r', metaKey: true, shiftKey: true, commandId: 'file.reload' },
 	{ key: 'w', metaKey: true, commandId: 'file.closeTab' },
 
 	// Edit
