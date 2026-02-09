@@ -31,6 +31,9 @@ echo ""
 # ── 1. netrun-sim ────────────────────────────────────────────────────
 bold "── netrun-sim ──"
 
+cd "$REPO/netrun-sim"
+cargo build -p netrun-sim --release
+
 cd "$REPO/netrun-sim/python"
 echo "  maturin build --release"
 uvx maturin build --release -o "$WHEELS" 2>&1 | tail -1
