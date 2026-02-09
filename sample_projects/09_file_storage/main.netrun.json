@@ -1,0 +1,42 @@
+{
+  "extra": {
+    "description": "A data pipeline demonstrating file storage features"
+  },
+  "output_queues": {
+    "results": {
+      "ports": [["summarize", "out"]]
+    }
+  },
+  "graph": {
+    "nodes": [
+      {
+        "name": "generate_data",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {"func": "nodes.generate_data"},
+        "extra": {
+          "ui": {"position": {"x": 100, "y": 150}}
+        }
+      },
+      {
+        "name": "transform",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {"func": "nodes.transform"},
+        "extra": {
+          "ui": {"position": {"x": 400, "y": 150}}
+        }
+      },
+      {
+        "name": "summarize",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {"func": "nodes.summarize"},
+        "extra": {
+          "ui": {"position": {"x": 700, "y": 150}}
+        }
+      }
+    ],
+    "edges": [
+      {"source_str": "generate_data.out", "target_str": "transform.data"},
+      {"source_str": "transform.out", "target_str": "summarize.stats"}
+    ]
+  }
+}
