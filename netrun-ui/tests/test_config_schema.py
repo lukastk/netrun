@@ -3,10 +3,27 @@
 These tests ensure that:
 1. The schema endpoint returns correct field classifications
 2. Every model field is accounted for in KNOWN_FIELDS (catches new/removed fields)
+3. Every field has a registration in configFieldRegistrations.ts
 """
+import pathlib
+import re
+
 import pytest
 
 from netrun.net.config import NetConfig, NodeConfig, NodeExecutionConfig
+from netrun.net.config._net_config import OutputQueueConfig
+from netrun.storage.config import (
+    CacheConfig,
+    GCSBackendConfig,
+    LocalBackendConfig,
+    NodeCacheConfig,
+    NodeFileStorageConfig,
+    NodeStorageConfig,
+    RcloneBackendConfig,
+    S3BackendConfig,
+    SSHBackendConfig,
+    StorageConfig,
+)
 from netrun_ui_backend.schema import FieldCategory, get_model_schema
 
 # ------------------------------------------------------------------
@@ -32,7 +49,7 @@ KNOWN_FIELDS: dict[str, set[str]] = {
         "type_checking_enabled",
         "propagate_exceptions",
         "print_exceptions",
-        "cache",
+        "storage",
     },
     "NodeConfig": {
         "type",
@@ -69,14 +86,51 @@ KNOWN_FIELDS: dict[str, set[str]] = {
         "type_checking_enabled",
         "propagate_exceptions",
         "print_exceptions",
-        "cache",
+        "storage",
+        "run_on_startup",
     },
+    # --- Sub-models ---
+    "StorageConfig": {"backends", "cache", "file_storage_metadata_path"},
+    "CacheConfig": {
+        "enabled", "version", "storage_path", "include_nodes", "exclude_nodes",
+        "include_all_nodes", "cache_what", "hash_method", "pickling_method",
+        "pickling_args", "evaluate_lazy_value_for_cache", "sample_size",
+    },
+    "NodeStorageConfig": {"cache", "file_storage"},
+    "NodeCacheConfig": {
+        "enabled", "version", "cache_what", "hash_method", "pickling_method",
+        "pickling_args", "evaluate_lazy_value_for_cache", "sample_size",
+    },
+    "NodeFileStorageConfig": {
+        "enabled", "backend", "serialization", "pickling_method",
+        "pickling_args", "compression", "on_hash_change", "store_inputs",
+        "hash_method", "hash_pickling_method", "hash_pickling_args",
+        "evaluate_lazy_value_for_hash", "bundle", "bundle_format",
+        "output_names", "version",
+    },
+    "LocalBackendConfig": {"type", "base_path"},
+    "S3BackendConfig": {"type", "bucket", "prefix", "region", "endpoint_url", "access_key", "secret_key"},
+    "GCSBackendConfig": {"type", "bucket", "prefix", "credentials_path"},
+    "SSHBackendConfig": {"type", "host", "base_path", "port", "username", "key_path", "password"},
+    "RcloneBackendConfig": {"type", "remote", "config_path"},
+    "OutputQueueConfig": {"ports"},
 }
 
 MODEL_CLASSES = {
     "NetConfig": NetConfig,
     "NodeConfig": NodeConfig,
     "NodeExecutionConfig": NodeExecutionConfig,
+    "StorageConfig": StorageConfig,
+    "CacheConfig": CacheConfig,
+    "NodeStorageConfig": NodeStorageConfig,
+    "NodeCacheConfig": NodeCacheConfig,
+    "NodeFileStorageConfig": NodeFileStorageConfig,
+    "LocalBackendConfig": LocalBackendConfig,
+    "S3BackendConfig": S3BackendConfig,
+    "GCSBackendConfig": GCSBackendConfig,
+    "SSHBackendConfig": SSHBackendConfig,
+    "RcloneBackendConfig": RcloneBackendConfig,
+    "OutputQueueConfig": OutputQueueConfig,
 }
 
 
@@ -225,3 +279,49 @@ class TestEnvVarStripping:
         # max_epochs should have EnvVar support
         field = next(f for f in schema.fields if f.name == "max_epochs")
         assert field.env_var_supported is True
+
+
+# ------------------------------------------------------------------
+# Registration completeness tests
+# ------------------------------------------------------------------
+
+REGISTRATIONS_FILE = pathlib.Path(__file__).parent.parent / "src/lib/configFieldRegistrations.ts"
+
+
+def _parse_registrations() -> dict[str, set[str]]:
+    """Parse registerField() calls from TypeScript file."""
+    text = REGISTRATIONS_FILE.read_text()
+    pattern = r"registerField\(\s*['\"](\w+)['\"]\s*,\s*['\"](\w+)['\"]\s*,"
+    result: dict[str, set[str]] = {}
+    for model, field in re.findall(pattern, text):
+        result.setdefault(model, set()).add(field)
+    return result
+
+
+class TestRegistrationCompleteness:
+    """Ensure every field in every known model has a registration in configFieldRegistrations.ts."""
+
+    def test_all_fields_registered(self):
+        """Every field in every known model must have a registration."""
+        registrations = _parse_registrations()
+        missing = []
+        for model, fields in KNOWN_FIELDS.items():
+            registered = registrations.get(model, set())
+            for field in sorted(fields):
+                if field not in registered:
+                    missing.append(f"{model}.{field}")
+        assert not missing, f"Unregistered fields: {missing}"
+
+    def test_no_stale_registrations(self):
+        """No registrations for fields that don't exist in any model."""
+        registrations = _parse_registrations()
+        stale = []
+        for model, fields in registrations.items():
+            known = KNOWN_FIELDS.get(model)
+            if known is None:
+                stale.extend(f"{model}.{f}" for f in sorted(fields))
+            else:
+                for f in sorted(fields):
+                    if f not in known:
+                        stale.append(f"{model}.{f}")
+        assert not stale, f"Stale registrations: {stale}"
