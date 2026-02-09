@@ -26,8 +26,12 @@ import tomllib
 from netrun.net.config._base import (
     _get_callable_import_path,
     _import_from_path,
+    VarRef,
     EnvVar,
     EnvVarResolvableModel,
+    _extract_target_type,
+    _resolve_var_ref_value,
+    _resolve_var_refs_in_dict,
 )
 from netrun.net.config._nodes import NodeVariable
 from netrun.net.config._graph import GraphConfig
@@ -54,7 +58,7 @@ class OutputQueueConfig(EnvVarResolvableModel):
     final results are collected from sink nodes.
     """
 
-    ports: list[tuple[str, str]] | EnvVar
+    ports: list[tuple[str, str]] | VarRef
     """List of (node_name, port_name) tuples that feed this queue."""
 
 # %% [markdown]
@@ -70,14 +74,14 @@ class MainPoolConfig(EnvVarResolvableModel):
 class ThreadPoolConfig(EnvVarResolvableModel):
     """Configuration for a thread pool."""
     type: Literal["thread"] = "thread"
-    num_workers: int | EnvVar = 1
+    num_workers: int | VarRef = 1
 
 
 class MultiprocessPoolConfig(EnvVarResolvableModel):
     """Configuration for a multiprocess pool."""
     type: Literal["multiprocess"] = "multiprocess"
-    num_processes: int | EnvVar = 1
-    threads_per_process: int | EnvVar = 1
+    num_processes: int | VarRef = 1
+    threads_per_process: int | VarRef = 1
 
 
 class RemotePoolConfig(EnvVarResolvableModel):
@@ -89,10 +93,10 @@ class RemotePoolConfig(EnvVarResolvableModel):
     is raised at pool-construction time.
     """
     type: Literal["remote"] = "remote"
-    url: str | EnvVar | None = None
-    worker_name: str | EnvVar | None = None
-    num_processes: int | EnvVar = 1
-    threads_per_process: int | EnvVar = 1
+    url: str | VarRef | None = None
+    worker_name: str | VarRef | None = None
+    num_processes: int | VarRef = 1
+    threads_per_process: int | VarRef = 1
 
 
 PoolSpecConfig = Annotated[
@@ -103,8 +107,8 @@ PoolSpecConfig = Annotated[
 
 class PoolConfig(EnvVarResolvableModel):
     """Configuration for a pool of workers."""
-    print_flush_interval: float | EnvVar = 0.1
-    capture_prints: bool | EnvVar = True
+    print_flush_interval: float | VarRef = 0.1
+    capture_prints: bool | VarRef = True
     spec: PoolSpecConfig = Field(default_factory=MainPoolConfig)
 
 # %% [markdown]
@@ -150,7 +154,7 @@ class NetConfig(EnvVarResolvableModel):
     """Configuration for a Net."""
     model_config = {"arbitrary_types_allowed": True}
 
-    project_root: str | EnvVar | None = Field(default=None, description="Project root path. Relative paths resolve from the config file's directory.")
+    project_root: str | VarRef | None = Field(default=None, description="Project root path. Relative paths resolve from the config file's directory.")
 
     _file_path: Path | None = PrivateAttr(default=None)
 
@@ -212,29 +216,29 @@ class NetConfig(EnvVarResolvableModel):
 
     extra: dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data (descriptions, version info, tool-specific data).")
 
-    default_pool_allocation_method: RunAllocationMethod | EnvVar = Field(default=RunAllocationMethod.ROUND_ROBIN, description="Default worker allocation method for nodes with multiple pools.")
+    default_pool_allocation_method: RunAllocationMethod | VarRef = Field(default=RunAllocationMethod.ROUND_ROBIN, description="Default worker allocation method for nodes with multiple pools.")
 
     node_vars: dict[str, NodeVariable] | None = Field(default=None, description="Global default node variables, accessible via ctx.vars.")
 
-    dead_letter_queue: bool | EnvVar = Field(default=True, description="Enable dead letter queue for undeliverable packets.")
-    dead_letter_path: str | EnvVar | None = Field(default=None, description="File path for dead letter queue storage.")
-    dead_letter_callback: Callable | str | EnvVar | None = Field(default=None, description="Callback function or import path for dead letter handling.")
+    dead_letter_queue: bool | VarRef = Field(default=True, description="Enable dead letter queue for undeliverable packets.")
+    dead_letter_path: str | VarRef | None = Field(default=None, description="File path for dead letter queue storage.")
+    dead_letter_callback: Callable | str | VarRef | None = Field(default=None, description="Callback function or import path for dead letter handling.")
 
     # Output queue configuration
     output_queues: dict[str, OutputQueueConfig] | None = Field(default=None, description="Output queue configurations. None auto-generates queues for unconnected output ports.")
 
-    error_on_undeclared_output: bool | EnvVar = Field(default=False, description="Raise an error when a packet is sent from an unconnected output port with no queue.")
+    error_on_undeclared_output: bool | VarRef = Field(default=False, description="Raise an error when a packet is sent from an unconnected output port with no queue.")
 
-    type_checking_enabled: bool | EnvVar = Field(default=True, description="Enable runtime type checking for packet values. Can be overridden per-node.")
+    type_checking_enabled: bool | VarRef = Field(default=True, description="Enable runtime type checking for packet values. Can be overridden per-node.")
 
-    propagate_exceptions: bool | EnvVar = Field(default=True, description="Propagate epoch exceptions immediately from run_step/run_until_blocked. Can be overridden per-node.")
+    propagate_exceptions: bool | VarRef = Field(default=True, description="Propagate epoch exceptions immediately from run_step/run_until_blocked. Can be overridden per-node.")
 
-    print_exceptions: bool | EnvVar = Field(default=False, description="Print epoch exceptions to stderr when they occur. Can be overridden per-node.")
+    print_exceptions: bool | VarRef = Field(default=False, description="Print epoch exceptions to stderr when they occur. Can be overridden per-node.")
 
     storage: StorageConfig | None = Field(default=None, description="Storage configuration (caching, file storage, backend registry).")
 
     @field_serializer("dead_letter_callback", when_used='json')
-    def serialize_dead_letter_callback(self, callback: Callable | str | EnvVar | None) -> str | dict | None:
+    def serialize_dead_letter_callback(self, callback: Callable | str | VarRef | None) -> str | dict | None:
         """Serialize dead_letter_callback to import path for JSON.
 
         Note: Only called during JSON serialization (model_dump_json).
@@ -245,7 +249,7 @@ class NetConfig(EnvVarResolvableModel):
         """
         if callback is None:
             return None
-        if isinstance(callback, EnvVar):
+        if isinstance(callback, VarRef):
             return callback.model_dump(by_alias=True)
         if isinstance(callback, str):
             return callback
@@ -268,12 +272,14 @@ class NetConfig(EnvVarResolvableModel):
         """Return a resolved copy with all factories and imports resolved.
 
         Resolves:
-        - All EnvVar fields from os.environ (first)
+        - All $env VarRef fields from os.environ (first)
+        - All $var VarRef fields from node_vars (second, net-level only for net-level fields)
         - All subgraphs in the graph (flattening to regular nodes)
         - All node factories in the graph
         - All string import paths to callables
         - dead_letter_callback if it's a string
         - pools if None (generates default main pool)
+        - Per-node $var resolution with merged vars (net + node override) in GraphConfig.resolve
 
         Args:
             base_path: Base path for resolving relative file paths in subgraphs.
@@ -288,6 +294,37 @@ class NetConfig(EnvVarResolvableModel):
         if resolved is not self:
             resolved._file_path = self._file_path
 
+        # Resolve $var refs at net level (using net-level node_vars only)
+        net_vars_resolved = {}
+        if resolved.node_vars:
+            net_vars_resolved = {
+                name: var.resolve_value()
+                for name, var in resolved.node_vars.items()
+            }
+        if net_vars_resolved:
+            var_updates = {}
+            for field_name, field_info in type(resolved).model_fields.items():
+                if field_name in ('graph', 'node_vars'):
+                    continue  # graph handled per-node; node_vars are the source
+                value = getattr(resolved, field_name)
+                if isinstance(value, VarRef) and value.var is not None:
+                    target_type = _extract_target_type(field_info.annotation)
+                    var_updates[field_name] = _resolve_var_ref_value(
+                        value, net_vars_resolved, target_type,
+                        f"NetConfig.{field_name}",
+                    )
+                elif isinstance(value, EnvVarResolvableModel):
+                    new_val = value.resolve_var_refs(net_vars_resolved)
+                    if new_val is not value:
+                        var_updates[field_name] = new_val
+                elif isinstance(value, dict):
+                    new_dict, changed = _resolve_var_refs_in_dict(value, net_vars_resolved)
+                    if changed:
+                        var_updates[field_name] = new_dict
+            if var_updates:
+                resolved = resolved.model_copy(update=var_updates)
+                resolved._file_path = self._file_path
+
         # Auto-derive base_path from _file_path when not provided
         if base_path is None and resolved._file_path is not None:
             base_path = resolved._file_path.parent
@@ -298,7 +335,7 @@ class NetConfig(EnvVarResolvableModel):
         if resolved.pools is None:
             updates["pools"] = _default_pools()
 
-        # Resolve graph (includes subgraph flattening)
+        # Resolve graph (includes subgraph flattening + per-node $var resolution)
         project_root = resolved.project_root_path
         resolved_graph = resolved.graph.resolve(base_path=base_path, net_config=resolved)
         if resolved_graph is not resolved.graph:

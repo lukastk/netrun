@@ -2,6 +2,7 @@
 	import { pushHistory } from '$lib/stores/flowStore';
 	import { configSchema } from '$lib/stores/schemaStore';
 	import AutoConfigFields from './AutoConfigFields.svelte';
+	import { availableVarNames } from '$lib/stores/variablesStore';
 
 	type StorageMode = 'none' | 'cache' | 'file_storage';
 
@@ -136,6 +137,7 @@
 					values={cacheData}
 					onUpdate={(updates) => { updateCache(updates); pushHistory(); }}
 					onUpdateLive={(updates) => updateCache(updates)}
+					availableVarNames={$availableVarNames}
 				/>
 			{/if}
 
@@ -193,6 +195,7 @@
 					values={fileStorageData}
 					onUpdate={(updates) => { updateFileStorage(updates); pushHistory(); }}
 					onUpdateLive={(updates) => updateFileStorage(updates)}
+					availableVarNames={$availableVarNames}
 				/>
 			{/if}
 

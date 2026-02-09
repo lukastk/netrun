@@ -28,6 +28,7 @@ from netrun.net.config._base import (
     _is_file_path_ref,
     _import_from_file_path,
     _import_from_path,
+    VarRef,
     EnvVar,
     EnvVarResolvableModel,
     PortConfig,
@@ -167,8 +168,14 @@ Args:
 #|export
 class NodeVariable(EnvVarResolvableModel):
     """A typed variable accessible to nodes via ctx.vars."""
-    value: str | EnvVar
+    value: str | VarRef
     type: str = "str"  # "str", "int", "float", "bool", "json"
+
+    @model_validator(mode='after')
+    def check_no_var_ref(self):
+        if isinstance(self.value, VarRef) and self.value.var is not None:
+            raise ValueError("NodeVariable.value cannot use $var (circular). Use $env instead.")
+        return self
 
     def resolve_value(self) -> Any:
         """Resolve the string value to the appropriate Python type."""
@@ -197,51 +204,51 @@ class NodeExecutionConfig(EnvVarResolvableModel):
     """Runtime configuration for a node's execution behavior."""
     model_config = {"arbitrary_types_allowed": True}
 
-    pools: list[str] | EnvVar = Field(default_factory=lambda: ["main"], description="Which pools can execute this node.")
-    exec_node_func: NodeExecutionFunc | str | EnvVar | None = Field(default=None, description="Function to execute the node. Can be a callable or import path string.")
+    pools: list[str] | VarRef = Field(default_factory=lambda: ["main"], description="Which pools can execute this node.")
+    exec_node_func: NodeExecutionFunc | str | VarRef | None = Field(default=None, description="Function to execute the node. Can be a callable or import path string.")
 
-    start_node_func: NodeStartFunc | str | EnvVar | None = Field(default=None, description="Function called when the node starts up.")
-    stop_node_func: NodeStopFunc | str | EnvVar | None = Field(default=None, description="Function called when the node shuts down.")
-    on_node_failure: OnNodeFailureFunc | str | EnvVar | None = Field(default=None, description="Callback when node execution fails.")
+    start_node_func: NodeStartFunc | str | VarRef | None = Field(default=None, description="Function called when the node starts up.")
+    stop_node_func: NodeStopFunc | str | VarRef | None = Field(default=None, description="Function called when the node shuts down.")
+    on_node_failure: OnNodeFailureFunc | str | VarRef | None = Field(default=None, description="Callback when node execution fails.")
 
     # Additional execution options (from PROJECT_SPEC.md)
-    defer_startup: bool | EnvVar = Field(default=False, description="Defer start_node_func until the node's first epoch instead of during Net.start().")
+    defer_startup: bool | VarRef = Field(default=False, description="Defer start_node_func until the node's first epoch instead of during Net.start().")
 
-    run_on_startup: bool | EnvVar = Field(default=False, description="Execute this node once during Net.start(). Requires a satisfied input salvo condition with zero input packets.")
+    run_on_startup: bool | VarRef = Field(default=False, description="Execute this node once during Net.start(). Requires a satisfied input salvo condition with zero input packets.")
 
-    max_parallel_epochs: int | EnvVar | None = Field(default=None, description="Maximum concurrent epochs for this node.")
-    max_epochs: int | EnvVar | None = Field(default=None, description="Maximum total epochs across this node's lifetime. None = unlimited.")
+    max_parallel_epochs: int | VarRef | None = Field(default=None, description="Maximum concurrent epochs for this node.")
+    max_epochs: int | VarRef | None = Field(default=None, description="Maximum total epochs across this node's lifetime. None = unlimited.")
 
-    rate_limit_per_second: float | EnvVar | None = Field(default=None, description="Maximum epoch triggers per second.")
+    rate_limit_per_second: float | VarRef | None = Field(default=None, description="Maximum epoch triggers per second.")
 
-    defer_net_actions: bool | EnvVar | None = Field(default=None, description="Defer net action notifications until epoch completes successfully. Required if retries enabled.")
+    defer_net_actions: bool | VarRef | None = Field(default=None, description="Defer net action notifications until epoch completes successfully. Required if retries enabled.")
 
-    retries: int | EnvVar = Field(default=0, description="Number of retry attempts on failure.")
-    retry_wait: float | EnvVar = Field(default=0.0, description="Wait time in seconds between retries.")
-    timeout: float | EnvVar | None = Field(default=None, description="Epoch execution timeout in seconds.")
+    retries: int | VarRef = Field(default=0, description="Number of retry attempts on failure.")
+    retry_wait: float | VarRef = Field(default=0.0, description="Wait time in seconds between retries.")
+    timeout: float | VarRef | None = Field(default=None, description="Epoch execution timeout in seconds.")
 
-    capture_prints: bool | EnvVar = Field(default=True, description="Capture print statements in the node.")
+    capture_prints: bool | VarRef = Field(default=True, description="Capture print statements in the node.")
 
-    print_flush_interval: float | EnvVar = Field(default=0.1, description="How often to flush the print buffer in seconds.")
+    print_flush_interval: float | VarRef = Field(default=0.1, description="How often to flush the print buffer in seconds.")
 
-    print_buffer_max_size: int | EnvVar | None = Field(default=None, description="Max print buffer size before forced flush. None = unlimited.")
+    print_buffer_max_size: int | VarRef | None = Field(default=None, description="Max print buffer size before forced flush. None = unlimited.")
 
-    print_echo_stdout: bool | EnvVar = Field(default=False, description="Also print to actual stdout when ctx.print() is called.")
+    print_echo_stdout: bool | VarRef = Field(default=False, description="Also print to actual stdout when ctx.print() is called.")
 
-    pool_allocation_method: RunAllocationMethod | EnvVar | None = Field(default=None, description="Worker selection method when node has multiple pools. None inherits Net default.")
+    pool_allocation_method: RunAllocationMethod | VarRef | None = Field(default=None, description="Worker selection method when node has multiple pools. None inherits Net default.")
 
     node_vars: dict[str, NodeVariable] | None = Field(default=None, description="Per-node variables, override net-level vars with the same name.")
 
-    type_checking_enabled: bool | EnvVar | None = Field(default=None, description="Enable/disable type checking for this node. None inherits from NetConfig.")
+    type_checking_enabled: bool | VarRef | None = Field(default=None, description="Enable/disable type checking for this node. None inherits from NetConfig.")
 
-    propagate_exceptions: bool | EnvVar | None = Field(default=None, description="Override NetConfig.propagate_exceptions for this node. None inherits.")
+    propagate_exceptions: bool | VarRef | None = Field(default=None, description="Override NetConfig.propagate_exceptions for this node. None inherits.")
 
-    print_exceptions: bool | EnvVar | None = Field(default=None, description="Override NetConfig.print_exceptions for this node. None inherits.")
+    print_exceptions: bool | VarRef | None = Field(default=None, description="Override NetConfig.print_exceptions for this node. None inherits.")
 
     storage: NodeStorageConfig | None = Field(default=None, description="Per-node storage configuration (cache and/or file storage).")
 
     @field_serializer("exec_node_func", "start_node_func", "stop_node_func", "on_node_failure", when_used='json')
-    def serialize_func(self, func: Callable | str | EnvVar | None) -> str | dict | None:
+    def serialize_func(self, func: Callable | str | VarRef | None) -> str | dict | None:
         """Serialize functions to their import path for JSON.
 
         Function objects are serialized to their full import path
@@ -257,7 +264,7 @@ class NodeExecutionConfig(EnvVarResolvableModel):
         """
         if func is None:
             return None
-        if isinstance(func, EnvVar):
+        if isinstance(func, VarRef):
             return func.model_dump(by_alias=True)
         if isinstance(func, str):
             return func

@@ -3447,3 +3447,346 @@ def test_validate_graph_collects_node_errors():
 
 # %%
 test_validate_graph_collects_node_errors()
+
+# %% [markdown]
+# ## VarRef Tests
+
+# %%
+#|export
+from netrun.net.config._base import VarRef, _resolve_var_ref_value, _resolve_var_refs_in_dict
+
+# %%
+#|export
+def test_varref_env_serialization():
+    """VarRef with $env serializes correctly with by_alias."""
+    ref = VarRef(env="MY_VAR")
+    assert ref.env == "MY_VAR"
+    assert ref.var is None
+    assert ref.default is None
+
+    dumped = ref.model_dump(by_alias=True)
+    assert dumped == {"$env": "MY_VAR"}
+
+    ref2 = VarRef(env="MY_VAR", default="fallback")
+    dumped2 = ref2.model_dump(by_alias=True)
+    assert dumped2 == {"$env": "MY_VAR", "default": "fallback"}
+
+# %%
+test_varref_env_serialization()
+
+# %%
+#|export
+def test_varref_var_serialization():
+    """VarRef with $var serializes correctly with by_alias."""
+    ref = VarRef(var="my_var")
+    assert ref.var == "my_var"
+    assert ref.env is None
+
+    dumped = ref.model_dump(by_alias=True)
+    assert dumped == {"$var": "my_var"}
+
+    ref2 = VarRef(var="my_var", default=42)
+    dumped2 = ref2.model_dump(by_alias=True)
+    assert dumped2 == {"$var": "my_var", "default": 42}
+
+# %%
+test_varref_var_serialization()
+
+# %%
+#|export
+def test_varref_parse_from_json():
+    """VarRef parses from JSON alias format."""
+    ref_env = VarRef.model_validate({"$env": "MY_VAR"})
+    assert ref_env.env == "MY_VAR"
+    assert ref_env.var is None
+
+    ref_var = VarRef.model_validate({"$var": "my_var"})
+    assert ref_var.var == "my_var"
+    assert ref_var.env is None
+
+    ref_var_default = VarRef.model_validate({"$var": "my_var", "default": "fallback"})
+    assert ref_var_default.var == "my_var"
+    assert ref_var_default.default == "fallback"
+
+# %%
+test_varref_parse_from_json()
+
+# %%
+#|export
+def test_varref_rejects_both_env_and_var():
+    """VarRef with both $env and $var is rejected."""
+    with pytest.raises(Exception):
+        VarRef.model_validate({"$env": "MY_VAR", "$var": "my_var"})
+
+# %%
+test_varref_rejects_both_env_and_var()
+
+# %%
+#|export
+def test_varref_rejects_neither_env_nor_var():
+    """VarRef with neither $env nor $var is rejected."""
+    with pytest.raises(Exception):
+        VarRef.model_validate({})
+
+    with pytest.raises(Exception):
+        VarRef.model_validate({"default": 42})
+
+# %%
+test_varref_rejects_neither_env_nor_var()
+
+# %%
+#|export
+def test_varref_backwards_compat_alias():
+    """EnvVar is the same as VarRef."""
+    assert EnvVar is VarRef
+    ev = EnvVar(env="MY_VAR")
+    assert isinstance(ev, VarRef)
+
+# %%
+test_varref_backwards_compat_alias()
+
+# %%
+#|export
+def test_resolve_env_vars_skips_var_refs(monkeypatch):
+    """resolve_env_vars() resolves $env VarRefs, skips $var VarRefs."""
+    monkeypatch.setenv("NUM_WORKERS", "8")
+    cfg = ThreadPoolConfig(num_workers=VarRef(var="my_num"))
+    resolved = cfg.resolve_env_vars()
+    # $var VarRef should be left untouched
+    assert isinstance(resolved.num_workers, VarRef)
+    assert resolved.num_workers.var == "my_num"
+
+# %%
+test_resolve_env_vars_skips_var_refs()
+
+# %%
+#|export
+def test_resolve_var_refs_simple():
+    """resolve_var_refs() resolves $var VarRefs."""
+    cfg = ThreadPoolConfig(num_workers=VarRef(var="pool_size"))
+    resolved = cfg.resolve_var_refs({"pool_size": "4"})
+    assert resolved.num_workers == 4  # cast from str "4" to int
+
+# %%
+test_resolve_var_refs_simple()
+
+# %%
+#|export
+def test_resolve_var_refs_with_default():
+    """resolve_var_refs() uses default when var missing."""
+    cfg = ThreadPoolConfig(num_workers=VarRef(var="missing_var", default=6))
+    resolved = cfg.resolve_var_refs({"other_var": "10"})
+    assert resolved.num_workers == 6
+
+# %%
+test_resolve_var_refs_with_default()
+
+# %%
+#|export
+def test_resolve_var_refs_missing_no_default():
+    """resolve_var_refs() raises ValueError when var missing and no default."""
+    cfg = ThreadPoolConfig(num_workers=VarRef(var="missing_var"))
+    with pytest.raises(ValueError, match="Node variable 'missing_var' is not defined"):
+        cfg.resolve_var_refs({"other_var": "10"})
+
+# %%
+test_resolve_var_refs_missing_no_default()
+
+# %%
+#|export
+def test_resolve_var_refs_passes_typed_value_directly():
+    """resolve_var_refs() passes through already-typed values directly."""
+    cfg = ThreadPoolConfig(num_workers=VarRef(var="pool_size"))
+    resolved = cfg.resolve_var_refs({"pool_size": 4})
+    assert resolved.num_workers == 4
+    assert isinstance(resolved.num_workers, int)
+
+# %%
+test_resolve_var_refs_passes_typed_value_directly()
+
+# %%
+#|export
+def test_resolve_var_refs_skips_env_refs(monkeypatch):
+    """resolve_var_refs() skips $env VarRefs (they should be resolved already)."""
+    cfg = ThreadPoolConfig(num_workers=VarRef(env="NUM_WORKERS"))
+    resolved = cfg.resolve_var_refs({"pool_size": "4"})
+    # $env VarRef should be left untouched
+    assert isinstance(resolved.num_workers, VarRef)
+    assert resolved.num_workers.env == "NUM_WORKERS"
+
+# %%
+test_resolve_var_refs_skips_env_refs()
+
+# %%
+#|export
+def test_resolve_var_refs_empty_vars_returns_self():
+    """resolve_var_refs() with empty vars dict returns self."""
+    cfg = ThreadPoolConfig(num_workers=VarRef(var="pool_size"))
+    resolved = cfg.resolve_var_refs({})
+    assert resolved is cfg
+
+# %%
+test_resolve_var_refs_empty_vars_returns_self()
+
+# %%
+#|export
+def test_resolve_var_refs_casts_string_to_enum():
+    """resolve_var_refs() casts string var value to enum field."""
+    cfg = NetConfig(
+        project_root="/tmp",
+        default_pool_allocation_method=VarRef(var="alloc_method"),
+        graph=GraphConfig(nodes=[], edges=[]),
+    )
+    resolved = cfg.resolve_var_refs({"alloc_method": "round-robin"})
+    assert resolved.default_pool_allocation_method == RunAllocationMethod("round-robin")
+
+# %%
+test_resolve_var_refs_casts_string_to_enum()
+
+# %%
+#|export
+def test_extract_target_type_strips_varref():
+    """_extract_target_type strips VarRef from unions."""
+    from typing import Union
+    assert _extract_target_type(int | VarRef | None) == int
+    assert _extract_target_type(str | VarRef) == str
+    assert _extract_target_type(Union[float, VarRef, None]) == float
+
+# %%
+test_extract_target_type_strips_varref()
+
+# %%
+#|export
+def test_node_variable_rejects_var_ref():
+    """NodeVariable.value rejects $var VarRef to prevent circular references."""
+    with pytest.raises(Exception, match="cannot use \\$var"):
+        NodeVariable(value=VarRef(var="some_var"))
+
+    # $env should still be allowed
+    nv = NodeVariable(value=VarRef(env="MY_SECRET"))
+    assert isinstance(nv.value, VarRef)
+    assert nv.value.env == "MY_SECRET"
+
+# %%
+test_node_variable_rejects_var_ref()
+
+# %%
+#|export
+def test_varref_json_roundtrip():
+    """NetConfig with VarRef fields -> model_dump_json -> model_validate_json -> same VarRef."""
+    nc = NetConfig(
+        project_root=VarRef(env="PROJECT_ROOT"),
+        type_checking_enabled=VarRef(var="tc_enabled", default=True),
+        graph=GraphConfig(nodes=[], edges=[]),
+    )
+    json_str = nc.model_dump_json(by_alias=True)
+    restored = NetConfig.model_validate_json(json_str)
+
+    assert isinstance(restored.project_root, VarRef)
+    assert restored.project_root.env == "PROJECT_ROOT"
+    assert isinstance(restored.type_checking_enabled, VarRef)
+    assert restored.type_checking_enabled.var == "tc_enabled"
+    assert restored.type_checking_enabled.default is True
+
+# %%
+test_varref_json_roundtrip()
+
+# %%
+#|export
+def test_netconfig_resolve_with_var_refs(monkeypatch, tmp_path):
+    """NetConfig.resolve() resolves $var refs from net-level node_vars."""
+    monkeypatch.delenv("PROJECT_ROOT", raising=False)
+    nc = NetConfig(
+        project_root=str(tmp_path),
+        type_checking_enabled=VarRef(var="tc_enabled"),
+        node_vars={
+            "tc_enabled": NodeVariable(value="true", type="bool"),
+        },
+        graph=GraphConfig(nodes=[], edges=[]),
+    )
+    resolved = nc.resolve()
+    assert resolved.type_checking_enabled is True
+
+# %%
+test_netconfig_resolve_with_var_refs()
+
+# %%
+#|export
+def test_node_var_refs_merged_resolution(monkeypatch, tmp_path):
+    """GraphConfig.resolve() resolves per-node $var refs with merged net+node vars."""
+    monkeypatch.delenv("PROJECT_ROOT", raising=False)
+    nc = NetConfig(
+        project_root=str(tmp_path),
+        node_vars={
+            "max_ep": NodeVariable(value="5", type="int"),
+        },
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="a",
+                    in_ports={"in": PortConfig()},
+                    out_ports={"out": PortConfig()},
+                    execution_config=NodeExecutionConfig(
+                        max_epochs=VarRef(var="max_ep"),
+                        node_vars={
+                            "max_ep": NodeVariable(value="10", type="int"),
+                        },
+                    ),
+                ),
+            ],
+            edges=[],
+        ),
+    )
+    resolved = nc.resolve()
+    # Node-level var overrides net-level: max_ep=10
+    assert resolved.graph.nodes[0].execution_config.max_epochs == 10
+
+# %%
+test_node_var_refs_merged_resolution()
+
+# %%
+#|export
+def test_two_phase_resolution_order(monkeypatch, tmp_path):
+    """$env in NodeVariable.value resolved first, then $var refs use resolved values."""
+    monkeypatch.setenv("MY_MAX", "7")
+    nc = NetConfig(
+        project_root=str(tmp_path),
+        node_vars={
+            "max_ep": NodeVariable(value=VarRef(env="MY_MAX"), type="int"),
+        },
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="a",
+                    in_ports={"in": PortConfig()},
+                    out_ports={"out": PortConfig()},
+                    execution_config=NodeExecutionConfig(
+                        max_epochs=VarRef(var="max_ep"),
+                    ),
+                ),
+            ],
+            edges=[],
+        ),
+    )
+    resolved = nc.resolve()
+    # $env "MY_MAX" resolved to "7" first, then NodeVariable("7", type="int") -> 7
+    # Then $var "max_ep" resolved to 7
+    assert resolved.graph.nodes[0].execution_config.max_epochs == 7
+
+# %%
+test_two_phase_resolution_order()
+
+# %%
+#|export
+def test_backwards_compat_env_var_in_config():
+    """Existing {"$env": "X"} configs still parse and resolve via VarRef."""
+    data = {"$env": "MY_VAR", "default": "fallback"}
+    ref = VarRef.model_validate(data)
+    assert ref.env == "MY_VAR"
+    assert ref.default == "fallback"
+    # Also via EnvVar alias
+    ref2 = EnvVar.model_validate(data)
+    assert ref2.env == "MY_VAR"
+
+# %%
+test_backwards_compat_env_var_in_config()
