@@ -257,7 +257,6 @@
 		border-radius: 3px;
 		color: var(--text-primary, #fff);
 		font-size: 11px;
-		font-family: 'SF Mono', Monaco, Consolas, monospace;
 	}
 
 	.port-pair input:focus {

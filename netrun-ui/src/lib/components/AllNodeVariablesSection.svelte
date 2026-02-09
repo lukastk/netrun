@@ -253,7 +253,6 @@
 	}
 
 	.var-name {
-		font-family: 'SF Mono', Monaco, Consolas, monospace;
 		font-size: 11px;
 		font-weight: 500;
 		color: var(--text-primary, #fff);
@@ -265,7 +264,6 @@
 		background: var(--bg-tertiary, #2d2d2d);
 		border-radius: 3px;
 		color: var(--text-secondary, #a0a0a0);
-		font-family: 'SF Mono', Monaco, Consolas, monospace;
 	}
 
 	.var-badge {
@@ -362,7 +360,6 @@
 		border-radius: 3px;
 		background: transparent;
 		color: var(--text-secondary, #666);
-		font-family: 'SF Mono', Monaco, Consolas, monospace;
 		font-size: 10px;
 		font-weight: 700;
 		cursor: pointer;
@@ -405,7 +402,6 @@
 	.envvar-prefix {
 		padding: 3px 4px 3px 6px;
 		color: var(--accent-color, #3b82f6);
-		font-family: 'SF Mono', Monaco, Consolas, monospace;
 		font-size: 11px;
 		font-weight: 700;
 		user-select: none;
@@ -417,7 +413,6 @@
 		background: transparent;
 		border: none;
 		color: var(--text-primary, #fff);
-		font-family: 'SF Mono', Monaco, Consolas, monospace;
 		font-size: 11px;
 	}
 

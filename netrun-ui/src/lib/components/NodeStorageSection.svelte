@@ -329,7 +329,6 @@
 
 	.field input.mono,
 	.field textarea.mono {
-		font-family: 'SF Mono', Monaco, Consolas, monospace;
 		font-size: 11px;
 	}
 

@@ -648,3 +648,109 @@ async def test_file_storage_bundle_hash_change_overwrite():
             results3 = net3.flush_output_queue("results")
         assert call_count == 0
         assert results3[0] == 20
+
+# %% [markdown]
+# ## Test: was_file_storage_hit flag
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_was_file_storage_hit_flag():
+    """EpochRecord.was_file_storage_hit is set on replay, was_cache_hit is not."""
+    call_count = 0
+
+    def exec_fn(ctx: NodeExecutionContext, packets):
+        nonlocal call_count
+        call_count += 1
+        for port, pids in packets.items():
+            for pid in pids:
+                value = ctx.consume_packet(pid)
+                out_id = ctx.create_packet(value * 2)
+                ctx.load_output_port("out", out_id)
+        ctx.send_output_salvo("send")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        fs_config = NodeFileStorageConfig(
+            backend=LocalBackendConfig(base_path=tmpdir + "/data"),
+            serialization="pickle",
+        )
+        storage = StorageConfig(
+            file_storage_metadata_path=tmpdir + "/meta",
+        )
+
+        # First run
+        node = _make_node("A", ["in"], ["out"], exec_fn, file_storage=fs_config)
+        net = _make_net(node, storage=storage)
+        async with net:
+            net.inject_data("A", "in", [5])
+            await net.run_until_blocked()
+            epochs1 = net.epochs
+
+        assert call_count == 1
+        # First run: neither flag set
+        for e in epochs1.values():
+            assert e.was_cache_hit is False
+            assert e.was_file_storage_hit is False
+
+        # Second run: replay
+        call_count = 0
+        node2 = _make_node("A", ["in"], ["out"], exec_fn, file_storage=fs_config)
+        net2 = _make_net(node2, storage=storage)
+        async with net2:
+            net2.inject_data("A", "in", [5])
+            await net2.run_until_blocked()
+            epochs2 = net2.epochs
+
+        assert call_count == 0
+        for e in epochs2.values():
+            assert e.was_cache_hit is False
+            assert e.was_file_storage_hit is True
+
+# %% [markdown]
+# ## Test: store_inputs multi-packet
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_file_storage_store_inputs_multi_packet():
+    """store_inputs stores all packets from a multi-packet port, not just the last."""
+    import os
+
+    def exec_fn(ctx: NodeExecutionContext, packets):
+        for port, pids in packets.items():
+            for pid in pids:
+                value = ctx.consume_packet(pid)
+                out_id = ctx.create_packet(value * 10)
+                ctx.load_output_port("out", out_id)
+        ctx.send_output_salvo("send")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        fs_config = NodeFileStorageConfig(
+            backend=LocalBackendConfig(base_path=tmpdir + "/data"),
+            serialization="pickle",
+            store_inputs=True,
+        )
+        storage = StorageConfig(
+            file_storage_metadata_path=tmpdir + "/meta",
+        )
+
+        node = _make_node("A", ["in"], ["out"], exec_fn, file_storage=fs_config)
+        net = _make_net(node, storage=storage)
+
+        async with net:
+            net.inject_data("A", "in", [10, 20, 30])
+            await net.run_until_blocked()
+
+        # Check that 3 input files were created (not just 1)
+        input_dir = os.path.join(tmpdir, "data", "A", "_inputs")
+        assert os.path.isdir(input_dir)
+        input_files = os.listdir(input_dir)
+        assert len(input_files) == 3
+
+        # Check manifest has list of keys per port
+        fs_store = net._file_storage_store
+        manifest = fs_store.lookup("A")
+        assert manifest is not None
+        assert manifest.input_file_keys is not None
+        assert "in" in manifest.input_file_keys
+        assert len(manifest.input_file_keys["in"]) == 3

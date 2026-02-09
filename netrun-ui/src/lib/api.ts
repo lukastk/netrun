@@ -19,6 +19,7 @@ export interface UINodeData {
 	factoryArgs?: Record<string, unknown>;
 	isValid?: boolean;
 	validationErrors?: string[];
+	description?: string;
 	_config?: Record<string, unknown>;
 	// Subgraph-specific
 	source?: string;
@@ -84,6 +85,7 @@ export interface FactoryPreviewResponse {
 	out_ports: FactoryPortInfo[];
 	has_in_salvo_conditions: boolean;
 	has_out_salvo_conditions: boolean;
+	description: string | null;
 	error: string | null;
 }
 

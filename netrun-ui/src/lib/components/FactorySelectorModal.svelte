@@ -306,7 +306,6 @@
 	.error-detail {
 		color: var(--text-secondary, #a0a0a0);
 		font-size: 11px;
-		font-family: 'SF Mono', Monaco, Consolas, monospace;
 		margin: 4px 0;
 		word-break: break-word;
 	}
@@ -415,7 +414,6 @@
 
 	.factory-path {
 		font-size: 11px;
-		font-family: 'SF Mono', Monaco, Consolas, monospace;
 		color: var(--text-secondary, #a0a0a0);
 	}
 
@@ -445,7 +443,6 @@
 		border-radius: 6px;
 		color: var(--text-primary, #fff);
 		font-size: 14px;
-		font-family: 'SF Mono', Monaco, Consolas, monospace;
 		box-sizing: border-box;
 	}
 
