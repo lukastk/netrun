@@ -12,6 +12,8 @@
 
 	let { id, data, selected = false }: Props = $props();
 
+	let descExpanded = $state(false);
+
 	function handleResizeEnd(_event: unknown, params: { x: number; y: number; width: number; height: number }) {
 		updateNodeDimensions([{
 			id,
@@ -43,6 +45,19 @@
 		{/if}
 		<span class="node-label">{data.label}</span>
 	</div>
+
+	<!-- Description -->
+	{#if data.description}
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="node-description" onclick={() => descExpanded = !descExpanded}>
+			<span class="desc-chevron" class:expanded={descExpanded}>&#9656;</span>
+			{#if descExpanded}
+				<span class="desc-content">{data.description}</span>
+			{:else}
+				<span class="desc-preview">{data.description}</span>
+			{/if}
+		</div>
+	{/if}
 
 	<!-- Ports container -->
 	<div class="ports-container">
@@ -111,6 +126,40 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+	}
+
+	.node-description {
+		padding: 4px 10px;
+		border-bottom: 1px solid var(--border-color, #404040);
+		cursor: pointer;
+		display: flex;
+		align-items: flex-start;
+		gap: 4px;
+		font-size: 10px;
+		color: var(--text-secondary, #a0a0a0);
+	}
+
+	.desc-chevron {
+		display: inline-block;
+		font-size: 9px;
+		transition: transform 0.15s ease;
+		flex-shrink: 0;
+		line-height: 14px;
+	}
+
+	.desc-chevron.expanded {
+		transform: rotate(90deg);
+	}
+
+	.desc-preview {
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.desc-content {
+		white-space: pre-wrap;
+		word-break: break-word;
 	}
 
 	.ports-container {

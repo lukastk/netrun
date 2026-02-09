@@ -130,7 +130,7 @@ def resolve_factory_ports(
     factory_path: str,
     factory_args: dict[str, Any],
     working_dir: str | None = None,
-) -> tuple[dict[str, Any], dict[str, Any]] | None:
+) -> tuple[dict[str, Any], dict[str, Any], str | None] | None:
     """Resolve ports from a factory by calling get_node_config.
 
     Args:
@@ -139,7 +139,7 @@ def resolve_factory_ports(
         working_dir: Optional working directory to add to sys.path for imports.
 
     Returns:
-        Tuple of (in_ports, out_ports) dicts, or None if resolution fails.
+        Tuple of (in_ports, out_ports, description) dicts, or None if resolution fails.
     """
     import sys
 
@@ -188,7 +188,8 @@ def resolve_factory_ports(
                     port_dict["port_type"] = port.port_type.__name__
             out_ports[name] = port_dict
 
-        return in_ports, out_ports
+        description = getattr(node_config, 'description', None)
+        return in_ports, out_ports, description
 
     except Exception as e:
         logger.warning(f"Failed to resolve factory '{factory_path}': {e}")
@@ -271,6 +272,8 @@ def graph_config_to_ui(
                     },
                 },
             }
+            if node.get("description"):
+                ui_node["data"]["description"] = node["description"]
             if dimensions:
                 ui_node["width"] = dimensions.get("width")
                 ui_node["height"] = dimensions.get("height")
@@ -285,12 +288,13 @@ def graph_config_to_ui(
             config_out_ports = node.get("out_ports", {})
 
             # For factory nodes without explicit ports, try to resolve from factory
+            factory_description = None
             if is_factory and not config_in_ports and not config_out_ports:
                 factory_path = node.get("factory")
                 factory_args = node.get("factory_args", {})
                 resolved = resolve_factory_ports(factory_path, factory_args, working_dir)
                 if resolved:
-                    config_in_ports, config_out_ports = resolved
+                    config_in_ports, config_out_ports, factory_description = resolved
 
             # Convert ports to UI format
             in_ports = [
@@ -324,8 +328,16 @@ def graph_config_to_ui(
             # survives the round-trip through the UI.
             ui_node["data"]["_config"] = {
                 k: v for k, v in node.items()
-                if k not in ("name", "in_ports", "out_ports", "factory", "factory_args", "type")
+                if k not in ("name", "in_ports", "out_ports", "factory", "factory_args", "type", "description")
             }
+
+            # Promote description to a first-class UI field
+            # Use explicit node description, falling back to factory-resolved description
+            node_description = node.get("description")
+            if node_description:
+                ui_node["data"]["description"] = node_description
+            elif factory_description:
+                ui_node["data"]["description"] = factory_description
 
             if dimensions:
                 ui_node["width"] = dimensions.get("width")
@@ -429,11 +441,14 @@ def _ui_to_graph_config_model(
 
         if node_type == "subgraph" or node.get("type") == "subgraphNode":
             subgraph_config = data.get("_subgraphConfig", {})
-            config_node = _SubgraphConfig.model_validate({
+            subgraph_kwargs = {
                 **subgraph_config,
                 "name": node_name,
                 "extra": merged_extra,
-            })
+            }
+            if data.get("description"):
+                subgraph_kwargs["description"] = data["description"]
+            config_node = _SubgraphConfig.model_validate(subgraph_kwargs)
 
         elif node_type == "factory":
             # Build factory NodeConfig — no in_ports/out_ports (factory generates them)
@@ -452,6 +467,8 @@ def _ui_to_graph_config_model(
                     kwargs["factory_args"] = filtered_args
             if "execution_config" in extra_config:
                 kwargs["execution_config"] = extra_config["execution_config"]
+            if data.get("description"):
+                kwargs["description"] = data["description"]
             config_node = _NodeConfig(**kwargs)
 
         else:
@@ -480,6 +497,8 @@ def _ui_to_graph_config_model(
             for key, value in extra_config.items():
                 if key not in ("extra",) and key not in kwargs:
                     kwargs[key] = value
+            if data.get("description"):
+                kwargs["description"] = data["description"]
             config_node = _NodeConfig(**kwargs)
 
         config_nodes.append(config_node)
