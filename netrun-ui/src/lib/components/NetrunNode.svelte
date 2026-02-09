@@ -159,15 +159,4 @@
 		height: 12px;
 		border-radius: 3px;
 	}
-
-	/* Resize control styling — z-index ensures controls sit above node content */
-	:global(.netrun-node .svelte-flow__resize-control) {
-		z-index: 10;
-	}
-	:global(.netrun-node .svelte-flow__resize-control.handle) {
-		width: 8px;
-		height: 8px;
-		border-radius: 2px;
-		border: 1px solid rgba(255, 255, 255, 0.5);
-	}
 </style>
