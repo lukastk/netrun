@@ -67,7 +67,7 @@
 			{#if descExpanded}
 				<span class="desc-content">{data.description}</span>
 			{:else}
-				<span class="desc-preview">{data.description}</span>
+				<span class="desc-preview">{data.description.split('\n')[0]}</span>
 			{/if}
 		</div>
 	{/if}
@@ -158,6 +158,10 @@
 		gap: 4px;
 		font-size: 10px;
 		color: var(--text-secondary, #a0a0a0);
+		overflow: hidden;
+		width: 0;
+		min-width: 100%;
+		box-sizing: border-box;
 	}
 
 	.desc-chevron {
@@ -176,11 +180,14 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+		min-width: 0;
 	}
 
 	.desc-content {
 		white-space: pre-wrap;
-		word-break: break-word;
+		word-wrap: break-word;
+		overflow-wrap: break-word;
+		min-width: 0;
 	}
 
 	.ports-container {
