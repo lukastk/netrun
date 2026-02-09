@@ -228,7 +228,10 @@ class NetFileStorageStore:
                     password=backend_config.password,
                 )
             case _ if backend_config.type == "rclone":
-                return RcloneBackend(remote=backend_config.remote)
+                config_path = backend_config.config_path
+                if config_path and project_root and not Path(config_path).is_absolute():
+                    config_path = str(project_root / config_path)
+                return RcloneBackend(remote=backend_config.remote, config_path=config_path)
             case _:
                 raise ValueError(f"Unknown backend type: {backend_config.type}")
 

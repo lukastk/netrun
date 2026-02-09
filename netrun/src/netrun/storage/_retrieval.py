@@ -48,7 +48,7 @@ def _create_backend_from_json(backend_config_json: str):
                 username=config.get("username"),
             )
         case "rclone":
-            return RcloneBackend(remote=config["remote"])
+            return RcloneBackend(remote=config["remote"], config_path=config.get("config_path"))
         case _:
             raise ValueError(f"Unknown backend type: {backend_type}")
 

@@ -142,6 +142,7 @@ class RcloneBackendConfig(EnvVarResolvableModel):
     """Rclone backend configuration."""
     type: Literal["rclone"] = "rclone"
     remote: str | EnvVar = Field(description="Rclone remote spec, e.g. 'myremote:bucket/path'.")
+    config_path: str | EnvVar | None = Field(default=None, description="Path to rclone config file. None uses rclone default (~/.config/rclone/rclone.conf). Relative paths resolved against project_root.")
 
 
 BackendConfig = Annotated[
