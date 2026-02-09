@@ -199,7 +199,7 @@
 								pushHistory();
 							}}
 						>
-							{#if field.category === 'enum_or_null'}<option value="__default__">Default</option>{/if}
+							{#if field.category === 'enum_or_null'}<option value="__default__">None</option>{/if}
 							{#each field.enum_values ?? [] as opt}
 								<option value={opt}>{opt}</option>
 							{/each}
@@ -390,7 +390,7 @@
 					pushHistory();
 				}}
 			>
-				<option value="__default__">Default</option>
+				<option value="__default__">None</option>
 				{#each field.enum_values ?? [] as opt}
 					<option value={opt}>{opt}</option>
 				{/each}
