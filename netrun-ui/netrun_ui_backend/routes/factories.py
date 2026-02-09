@@ -191,6 +191,7 @@ class FactoryPreviewResponse(BaseModel):
     out_ports: list[PortInfo]
     has_in_salvo_conditions: bool
     has_out_salvo_conditions: bool
+    description: str | None = None
     error: str | None = None
 
 
@@ -442,6 +443,7 @@ async def preview_factory(request: FactoryPreviewRequest) -> FactoryPreviewRespo
             out_ports=out_ports,
             has_in_salvo_conditions=bool(node_config.in_salvo_conditions),
             has_out_salvo_conditions=bool(node_config.out_salvo_conditions),
+            description=getattr(node_config, 'description', None),
         )
 
     except (ImportError, FileNotFoundError) as e:

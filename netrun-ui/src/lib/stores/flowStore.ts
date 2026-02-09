@@ -41,6 +41,7 @@ export interface BaseNodeData extends Record<string, unknown> {
 	nodeType: 'regular' | 'factory' | 'subgraph';
 	inPorts: PortConfig[];
 	outPorts: PortConfig[];
+	description?: string;
 	// Validation state
 	isValid?: boolean;
 	validationErrors?: string[];
@@ -1255,6 +1256,7 @@ function convertApiNodes(apiNodes: UINode[]): FlowNode[] {
 					outPorts: node.data.outPorts.map(apiPortToPortConfig),
 					isValid: node.data.isValid ?? true,
 					validationErrors: node.data.validationErrors,
+					description: node.data.description,
 					source: node.data.source,
 					nodeCount: node.data.nodeCount,
 					_subgraphConfig: node.data._subgraphConfig,
@@ -1276,6 +1278,7 @@ function convertApiNodes(apiNodes: UINode[]): FlowNode[] {
 					factoryArgs: node.data.factoryArgs,
 					isValid: node.data.isValid ?? true,
 					validationErrors: node.data.validationErrors,
+					description: node.data.description,
 					_config: node.data._config as Record<string, unknown> | undefined,
 				}
 			} as NetrunNode;
@@ -1523,6 +1526,7 @@ export async function saveToFile(path?: string): Promise<void> {
 			outPorts: data.outPorts.map(p => ({ name: p.name, type: p.type })),
 			isValid: data.isValid,
 			validationErrors: data.validationErrors,
+			description: data.description,
 		};
 
 		// Add type-specific properties
@@ -1659,7 +1663,7 @@ export async function updateFactoryNodePreview(nodeId: string): Promise<void> {
 		// Update node with preview data
 		// Note: We deliberately don't update the label - the user controls the node name,
 		// not the factory. Factories only provide ports and other structural data.
-		updateNodeData(nodeId, {
+		const previewUpdates: Partial<NetrunNodeData> = {
 			inPorts: preview.in_ports.map(p => ({
 				name: p.name,
 				type: p.port_type || undefined,
@@ -1670,7 +1674,14 @@ export async function updateFactoryNodePreview(nodeId: string): Promise<void> {
 			})),
 			isValid: true,
 			validationErrors: [],
-		});
+		};
+
+		// Set description from factory if the node doesn't already have one
+		if (preview.description && !node.data.description) {
+			previewUpdates.description = preview.description;
+		}
+
+		updateNodeData(nodeId, previewUpdates);
 	} catch (error) {
 		updateNodeData(nodeId, {
 			isValid: false,

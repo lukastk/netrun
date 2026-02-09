@@ -1,11 +1,10 @@
 /**
  * Central field registration file.
  *
- * Every field of NetConfig, NodeConfig, and NodeExecutionConfig must appear
- * here. When a new field is added to a Python model:
+ * Every field of every model in MODEL_CLASSES (see tests/test_config_schema.py)
+ * must appear here. When a new field is added to a Python model:
  *   1. The test in tests/test_config_schema.py will fail
- *   2. Add the field to KNOWN_FIELDS in that test
- *   3. Register it here with the appropriate strategy
+ *   2. Register the field here with the appropriate strategy
  *
  * Strategies:
  *   'auto'   — AutoConfigFields renders it based on schema category
@@ -40,6 +39,7 @@ registerField('NetConfig', 'storage', 'custom', 'StorageSection.svelte');
 
 registerField('NodeConfig', 'type', 'ignore');
 registerField('NodeConfig', 'name', 'custom', 'Sidebar.svelte');
+registerField('NodeConfig', 'description', 'custom', 'Sidebar.svelte');
 registerField('NodeConfig', 'in_ports', 'custom', 'Sidebar.svelte');
 registerField('NodeConfig', 'out_ports', 'custom', 'Sidebar.svelte');
 registerField('NodeConfig', 'in_salvo_conditions', 'custom', 'SalvoConditionsSection.svelte');
