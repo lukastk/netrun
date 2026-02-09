@@ -173,6 +173,16 @@ class Net:
         """
         self._config: NetConfig = config
         self._config_resolved: NetConfig = config.resolve()
+
+        # Pre-resolution structural validation on resolved config
+        validation_errors = self._config_resolved.graph.validate()
+        if validation_errors:
+            msgs = [f"{e.type}: {e.msg}" for e in validation_errors]
+            raise ValueError(
+                f"Graph validation failed with {len(validation_errors)} error(s):\n"
+                + "\n".join(f"  - {m}" for m in msgs)
+            )
+
         self._graph: netrun_sim.Graph = self._config_resolved.graph.get_graph()
         self._netsim = netrun_sim.NetSim(self._graph)
         self._started: bool = False

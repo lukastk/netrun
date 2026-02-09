@@ -56,7 +56,7 @@ def validate(
     node_count = 0
     edge_count = 0
 
-    # Pydantic validation via NetConfig.from_file
+    # Step 1: Pydantic validation — must succeed to continue
     try:
         from netrun.net.config._net_config import NetConfig
         net_config = NetConfig.from_file(config_path)
@@ -64,58 +64,61 @@ def validate(
         edge_count = len(net_config.graph.edges)
     except Exception as e:
         errors.append(f"Config validation error: {e}")
+        output_json({"valid": False, "file": str(config_path), "errors": errors}, pretty)
+        raise typer.Exit(1)
 
-    # Graph-level validation (fan-out, missing nodes/ports, etc.)
-    if not errors:
+    # Step 2: Pre-resolution structural validation (always runs)
+    config_errors = net_config.graph.validate()
+    for err in config_errors:
+        errors.append(f"{err.type}: {err.msg}")
+
+    # Step 3: Post-resolution validation via Rust (only if resolve succeeds)
+    try:
+        resolved = net_config.resolve()
+    except Exception:
+        resolved = None
+
+    if resolved is not None:
         try:
-            resolved = net_config.resolve()
-        except Exception:
-            # Factory/import resolution failures — skip graph validation
-            # (these require the project's Python environment to resolve)
-            resolved = None
+            resolved.graph.get_graph()  # validates via netrun_sim
+        except ValueError as e:
+            errors.append(f"Graph validation error: {e}")
 
-        if resolved is not None:
-            try:
-                resolved.graph.get_graph()  # validates via netrun_sim
-            except ValueError as e:
-                errors.append(f"Graph validation error: {e}")
+    # Step 4: Raw data checks (recipes, actions) — always runs
+    try:
+        raw, _ = load_raw_data(config)
+        config_dir = config_path.parent
 
-    # Raw data checks (recipes, actions)
-    if not errors:
-        try:
-            raw, _ = load_raw_data(config)
-            config_dir = config_path.parent
+        # Check recipe file paths exist
+        raw_recipes = raw.get("recipes", {})
+        for name, recipe in raw_recipes.items():
+            recipe_path = recipe.get("path")
+            if recipe_path:
+                rp = Path(recipe_path)
+                if not rp.is_absolute():
+                    rp = config_dir / rp
+                if not rp.exists():
+                    errors.append(f"Recipe '{name}': file not found: {rp}")
 
-            # Check recipe file paths exist
-            raw_recipes = raw.get("recipes", {})
-            for name, recipe in raw_recipes.items():
-                recipe_path = recipe.get("path")
-                if recipe_path:
-                    rp = Path(recipe_path)
-                    if not rp.is_absolute():
-                        rp = config_dir / rp
-                    if not rp.exists():
-                        errors.append(f"Recipe '{name}': file not found: {rp}")
+        # Check actions have required fields
+        def _check_actions(actions: list[dict], prefix: str) -> None:
+            for i, action in enumerate(actions):
+                for field in ("id", "label", "command"):
+                    if field not in action:
+                        errors.append(f"{prefix} action [{i}]: missing '{field}'")
 
-            # Check actions have required fields
-            def _check_actions(actions: list[dict], prefix: str) -> None:
-                for i, action in enumerate(actions):
-                    for field in ("id", "label", "command"):
-                        if field not in action:
-                            errors.append(f"{prefix} action [{i}]: missing '{field}'")
+        graph_extra = raw.get("graph", {}).get("extra", raw.get("extra", {}))
+        ui = graph_extra.get("ui", {})
+        _check_actions(ui.get("actions", []), "Project")
 
-            graph_extra = raw.get("graph", {}).get("extra", raw.get("extra", {}))
-            ui = graph_extra.get("ui", {})
-            _check_actions(ui.get("actions", []), "Project")
+        # Check per-node actions
+        for node_data in raw.get("graph", {}).get("nodes", []):
+            node_name = node_data.get("name", "?")
+            node_ui = node_data.get("extra", {}).get("ui", {})
+            _check_actions(node_ui.get("actions", []), f"Node '{node_name}'")
 
-            # Check per-node actions
-            for node_data in raw.get("graph", {}).get("nodes", []):
-                node_name = node_data.get("name", "?")
-                node_ui = node_data.get("extra", {}).get("ui", {})
-                _check_actions(node_ui.get("actions", []), f"Node '{node_name}'")
-
-        except Exception as e:
-            errors.append(f"Raw data check error: {e}")
+    except Exception as e:
+        errors.append(f"Raw data check error: {e}")
 
     if errors:
         output_json({"valid": False, "file": str(config_path), "errors": errors}, pretty)

@@ -41,6 +41,17 @@ import netrun_sim
 import json as _json_module
 
 # %% [markdown]
+# # Config Validation Error
+
+# %%
+#|export
+class ConfigValidationError(BaseModel):
+    """A single config validation error (pre-resolution, no factory needed)."""
+    loc: list[str | int]
+    msg: str
+    type: str
+
+# %% [markdown]
 # # Edge Configuration
 
 # %%
@@ -532,6 +543,44 @@ class NodeConfig(EnvVarResolvableModel):
             result = result.model_copy(update=updates)
 
         return result
+
+    def validate(self) -> list[ConfigValidationError]:
+        """Validate this node's config without requiring factory resolution.
+
+        Checks salvo condition port references against declared ports.
+        Skipped entirely when factory is set (salvo conditions are generated during resolution).
+
+        Returns:
+            List of ConfigValidationError (empty if valid).
+        """
+        if self.factory is not None:
+            return []
+
+        errors: list[ConfigValidationError] = []
+
+        # Check in_salvo_conditions reference valid in_ports
+        if self.in_salvo_conditions:
+            for sc_name, sc in self.in_salvo_conditions.items():
+                for port_name in sc.ports:
+                    if port_name not in self.in_ports:
+                        errors.append(ConfigValidationError(
+                            loc=["in_salvo_conditions", sc_name, "ports", port_name],
+                            msg=f"In-salvo condition '{sc_name}' references non-existent in_port '{port_name}'",
+                            type="invalid_salvo_port",
+                        ))
+
+        # Check out_salvo_conditions reference valid out_ports
+        if self.out_salvo_conditions:
+            for sc_name, sc in self.out_salvo_conditions.items():
+                for port_name in sc.ports:
+                    if port_name not in self.out_ports:
+                        errors.append(ConfigValidationError(
+                            loc=["out_salvo_conditions", sc_name, "ports", port_name],
+                            msg=f"Out-salvo condition '{sc_name}' references non-existent out_port '{port_name}'",
+                            type="invalid_salvo_port",
+                        ))
+
+        return errors
 
     def to_netrun_sim(self) -> netrun_sim.Node:
         # Salvo conditions should be resolved before calling to_netrun_sim

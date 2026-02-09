@@ -710,7 +710,16 @@ async def validate_config(request: ValidateRequest) -> ValidateResponse:
         )
 
     try:
-        # Step 2: Validate as NetConfig if extra_data present
+        # Step 2: Pre-resolution config validation (fan-out, missing nodes/ports, etc.)
+        config_errors = graph.validate()
+        for err in config_errors:
+            errors.append(ValidationError_(
+                loc=["graph"] + [str(x) for x in err.loc],
+                msg=err.msg,
+                type=err.type,
+            ))
+
+        # Step 3: Validate as NetConfig if extra_data present
         net_config = None
         if request.extra_data:
             graph_dict = dump_graph_config(graph)
@@ -725,7 +734,7 @@ async def validate_config(request: ValidateRequest) -> ValidateResponse:
                         type=err.get("type", "unknown"),
                     ))
 
-        # Step 3: Resolve each node individually for per-node error attribution
+        # Step 4: Resolve each node individually for per-node error attribution
         for idx, node in enumerate(graph.nodes):
             if hasattr(node, 'resolve'):
                 try:
@@ -737,7 +746,7 @@ async def validate_config(request: ValidateRequest) -> ValidateResponse:
                         type="resolve_error",
                     ))
 
-        # Step 4: Validate tool configs (actions, recipes)
+        # Step 5: Validate tool configs (actions, recipes)
         errors.extend(validate_tool_configs(graph, request.extra_data or {}))
 
         return ValidateResponse(
