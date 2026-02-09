@@ -168,12 +168,16 @@ def _import_from_path(import_path: str, project_root: 'Path | None' = None) -> A
 
 # %% pts/netrun/06_net/00_config/00_base.pct.py 5
 from ..._iutils.env_var import (
+    VarRef,
     EnvVar,
     EnvVarResolvableModel,
     _cast_env_var_value,
     _extract_target_type,
     _resolve_env_vars_in_list,
     _resolve_env_vars_in_dict,
+    _resolve_var_ref_value,
+    _resolve_var_refs_in_list,
+    _resolve_var_refs_in_dict,
 )
 
 # %% pts/netrun/06_net/00_config/00_base.pct.py 8
@@ -188,7 +192,7 @@ class PortSlotSpecInfiniteConfig(EnvVarResolvableModel):
 class PortSlotSpecFiniteConfig(EnvVarResolvableModel):
     """Port can hold at most `capacity` packets."""
     type: Literal["finite"] = "finite"
-    capacity: int | EnvVar
+    capacity: int | VarRef
 
     def to_netrun_sim(self) -> netrun_sim.PortSlotSpecFinite:
         return netrun_sim.PortSlotSpec.finite(self.capacity)
@@ -205,10 +209,10 @@ class PortTypeConfig(EnvVarResolvableModel):
 
     Used when you need more control than a simple type name string.
     """
-    name: str | EnvVar
+    name: str | VarRef
     """Type name to match (e.g., "DataFrame", "dict", "MyClass")."""
 
-    isinstance_check: bool | EnvVar = False
+    isinstance_check: bool | VarRef = False
     """If True and a type object is available, use isinstance().
     If False, use type().__name__ match. Default is False (name match)."""
 
@@ -324,7 +328,7 @@ class PortStateNonFullConfig(EnvVarResolvableModel):
 class PortStateEqualsConfig(EnvVarResolvableModel):
     """Port has exactly `value` packets."""
     type: Literal["equals"] = "equals"
-    value: int | EnvVar
+    value: int | VarRef
 
     def to_netrun_sim(self) -> netrun_sim.PortStateNumeric:
         return netrun_sim.PortState.equals(self.value)
@@ -333,7 +337,7 @@ class PortStateEqualsConfig(EnvVarResolvableModel):
 class PortStateLessThanConfig(EnvVarResolvableModel):
     """Port has fewer than `value` packets."""
     type: Literal["less_than"] = "less_than"
-    value: int | EnvVar
+    value: int | VarRef
 
     def to_netrun_sim(self) -> netrun_sim.PortStateNumeric:
         return netrun_sim.PortState.less_than(self.value)
@@ -342,7 +346,7 @@ class PortStateLessThanConfig(EnvVarResolvableModel):
 class PortStateGreaterThanConfig(EnvVarResolvableModel):
     """Port has more than `value` packets."""
     type: Literal["greater_than"] = "greater_than"
-    value: int | EnvVar
+    value: int | VarRef
 
     def to_netrun_sim(self) -> netrun_sim.PortStateNumeric:
         return netrun_sim.PortState.greater_than(self.value)
@@ -351,7 +355,7 @@ class PortStateGreaterThanConfig(EnvVarResolvableModel):
 class PortStateEqualsOrLessThanConfig(EnvVarResolvableModel):
     """Port has at most `value` packets."""
     type: Literal["equals_or_less_than"] = "equals_or_less_than"
-    value: int | EnvVar
+    value: int | VarRef
 
     def to_netrun_sim(self) -> netrun_sim.PortStateNumeric:
         return netrun_sim.PortState.equals_or_less_than(self.value)
@@ -360,7 +364,7 @@ class PortStateEqualsOrLessThanConfig(EnvVarResolvableModel):
 class PortStateEqualsOrGreaterThanConfig(EnvVarResolvableModel):
     """Port has at least `value` packets."""
     type: Literal["equals_or_greater_than"] = "equals_or_greater_than"
-    value: int | EnvVar
+    value: int | VarRef
 
     def to_netrun_sim(self) -> netrun_sim.PortStateNumeric:
         return netrun_sim.PortState.equals_or_greater_than(self.value)
@@ -383,7 +387,7 @@ class PacketCountAllConfig(EnvVarResolvableModel):
 class PacketCountNConfig(EnvVarResolvableModel):
     """Take at most `count` packets (takes fewer if port has fewer)."""
     type: Literal["count"] = "count"
-    count: int | EnvVar
+    count: int | VarRef
 
     def to_netrun_sim(self) -> netrun_sim.PacketCountN:
         return netrun_sim.PacketCount.count(self.count)
@@ -406,7 +410,7 @@ class MaxSalvosInfiniteConfig(EnvVarResolvableModel):
 class MaxSalvosFiniteConfig(EnvVarResolvableModel):
     """Can trigger at most `max` times."""
     type: Literal["finite"] = "finite"
-    max: int | EnvVar
+    max: int | VarRef
 
     def to_netrun_sim(self) -> netrun_sim.MaxSalvosFinite:
         return netrun_sim.MaxSalvos.finite(self.max)
@@ -437,7 +441,7 @@ class SalvoConditionTermFalseConfig(EnvVarResolvableModel):
 class SalvoConditionTermPortConfig(EnvVarResolvableModel):
     """Check if a specific port matches a state predicate."""
     type: Literal["port"] = "port"
-    port_name: str | EnvVar
+    port_name: str | VarRef
     state: PortStateConfig
 
     def to_netrun_sim(self) -> netrun_sim.SalvoConditionTerm:

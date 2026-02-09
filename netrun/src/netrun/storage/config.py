@@ -7,7 +7,7 @@ from enum import Enum
 from typing import Annotated, Literal
 from pydantic import Field, model_validator
 
-from .._iutils.env_var import EnvVar, EnvVarResolvableModel
+from .._iutils.env_var import VarRef, EnvVar, EnvVarResolvableModel
 from .._iutils.hashing import HashMethod
 from .._iutils.pickling import PicklingMethod
 from ..storage._serialization import SerializationMethod
@@ -23,30 +23,30 @@ class CacheWhat(Enum):
 # %% pts/netrun/02_storage/00_config.pct.py 7
 class CacheConfig(EnvVarResolvableModel):
     """Net-level cache configuration."""
-    enabled: bool | EnvVar = False
-    version: int | EnvVar = Field(default=0, description="Cache version. Changing this invalidates all cached entries.")
-    storage_path: str | EnvVar | None = Field(default=None, description="Directory for cache storage. None = auto-generated temp directory.")
-    include_nodes: list[str] | EnvVar | None = Field(default=None, description="Glob patterns for node names to cache.")
-    exclude_nodes: list[str] | EnvVar | None = Field(default=None, description="Glob patterns for node names to exclude from caching.")
-    include_all_nodes: bool | EnvVar = Field(default=False, description="Cache all nodes (overrides include_nodes).")
-    cache_what: CacheWhat | EnvVar = Field(default=CacheWhat.BOTH, description="What to cache: both (memoization), output only, or input only.")
-    hash_method: HashMethod | EnvVar = Field(default=HashMethod.xxh64, description="Hash algorithm for input salvo hashing.")
-    pickling_method: PicklingMethod | EnvVar = Field(default=PicklingMethod.pickle, description="Pickling method for serialization.")
-    pickling_args: dict | EnvVar = Field(default_factory=dict, description="Arguments passed to the pickler.")
-    evaluate_lazy_value_for_cache: bool | EnvVar = Field(default=False, description="Evaluate lazy values before hashing/caching.")
-    sample_size: int | EnvVar | None = Field(default=None, description="Max cached entries per node (reservoir sampling). None = unlimited.")
+    enabled: bool | VarRef = False
+    version: int | VarRef = Field(default=0, description="Cache version. Changing this invalidates all cached entries.")
+    storage_path: str | VarRef | None = Field(default=None, description="Directory for cache storage. None = auto-generated temp directory.")
+    include_nodes: list[str] | VarRef | None = Field(default=None, description="Glob patterns for node names to cache.")
+    exclude_nodes: list[str] | VarRef | None = Field(default=None, description="Glob patterns for node names to exclude from caching.")
+    include_all_nodes: bool | VarRef = Field(default=False, description="Cache all nodes (overrides include_nodes).")
+    cache_what: CacheWhat | VarRef = Field(default=CacheWhat.BOTH, description="What to cache: both (memoization), output only, or input only.")
+    hash_method: HashMethod | VarRef = Field(default=HashMethod.xxh64, description="Hash algorithm for input salvo hashing.")
+    pickling_method: PicklingMethod | VarRef = Field(default=PicklingMethod.pickle, description="Pickling method for serialization.")
+    pickling_args: dict | VarRef = Field(default_factory=dict, description="Arguments passed to the pickler.")
+    evaluate_lazy_value_for_cache: bool | VarRef = Field(default=False, description="Evaluate lazy values before hashing/caching.")
+    sample_size: int | VarRef | None = Field(default=None, description="Max cached entries per node (reservoir sampling). None = unlimited.")
 
 # %% pts/netrun/02_storage/00_config.pct.py 9
 class NodeCacheConfig(EnvVarResolvableModel):
     """Per-node cache overrides. None values inherit from CacheConfig."""
-    enabled: bool | EnvVar | None = None
-    version: int | EnvVar | None = None
-    cache_what: CacheWhat | EnvVar | None = None
-    hash_method: HashMethod | EnvVar | None = None
-    pickling_method: PicklingMethod | EnvVar | None = None
-    pickling_args: dict | EnvVar | None = None
-    evaluate_lazy_value_for_cache: bool | EnvVar | None = None
-    sample_size: int | EnvVar | None = None
+    enabled: bool | VarRef | None = None
+    version: int | VarRef | None = None
+    cache_what: CacheWhat | VarRef | None = None
+    hash_method: HashMethod | VarRef | None = None
+    pickling_method: PicklingMethod | VarRef | None = None
+    pickling_args: dict | VarRef | None = None
+    evaluate_lazy_value_for_cache: bool | VarRef | None = None
+    sample_size: int | VarRef | None = None
 
 # %% pts/netrun/02_storage/00_config.pct.py 11
 class OnHashChange(str, Enum):
@@ -64,44 +64,44 @@ class BundleFormat(str, Enum):
 class LocalBackendConfig(EnvVarResolvableModel):
     """Local filesystem backend configuration."""
     type: Literal["local"] = "local"
-    base_path: str | EnvVar = Field(description="Base directory for file storage. Resolved relative to project_root if relative.")
+    base_path: str | VarRef = Field(description="Base directory for file storage. Resolved relative to project_root if relative.")
 
 
 class S3BackendConfig(EnvVarResolvableModel):
     """AWS S3 backend configuration."""
     type: Literal["s3"] = "s3"
-    bucket: str | EnvVar
-    prefix: str | EnvVar = ""
-    region: str | EnvVar | None = None
-    endpoint_url: str | EnvVar | None = None
-    access_key: str | EnvVar | None = None
-    secret_key: str | EnvVar | None = None
+    bucket: str | VarRef
+    prefix: str | VarRef = ""
+    region: str | VarRef | None = None
+    endpoint_url: str | VarRef | None = None
+    access_key: str | VarRef | None = None
+    secret_key: str | VarRef | None = None
 
 
 class GCSBackendConfig(EnvVarResolvableModel):
     """Google Cloud Storage backend configuration."""
     type: Literal["gcs"] = "gcs"
-    bucket: str | EnvVar
-    prefix: str | EnvVar = ""
-    credentials_path: str | EnvVar | None = None
+    bucket: str | VarRef
+    prefix: str | VarRef = ""
+    credentials_path: str | VarRef | None = None
 
 
 class SSHBackendConfig(EnvVarResolvableModel):
     """SSH/SFTP backend configuration."""
     type: Literal["ssh"] = "ssh"
-    host: str | EnvVar
-    base_path: str | EnvVar
-    port: int | EnvVar = 22
-    username: str | EnvVar | None = None
-    key_path: str | EnvVar | None = None
-    password: str | EnvVar | None = None
+    host: str | VarRef
+    base_path: str | VarRef
+    port: int | VarRef = 22
+    username: str | VarRef | None = None
+    key_path: str | VarRef | None = None
+    password: str | VarRef | None = None
 
 
 class RcloneBackendConfig(EnvVarResolvableModel):
     """Rclone backend configuration."""
     type: Literal["rclone"] = "rclone"
-    remote: str | EnvVar = Field(description="Rclone remote spec, e.g. 'myremote:bucket/path'.")
-    config_path: str | EnvVar | None = Field(default=None, description="Path to rclone config file. None uses rclone default (~/.config/rclone/rclone.conf). Relative paths resolved against project_root.")
+    remote: str | VarRef = Field(description="Rclone remote spec, e.g. 'myremote:bucket/path'.")
+    config_path: str | VarRef | None = Field(default=None, description="Path to rclone config file. None uses rclone default (~/.config/rclone/rclone.conf). Relative paths resolved against project_root.")
 
 
 BackendConfig = Annotated[
@@ -112,41 +112,41 @@ BackendConfig = Annotated[
 # %% pts/netrun/02_storage/00_config.pct.py 16
 class NodeFileStorageConfig(EnvVarResolvableModel):
     """Per-node file storage configuration."""
-    enabled: bool | EnvVar = True
+    enabled: bool | VarRef = True
     backend: str | BackendConfig = Field(description="Named backend from registry, or inline BackendConfig.")
 
     # Serialization
-    serialization: SerializationMethod | EnvVar = Field(default=SerializationMethod.pickle, description="Serialization format for stored values.")
-    pickling_method: PicklingMethod | EnvVar = PicklingMethod.pickle
-    pickling_args: dict | EnvVar = Field(default_factory=dict)
+    serialization: SerializationMethod | VarRef = Field(default=SerializationMethod.pickle, description="Serialization format for stored values.")
+    pickling_method: PicklingMethod | VarRef = PicklingMethod.pickle
+    pickling_args: dict | VarRef = Field(default_factory=dict)
 
     # Compression
-    compression: CompressionMethod | EnvVar | None = Field(default=None, description="Compression algorithm, or None for no compression.")
+    compression: CompressionMethod | VarRef | None = Field(default=None, description="Compression algorithm, or None for no compression.")
 
     # Hash change policy
-    on_hash_change: OnHashChange | EnvVar = OnHashChange.error
+    on_hash_change: OnHashChange | VarRef = OnHashChange.error
 
     # Input storage
-    store_inputs: bool | EnvVar = False
+    store_inputs: bool | VarRef = False
 
     # Hashing
-    hash_method: HashMethod | EnvVar = HashMethod.xxh64
-    hash_pickling_method: PicklingMethod | EnvVar = PicklingMethod.pickle
-    hash_pickling_args: dict | EnvVar = Field(default_factory=dict)
-    evaluate_lazy_value_for_hash: bool | EnvVar = False
+    hash_method: HashMethod | VarRef = HashMethod.xxh64
+    hash_pickling_method: PicklingMethod | VarRef = PicklingMethod.pickle
+    hash_pickling_args: dict | VarRef = Field(default_factory=dict)
+    evaluate_lazy_value_for_hash: bool | VarRef = False
 
     # Bundle mode
-    bundle: bool | EnvVar = False
-    bundle_format: BundleFormat | EnvVar = BundleFormat.tar_gz
+    bundle: bool | VarRef = False
+    bundle_format: BundleFormat | VarRef = BundleFormat.tar_gz
 
     # Output naming overrides (per-file mode only)
-    output_names: dict[str, dict[str, str]] | EnvVar | None = Field(
+    output_names: dict[str, dict[str, str]] | VarRef | None = Field(
         default=None,
         description="Override output file names: {salvo_name: {port_name: custom_base_name}}.",
     )
 
     # Version for invalidation
-    version: int | EnvVar = 0
+    version: int | VarRef = 0
 
 # %% pts/netrun/02_storage/00_config.pct.py 19
 class NodeStorageConfig(EnvVarResolvableModel):
@@ -171,7 +171,7 @@ class StorageConfig(EnvVarResolvableModel):
         description="Named backend registry. Nodes reference these by name.",
     )
     cache: CacheConfig | None = None
-    file_storage_metadata_path: str | EnvVar | None = Field(
+    file_storage_metadata_path: str | VarRef | None = Field(
         default=None,
         description="Diskcache path for file storage hash/manifest tracking. Required if any node uses file storage.",
     )

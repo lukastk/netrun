@@ -3,7 +3,8 @@
 	import { configSchema, getFieldDescription } from '$lib/stores/schemaStore';
 	import AutoConfigFields from './AutoConfigFields.svelte';
 	import { tooltip } from '$lib/utils/tooltip';
-	import { isEnvVar, makeEnvVar, getEnvVarName, getEnvVarDefault } from '$lib/utils/envvar';
+	import { isEnvVar, isVarRef, makeEnvVar, getEnvVarName, getEnvVarDefault } from '$lib/utils/envvar';
+	import { availableVarNames } from '$lib/stores/variablesStore';
 
 	function desc(field: string): string | undefined {
 		return getFieldDescription($configSchema, 'NodeExecutionConfig', field);
@@ -315,6 +316,7 @@
 				values={getConfig() as Record<string, unknown>}
 				onUpdate={(updates) => { onUpdate(updates); pushHistory(); }}
 				onUpdateLive={(updates) => onUpdate(updates)}
+				availableVarNames={$availableVarNames}
 			/>
 		</div>
 	{/if}
