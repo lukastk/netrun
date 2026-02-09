@@ -207,6 +207,8 @@ class NodeExecutionConfig(EnvVarResolvableModel):
     # Additional execution options (from PROJECT_SPEC.md)
     defer_startup: bool | EnvVar = Field(default=False, description="Defer start_node_func until the node's first epoch instead of during Net.start().")
 
+    run_on_startup: bool | EnvVar = Field(default=False, description="Execute this node once during Net.start(). Requires a satisfied input salvo condition with zero input packets.")
+
     max_parallel_epochs: int | EnvVar | None = Field(default=None, description="Maximum concurrent epochs for this node.")
     max_epochs: int | EnvVar | None = Field(default=None, description="Maximum total epochs across this node's lifetime. None = unlimited.")
 

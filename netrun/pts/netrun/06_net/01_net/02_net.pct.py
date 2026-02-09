@@ -1139,6 +1139,12 @@ class Net:
 
         self._started = True
 
+        # Execute run_on_startup nodes
+        for node_config in self._config_resolved.graph.nodes:
+            config = self._get_node_execution_config(node_config.name)
+            if config is not None and config.run_on_startup:
+                await self.execute_node(node_config.name)
+
     def start_sync(self) -> None:
         """Start the Net synchronously.
 
@@ -2097,6 +2103,324 @@ class Net:
         # Collect any prints from the failure callback into the epoch's logs
         if failure_ctx._print_buffer:
             self._handle_print_buffer(failure_ctx.epoch_id, failure_ctx._print_buffer)
+
+    def _evaluate_salvo_condition_term(
+        self,
+        term,  # netrun_sim.SalvoConditionTerm
+        port_packet_counts: dict[str, int],
+        node_name: str,
+    ) -> bool:
+        """Evaluate a netsim SalvoConditionTerm against given port packet counts.
+
+        Args:
+            term: A netrun_sim.SalvoConditionTerm to evaluate.
+            port_packet_counts: Mapping of port_name -> packet count.
+            node_name: Node name (for looking up port capacities).
+
+        Returns:
+            True if the term is satisfied.
+        """
+        kind = term.kind
+        if kind == "True":
+            return True
+        elif kind == "False":
+            return False
+        elif kind == "Port":
+            port_name = term.get_port_name()
+            state = term.get_port_state()
+            count = port_packet_counts.get(port_name, 0)
+
+            # Get port capacity from graph
+            node = self._netsim.graph.nodes()[node_name]
+            port = node.in_ports.get(port_name)
+            if port is None:
+                return False
+            slots_spec = port.slots_spec
+
+            # Check if it's a PortStateNumeric (has .kind and .value attributes)
+            if hasattr(state, 'value') and hasattr(state, 'kind'):
+                # PortStateNumeric
+                numeric_kind = state.kind
+                val = state.value
+                if numeric_kind == "equals":
+                    return count == val
+                elif numeric_kind == "less_than":
+                    return count < val
+                elif numeric_kind == "greater_than":
+                    return count > val
+                elif numeric_kind == "equals_or_less_than":
+                    return count <= val
+                elif numeric_kind == "equals_or_greater_than":
+                    return count >= val
+                return False
+            else:
+                # Simple PortState enum
+                is_finite = hasattr(slots_spec, 'capacity')
+                capacity = slots_spec.capacity if is_finite else None
+
+                if state == netrun_sim.PortState.Empty:
+                    return count == 0
+                elif state == netrun_sim.PortState.NonEmpty:
+                    return count > 0
+                elif state == netrun_sim.PortState.Full:
+                    if not is_finite:
+                        return False  # Infinite capacity is never full
+                    return count >= capacity
+                elif state == netrun_sim.PortState.NonFull:
+                    if not is_finite:
+                        return True  # Infinite capacity is always non-full
+                    return count < capacity
+                return False
+        elif kind == "And":
+            return all(
+                self._evaluate_salvo_condition_term(t, port_packet_counts, node_name)
+                for t in term.get_terms()
+            )
+        elif kind == "Or":
+            return any(
+                self._evaluate_salvo_condition_term(t, port_packet_counts, node_name)
+                for t in term.get_terms()
+            )
+        elif kind == "Not":
+            return not self._evaluate_salvo_condition_term(
+                term.get_inner(), port_packet_counts, node_name
+            )
+        return False
+
+    def _find_matching_salvo_condition(
+        self,
+        node_name: str,
+        port_packet_counts: dict[str, int],
+    ) -> tuple[str, dict] | None:
+        """Find the first input salvo condition satisfied by given port counts.
+
+        Args:
+            node_name: The node name.
+            port_packet_counts: Mapping of port_name -> packet count.
+
+        Returns:
+            Tuple of (condition_name, ports_spec) or None if no condition is satisfied.
+        """
+        node = self._netsim.graph.nodes()[node_name]
+        for cond_name, cond in node.in_salvo_conditions.items():
+            if self._evaluate_salvo_condition_term(cond.term, port_packet_counts, node_name):
+                return (cond_name, cond.ports)
+        return None
+
+    async def execute_node(
+        self,
+        node_name: str,
+        inputs: dict[str, list[Any]] | None = None,
+        *,
+        outside_net: bool = False,
+    ) -> "NodeExecutionResult | dict[str, list[Any]]":
+        """Execute a node's function directly by name.
+
+        This is a high-level helper that handles packet injection, epoch creation,
+        and execution in one call.
+
+        Args:
+            node_name: The name of the node to execute.
+            inputs: Mapping of port_name -> list of values to inject. None means no inputs.
+            outside_net: If True, execute the function directly without going through
+                the netsim epoch machinery. Returns a dict of output port -> values
+                instead of NodeExecutionResult.
+
+        Returns:
+            NodeExecutionResult (inside mode) or dict[str, list[Any]] (outside mode).
+
+        Raises:
+            ValueError: If node doesn't exist or no salvo condition is satisfied.
+            RuntimeError: If Net is not started (inside mode).
+        """
+        # Validate node exists
+        graph_nodes = self._netsim.graph.nodes()
+        if node_name not in graph_nodes:
+            raise ValueError(f"Node '{node_name}' not found in graph")
+
+        # Normalize inputs
+        if inputs is None:
+            inputs = {}
+
+        # Build port packet counts
+        port_packet_counts = {port_name: len(values) for port_name, values in inputs.items()}
+
+        # Find matching salvo condition
+        match = self._find_matching_salvo_condition(node_name, port_packet_counts)
+        if match is None:
+            raise ValueError(
+                f"No input salvo condition satisfied for node '{node_name}' "
+                f"with port packet counts: {port_packet_counts}"
+            )
+        matched_condition, _ = match
+
+        # Ensure start_node_func has been called
+        if node_name not in self._started_nodes:
+            await self._start_node(node_name)
+
+        if outside_net:
+            return await self._execute_node_outside(node_name, inputs, matched_condition)
+
+        # Inside mode: requires started Net
+        if not self._started:
+            raise RuntimeError("Net must be started to execute nodes inside the net")
+
+        # Verify node has an exec function
+        config = self._get_node_execution_config(node_name)
+        has_exec_func = (
+            config is not None and
+            (config.exec_node_func is not None or node_name in self._node_factories)
+        )
+        if not has_exec_func:
+            raise ValueError(f"Node '{node_name}' has no execution function configured")
+
+        # Inject input packets
+        injected_packets: list[tuple[str, str]] = []  # (port_name, packet_id)
+        for port_name, values in inputs.items():
+            packet_ids = self.inject_data(node_name, port_name, values)
+            for pid in packet_ids:
+                injected_packets.append((port_name, pid))
+
+        # Create epoch manually
+        salvo = netrun_sim.Salvo(
+            salvo_condition=matched_condition,
+            packets=injected_packets,
+        )
+        response, _ = self._netsim.do_action(
+            netrun_sim.NetAction.create_epoch(node_name, salvo)
+        )
+        epoch_id = response.epoch.id
+
+        # Execute the epoch using existing machinery
+        result = await self._execute_epoch(epoch_id)
+        return result
+
+    def _get_node_exec_func(self, node_name: str) -> Callable | None:
+        """Get the exec_node_func for a node, resolving from config or factory.
+
+        Args:
+            node_name: The node name.
+
+        Returns:
+            The exec function, or None if not configured.
+        """
+        config = self._get_node_execution_config(node_name)
+        if config is None:
+            return None
+
+        func = config.exec_node_func
+        if func is not None:
+            if isinstance(func, str):
+                func = self._import_from_path(func)
+            return func
+
+        # Check factory
+        if node_name in self._node_factories:
+            factory_path, factory_args = self._node_factories[node_name]
+            import importlib
+            module = importlib.import_module(factory_path)
+            get_node_funcs = getattr(module, "get_node_funcs", None)
+            if get_node_funcs is not None:
+                exec_func, _, _, _ = get_node_funcs(_net_config=self._config, **factory_args)
+                return exec_func
+
+        return None
+
+    async def _execute_node_outside(
+        self,
+        node_name: str,
+        inputs: dict[str, list[Any]],
+        matched_condition: str,
+    ) -> dict[str, list[Any]]:
+        """Execute a node's function directly without netsim epoch machinery.
+
+        Args:
+            node_name: The node name.
+            inputs: Mapping of port_name -> list of values.
+            matched_condition: The name of the matched salvo condition.
+
+        Returns:
+            Dict mapping output port names to lists of output values.
+
+        Raises:
+            ValueError: If no exec function is found for the node.
+        """
+        import uuid
+
+        # Resolve exec function
+        actual_func = self._get_node_exec_func(node_name)
+        if actual_func is None:
+            raise ValueError(f"Node '{node_name}' has no execution function configured")
+
+        # Build ephemeral packet IDs and values
+        packets: dict[str, list[str]] = {}
+        packet_values: dict[str, Any] = {}
+        for port_name, values in inputs.items():
+            packets[port_name] = []
+            for value in values:
+                pid = f"ephemeral_{uuid.uuid4()}"
+                packets[port_name].append(pid)
+                packet_values[pid] = value
+
+        # Get output port configs
+        out_ports = self._node_out_ports.get(node_name, {})
+
+        # Get node variables
+        config = self._get_node_execution_config(node_name)
+        node_vars = None
+        if config and config.node_vars:
+            node_vars = config.node_vars
+        elif self._config_resolved.node_vars:
+            node_vars = dict(self._config_resolved.node_vars)
+        if config and config.node_vars and self._config_resolved.node_vars:
+            # Merge: node-level overrides net-level
+            node_vars = {**self._config_resolved.node_vars, **config.node_vars}
+
+        # Create context
+        from netrun.net._net._context import NodeExecutionContext, DeferredActionQueue
+        ctx = NodeExecutionContext(
+            epoch_id=f"outside_{uuid.uuid4()}",
+            node_name=node_name,
+            _input_packet_values=packet_values,
+            _out_ports=out_ports,
+            _node_vars=node_vars,
+            _type_checking_enabled=(
+                config.type_checking_enabled
+                if config and config.type_checking_enabled is not None
+                else (self._config_resolved.type_checking_enabled or True)
+            ),
+        )
+
+        # Call the function
+        result = actual_func(ctx, packets)
+        if asyncio.iscoroutine(result):
+            result = await result
+
+        # Extract outputs from deferred actions
+        deferred_values: dict[str, Any] = {}  # deferred_id -> value
+        port_packets: dict[str, list[str]] = {}  # port_name -> list of deferred_ids
+        output_values: dict[str, list[Any]] = {}
+
+        for action_type, args in ctx._deferred_actions.actions:
+            if action_type == "create_packet":
+                deferred_id, value = args
+                deferred_values[deferred_id] = value
+            elif action_type == "load_output_port":
+                port_name, packet_id = args
+                if port_name not in port_packets:
+                    port_packets[port_name] = []
+                port_packets[port_name].append(packet_id)
+
+        # Map port packets to values
+        for port_name, pkt_ids in port_packets.items():
+            output_values[port_name] = []
+            for pid in pkt_ids:
+                if pid in deferred_values:
+                    output_values[port_name].append(deferred_values[pid])
+                elif pid in packet_values:
+                    output_values[port_name].append(packet_values[pid])
+
+        return output_values
 
     async def execute_startable_epochs(self) -> list[tuple[str, NodeExecutionResult | None]]:
         """Execute all currently startable epochs.
