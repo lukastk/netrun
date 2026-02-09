@@ -329,7 +329,6 @@
 		border-radius: 6px;
 		color: var(--text-primary, #fff);
 		font-size: 13px;
-		font-family: 'SF Mono', Monaco, monospace;
 		box-sizing: border-box;
 	}
 
@@ -396,7 +395,6 @@
 
 	.env-equals {
 		color: var(--text-secondary, #666);
-		font-family: 'SF Mono', Monaco, monospace;
 	}
 
 	.env-value {
@@ -410,7 +408,6 @@
 		border-radius: 4px;
 		color: var(--text-primary, #fff);
 		font-size: 12px;
-		font-family: 'SF Mono', Monaco, monospace;
 	}
 
 	.env-row input:focus {
