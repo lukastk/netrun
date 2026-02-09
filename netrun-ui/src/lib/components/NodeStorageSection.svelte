@@ -7,10 +7,11 @@
 
 	interface Props {
 		storage: Record<string, unknown> | null | undefined;
+		availableBackends: string[];
 		onUpdate: (storage: Record<string, unknown> | null) => void;
 	}
 
-	let { storage, onUpdate }: Props = $props();
+	let { storage, availableBackends, onUpdate }: Props = $props();
 
 	// --- Schema lookups ---
 	let cacheSchema = $derived($configSchema?.models['NodeCacheConfig'] ?? null);
@@ -156,17 +157,32 @@
 	<!-- File storage mode -->
 	{#if mode === 'file_storage' && fileStorageData != null}
 		<div class="mode-content">
-			<!-- Custom: backend (string name or inline config) -->
+			<!-- Custom: backend (select from net-level backends or type manually) -->
 			<div class="field">
 				<label>Backend</label>
-				<input
-					type="text"
-					value={typeof fileStorageData.backend === 'string' ? fileStorageData.backend : ''}
-					placeholder="backend_name (from net-level backends)"
-					oninput={(e) => updateFileStorage({ ...fileStorageData, backend: (e.target as HTMLInputElement).value || '' })}
-					onblur={() => pushHistory()}
-					class="mono"
-				/>
+				{#if availableBackends.length > 0}
+					<select
+						value={typeof fileStorageData.backend === 'string' ? fileStorageData.backend : ''}
+						onchange={(e) => {
+							updateFileStorage({ ...fileStorageData, backend: (e.target as HTMLSelectElement).value });
+							pushHistory();
+						}}
+					>
+						<option value="">Select a backend...</option>
+						{#each availableBackends as name}
+							<option value={name}>{name}</option>
+						{/each}
+					</select>
+				{:else}
+					<input
+						type="text"
+						value={typeof fileStorageData.backend === 'string' ? fileStorageData.backend : ''}
+						placeholder="backend_name"
+						oninput={(e) => updateFileStorage({ ...fileStorageData, backend: (e.target as HTMLInputElement).value || '' })}
+						onblur={() => pushHistory()}
+						class="mono"
+					/>
+				{/if}
 				<span class="field-hint">Name of a backend defined in Storage &gt; Backends</span>
 			</div>
 
@@ -289,7 +305,8 @@
 	}
 
 	.field input,
-	.field textarea {
+	.field textarea,
+	.field select {
 		width: 100%;
 		padding: 6px 8px;
 		background: var(--bg-tertiary, #2d2d2d);
@@ -300,9 +317,14 @@
 	}
 
 	.field input:focus,
-	.field textarea:focus {
+	.field textarea:focus,
+	.field select:focus {
 		outline: none;
 		border-color: var(--accent-color, #3b82f6);
+	}
+
+	.field select {
+		cursor: pointer;
 	}
 
 	.field input.mono,
