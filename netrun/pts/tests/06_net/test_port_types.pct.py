@@ -27,7 +27,7 @@ from netrun.net._net import (
     PacketTypeMismatch,
     DeferredActionQueue,
 )
-from netrun.storage import LazyPacketValueSpec
+from netrun.packets import LazyPacketValueSpec
 
 # %%
 #|export

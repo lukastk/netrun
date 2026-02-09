@@ -16,7 +16,7 @@ from netrun.net._net import (
     PacketTypeMismatch,
     DeferredActionQueue,
 )
-from netrun.storage import LazyPacketValueSpec
+from netrun.packets import LazyPacketValueSpec
 
 # %% pts/tests/06_net/test_port_types.pct.py 3
 class TestPortTypeConfig:

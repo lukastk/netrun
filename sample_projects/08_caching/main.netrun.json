@@ -2,9 +2,11 @@
   "extra": {
     "description": "A data pipeline demonstrating caching/memoization features"
   },
-  "cache": {
-    "enabled": true,
-    "include_all_nodes": true
+  "storage": {
+    "cache": {
+      "enabled": true,
+      "include_all_nodes": true
+    }
   },
   "output_queues": {
     "reports": {

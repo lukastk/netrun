@@ -27,7 +27,7 @@ import netrun_sim
 if TYPE_CHECKING:
     from netrun.net._net._net import Net
     from netrun.net.config import NodeConfig, EdgeConfig, PortConfig, NodeExecutionConfig
-    from netrun.caching._store import CachedEpochData
+    from netrun.storage._cache import CachedEpochData
 
 # %%
 #|export

@@ -20,7 +20,7 @@ from ...net.config._base import (
 from ...net.config._nodes import NodeVariable
 from ...net.config._graph import GraphConfig
 from ...execution_manager import RunAllocationMethod
-from ...caching.config import CacheConfig
+from ...storage.config import StorageConfig
 
 # %% pts/netrun/06_net/00_config/03_net_config.pct.py 5
 class OutputQueueConfig(EnvVarResolvableModel):
@@ -200,7 +200,7 @@ class NetConfig(EnvVarResolvableModel):
 
     print_exceptions: bool | EnvVar = Field(default=False, description="Print epoch exceptions to stderr when they occur. Can be overridden per-node.")
 
-    cache: CacheConfig | None = Field(default=None, description="Cache/memoization configuration.")
+    storage: StorageConfig | None = Field(default=None, description="Storage configuration (caching, file storage, backend registry).")
 
     @field_serializer("dead_letter_callback", when_used='json')
     def serialize_dead_letter_callback(self, callback: Callable | str | EnvVar | None) -> str | dict | None:

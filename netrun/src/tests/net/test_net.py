@@ -47,7 +47,7 @@ from netrun.net.config import (
     PortStateNonEmptyConfig,
 )
 from netrun.execution_manager import RunAllocationMethod
-from netrun.storage import LazyPacketValueSpec
+from netrun.packets import LazyPacketValueSpec
 
 # %% pts/tests/06_net/test_net.pct.py 4
 def test_net_protocol_keys_values():

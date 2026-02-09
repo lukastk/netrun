@@ -60,7 +60,7 @@ from netrun.net.config import (
     PortStateNonEmptyConfig,
 )
 from netrun.execution_manager import RunAllocationMethod
-from netrun.storage import LazyPacketValueSpec
+from netrun.packets import LazyPacketValueSpec
 
 # %% [markdown]
 # ## NetProtocolKeys Tests

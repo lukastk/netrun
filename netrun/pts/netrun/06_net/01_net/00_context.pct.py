@@ -34,7 +34,7 @@ from beartype.door import is_bearable
 
 from netrun.net.config import NodeExecutionConfig, NodeVariable, PortConfig, PortTypeConfig
 from netrun._iutils import get_timestamp_utc
-from netrun.storage import LazyPacketValueSpec
+from netrun.packets import LazyPacketValueSpec
 
 # %% [markdown]
 # ## Net Protocol Keys

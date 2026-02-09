@@ -21,7 +21,7 @@ import time
 from pathlib import Path
 
 from netrun.core import Net, NetConfig
-from netrun.caching.config import CacheConfig, CacheWhat, NodeCacheConfig
+from netrun.storage.config import CacheConfig, CacheWhat, NodeCacheConfig, StorageConfig
 
 
 # Helper to run the pipeline and return elapsed time
@@ -61,11 +61,11 @@ async def main():
     reset_call_counts()
 
     config = NetConfig.from_file(config_path)
-    config.cache = CacheConfig(
+    config.storage = StorageConfig(cache=CacheConfig(
         enabled=True,
         include_all_nodes=True,
         storage_path=cache_dir,
-    )
+    ))
 
     async with Net(config) as net:
         # First run — all nodes execute
@@ -99,11 +99,11 @@ async def main():
     reset_call_counts()
 
     config = NetConfig.from_file(config_path)
-    config.cache = CacheConfig(
+    config.storage = StorageConfig(cache=CacheConfig(
         enabled=True,
         include_all_nodes=True,
         storage_path=cache_dir,
-    )
+    ))
 
     async with Net(config) as net:
         elapsed = await run_pipeline(net, "https://example.com/other")
@@ -123,11 +123,11 @@ async def main():
     print()
 
     config = NetConfig.from_file(config_path)
-    config.cache = CacheConfig(
+    config.storage = StorageConfig(cache=CacheConfig(
         enabled=True,
         include_all_nodes=True,
         storage_path=cache_dir,
-    )
+    ))
 
     async with Net(config) as net:
         # Run twice with different inputs to populate cache
@@ -166,11 +166,11 @@ async def main():
     print()
 
     config = NetConfig.from_file(config_path)
-    config.cache = CacheConfig(
+    config.storage = StorageConfig(cache=CacheConfig(
         enabled=True,
         include_all_nodes=True,
         storage_path=cache_dir,
-    )
+    ))
 
     async with Net(config) as net:
         await run_pipeline(net, "https://example.com/data")
@@ -197,11 +197,11 @@ async def main():
     reset_call_counts()
 
     config = NetConfig.from_file(config_path)
-    config.cache = CacheConfig(
+    config.storage = StorageConfig(cache=CacheConfig(
         enabled=True,
         include_all_nodes=True,
         storage_path=cache_dir,
-    )
+    ))
 
     async with Net(config) as net:
         # These should both be cache hits from earlier
@@ -240,12 +240,12 @@ async def main():
 
     output_cache_dir = tempfile.mkdtemp(prefix="netrun_output_cache_")
     config = NetConfig.from_file(config_path)
-    config.cache = CacheConfig(
+    config.storage = StorageConfig(cache=CacheConfig(
         enabled=True,
         include_all_nodes=True,
         cache_what=CacheWhat.OUTPUT_ONLY,
         storage_path=output_cache_dir,
-    )
+    ))
 
     async with Net(config) as net:
         await run_pipeline(net, "https://example.com/data")
@@ -273,12 +273,12 @@ async def main():
 
     input_cache_dir = tempfile.mkdtemp(prefix="netrun_input_cache_")
     config = NetConfig.from_file(config_path)
-    config.cache = CacheConfig(
+    config.storage = StorageConfig(cache=CacheConfig(
         enabled=True,
         include_all_nodes=True,
         cache_what=CacheWhat.INPUT_ONLY,
         storage_path=input_cache_dir,
-    )
+    ))
 
     async with Net(config) as net:
         await run_pipeline(net, "https://example.com/data")
@@ -307,12 +307,12 @@ async def main():
 
     # Version 0
     config = NetConfig.from_file(config_path)
-    config.cache = CacheConfig(
+    config.storage = StorageConfig(cache=CacheConfig(
         enabled=True,
         include_all_nodes=True,
         version=0,
         storage_path=version_cache_dir,
-    )
+    ))
 
     async with Net(config) as net:
         await run_pipeline(net, "https://example.com/data")
@@ -325,12 +325,12 @@ async def main():
     reset_call_counts()
 
     config = NetConfig.from_file(config_path)
-    config.cache = CacheConfig(
+    config.storage = StorageConfig(cache=CacheConfig(
         enabled=True,
         include_all_nodes=True,
         version=1,  # bumped!
         storage_path=version_cache_dir,
-    )
+    ))
 
     async with Net(config) as net:
         await run_pipeline(net, "https://example.com/data")
@@ -351,11 +351,11 @@ async def main():
     print()
 
     config = NetConfig.from_file(config_path)
-    config.cache = CacheConfig(
+    config.storage = StorageConfig(cache=CacheConfig(
         enabled=True,
         include_all_nodes=True,
         storage_path=cache_dir,
-    )
+    ))
 
     async with Net(config) as net:
         await run_pipeline(net, "https://example.com/data")
@@ -387,11 +387,11 @@ async def main():
 
     epoch_cache_dir = tempfile.mkdtemp(prefix="netrun_epoch_cache_")
     config = NetConfig.from_file(config_path)
-    config.cache = CacheConfig(
+    config.storage = StorageConfig(cache=CacheConfig(
         enabled=True,
         include_all_nodes=True,
         storage_path=epoch_cache_dir,
-    )
+    ))
 
     async with Net(config) as net:
         await run_pipeline(net, "https://example.com/data")

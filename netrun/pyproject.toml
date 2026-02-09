@@ -39,6 +39,7 @@ dev = [
 
 [tool.uv.sources]
 dev = { path = "src/dev", editable = true }
+netrun-sim = { path = "../netrun-sim/python", editable = true }
 
 [build-system]
 requires = ["hatchling"]

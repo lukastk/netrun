@@ -7,12 +7,12 @@
 # ---
 
 # %%
-#|default_exp caching._store
+#|default_exp storage._cache
 
 # %%
 #|hide
 from nblite import nbl_export, show_doc; nbl_export();
-import netrun.caching._store as this_module
+import netrun.storage._cache as this_module
 
 # %%
 #|export
@@ -28,8 +28,8 @@ import diskcache
 from netrun._iutils import get_timestamp_utc
 from netrun._iutils.hashing import HashMethod, hash as hash_data
 from netrun._iutils.pickling import PicklingMethod, pickle_data, unpickle_data
-from netrun.caching.config import CacheConfig, CacheWhat, NodeCacheConfig
-from netrun.storage import LazyPacketValueSpec
+from netrun.storage.config import CacheConfig, CacheWhat, NodeCacheConfig
+from netrun.storage._file_storage import compute_input_hash
 
 # %%
 #|hide
@@ -286,28 +286,16 @@ class NetCacheStore:
             Combined hash of all input values.
         """
         effective = self.get_effective_config(node_name)
-        hash_method = effective["hash_method"]
-        pickling_method = effective["pickling_method"]
-        pickling_args = effective["pickling_args"]
         if evaluate_lazy is None:
             evaluate_lazy = effective["evaluate_lazy_value_for_cache"]
 
-        # Build a deterministic representation: sorted by port name, values in order
-        hash_input = []
-        for port_name in sorted(packets.keys()):
-            port_values = []
-            for packet_id in packets[port_name]:
-                value = packet_store.peek(packet_id)
-                if evaluate_lazy and isinstance(value, LazyPacketValueSpec):
-                    value = packet_store._evaluate_lazy_value(value, packet_id)
-                port_values.append(value)
-            hash_input.append((port_name, port_values))
-
-        return hash_data(
-            hash_input,
-            method=hash_method,
-            pickling_method=pickling_method,
-            pickling_args=pickling_args,
+        return compute_input_hash(
+            packets=packets,
+            packet_store=packet_store,
+            hash_method=effective["hash_method"],
+            pickling_method=effective["pickling_method"],
+            pickling_args=effective["pickling_args"],
+            evaluate_lazy=evaluate_lazy,
         )
 
     def lookup(self, node_name: str, input_hash: int) -> CachedEpochData | None:
