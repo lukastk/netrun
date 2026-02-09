@@ -679,6 +679,9 @@ export { hasClipboardContent } from './clipboardStore';
 // Toast notifications
 import { toasts } from './toastStore';
 
+// Modal dialogs
+import { showConfirm, showAlert } from './modalStore';
+
 // Recent files
 import { addRecentFile } from './recentFilesStore';
 export { recentFiles, removeRecentFile, clearRecentFiles } from './recentFilesStore';
@@ -1235,22 +1238,10 @@ function apiPortToPortConfig(port: { name: string; type?: string | null }): Port
 	};
 }
 
-// Load from file via API
-// Creates a new tab if file not already open, or switches to existing tab
-export async function loadFromFile(path: string): Promise<void> {
-	// Check if file is already open in a tab
-	const existingTab = getTabByFilePath(path);
-	if (existingTab) {
-		switchTab(existingTab.id);
-		return;
-	}
-
-	const response = await api.readFile(path);
-
-	// Convert API response to our node/edge types
-	const loadedNodes: FlowNode[] = response.nodes.map(node => {
+// Helpers to convert API response types to our internal node/edge types
+function convertApiNodes(apiNodes: UINode[]): FlowNode[] {
+	return apiNodes.map(node => {
 		if (node.data.nodeType === 'subgraph') {
-			// Subgraph node
 			return {
 				id: node.id,
 				type: node.type as 'subgraphNode',
@@ -1270,7 +1261,6 @@ export async function loadFromFile(path: string): Promise<void> {
 				}
 			} as SubgraphNode;
 		} else {
-			// Regular or factory node
 			return {
 				id: node.id,
 				type: node.type as 'netrunNode',
@@ -1291,8 +1281,10 @@ export async function loadFromFile(path: string): Promise<void> {
 			} as NetrunNode;
 		}
 	});
+}
 
-	const loadedEdges: NetrunEdge[] = response.edges.map(edge => ({
+function convertApiEdges(apiEdges: UIEdge[]): NetrunEdge[] {
+	return apiEdges.map(edge => ({
 		id: edge.id,
 		source: edge.source,
 		target: edge.target,
@@ -1300,6 +1292,22 @@ export async function loadFromFile(path: string): Promise<void> {
 		targetHandle: edge.targetHandle,
 		type: edge.type || 'smoothstep',
 	}));
+}
+
+// Load from file via API
+// Creates a new tab if file not already open, or switches to existing tab
+export async function loadFromFile(path: string): Promise<void> {
+	// Check if file is already open in a tab
+	const existingTab = getTabByFilePath(path);
+	if (existingTab) {
+		switchTab(existingTab.id);
+		return;
+	}
+
+	const response = await api.readFile(path);
+
+	const loadedNodes = convertApiNodes(response.nodes);
+	const loadedEdges = convertApiEdges(response.edges);
 
 	// Check if current tab is empty and untitled - reuse it
 	const currentTab = get(activeTab);
@@ -1337,6 +1345,41 @@ export async function loadFromFile(path: string): Promise<void> {
 
 	// Update browser URL to reflect opened file
 	updateUrlWithFile(path);
+}
+
+// Reload the current file from disk, discarding in-memory changes
+export async function reloadFile(): Promise<void> {
+	const tab = get(activeTab);
+	if (!tab || !tab.filePath || tab.subgraphContext?.isInline) return;
+
+	if (tab.isDirty) {
+		const confirmed = await showConfirm({
+			title: 'Unsaved Changes',
+			message: 'You have unsaved changes. Reload file from disk and discard changes?',
+			confirmText: 'Reload',
+			cancelText: 'Cancel',
+		});
+		if (!confirmed) return;
+	}
+
+	try {
+		const response = await api.readFile(tab.filePath);
+		updateActiveTab({
+			nodes: convertApiNodes(response.nodes),
+			edges: convertApiEdges(response.edges),
+			extraData: response.extra_data || null,
+			graphExtra: response.extra || null,
+			fileFormat: response.format,
+			isDirty: false,
+			history: { past: [], future: [] },
+		});
+		toasts.success('File reloaded from disk');
+	} catch (e) {
+		await showAlert({
+			title: 'Error',
+			message: `Reload failed: ${(e as Error).message}`,
+		});
+	}
 }
 
 // Save inline subgraph changes back to parent tab

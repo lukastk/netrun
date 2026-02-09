@@ -11,6 +11,7 @@
 		isInlineSubgraph,
 		loadFromFile,
 		saveToFile,
+		reloadFile,
 		clearFlow,
 		updateFactoryNodePreview,
 		selectedNodeIds,
@@ -217,6 +218,10 @@
 		}
 	}
 
+	async function handleReload() {
+		await reloadFile();
+	}
+
 	function handleUndo() {
 		undo();
 	}
@@ -239,6 +244,10 @@
 		<button onclick={handleSave} title="Save file (Cmd+S)" disabled={!$isDirty}>
 			<span class="icon">💾</span>
 			<span class="label">Save</span>
+		</button>
+		<button onclick={handleReload} title="Reload file from disk (Cmd+Shift+R)" disabled={!$currentFilePath}>
+			<span class="icon">🔄</span>
+			<span class="label">Reload</span>
 		</button>
 		<div class="separator"></div>
 		<button onclick={handleUndo} title="Undo (Cmd+Z)" disabled={$history.past.length === 0}>
