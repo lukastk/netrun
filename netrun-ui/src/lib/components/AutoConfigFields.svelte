@@ -714,7 +714,7 @@
 		background: transparent;
 		color: var(--text-secondary, #666);
 		font-family: 'SF Mono', Monaco, Consolas, monospace;
-		font-size: 10px;
+		font-size: 9px;
 		font-weight: 700;
 		cursor: pointer;
 		line-height: 1;

@@ -4445,6 +4445,156 @@ async def test_max_epochs_queued_when_not_propagating():
         assert isinstance(net._exception_queue[0].__cause__, MaxEpochsExceeded)
 
 # %% [markdown]
+# ## Global max_epochs Tests
+
+# %%
+#|export
+def test_global_max_epochs_default_unlimited():
+    """Test that NetConfig() has max_epochs=-1 (unlimited) by default."""
+    config = NetConfig(graph=GraphConfig(nodes=[], edges=[]))
+    assert config.max_epochs == -1
+
+# %%
+test_global_max_epochs_default_unlimited()
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_global_max_epochs_limits_all_nodes():
+    """Test that global max_epochs limits nodes without per-node config."""
+    def simple_node(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="A",
+                in_ports={"in": PortConfig()},
+                execution_config=NodeExecutionConfig(
+                    node_name="A",
+                    pools=["main"],
+                    exec_node_func=simple_node,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+        max_epochs=2,
+    )
+
+    async with Net(config) as net:
+        # First two epochs should succeed
+        net.inject_data("A", "in", [1])
+        await net.run_until_blocked()
+        net.inject_data("A", "in", [2])
+        await net.run_until_blocked()
+
+        # Third epoch should raise
+        net.inject_data("A", "in", [3])
+        with pytest.raises(EpochError) as exc_info:
+            await net.run_until_blocked()
+
+        assert isinstance(exc_info.value.__cause__, MaxEpochsExceeded)
+        assert exc_info.value.__cause__.max_epochs == 2
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_per_node_max_epochs_overrides_global():
+    """Test that per-node max_epochs overrides global max_epochs."""
+    def simple_node(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Limited",
+                in_ports={"in": PortConfig()},
+                execution_config=NodeExecutionConfig(
+                    node_name="Limited",
+                    pools=["main"],
+                    exec_node_func=simple_node,
+                    max_epochs=2,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+        max_epochs=5,
+    )
+
+    async with Net(config) as net:
+        # First two epochs succeed (per-node limit is 2)
+        net.inject_data("Limited", "in", [1])
+        await net.run_until_blocked()
+        net.inject_data("Limited", "in", [2])
+        await net.run_until_blocked()
+
+        # Third epoch should raise (per-node limit of 2, not global 5)
+        net.inject_data("Limited", "in", [3])
+        with pytest.raises(EpochError) as exc_info:
+            await net.run_until_blocked()
+
+        assert isinstance(exc_info.value.__cause__, MaxEpochsExceeded)
+        assert exc_info.value.__cause__.max_epochs == 2
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_per_node_minus_one_overrides_global_limit():
+    """Test that per-node max_epochs=-1 makes node unlimited despite global limit."""
+    count = 0
+
+    def counting_node(ctx, packets):
+        nonlocal count
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+                count += 1
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Unlimited",
+                in_ports={"in": PortConfig()},
+                execution_config=NodeExecutionConfig(
+                    node_name="Unlimited",
+                    pools=["main"],
+                    exec_node_func=counting_node,
+                    max_epochs=-1,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+        max_epochs=2,
+    )
+
+    async with Net(config) as net:
+        # Should run more than the global limit of 2
+        for i in range(5):
+            net.inject_data("Unlimited", "in", [i])
+            await net.run_until_blocked()
+
+    assert count == 5
+
+# %% [markdown]
 # ## Factory exec_node_func Override Tests
 
 # %%
