@@ -65,6 +65,21 @@ def validate(
     except Exception as e:
         errors.append(f"Config validation error: {e}")
 
+    # Graph-level validation (fan-out, missing nodes/ports, etc.)
+    if not errors:
+        try:
+            resolved = net_config.resolve()
+        except Exception:
+            # Factory/import resolution failures — skip graph validation
+            # (these require the project's Python environment to resolve)
+            resolved = None
+
+        if resolved is not None:
+            try:
+                resolved.graph.get_graph()  # validates via netrun_sim
+            except ValueError as e:
+                errors.append(f"Graph validation error: {e}")
+
     # Raw data checks (recipes, actions)
     if not errors:
         try:
