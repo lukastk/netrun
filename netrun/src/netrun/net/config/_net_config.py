@@ -204,6 +204,8 @@ class NetConfig(EnvVarResolvableModel):
 
     print_exceptions: bool | VarRef = Field(default=False, description="Print epoch exceptions to stderr when they occur. Can be overridden per-node.")
 
+    max_epochs: int | VarRef = Field(default=-1, description="Default max epochs for all nodes. -1 = unlimited. Can be overridden per-node.")
+
     storage: StorageConfig | None = Field(default=None, description="Storage configuration (caching, file storage, backend registry).")
 
     @field_serializer("dead_letter_callback", when_used='json')
