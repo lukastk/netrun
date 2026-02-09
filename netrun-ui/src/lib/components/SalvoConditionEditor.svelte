@@ -484,7 +484,6 @@
 	}
 
 	.term-input.mono {
-		font-family: 'SF Mono', Monaco, Consolas, monospace;
 		font-size: 11px;
 	}
 
@@ -527,7 +526,6 @@
 	}
 
 	.term-help code {
-		font-family: 'SF Mono', Monaco, Consolas, monospace;
 		background: var(--bg-tertiary, #2d2d2d);
 		padding: 1px 4px;
 		border-radius: 2px;
@@ -561,7 +559,6 @@
 
 	.port-name {
 		font-size: 11px;
-		font-family: 'SF Mono', Monaco, Consolas, monospace;
 		color: var(--text-primary, #fff);
 	}
 

@@ -729,7 +729,6 @@
 		border-radius: 3px;
 		background: transparent;
 		color: var(--text-secondary, #666);
-		font-family: 'SF Mono', Monaco, Consolas, monospace;
 		font-size: 10px;
 		font-weight: 700;
 		cursor: pointer;
@@ -766,7 +765,6 @@
 	.envvar-prefix {
 		padding: 6px 4px 6px 8px;
 		color: var(--accent-color, #3b82f6);
-		font-family: 'SF Mono', Monaco, Consolas, monospace;
 		font-size: 12px;
 		font-weight: 700;
 		user-select: none;
@@ -778,7 +776,6 @@
 		background: transparent;
 		border: none;
 		color: var(--text-primary, #fff);
-		font-family: 'SF Mono', Monaco, Consolas, monospace;
 		font-size: 12px;
 	}
 

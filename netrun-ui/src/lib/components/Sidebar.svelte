@@ -1678,7 +1678,6 @@
 	}
 
 	.readonly-value.mono {
-		font-family: 'SF Mono', Monaco, Consolas, monospace;
 		font-size: 11px;
 		color: var(--text-secondary, #a0a0a0);
 	}
@@ -1750,7 +1749,6 @@
 	}
 
 	.arg-key {
-		font-family: 'SF Mono', Monaco, Consolas, monospace;
 		font-size: 12px;
 		font-weight: 500;
 		color: var(--text-primary, #fff);
@@ -1772,7 +1770,6 @@
 	}
 
 	.factory-arg input.import-path {
-		font-family: 'SF Mono', Monaco, Consolas, monospace;
 		font-size: 12px;
 	}
 
@@ -1808,7 +1805,6 @@
 	}
 
 	.factory-arg input[type="number"] {
-		font-family: 'SF Mono', Monaco, Consolas, monospace;
 		font-size: 12px;
 	}
 
@@ -1901,7 +1897,6 @@
 	}
 
 	input.mono {
-		font-family: 'SF Mono', Monaco, Consolas, monospace;
 		font-size: 11px;
 	}
 
@@ -1980,12 +1975,10 @@
 
 	.pool-key {
 		color: var(--text-secondary, #a0a0a0);
-		font-family: 'SF Mono', Monaco, Consolas, monospace;
 	}
 
 	.pool-value {
 		color: var(--text-primary, #fff);
-		font-family: 'SF Mono', Monaco, Consolas, monospace;
 	}
 
 	/* Factory item styling */
@@ -2009,7 +2002,6 @@
 
 	.factory-item .factory-full-path {
 		font-size: 10px;
-		font-family: 'SF Mono', Monaco, Consolas, monospace;
 		color: var(--text-secondary, #a0a0a0);
 		white-space: nowrap;
 		overflow: hidden;
@@ -2093,7 +2085,6 @@
 		border-radius: 3px;
 		background: transparent;
 		color: var(--text-secondary, #666);
-		font-family: 'SF Mono', Monaco, Consolas, monospace;
 		font-size: 10px;
 		font-weight: 700;
 		cursor: pointer;
@@ -2130,7 +2121,6 @@
 	.envvar-prefix {
 		padding: 6px 4px 6px 8px;
 		color: var(--accent-color, #3b82f6);
-		font-family: 'SF Mono', Monaco, Consolas, monospace;
 		font-size: 12px;
 		font-weight: 700;
 		user-select: none;
@@ -2142,7 +2132,6 @@
 		background: transparent;
 		border: none;
 		color: var(--text-primary, #fff);
-		font-family: 'SF Mono', Monaco, Consolas, monospace;
 		font-size: 12px;
 	}
 
