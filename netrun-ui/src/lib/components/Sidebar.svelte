@@ -929,9 +929,12 @@
 					</button>
 					{#if sectionsOpen.nodeStorage}
 						{@const nodeExecConfig = getNodeExecutionConfig($selectedNode)}
+						{@const storageData = ($extraData as Record<string, unknown>)?.storage as Record<string, unknown> | null | undefined}
+						{@const backendsObj = storageData?.backends as Record<string, unknown> | null | undefined}
 						<div class="section-content">
 							<NodeStorageSection
 								storage={nodeExecConfig?.storage as Record<string, unknown> | null | undefined}
+								availableBackends={backendsObj ? Object.keys(backendsObj) : []}
 								onUpdate={(storageVal: Record<string, unknown> | null) => {
 									const config = { ...(nodeExecConfig ?? {}) };
 									if (storageVal === null) {
