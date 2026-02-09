@@ -1623,8 +1623,14 @@ class Net:
 
         # Check max_epochs limit
         self._node_epoch_counts[node_name] = self._node_epoch_counts.get(node_name, 0) + 1
+
+        # Resolve effective max_epochs: per-node overrides global, -1 means unlimited
+        effective_max_epochs = self._config_resolved.max_epochs  # global default
         if config is not None and config.max_epochs is not None:
-            if self._node_epoch_counts[node_name] > config.max_epochs:
+            effective_max_epochs = config.max_epochs
+
+        if effective_max_epochs != -1:
+            if self._node_epoch_counts[node_name] > effective_max_epochs:
                 # Cancel the epoch and raise
                 response, _ = self._netsim.do_action(netrun_sim.NetAction.cancel_epoch(epoch_id))
                 record = self._epochs[epoch_id]
@@ -1632,7 +1638,7 @@ class Net:
                 record.ended_at = get_timestamp_utc()
                 record.destroyed_packets = list(response.destroyed_packets)
 
-                error = MaxEpochsExceeded(node_name, config.max_epochs)
+                error = MaxEpochsExceeded(node_name, effective_max_epochs)
                 propagate, print_exc = self._get_effective_exception_config(config)
 
                 if print_exc:
