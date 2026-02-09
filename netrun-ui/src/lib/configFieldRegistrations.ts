@@ -31,6 +31,7 @@ registerField('NetConfig', 'error_on_undeclared_output', 'auto');
 registerField('NetConfig', 'type_checking_enabled', 'auto');
 registerField('NetConfig', 'propagate_exceptions', 'auto');
 registerField('NetConfig', 'print_exceptions', 'auto');
+registerField('NetConfig', 'max_epochs', 'auto');
 registerField('NetConfig', 'storage', 'custom', 'StorageSection.svelte');
 
 // ==========================================================================
