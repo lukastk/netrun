@@ -1633,7 +1633,7 @@ class Net:
         input_hash = None
         if self._cache_store.is_cache_enabled(node_name):
             effective_cache = self._cache_store.get_effective_config(node_name)
-            cache_what = effective_cache["cache_what"]
+            cache_what = effective_cache.cache_what
             input_hash = self._cache_store.hash_input_salvo(
                 node_name, packets, self._packet_store,
             )
@@ -1906,6 +1906,44 @@ class Net:
             exception=None,
         )
 
+    def _extract_epoch_outputs(
+        self,
+        execution_result: NodeExecutionResult,
+        packets: dict[str, list[str]],
+        packet_values: dict[str, Any],
+    ) -> tuple[dict[str, list[Any]], list[str], set[str]]:
+        """Extract output values, salvo names, and consumed ports from deferred actions.
+
+        Returns:
+            (output_port_values, output_salvo_names, consumed_input_ports)
+        """
+        output_port_values: dict[str, list[Any]] = {}
+        output_salvo_names: list[str] = []
+        consumed_input_ports: set[str] = set()
+        deferred_packet_values: dict[str, Any] = {}
+
+        for action_type, args in execution_result.deferred_actions.actions:
+            if action_type == "create_packet":
+                deferred_id, value = args
+                deferred_packet_values[deferred_id] = value
+            elif action_type == "consume_packet":
+                (packet_id,) = args
+                for port_name, pkt_ids in packets.items():
+                    if packet_id in pkt_ids:
+                        consumed_input_ports.add(port_name)
+                        break
+            elif action_type == "load_output_port":
+                port_name, packet_id = args
+                if port_name not in output_port_values:
+                    output_port_values[port_name] = []
+                value = deferred_packet_values.get(packet_id, packet_values.get(packet_id))
+                output_port_values[port_name].append(value)
+            elif action_type == "send_output_salvo":
+                (salvo_name,) = args
+                output_salvo_names.append(salvo_name)
+
+        return output_port_values, output_salvo_names, consumed_input_ports
+
     def _store_epoch_in_cache(
         self,
         epoch_id: str,
@@ -1926,7 +1964,7 @@ class Net:
             execution_result: The successful execution result.
         """
         effective_cache = self._cache_store.get_effective_config(node_name)
-        cache_what = effective_cache["cache_what"]
+        cache_what = effective_cache.cache_what
 
         # Build input values by port
         input_values_by_port: dict[str, list[Any]] = {}
@@ -1936,8 +1974,8 @@ class Net:
         if cache_what == CacheWhat.INPUT_ONLY:
             cached_data = CachedEpochData(
                 input_salvo_hash=input_hash,
-                net_version=effective_cache["net_version"],
-                node_version=effective_cache["node_version"],
+                net_version=effective_cache.net_version,
+                node_version=effective_cache.node_version,
                 input_values_by_port=input_values_by_port,
                 output_port_values={},
                 output_salvo_names=[],
@@ -1949,37 +1987,13 @@ class Net:
             return
 
         # BOTH or OUTPUT_ONLY: extract outputs from deferred actions
-        output_port_values: dict[str, list[Any]] = {}
-        output_salvo_names: list[str] = []
-        consumed_input_ports: set[str] = set()
-        # Map deferred packet IDs to their values
-        deferred_packet_values: dict[str, Any] = {}
-
-        for action_type, args in execution_result.deferred_actions.actions:
-            if action_type == "create_packet":
-                deferred_id, value = args
-                deferred_packet_values[deferred_id] = value
-            elif action_type == "consume_packet":
-                packet_id, = args
-                # Find which port this packet belonged to
-                for port_name, pkt_ids in packets.items():
-                    if packet_id in pkt_ids:
-                        consumed_input_ports.add(port_name)
-                        break
-            elif action_type == "load_output_port":
-                port_name, packet_id = args
-                if port_name not in output_port_values:
-                    output_port_values[port_name] = []
-                value = deferred_packet_values.get(packet_id, packet_values.get(packet_id))
-                output_port_values[port_name].append(value)
-            elif action_type == "send_output_salvo":
-                salvo_name, = args
-                output_salvo_names.append(salvo_name)
+        output_port_values, output_salvo_names, consumed_input_ports = \
+            self._extract_epoch_outputs(execution_result, packets, packet_values)
 
         cached_data = CachedEpochData(
             input_salvo_hash=input_hash,
-            net_version=effective_cache["net_version"],
-            node_version=effective_cache["node_version"],
+            net_version=effective_cache.net_version,
+            node_version=effective_cache.node_version,
             input_values_by_port=input_values_by_port,
             output_port_values=output_port_values,
             output_salvo_names=output_salvo_names,
@@ -2016,9 +2030,9 @@ class Net:
         project_root = Path(self._config_resolved.project_root) if self._config_resolved.project_root else None
         backend = self._file_storage_store.resolve_backend(node_name, project_root=project_root)
 
-        # Build serialization kwargs for retrieval
-        ser_method = SerializationMethod(fs_config.serialization)
-        comp_method = CompressionMethod(fs_config.compression) if fs_config.compression else None
+        # Build serialization config for retrieval
+        ser_method = fs_config.serialization
+        comp_method = fs_config.compression
         pickling_method = fs_config.pickling_method
         pickling_args = fs_config.pickling_args if isinstance(fs_config.pickling_args, dict) else {}
 
@@ -2110,8 +2124,8 @@ class Net:
                             kwargs={
                                 "backend_config_json": backend_config_json,
                                 "key": file_key,
-                                "serialization": fs_config.serialization,
-                                "compression": fs_config.compression,
+                                "serialization": fs_config.serialization.value,
+                                "compression": fs_config.compression.value if fs_config.compression else None,
                                 "serialization_kwargs_json": ser_kwargs_json,
                             },
                         )
@@ -2142,7 +2156,7 @@ class Net:
         epoch_snapshot = self._netsim.get_epoch(epoch_id)
         self._epochs[epoch_id].out_salvos = list(epoch_snapshot.out_salvos)
         self._epochs[epoch_id].orphaned_packets = list(epoch_snapshot.orphaned_packets)
-        self._epochs[epoch_id].was_cache_hit = True  # Reuse flag for storage hits too
+        self._epochs[epoch_id].was_file_storage_hit = True
 
         self._netsim.do_action(netrun_sim.NetAction.finish_epoch(epoch_id))
         self._epochs[epoch_id].ended_at = get_timestamp_utc()
@@ -2185,38 +2199,16 @@ class Net:
         project_root = Path(self._config_resolved.project_root) if self._config_resolved.project_root else None
         backend = self._file_storage_store.resolve_backend(node_name, project_root=project_root)
 
-        ser_method = SerializationMethod(fs_config.serialization)
-        comp_method = CompressionMethod(fs_config.compression) if fs_config.compression else None
+        ser_method = fs_config.serialization
+        comp_method = fs_config.compression
         pickling_method = fs_config.pickling_method
         pickling_args = fs_config.pickling_args if isinstance(fs_config.pickling_args, dict) else {}
         ser_ext = get_file_extension(ser_method)
         comp_ext = get_compression_extension(comp_method) if comp_method else ""
 
-        # Extract outputs from deferred actions (same logic as cache store)
-        output_port_values: dict[str, list[Any]] = {}
-        output_salvo_names: list[str] = []
-        consumed_input_ports: set[str] = set()
-        deferred_packet_values: dict[str, Any] = {}
-
-        for action_type, args in execution_result.deferred_actions.actions:
-            if action_type == "create_packet":
-                deferred_id, value = args
-                deferred_packet_values[deferred_id] = value
-            elif action_type == "consume_packet":
-                packet_id, = args
-                for port_name, pkt_ids in packets.items():
-                    if packet_id in pkt_ids:
-                        consumed_input_ports.add(port_name)
-                        break
-            elif action_type == "load_output_port":
-                port_name, packet_id = args
-                if port_name not in output_port_values:
-                    output_port_values[port_name] = []
-                value = deferred_packet_values.get(packet_id, packet_values.get(packet_id))
-                output_port_values[port_name].append(value)
-            elif action_type == "send_output_salvo":
-                salvo_name, = args
-                output_salvo_names.append(salvo_name)
+        # Extract outputs from deferred actions
+        output_port_values, output_salvo_names, consumed_input_ports = \
+            self._extract_epoch_outputs(execution_result, packets, packet_values)
 
         # Determine file key naming
         num_salvos = len(output_salvo_names)
@@ -2226,22 +2218,26 @@ class Net:
         if fs_config.store_inputs:
             input_file_keys = {}
             for port_name, pkt_ids in packets.items():
-                for pkt_id in pkt_ids:
+                port_keys = []
+                for idx, pkt_id in enumerate(pkt_ids):
                     value = packet_values.get(pkt_id)
                     if value is not None:
-                        input_key = f"{node_name}/_inputs/{port_name}{ser_ext}{comp_ext}"
+                        suffix = f"_{idx}" if len(pkt_ids) > 1 else ""
+                        input_key = f"{node_name}/_inputs/{port_name}{suffix}{ser_ext}{comp_ext}"
                         data = serialize(value, ser_method, pickling_method=pickling_method, **pickling_args)
                         if comp_method:
                             data = compress(data, comp_method)
                         backend.write(input_key, data)
-                        input_file_keys[port_name] = input_key
+                        port_keys.append(input_key)
+                if port_keys:
+                    input_file_keys[port_name] = port_keys
 
         if fs_config.bundle:
             # --- Bundle mode: all outputs go into a single archive ---
             import io
             from ...storage.config import BundleFormat
 
-            bundle_format = BundleFormat(fs_config.bundle_format) if isinstance(fs_config.bundle_format, str) else fs_config.bundle_format
+            bundle_format = fs_config.bundle_format
             bundle_ext = ".tar.gz" if bundle_format == BundleFormat.tar_gz else ".zip"
             bundle_key = f"{node_name}/outputs{bundle_ext}"
 
@@ -2251,7 +2247,7 @@ class Net:
             file_keys: dict[str, list[dict[str, str]]] = {}
 
             for salvo_name in output_salvo_names:
-                port_keys: dict[str, str] = {}
+                salvo_port_keys: list[dict[str, str]] = []
                 for port_name, values in output_port_values.items():
                     for val_idx, value in enumerate(values):
                         # Entry name inside the archive (no compression ext — archive is compressed)
@@ -2264,9 +2260,9 @@ class Net:
 
                         data = serialize(value, ser_method, pickling_method=pickling_method, **pickling_args)
                         entries.append((entry_name, data))
-                        port_keys[port_name] = entry_name
+                        salvo_port_keys.append({port_name: entry_name})
 
-                file_keys[salvo_name] = [port_keys]
+                file_keys[salvo_name] = salvo_port_keys
 
             # Build archive
             archive_buf = io.BytesIO()
