@@ -25,6 +25,7 @@ from netrun.net.config._nodes import (
     EdgeConfig,
     PortRefConfig,
     EnvVarResolvableModel,
+    ConfigValidationError,
 )
 import netrun_sim
 
@@ -204,6 +205,129 @@ class GraphConfig(EnvVarResolvableModel):
             seen_names.add(name)
 
         return GraphConfig(nodes=resolved_nodes, edges=final_edges, extra=self.extra)
+
+    def validate(self) -> list[ConfigValidationError]:
+        """Validate graph structure without requiring factory resolution.
+
+        Checks:
+        - Duplicate node names
+        - Empty node names
+        - Fan-out (output port connected to multiple edges)
+        - Edge references to non-existent nodes
+        - Edge references to non-existent ports (non-factory nodes only)
+        - Per-node salvo condition port validation (via NodeConfig.validate)
+
+        Returns:
+            List of ConfigValidationError (empty if valid).
+        """
+        errors: list[ConfigValidationError] = []
+
+        # Build node name set and check duplicates/empty
+        node_names: set[str] = set()
+        for idx, node in enumerate(self.nodes):
+            if not node.name:
+                errors.append(ConfigValidationError(
+                    loc=["nodes", idx, "name"],
+                    msg=f"Node at index {idx} has an empty name",
+                    type="empty_node_name",
+                ))
+            elif node.name in node_names:
+                errors.append(ConfigValidationError(
+                    loc=["nodes", idx, "name"],
+                    msg=f"Duplicate node name '{node.name}'",
+                    type="duplicate_node_name",
+                ))
+            else:
+                node_names.add(node.name)
+
+        # Build port lookup for non-factory nodes
+        # factory nodes: skip port checks (ports unknown until resolution)
+        # subgraph nodes: use exposed_in_ports/exposed_out_ports
+        node_in_ports: dict[str, set[str] | None] = {}  # None = skip check
+        node_out_ports: dict[str, set[str] | None] = {}
+
+        for node in self.nodes:
+            if isinstance(node, SubgraphConfig):
+                node_in_ports[node.name] = set(node.exposed_in_ports.keys())
+                node_out_ports[node.name] = set(node.exposed_out_ports.keys())
+            elif node.factory is not None:
+                node_in_ports[node.name] = None
+                node_out_ports[node.name] = None
+            else:
+                node_in_ports[node.name] = set(node.in_ports.keys())
+                node_out_ports[node.name] = set(node.out_ports.keys())
+
+        # Validate edges: node existence, port existence, collect sources for fan-out
+        source_keys: dict[str, list[int]] = {}  # "node.port" -> list of edge indices
+
+        for idx, edge in enumerate(self.edges):
+            try:
+                source = edge.get_source()
+                target = edge.get_target()
+            except ValueError:
+                # Malformed edge string — pydantic already catches this
+                continue
+
+            # Check source node exists
+            if source.node_name not in node_names:
+                errors.append(ConfigValidationError(
+                    loc=["edges", idx],
+                    msg=f"Edge source references non-existent node '{source.node_name}'",
+                    type="missing_node",
+                ))
+            else:
+                # Check source port exists (if ports are known)
+                out_ports = node_out_ports.get(source.node_name)
+                if out_ports is not None and source.port_name not in out_ports:
+                    errors.append(ConfigValidationError(
+                        loc=["edges", idx],
+                        msg=f"Edge source references non-existent port '{source.port_name}' on node '{source.node_name}'",
+                        type="missing_port",
+                    ))
+
+            # Check target node exists
+            if target.node_name not in node_names:
+                errors.append(ConfigValidationError(
+                    loc=["edges", idx],
+                    msg=f"Edge target references non-existent node '{target.node_name}'",
+                    type="missing_node",
+                ))
+            else:
+                # Check target port exists (if ports are known)
+                in_ports = node_in_ports.get(target.node_name)
+                if in_ports is not None and target.port_name not in in_ports:
+                    errors.append(ConfigValidationError(
+                        loc=["edges", idx],
+                        msg=f"Edge target references non-existent port '{target.port_name}' on node '{target.node_name}'",
+                        type="missing_port",
+                    ))
+
+            # Collect source key for fan-out detection
+            src_key = f"{source.node_name}.{source.port_name}"
+            source_keys.setdefault(src_key, []).append(idx)
+
+        # Detect fan-out
+        for src_key, edge_indices in source_keys.items():
+            if len(edge_indices) > 1:
+                for idx in edge_indices:
+                    errors.append(ConfigValidationError(
+                        loc=["edges", idx],
+                        msg=f"Fan-out: output port '{src_key}' is connected by multiple edges (indices {edge_indices})",
+                        type="fan_out",
+                    ))
+
+        # Per-node validation
+        for idx, node in enumerate(self.nodes):
+            if isinstance(node, NodeConfig):
+                node_errors = node.validate()
+                for err in node_errors:
+                    errors.append(ConfigValidationError(
+                        loc=["nodes", idx] + err.loc,
+                        msg=err.msg,
+                        type=err.type,
+                    ))
+
+        return errors
 
     def has_subgraphs(self) -> bool:
         """Check if this graph contains any subgraphs."""

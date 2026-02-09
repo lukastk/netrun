@@ -3136,3 +3136,314 @@ def test_env_var_in_graph_topology_with_default(monkeypatch):
 
 # %%
 test_env_var_in_graph_topology_with_default()
+
+# %% [markdown]
+# ## GraphConfig / NodeConfig Validation Tests
+
+# %%
+#|export
+from netrun.net.config._nodes import ConfigValidationError
+
+# %%
+#|export
+def test_validate_valid_graph():
+    """A well-formed graph should return no validation errors."""
+    graph = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="A",
+                out_ports={"out": PortConfig()},
+            ),
+            NodeConfig(
+                name="B",
+                in_ports={"in": PortConfig()},
+                in_salvo_conditions={
+                    "default": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"in": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+            ),
+        ],
+        edges=[EdgeConfig(source_str="A.out", target_str="B.in")],
+    )
+    errors = graph.validate()
+    assert errors == []
+
+# %%
+test_validate_valid_graph()
+
+# %%
+#|export
+def test_validate_duplicate_node_names():
+    """Duplicate node names should produce errors."""
+    graph = GraphConfig(
+        nodes=[
+            NodeConfig(name="A", out_ports={"out": PortConfig()}),
+            NodeConfig(name="A", in_ports={"in": PortConfig()}),
+        ],
+        edges=[],
+    )
+    errors = graph.validate()
+    assert len(errors) == 1
+    assert errors[0].type == "duplicate_node_name"
+    assert errors[0].loc == ["nodes", 1, "name"]
+    assert "A" in errors[0].msg
+
+# %%
+test_validate_duplicate_node_names()
+
+# %%
+#|export
+def test_validate_empty_node_name():
+    """Empty node names should produce errors."""
+    graph = GraphConfig(
+        nodes=[
+            NodeConfig(name="", out_ports={"out": PortConfig()}),
+        ],
+        edges=[],
+    )
+    errors = graph.validate()
+    assert len(errors) == 1
+    assert errors[0].type == "empty_node_name"
+    assert errors[0].loc == ["nodes", 0, "name"]
+
+# %%
+test_validate_empty_node_name()
+
+# %%
+#|export
+def test_validate_fan_out():
+    """An output port connected to multiple edges should produce fan-out errors."""
+    graph = GraphConfig(
+        nodes=[
+            NodeConfig(name="A", out_ports={"out": PortConfig()}),
+            NodeConfig(name="B", in_ports={"in1": PortConfig()}),
+            NodeConfig(name="C", in_ports={"in1": PortConfig()}),
+        ],
+        edges=[
+            EdgeConfig(source_str="A.out", target_str="B.in1"),
+            EdgeConfig(source_str="A.out", target_str="C.in1"),
+        ],
+    )
+    errors = graph.validate()
+    fan_out_errors = [e for e in errors if e.type == "fan_out"]
+    assert len(fan_out_errors) == 2
+    # Both edges should be flagged
+    locs = {tuple(e.loc) for e in fan_out_errors}
+    assert ("edges", 0) in locs
+    assert ("edges", 1) in locs
+
+# %%
+test_validate_fan_out()
+
+# %%
+#|export
+def test_validate_missing_source_node():
+    """Edge referencing a non-existent source node should produce error."""
+    graph = GraphConfig(
+        nodes=[
+            NodeConfig(name="B", in_ports={"in": PortConfig()}),
+        ],
+        edges=[EdgeConfig(source_str="NOPE.out", target_str="B.in")],
+    )
+    errors = graph.validate()
+    missing = [e for e in errors if e.type == "missing_node"]
+    assert len(missing) == 1
+    assert "NOPE" in missing[0].msg
+    assert missing[0].loc == ["edges", 0]
+
+# %%
+test_validate_missing_source_node()
+
+# %%
+#|export
+def test_validate_missing_target_node():
+    """Edge referencing a non-existent target node should produce error."""
+    graph = GraphConfig(
+        nodes=[
+            NodeConfig(name="A", out_ports={"out": PortConfig()}),
+        ],
+        edges=[EdgeConfig(source_str="A.out", target_str="NOPE.in")],
+    )
+    errors = graph.validate()
+    missing = [e for e in errors if e.type == "missing_node"]
+    assert len(missing) == 1
+    assert "NOPE" in missing[0].msg
+
+# %%
+test_validate_missing_target_node()
+
+# %%
+#|export
+def test_validate_missing_port():
+    """Edge referencing a non-existent port should produce error."""
+    graph = GraphConfig(
+        nodes=[
+            NodeConfig(name="A", out_ports={"out": PortConfig()}),
+            NodeConfig(name="B", in_ports={"in": PortConfig()}),
+        ],
+        edges=[EdgeConfig(source_str="A.nope", target_str="B.in")],
+    )
+    errors = graph.validate()
+    port_errors = [e for e in errors if e.type == "missing_port"]
+    assert len(port_errors) == 1
+    assert "nope" in port_errors[0].msg
+    assert port_errors[0].loc == ["edges", 0]
+
+# %%
+test_validate_missing_port()
+
+# %%
+#|export
+def test_validate_skips_factory_port_check():
+    """Factory nodes should not produce missing_port errors (ports unknown until resolution)."""
+    graph = GraphConfig(
+        nodes=[
+            NodeConfig(name="A", factory="some.factory.module"),
+            NodeConfig(name="B", in_ports={"in": PortConfig()}),
+        ],
+        edges=[EdgeConfig(source_str="A.out", target_str="B.in")],
+    )
+    errors = graph.validate()
+    # Should NOT have missing_port for A.out since A is a factory node
+    port_errors = [e for e in errors if e.type == "missing_port"]
+    assert len(port_errors) == 0
+
+# %%
+test_validate_skips_factory_port_check()
+
+# %%
+#|export
+def test_validate_subgraph_exposed_ports():
+    """Subgraph nodes should be checked against their exposed ports."""
+    graph = GraphConfig(
+        nodes=[
+            NodeConfig(name="A", out_ports={"out": PortConfig()}),
+            SubgraphConfig(
+                name="sg",
+                nodes=[NodeConfig(name="inner", in_ports={"in": PortConfig()})],
+                edges=[],
+                exposed_in_ports={"x": ExposedPortConfig(internal_node="inner", internal_port="in")},
+                exposed_out_ports={},
+            ),
+        ],
+        edges=[EdgeConfig(source_str="A.out", target_str="sg.x")],
+    )
+    errors = graph.validate()
+    assert len(errors) == 0
+
+    # Now reference a non-existent exposed port
+    graph2 = GraphConfig(
+        nodes=[
+            NodeConfig(name="A", out_ports={"out": PortConfig()}),
+            SubgraphConfig(
+                name="sg",
+                nodes=[NodeConfig(name="inner", in_ports={"in": PortConfig()})],
+                edges=[],
+                exposed_in_ports={"x": ExposedPortConfig(internal_node="inner", internal_port="in")},
+                exposed_out_ports={},
+            ),
+        ],
+        edges=[EdgeConfig(source_str="A.out", target_str="sg.nope")],
+    )
+    errors2 = graph2.validate()
+    port_errors = [e for e in errors2 if e.type == "missing_port"]
+    assert len(port_errors) == 1
+    assert "nope" in port_errors[0].msg
+
+# %%
+test_validate_subgraph_exposed_ports()
+
+# %%
+#|export
+def test_validate_node_invalid_salvo_port():
+    """NodeConfig.validate() should catch salvo conditions referencing non-existent ports."""
+    node = NodeConfig(
+        name="A",
+        in_ports={"in": PortConfig()},
+        out_ports={"out": PortConfig()},
+        in_salvo_conditions={
+            "trigger": SalvoConditionConfig(
+                max_salvos=MaxSalvosFiniteConfig(max=1),
+                ports={"nonexistent": PacketCountAllConfig()},
+                term=SalvoConditionTermTrueConfig(),
+            ),
+        },
+        out_salvo_conditions={
+            "send": SalvoConditionConfig(
+                max_salvos=MaxSalvosInfiniteConfig(),
+                ports={"missing_out": PacketCountAllConfig()},
+                term=SalvoConditionTermTrueConfig(),
+            ),
+        },
+    )
+    errors = node.validate()
+    assert len(errors) == 2
+    assert all(e.type == "invalid_salvo_port" for e in errors)
+
+    # Verify loc paths
+    in_err = [e for e in errors if "in_salvo" in str(e.loc)]
+    out_err = [e for e in errors if "out_salvo" in str(e.loc)]
+    assert len(in_err) == 1
+    assert in_err[0].loc == ["in_salvo_conditions", "trigger", "ports", "nonexistent"]
+    assert len(out_err) == 1
+    assert out_err[0].loc == ["out_salvo_conditions", "send", "ports", "missing_out"]
+
+# %%
+test_validate_node_invalid_salvo_port()
+
+# %%
+#|export
+def test_validate_node_skips_factory():
+    """NodeConfig.validate() should skip all checks when factory is set."""
+    node = NodeConfig(
+        name="A",
+        factory="some.factory",
+        # These would normally trigger errors, but factory is set
+        in_salvo_conditions={
+            "trigger": SalvoConditionConfig(
+                max_salvos=MaxSalvosFiniteConfig(max=1),
+                ports={"ghost": PacketCountAllConfig()},
+                term=SalvoConditionTermTrueConfig(),
+            ),
+        },
+    )
+    errors = node.validate()
+    assert errors == []
+
+# %%
+test_validate_node_skips_factory()
+
+# %%
+#|export
+def test_validate_graph_collects_node_errors():
+    """GraphConfig.validate() should collect NodeConfig.validate() errors with prefixed loc."""
+    graph = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="A",
+                in_ports={"in": PortConfig()},
+                in_salvo_conditions={
+                    "trigger": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"bad_port": PacketCountAllConfig()},
+                        term=SalvoConditionTermTrueConfig(),
+                    ),
+                },
+            ),
+        ],
+        edges=[],
+    )
+    errors = graph.validate()
+    salvo_errors = [e for e in errors if e.type == "invalid_salvo_port"]
+    assert len(salvo_errors) == 1
+    # loc should be prefixed with ["nodes", 0]
+    assert salvo_errors[0].loc == ["nodes", 0, "in_salvo_conditions", "trigger", "ports", "bad_port"]
+
+# %%
+test_validate_graph_collects_node_errors()

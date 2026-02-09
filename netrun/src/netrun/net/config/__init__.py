@@ -50,6 +50,7 @@ from ._base import (
 
 # Re-export from _nodes
 from ._nodes import (
+    ConfigValidationError,
     PortRefConfig,
     EdgeConfig,
     PacketID,
