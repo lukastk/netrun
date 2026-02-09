@@ -213,7 +213,8 @@ class GraphConfig(EnvVarResolvableModel):
         """Convert this config to a netrun_sim.Graph object.
 
         Raises:
-            ValueError: If graph contains SubgraphConfig nodes. Call resolve() first.
+            ValueError: If graph contains SubgraphConfig nodes. Call resolve() first,
+                or if graph validation fails (e.g. fan-out from output ports).
         """
         if self.has_subgraphs():
             raise ValueError(
@@ -223,4 +224,15 @@ class GraphConfig(EnvVarResolvableModel):
         # At this point, all nodes are NodeConfig
         nodes = [node.to_netrun_sim() for node in self.nodes]  # type: ignore
         edges = [edge.to_netrun_sim() for edge in self.edges]
-        return netrun_sim.Graph(nodes, edges)
+        graph = netrun_sim.Graph(nodes, edges)
+
+        # Validate graph constraints (e.g. no fan-out from output ports)
+        errors = graph.validate()
+        if errors:
+            msgs = [str(e) for e in errors]
+            raise ValueError(
+                f"Graph validation failed with {len(errors)} error(s):\n"
+                + "\n".join(f"  - {m}" for m in msgs)
+            )
+
+        return graph
