@@ -10,6 +10,8 @@ from pydantic import Field, model_validator
 from .._iutils.env_var import EnvVar, EnvVarResolvableModel
 from .._iutils.hashing import HashMethod
 from .._iutils.pickling import PicklingMethod
+from ..storage._serialization import SerializationMethod
+from ..storage._compression import CompressionMethod
 
 # %% pts/netrun/02_storage/00_config.pct.py 5
 class CacheWhat(Enum):
@@ -114,12 +116,12 @@ class NodeFileStorageConfig(EnvVarResolvableModel):
     backend: str | BackendConfig = Field(description="Named backend from registry, or inline BackendConfig.")
 
     # Serialization
-    serialization: str | EnvVar = Field(default="pickle", description="Serialization method name (e.g. 'pickle', 'json', 'torch').")
+    serialization: SerializationMethod | EnvVar = Field(default=SerializationMethod.pickle, description="Serialization format for stored values.")
     pickling_method: PicklingMethod | EnvVar = PicklingMethod.pickle
     pickling_args: dict | EnvVar = Field(default_factory=dict)
 
     # Compression
-    compression: str | EnvVar | None = Field(default=None, description="Compression method name, or None.")
+    compression: CompressionMethod | EnvVar | None = Field(default=None, description="Compression algorithm, or None for no compression.")
 
     # Hash change policy
     on_hash_change: OnHashChange | EnvVar = OnHashChange.error
