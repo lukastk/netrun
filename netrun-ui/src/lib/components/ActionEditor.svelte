@@ -59,10 +59,8 @@
 
 <svelte:window onkeydown={handleKeydown} />
 
-<div class="modal-backdrop" onclick={onCancel} onkeydown={() => {}} role="presentation">
-	<!-- svelte-ignore a11y_click_events_have_key_events -->
-	<!-- svelte-ignore a11y_no_static_element_interactions -->
-	<div class="modal" onclick={(e) => e.stopPropagation()}>
+<div class="modal-backdrop" role="presentation">
+	<div class="modal">
 		<div class="modal-header">
 			<h2>{action ? 'Edit Action' : 'Add Action'}</h2>
 			<button class="close-btn" onclick={onCancel}>×</button>
