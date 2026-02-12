@@ -101,7 +101,7 @@ export interface ListBuiltinFactoriesResponse {
 }
 
 export interface ApiError {
-	detail: string;
+	detail: string | Array<{ loc?: string[]; msg?: string; type?: string }>;
 }
 
 export interface FileEntry {
@@ -248,7 +248,11 @@ class ApiClient {
 			const error: ApiError = await response.json().catch(() => ({
 				detail: `HTTP ${response.status}: ${response.statusText}`,
 			}));
-			throw new Error(error.detail);
+			const detail = error.detail;
+			const message = Array.isArray(detail)
+				? detail.map(d => d.msg ?? JSON.stringify(d)).join('; ')
+				: (typeof detail === 'string' ? detail : JSON.stringify(detail));
+			throw new Error(message);
 		}
 
 		return response.json();
