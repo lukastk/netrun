@@ -20,7 +20,7 @@ import {
 	executeRecipe,
 	showRecipeModal,
 } from '$lib/stores/recipeStore';
-import { getCurrentConfig, applyConfig } from '$lib/stores/flowStore';
+import { getCurrentConfig, applyConfig, setAllDescExpanded, setAllPortGroupsCollapsed } from '$lib/stores/flowStore';
 import { registerShortcuts, type ShortcutBinding } from '$lib/stores/keyboardStore';
 import { availableActions, executeAction } from '$lib/stores/actionsStore';
 import {
@@ -365,6 +365,60 @@ const viewCommands: Command[] = [
 		category: 'view',
 		keywords: ['search', 'commands', 'menu'],
 		action: () => openCommandPalette(),
+	},
+	{
+		id: 'view.collapseDescriptions',
+		label: 'Collapse All Descriptions',
+		category: 'view',
+		keywords: ['collapse', 'descriptions', 'hide'],
+		action: () => setAllDescExpanded(false),
+		enabled: () => get(nodes).some(n => n.data.description),
+	},
+	{
+		id: 'view.expandDescriptions',
+		label: 'Expand All Descriptions',
+		category: 'view',
+		keywords: ['expand', 'descriptions', 'show'],
+		action: () => setAllDescExpanded(true),
+		enabled: () => get(nodes).some(n => n.data.description),
+	},
+	{
+		id: 'view.collapsePorts',
+		label: 'Collapse All Ports',
+		category: 'view',
+		keywords: ['collapse', 'ports', 'hide', 'groups'],
+		action: () => setAllPortGroupsCollapsed(true),
+		enabled: () => get(nodes).length > 0,
+	},
+	{
+		id: 'view.expandPorts',
+		label: 'Expand All Ports',
+		category: 'view',
+		keywords: ['expand', 'ports', 'show', 'groups'],
+		action: () => setAllPortGroupsCollapsed(false),
+		enabled: () => get(nodes).length > 0,
+	},
+	{
+		id: 'view.collapseAll',
+		label: 'Collapse All',
+		category: 'view',
+		keywords: ['collapse', 'all', 'hide', 'descriptions', 'ports'],
+		action: () => {
+			setAllDescExpanded(false);
+			setAllPortGroupsCollapsed(true);
+		},
+		enabled: () => get(nodes).length > 0,
+	},
+	{
+		id: 'view.expandAll',
+		label: 'Expand All',
+		category: 'view',
+		keywords: ['expand', 'all', 'show', 'descriptions', 'ports'],
+		action: () => {
+			setAllDescExpanded(true);
+			setAllPortGroupsCollapsed(false);
+		},
+		enabled: () => get(nodes).length > 0,
 	},
 ];
 

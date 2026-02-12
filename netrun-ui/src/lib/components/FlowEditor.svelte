@@ -45,7 +45,7 @@
 		getGroupPortNames,
 		ROOT_GROUP_PATH,
 	} from '$lib/utils/portGroups';
-	import { isGroupCollapsed, portGroupOverrides } from '$lib/stores/portGroupStore';
+	import { isPortGroupCollapsed, getPortGroupStates } from '$lib/stores/portGroupStore';
 
 	// Get edge style from graph extra, defaulting to smoothstep
 	const edgeStyle = derived(graphExtra, ($graphExtra) => {
@@ -195,9 +195,13 @@
 				const tgtNode = currentNodes.find(n => n.id === edge.target);
 				if (!srcNode || !tgtNode) continue;
 
+				// Read port group states from node data
+				const srcPortGroupStates = getPortGroupStates(srcNode.data as Record<string, unknown>);
+				const tgtPortGroupStates = getPortGroupStates(tgtNode.data as Record<string, unknown>);
+
 				// Check if root group is collapsed on each side first
-				const srcRootCollapsed = isGroupCollapsed(edge.source, 'out', ROOT_GROUP_PATH, srcNode.data.outPorts.length);
-				const tgtRootCollapsed = isGroupCollapsed(edge.target, 'in', ROOT_GROUP_PATH, tgtNode.data.inPorts.length);
+				const srcRootCollapsed = isPortGroupCollapsed(srcPortGroupStates, 'out', ROOT_GROUP_PATH, srcNode.data.outPorts.length);
+				const tgtRootCollapsed = isPortGroupCollapsed(tgtPortGroupStates, 'in', ROOT_GROUP_PATH, tgtNode.data.inPorts.length);
 
 				// Determine effective group path: root if root is collapsed, otherwise the port's sub-group
 				const srcGroupPath = srcRootCollapsed
@@ -210,9 +214,9 @@
 				if (!srcGroupPath || !tgtGroupPath) continue;
 
 				// For non-root groups, also check if the sub-group itself is collapsed
-				const srcCollapsed = srcRootCollapsed || isGroupCollapsed(edge.source, 'out', srcGroupPath,
+				const srcCollapsed = srcRootCollapsed || isPortGroupCollapsed(srcPortGroupStates, 'out', srcGroupPath,
 					srcNode.data.outPorts.filter(p => p.name.startsWith(srcGroupPath + '.')).length);
-				const tgtCollapsed = tgtRootCollapsed || isGroupCollapsed(edge.target, 'in', tgtGroupPath,
+				const tgtCollapsed = tgtRootCollapsed || isPortGroupCollapsed(tgtPortGroupStates, 'in', tgtGroupPath,
 					tgtNode.data.inPorts.filter(p => p.name.startsWith(tgtGroupPath + '.')).length);
 
 				if (srcCollapsed && tgtCollapsed) {

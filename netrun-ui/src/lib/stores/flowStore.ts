@@ -26,7 +26,9 @@ import {
 	isGroupHandle as isGroupHandleFn,
 	parseGroupHandleId as parseGroupHandleIdFn,
 	areGroupsCompatible as areGroupsCompatibleFn,
+	ROOT_GROUP_PATH,
 } from '$lib/utils/portGroups';
+import { isPortGroupCollapsed } from './portGroupStore';
 
 // Types for netrun node data
 export interface PortConfig {
@@ -236,6 +238,155 @@ export function updateNodeDataLive(id: string, dataUpdates: Partial<NetrunNodeDa
 		nodes: tab.nodes.map(node =>
 			node.id === id ? { ...node, data: { ...node.data, ...dataUpdates } } : node
 		),
+		isDirty: true,
+	});
+}
+
+/**
+ * Toggle a node's description expanded state.
+ * Uses updateNodeDataLive (persistent, no history entry).
+ */
+export function toggleNodeDescExpanded(nodeId: string): void {
+	const tab = get(activeTab);
+	if (!tab) return;
+
+	const node = tab.nodes.find(n => n.id === nodeId);
+	if (!node) return;
+
+	const config = (node.data._config || {}) as Record<string, unknown>;
+	const extra = (config.extra || {}) as Record<string, unknown>;
+	const ui = (extra.ui || {}) as Record<string, unknown>;
+	const current = (ui.descriptionExpanded as boolean) ?? false;
+
+	updateNodeDataLive(nodeId, {
+		_config: {
+			...config,
+			extra: {
+				...extra,
+				ui: {
+					...ui,
+					descriptionExpanded: !current,
+				},
+			},
+		},
+	});
+}
+
+/**
+ * Toggle a node's port group collapsed state.
+ * Uses updateNodeDataLive (persistent, no history entry).
+ */
+export function toggleNodePortGroup(
+	nodeId: string,
+	side: 'in' | 'out',
+	groupPath: string,
+	portCount: number
+): void {
+	const tab = get(activeTab);
+	if (!tab) return;
+
+	const node = tab.nodes.find(n => n.id === nodeId);
+	if (!node) return;
+
+	const config = (node.data._config || {}) as Record<string, unknown>;
+	const extra = (config.extra || {}) as Record<string, unknown>;
+	const ui = (extra.ui || {}) as Record<string, unknown>;
+	const portGroups = (ui.portGroups as Record<string, boolean>) || {};
+
+	const current = isPortGroupCollapsed(portGroups, side, groupPath, portCount);
+
+	updateNodeDataLive(nodeId, {
+		_config: {
+			...config,
+			extra: {
+				...extra,
+				ui: {
+					...ui,
+					portGroups: {
+						...portGroups,
+						[`${side}:${groupPath}`]: !current,
+					},
+				},
+			},
+		},
+	});
+}
+
+/**
+ * Set all nodes' description expanded state.
+ * Pushes history (creates undo entry).
+ */
+export function setAllDescExpanded(expanded: boolean): void {
+	const tab = get(activeTab);
+	if (!tab) return;
+
+	pushHistory();
+	updateActiveTab({
+		nodes: tab.nodes.map(node => {
+			if (!node.data.description) return node;
+
+			const config = (node.data._config || {}) as Record<string, unknown>;
+			const extra = (config.extra || {}) as Record<string, unknown>;
+			const ui = (extra.ui || {}) as Record<string, unknown>;
+
+			return {
+				...node,
+				data: {
+					...node.data,
+					_config: {
+						...config,
+						extra: {
+							...extra,
+							ui: {
+								...ui,
+								descriptionExpanded: expanded,
+							},
+						},
+					},
+				},
+			};
+		}),
+		isDirty: true,
+	});
+}
+
+/**
+ * Set all nodes' root port groups collapsed state (both in and out).
+ * Pushes history (creates undo entry).
+ */
+export function setAllPortGroupsCollapsed(collapsed: boolean): void {
+	const tab = get(activeTab);
+	if (!tab) return;
+
+	pushHistory();
+	updateActiveTab({
+		nodes: tab.nodes.map(node => {
+			const config = (node.data._config || {}) as Record<string, unknown>;
+			const extra = (config.extra || {}) as Record<string, unknown>;
+			const ui = (extra.ui || {}) as Record<string, unknown>;
+			const portGroups = (ui.portGroups as Record<string, boolean>) || {};
+
+			return {
+				...node,
+				data: {
+					...node.data,
+					_config: {
+						...config,
+						extra: {
+							...extra,
+							ui: {
+								...ui,
+								portGroups: {
+									...portGroups,
+									[`in:${ROOT_GROUP_PATH}`]: collapsed,
+									[`out:${ROOT_GROUP_PATH}`]: collapsed,
+								},
+							},
+						},
+					},
+				},
+			};
+		}),
 		isDirty: true,
 	});
 }

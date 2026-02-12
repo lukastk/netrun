@@ -8,41 +8,33 @@
 		type PortGroupTree,
 		type PortLeaf,
 	} from '$lib/utils/portGroups';
-	import {
-		isGroupCollapsed,
-		toggleGroup,
-		portGroupOverrides,
-	} from '$lib/stores/portGroupStore';
+	import { isPortGroupCollapsed } from '$lib/stores/portGroupStore';
+	import { toggleNodePortGroup } from '$lib/stores/flowStore';
 	import type { PortConfig } from '$lib/stores/flowStore';
 
 	interface Props {
 		nodeId: string;
 		ports: PortConfig[];
 		side: 'in' | 'out';
+		portGroupStates?: Record<string, boolean>;
 	}
 
-	let { nodeId, ports, side }: Props = $props();
+	let { nodeId, ports, side, portGroupStates }: Props = $props();
 
 	// Build the port tree reactively
 	let portTree = $derived(buildPortTree(ports));
-
-	// Subscribe to overrides for reactivity
-	let _overrides = $derived($portGroupOverrides);
 
 	// Root group state
 	let totalPortCount = $derived(ports.length);
 	let rootHandleId = $derived(makeGroupHandleId(side, ROOT_GROUP_PATH));
 
-	// Check collapsed state (reactive via _overrides dependency)
+	// Check collapsed state (reactive via portGroupStates prop)
 	function collapsed(groupPath: string, portCount: number): boolean {
-		// Touch _overrides to establish reactivity
-		void _overrides;
-		return isGroupCollapsed(nodeId, side, groupPath, portCount);
+		return isPortGroupCollapsed(portGroupStates, side, groupPath, portCount);
 	}
 
 	function rootCollapsed(): boolean {
-		void _overrides;
-		return isGroupCollapsed(nodeId, side, ROOT_GROUP_PATH, totalPortCount);
+		return isPortGroupCollapsed(portGroupStates, side, ROOT_GROUP_PATH, totalPortCount);
 	}
 
 	// Collect visible handle IDs for children (excluding root)
@@ -126,7 +118,7 @@
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
 			class="group-header"
-			onclick={() => toggleGroup(nodeId, side, item.fullPath, item.portCount)}
+			onclick={() => toggleNodePortGroup(nodeId, side, item.fullPath, item.portCount)}
 			title={isCollapsed ? 'Expand group' : 'Collapse group'}
 		>
 			{#if side === 'in'}
@@ -206,7 +198,7 @@
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
 			class="root-group-header"
-			onclick={() => toggleGroup(nodeId, side, ROOT_GROUP_PATH, totalPortCount)}
+			onclick={() => toggleNodePortGroup(nodeId, side, ROOT_GROUP_PATH, totalPortCount)}
 			title={isRootCollapsed ? 'Expand all ports' : 'Collapse all ports'}
 		>
 			{#if side === 'in'}

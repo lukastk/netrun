@@ -1,34 +1,37 @@
 /**
- * Port group collapse/expand state management.
+ * Port group collapse/expand state utilities.
  *
- * Stores ephemeral UI state for which port groups are collapsed.
- * Not saved to file — groups auto-collapse based on port count threshold.
+ * Provides stateless helpers for determining port group collapse state
+ * from node data stored in _config.extra.ui.portGroups.
  */
-import { writable, get } from 'svelte/store';
 import { ROOT_GROUP_PATH } from '$lib/utils/portGroups';
 
 /** Default: groups with 3+ ports start collapsed */
-const AUTO_COLLAPSE_THRESHOLD = 3;
-
-/** Key format: "${nodeId}:${side}:${groupPath}" */
-function makeKey(nodeId: string, side: 'in' | 'out', groupPath: string): string {
-	return `${nodeId}:${side}:${groupPath}`;
-}
-
-/** Map of explicit collapse state overrides. If a key is absent, use default. */
-const overrides = writable<Map<string, boolean>>(new Map());
+export const AUTO_COLLAPSE_THRESHOLD = 3;
 
 /** Get default collapsed state based on port count. */
 export function getDefaultCollapsed(portCount: number): boolean {
 	return portCount >= AUTO_COLLAPSE_THRESHOLD;
 }
 
-/** Check if a specific group is collapsed. */
-export function isGroupCollapsed(nodeId: string, side: 'in' | 'out', groupPath: string, portCount: number): boolean {
-	const key = makeKey(nodeId, side, groupPath);
-	const map = get(overrides);
-	if (map.has(key)) {
-		return map.get(key)!;
+/**
+ * Check if a specific port group is collapsed.
+ * Uses persisted state from node data (_config.extra.ui.portGroups).
+ *
+ * @param portGroupStates - The portGroups record from node UI metadata, or undefined
+ * @param side - 'in' or 'out'
+ * @param groupPath - The group path (e.g. ROOT_GROUP_PATH, "group.subgroup")
+ * @param portCount - Number of ports in this group (used for auto-collapse default)
+ */
+export function isPortGroupCollapsed(
+	portGroupStates: Record<string, boolean> | undefined,
+	side: 'in' | 'out',
+	groupPath: string,
+	portCount: number
+): boolean {
+	const key = `${side}:${groupPath}`;
+	if (portGroupStates && key in portGroupStates) {
+		return portGroupStates[key];
 	}
 	// Root groups default to expanded
 	if (groupPath === ROOT_GROUP_PATH) {
@@ -37,47 +40,13 @@ export function isGroupCollapsed(nodeId: string, side: 'in' | 'out', groupPath: 
 	return getDefaultCollapsed(portCount);
 }
 
-/** Toggle a group's collapsed state. */
-export function toggleGroup(nodeId: string, side: 'in' | 'out', groupPath: string, portCount: number): void {
-	const key = makeKey(nodeId, side, groupPath);
-	overrides.update(map => {
-		const newMap = new Map(map);
-		const current = map.has(key) ? map.get(key)! : getDefaultCollapsed(portCount);
-		newMap.set(key, !current);
-		return newMap;
-	});
-}
-
-/** Explicitly set a group's collapsed state. */
-export function setGroupCollapsed(nodeId: string, side: 'in' | 'out', groupPath: string, collapsed: boolean): void {
-	const key = makeKey(nodeId, side, groupPath);
-	overrides.update(map => {
-		const newMap = new Map(map);
-		newMap.set(key, collapsed);
-		return newMap;
-	});
-}
-
-/** Clear all overrides (e.g., when switching tabs). */
-export function clearPortGroupOverrides(): void {
-	overrides.set(new Map());
-}
-
-/** Clear overrides for a specific node (e.g., when its ports change). */
-export function clearNodePortGroupOverrides(nodeId: string): void {
-	overrides.update(map => {
-		const newMap = new Map(map);
-		for (const key of map.keys()) {
-			if (key.startsWith(`${nodeId}:`)) {
-				newMap.delete(key);
-			}
-		}
-		return newMap;
-	});
-}
-
 /**
- * Subscribe to overrides store to be reactive.
- * Returns the store itself so components can use $overrides for reactivity.
+ * Extract portGroups state from a node's data object.
+ * Works with both NetrunNodeData and SubgraphNodeData.
  */
-export const portGroupOverrides = overrides;
+export function getPortGroupStates(nodeData: Record<string, unknown>): Record<string, boolean> | undefined {
+	const config = nodeData._config as Record<string, unknown> | undefined;
+	const extra = config?.extra as Record<string, unknown> | undefined;
+	const ui = extra?.ui as Record<string, unknown> | undefined;
+	return ui?.portGroups as Record<string, boolean> | undefined;
+}
