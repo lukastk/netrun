@@ -148,6 +148,27 @@ def test_resolve_template_regex_safe_value():
     assert result == r"echo C:\Users\test"
 
 
+def test_resolve_template_single_quotes_preserved():
+    """Variables inside single quotes are not substituted (shell behaviour)."""
+    ctx = ActionContext(node_name="TestNode")
+    result = resolve_template("echo '$NODE_NAME'", ctx)
+    assert result == "echo '$NODE_NAME'"
+
+
+def test_resolve_template_single_quotes_mixed():
+    """Variables outside single quotes are substituted, inside are not."""
+    ctx = ActionContext(node_name="TestNode", env={"GREETING": "hello"})
+    result = resolve_template("echo $GREETING '$NODE_NAME' $NODE_NAME", ctx)
+    assert result == "echo hello '$NODE_NAME' TestNode"
+
+
+def test_resolve_template_single_quotes_brace_syntax():
+    """Brace syntax inside single quotes is also preserved."""
+    ctx = ActionContext(node_name="TestNode")
+    result = resolve_template("echo '${NODE_NAME}'", ctx)
+    assert result == "echo '${NODE_NAME}'"
+
+
 # --- resolve_working_directory ---
 
 def test_resolve_working_directory_explicit():
