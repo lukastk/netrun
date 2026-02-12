@@ -5,6 +5,7 @@
  * Not saved to file — groups auto-collapse based on port count threshold.
  */
 import { writable, get } from 'svelte/store';
+import { ROOT_GROUP_PATH } from '$lib/utils/portGroups';
 
 /** Default: groups with 3+ ports start collapsed */
 const AUTO_COLLAPSE_THRESHOLD = 3;
@@ -28,6 +29,10 @@ export function isGroupCollapsed(nodeId: string, side: 'in' | 'out', groupPath: 
 	const map = get(overrides);
 	if (map.has(key)) {
 		return map.get(key)!;
+	}
+	// Root groups default to expanded
+	if (groupPath === ROOT_GROUP_PATH) {
+		return false;
 	}
 	return getDefaultCollapsed(portCount);
 }
