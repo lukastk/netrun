@@ -54,6 +54,7 @@ registerField('NodeConfig', 'factory_args', 'custom', 'Sidebar.svelte');
 // NodeExecutionConfig
 // ==========================================================================
 
+registerField('NodeExecutionConfig', 'enabled', 'auto');
 registerField('NodeExecutionConfig', 'pools', 'custom', 'NodeExecutionSection.svelte');
 registerField('NodeExecutionConfig', 'exec_node_func', 'custom', 'NodeExecutionSection.svelte');
 registerField('NodeExecutionConfig', 'start_node_func', 'custom', 'NodeExecutionSection.svelte');
