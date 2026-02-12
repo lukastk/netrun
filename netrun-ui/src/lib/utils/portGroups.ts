@@ -24,6 +24,11 @@ export interface PortLeaf {
 
 export type PortDisplayItem = PortGroupTree | PortLeaf;
 
+// --- Constants ---
+
+/** Sentinel group path representing all ports on a side (root-level group). */
+export const ROOT_GROUP_PATH = '__all__';
+
 // --- Group handle ID format: "group:{in|out}:{dotted.path}" ---
 
 const GROUP_HANDLE_PREFIX = 'group:';
@@ -145,8 +150,12 @@ export function getAllLeafPorts(items: PortDisplayItem[]): PortConfig[] {
 /**
  * Get the leaf port suffixes for a group (the part of the port name after the group path).
  * For group "a.b" with ports ["a.b.x", "a.b.y"], returns ["x", "y"].
+ * For ROOT_GROUP_PATH, returns all port names (no prefix stripping).
  */
 export function getGroupLeafSuffixes(groupPath: string, ports: PortConfig[]): string[] {
+	if (groupPath === ROOT_GROUP_PATH) {
+		return ports.map(p => p.name).sort();
+	}
 	const prefix = groupPath + '.';
 	return ports
 		.filter(p => p.name.startsWith(prefix))
@@ -206,6 +215,7 @@ export function areGroupsCompatible(
 /**
  * Get the matched port pairs for a group-to-group connection.
  * Returns pairs of [sourcePortName, targetPortName].
+ * When a group path is ROOT_GROUP_PATH, uses empty prefix so suffix = full port name.
  */
 export function getGroupConnectionPairs(
 	sourceNode: FlowNode,
@@ -216,13 +226,15 @@ export function getGroupConnectionPairs(
 	const sourcePorts = getNodePortsBySide(sourceNode, 'out');
 	const targetPorts = getNodePortsBySide(targetNode, 'in');
 
-	const sourcePrefix = sourceGroupPath + '.';
-	const targetPrefix = targetGroupPath + '.';
+	const sourceIsRoot = sourceGroupPath === ROOT_GROUP_PATH;
+	const targetIsRoot = targetGroupPath === ROOT_GROUP_PATH;
+	const sourcePrefix = sourceIsRoot ? '' : sourceGroupPath + '.';
+	const targetPrefix = targetIsRoot ? '' : targetGroupPath + '.';
 
 	// Build a map of suffix → source port name
 	const sourceBySuffix = new Map<string, string>();
 	for (const port of sourcePorts) {
-		if (port.name.startsWith(sourcePrefix)) {
+		if (sourceIsRoot || port.name.startsWith(sourcePrefix)) {
 			sourceBySuffix.set(port.name.slice(sourcePrefix.length), port.name);
 		}
 	}
@@ -230,7 +242,7 @@ export function getGroupConnectionPairs(
 	// Match target ports by suffix
 	const pairs: [string, string][] = [];
 	for (const port of targetPorts) {
-		if (port.name.startsWith(targetPrefix)) {
+		if (targetIsRoot || port.name.startsWith(targetPrefix)) {
 			const suffix = port.name.slice(targetPrefix.length);
 			const sourcePortName = sourceBySuffix.get(suffix);
 			if (sourcePortName) {
@@ -255,8 +267,12 @@ export function getPortGroupPath(portName: string): string | null {
 
 /**
  * Get all port names that belong to a group (recursively includes all leaf ports).
+ * For ROOT_GROUP_PATH, returns all port names.
  */
 export function getGroupPortNames(groupPath: string, ports: PortConfig[]): string[] {
+	if (groupPath === ROOT_GROUP_PATH) {
+		return ports.map(p => p.name);
+	}
 	const prefix = groupPath + '.';
 	return ports.filter(p => p.name.startsWith(prefix)).map(p => p.name);
 }
