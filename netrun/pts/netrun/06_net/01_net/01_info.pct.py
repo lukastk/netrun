@@ -136,6 +136,19 @@ class NodeInfo:
         """True if any epochs are running for this node."""
         return len(self.running_epochs) > 0
 
+    @property
+    def enabled(self) -> bool:
+        """Whether this node is enabled."""
+        return self._net.is_node_enabled(self._name)
+
+    def enable(self) -> None:
+        """Enable this node."""
+        self._net.enable_node(self._name)
+
+    def disable(self) -> None:
+        """Disable this node."""
+        self._net.disable_node(self._name)
+
     def packets_at_input_port(self, port_name: str) -> list:
         """Get packets waiting at a specific input port.
 
