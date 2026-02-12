@@ -14,9 +14,10 @@
 		ConnectionLineType
 	} from '@xyflow/svelte';
 	import '@xyflow/svelte/dist/style.css';
-	import { tick, onMount } from 'svelte';
+	import { tick, onMount, onDestroy } from 'svelte';
 	import { derived, get } from 'svelte/store';
 	import { isValidConnection, activeTabId } from '$lib/stores/flowStore';
+	import { svelteFlowRef } from '$lib/stores/svelteFlowStore';
 
 	import NetrunNodeComponent from './NetrunNode.svelte';
 	import SubgraphNodeComponent from './SubgraphNode.svelte';
@@ -302,7 +303,15 @@
 	}
 
 	// Get SvelteFlow instance for programmatic control
-	const { fitView } = useSvelteFlow();
+	const { fitView, getNodes } = useSvelteFlow();
+
+	// Expose SvelteFlow methods outside the provider boundary
+	onMount(() => {
+		svelteFlowRef.set({ fitView, getNodes });
+	});
+	onDestroy(() => {
+		svelteFlowRef.set(null);
+	});
 
 	// Fit view options - ensure entire graph is visible with padding
 	const fitViewOptions = {

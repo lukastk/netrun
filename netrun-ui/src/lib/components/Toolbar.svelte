@@ -22,6 +22,7 @@
 	} from '$lib/stores/flowStore';
 	import { tick } from 'svelte';
 	import { openCommandPalette } from '$lib/stores/commandStore';
+	import LayoutDropdown from './LayoutDropdown.svelte';
 	import { resolveFilePath } from '$lib/stores/fileExplorerStore';
 	import { showPrompt, showAlert, showConfirm } from '$lib/stores/modalStore';
 	import { showFactorySelector } from '$lib/stores/factorySelectorStore';
@@ -306,6 +307,8 @@
 				<span class="error-badge">{lastValidationResult.errorCount + lastValidationResult.configErrors.length}</span>
 			{/if}
 		</button>
+		<div class="separator"></div>
+		<LayoutDropdown />
 		<div class="separator"></div>
 		<button onclick={handleAddNode} title="Add regular node">
 			<span class="icon">+</span>
