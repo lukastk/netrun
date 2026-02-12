@@ -82,22 +82,36 @@ export const nodeEnv = derived(
 
 		const merged: Record<string, string> = {};
 
+		// Resolve a node_var value to a string.
+		// Plain strings pass through; VarRef objects ({"$env": "X", "default": "Y"})
+		// use the default value since we can't resolve env vars client-side.
+		const resolveVarValue = (value: unknown): string | undefined => {
+			if (typeof value === 'string') return value;
+			if (value && typeof value === 'object') {
+				const ref = value as Record<string, unknown>;
+				if (ref.default != null) return String(ref.default);
+			}
+			return undefined;
+		};
+
 		// 1. Global node_vars (from extraData.node_vars)
 		const extra = $extraData as Record<string, unknown> | null;
-		const globalVars = extra?.node_vars as Record<string, { value: string }> | undefined;
+		const globalVars = extra?.node_vars as Record<string, { value: unknown }> | undefined;
 		if (globalVars) {
 			for (const [key, v] of Object.entries(globalVars)) {
-				merged[key] = v.value;
+				const resolved = resolveVarValue(v.value);
+				if (resolved !== undefined) merged[key] = resolved;
 			}
 		}
 
 		// 2. Node-level node_vars (from execution_config.node_vars)
 		const config = $selectedNode.data._config as Record<string, unknown> | undefined;
 		const executionConfig = config?.execution_config as Record<string, unknown> | undefined;
-		const nodeVars = executionConfig?.node_vars as Record<string, { value: string }> | undefined;
+		const nodeVars = executionConfig?.node_vars as Record<string, { value: unknown }> | undefined;
 		if (nodeVars) {
 			for (const [key, v] of Object.entries(nodeVars)) {
-				merged[key] = v.value;
+				const resolved = resolveVarValue(v.value);
+				if (resolved !== undefined) merged[key] = resolved;
 			}
 		}
 
