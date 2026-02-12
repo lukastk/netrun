@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { NodeResizer } from '@xyflow/svelte';
 	import type { SubgraphNodeData } from '$lib/stores/flowStore';
-	import { updateNodeDimensions, pushHistory } from '$lib/stores/flowStore';
+	import { updateNodeDimensions, pushHistory, toggleNodeDescExpanded } from '$lib/stores/flowStore';
 	import { openSubgraphTab } from '$lib/stores/tabsStore';
 	import PortList from './PortList.svelte';
 
@@ -13,7 +13,19 @@
 
 	let { id, data, selected = false }: Props = $props();
 
-	let descExpanded = $state(false);
+	let descExpanded = $derived((() => {
+		const config = (data as Record<string, unknown>)._config as Record<string, unknown> | undefined;
+		const extra = config?.extra as Record<string, unknown> | undefined;
+		const ui = extra?.ui as Record<string, unknown> | undefined;
+		return (ui?.descriptionExpanded as boolean) ?? false;
+	})());
+
+	let portGroupStates = $derived((() => {
+		const config = (data as Record<string, unknown>)._config as Record<string, unknown> | undefined;
+		const extra = config?.extra as Record<string, unknown> | undefined;
+		const ui = extra?.ui as Record<string, unknown> | undefined;
+		return ui?.portGroups as Record<string, boolean> | undefined;
+	})());
 
 	function handleResizeEnd(_event: unknown, params: { x: number; y: number; width: number; height: number }) {
 		updateNodeDimensions([{
@@ -62,7 +74,7 @@
 	<!-- Description -->
 	{#if data.description}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div class="node-description" onclick={(e) => { e.stopPropagation(); descExpanded = !descExpanded; }}>
+		<div class="node-description" onclick={(e) => { e.stopPropagation(); toggleNodeDescExpanded(id); }}>
 			<span class="desc-chevron" class:expanded={descExpanded}>&#9656;</span>
 			{#if descExpanded}
 				<span class="desc-content">{data.description}</span>
@@ -74,8 +86,8 @@
 
 	<!-- Ports container -->
 	<div class="ports-container">
-		<PortList nodeId={id} ports={data.inPorts} side="in" />
-		<PortList nodeId={id} ports={data.outPorts} side="out" />
+		<PortList nodeId={id} ports={data.inPorts} side="in" {portGroupStates} />
+		<PortList nodeId={id} ports={data.outPorts} side="out" {portGroupStates} />
 	</div>
 
 	<!-- Subgraph info footer -->
