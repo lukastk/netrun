@@ -15,7 +15,7 @@ from nblite import nbl_export; nbl_export();
 
 # %%
 #|export
-from pydantic import BaseModel, Field, PrivateAttr, model_validator, field_serializer
+from pydantic import AliasChoices, BaseModel, Field, PrivateAttr, model_validator, field_serializer
 from typing import Annotated, Literal, Any
 from collections.abc import Callable
 from pathlib import Path
@@ -152,9 +152,9 @@ def _generate_default_output_queues(graph: "GraphConfig") -> dict[str, "OutputQu
 
 class NetConfig(EnvVarResolvableModel):
     """Configuration for a Net."""
-    model_config = {"arbitrary_types_allowed": True}
+    model_config = {"arbitrary_types_allowed": True, "populate_by_name": True}
 
-    project_root: str | VarRef | None = Field(default=None, description="Project root path. Relative paths resolve from the config file's directory.")
+    project_root_override: str | VarRef | None = Field(default=None, description="Project root path override. Relative paths resolve from the config file's directory.", validation_alias=AliasChoices("project_root", "project_root_override"))
 
     _file_path: Path | None = PrivateAttr(default=None)
 
@@ -163,13 +163,13 @@ class NetConfig(EnvVarResolvableModel):
         """Return the resolved project root as an absolute Path.
 
         Resolution order:
-        - If project_root is set and absolute, return it directly.
-        - If project_root is set and relative, resolve from _file_path.parent (or cwd).
-        - If project_root is None and _file_path is set, return _file_path.parent.
+        - If project_root_override is set and absolute, return it directly.
+        - If project_root_override is set and relative, resolve from _file_path.parent (or cwd).
+        - If project_root_override is None and _file_path is set, return _file_path.parent.
         - If both are None, return cwd.
         """
-        if self.project_root is not None:
-            p = Path(self.project_root)
+        if self.project_root_override is not None:
+            p = Path(self.project_root_override)
             if p.is_absolute():
                 return p
             # Relative: resolve from config file dir or cwd

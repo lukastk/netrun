@@ -183,7 +183,7 @@ for node in graph.nodes:
 print()
 
 # After resolve: the factory is expanded into prefixed nodes
-_nc = NetConfig(project_root=str(tmp_dir), graph=GraphConfig(nodes=[]))
+_nc = NetConfig(project_root_override=str(tmp_dir), graph=GraphConfig(nodes=[]))
 resolved = graph.resolve(net_config=_nc)
 
 print("After resolve:")
@@ -222,7 +222,7 @@ node_with_override = NodeConfig(
     extra={"description": "My custom pipeline"},
 )
 
-_nc = NetConfig(project_root=str(tmp_dir), graph=GraphConfig(nodes=[]))
+_nc = NetConfig(project_root_override=str(tmp_dir), graph=GraphConfig(nodes=[]))
 resolved_sg = node_with_override.resolve(net_config=_nc)
 print(f"Subgraph name: {resolved_sg.name}")
 print(f"Extra: {resolved_sg.extra}")

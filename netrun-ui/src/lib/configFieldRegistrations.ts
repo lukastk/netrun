@@ -17,7 +17,7 @@ import { registerField } from '$lib/stores/schemaStore';
 // NetConfig
 // ==========================================================================
 
-registerField('NetConfig', 'project_root', 'custom', 'Sidebar.svelte');
+registerField('NetConfig', 'project_root_override', 'custom', 'Sidebar.svelte');
 registerField('NetConfig', 'pools', 'custom', 'PoolsSection.svelte');
 registerField('NetConfig', 'graph', 'ignore');
 registerField('NetConfig', 'extra', 'ignore');
