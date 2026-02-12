@@ -3,6 +3,7 @@
 	import {
 		buildPortTree,
 		makeGroupHandleId,
+		ROOT_GROUP_PATH,
 		type PortDisplayItem,
 		type PortGroupTree,
 		type PortLeaf,
@@ -28,6 +29,10 @@
 	// Subscribe to overrides for reactivity
 	let _overrides = $derived($portGroupOverrides);
 
+	// Root group state
+	let totalPortCount = $derived(ports.length);
+	let rootHandleId = $derived(makeGroupHandleId(side, ROOT_GROUP_PATH));
+
 	// Check collapsed state (reactive via _overrides dependency)
 	function collapsed(groupPath: string, portCount: number): boolean {
 		// Touch _overrides to establish reactivity
@@ -35,8 +40,13 @@
 		return isGroupCollapsed(nodeId, side, groupPath, portCount);
 	}
 
-	// Collect visible handle IDs for positioning
-	function getVisibleIds(items: PortDisplayItem[]): string[] {
+	function rootCollapsed(): boolean {
+		void _overrides;
+		return isGroupCollapsed(nodeId, side, ROOT_GROUP_PATH, totalPortCount);
+	}
+
+	// Collect visible handle IDs for children (excluding root)
+	function getChildVisibleIds(items: PortDisplayItem[]): string[] {
 		const ids: string[] = [];
 		for (const item of items) {
 			if (item.type === 'port') {
@@ -45,14 +55,16 @@
 				if (collapsed(item.fullPath, item.portCount)) {
 					ids.push(makeGroupHandleId(side, item.fullPath));
 				} else {
-					ids.push(...getVisibleIds(item.children));
+					ids.push(...getChildVisibleIds(item.children));
 				}
 			}
 		}
 		return ids;
 	}
 
-	let visibleHandleIds = $derived(getVisibleIds(portTree));
+	let visibleHandleIds = $derived(
+		rootCollapsed() ? [rootHandleId] : getChildVisibleIds(portTree)
+	);
 
 	function getHandleStyle(handleId: string): string {
 		const total = visibleHandleIds.length;
@@ -187,15 +199,71 @@
 	{/each}
 {/snippet}
 
-<div class="ports {side}-ports">
-	{#each portTree as item}
-		{#if item.type === 'port'}
-			{@render portLeaf(item, false)}
+{#if ports.length > 0}
+	{@const isRootCollapsed = rootCollapsed()}
+	<div class="ports {side}-ports">
+		<!-- Root group header -->
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div
+			class="root-group-header"
+			onclick={() => toggleGroup(nodeId, side, ROOT_GROUP_PATH, totalPortCount)}
+			title={isRootCollapsed ? 'Expand all ports' : 'Collapse all ports'}
+		>
+			{#if side === 'in'}
+				<Handle
+					type={handleType}
+					position={handlePosition}
+					id={rootHandleId}
+					style={isRootCollapsed
+						? getHandleStyle(rootHandleId)
+						: 'opacity:0;width:0;height:0;pointer-events:none;'}
+					class="root-group-handle {isRootCollapsed ? '' : 'hidden-handle'}"
+				/>
+			{/if}
+			<span class="chevron" class:expanded={!isRootCollapsed}>{'\u25B6'}</span>
+			{#if isRootCollapsed}
+				<span class="group-count">({totalPortCount})</span>
+			{/if}
+			{#if side === 'out'}
+				<Handle
+					type={handleType}
+					position={handlePosition}
+					id={rootHandleId}
+					style={isRootCollapsed
+						? getHandleStyle(rootHandleId)
+						: 'opacity:0;width:0;height:0;pointer-events:none;'}
+					class="root-group-handle {isRootCollapsed ? '' : 'hidden-handle'}"
+				/>
+			{/if}
+		</div>
+
+		<!-- Children: visible when root expanded, hidden handles when root collapsed -->
+		{#if isRootCollapsed}
+			<!-- Render all port handles as hidden for edge routing -->
+			{#each portTree as item}
+				{#if item.type === 'port'}
+					<Handle
+						type={handleType}
+						position={handlePosition}
+						id={item.port.name}
+						style="opacity:0;width:0;height:0;pointer-events:none;"
+						class="hidden-handle"
+					/>
+				{:else}
+					{@render hiddenGroupHandles(item)}
+				{/if}
+			{/each}
 		{:else}
-			{@render groupNode(item)}
+			{#each portTree as item}
+				{#if item.type === 'port'}
+					{@render portLeaf(item, false)}
+				{:else}
+					{@render groupNode(item)}
+				{/if}
+			{/each}
 		{/if}
-	{/each}
-</div>
+	</div>
+{/if}
 
 <style>
 	.ports {
@@ -278,10 +346,35 @@
 		font-size: 10px;
 	}
 
+	/* Root group header */
+	.root-group-header {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		position: relative;
+		min-height: 18px;
+		cursor: pointer;
+		padding: 2px 4px;
+		margin: -2px -4px;
+		border-radius: 4px;
+		transition: background 0.15s;
+	}
+
+	.root-group-header:hover {
+		background: rgba(255, 255, 255, 0.06);
+	}
+
 	/* Group handle styling — slightly larger, rounded rectangle */
 	:global(.group-handle) {
 		width: 12px !important;
 		height: 12px !important;
+		border-radius: 3px !important;
+	}
+
+	/* Root group handle styling — larger than sub-group handles */
+	:global(.root-group-handle) {
+		width: 14px !important;
+		height: 14px !important;
 		border-radius: 3px !important;
 	}
 </style>
