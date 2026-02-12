@@ -31,7 +31,6 @@
 
 	// Root group state
 	let totalPortCount = $derived(ports.length);
-	let rootLabel = $derived(side === 'in' ? 'Inputs' : 'Outputs');
 	let rootHandleId = $derived(makeGroupHandleId(side, ROOT_GROUP_PATH));
 
 	// Check collapsed state (reactive via _overrides dependency)
@@ -222,7 +221,6 @@
 				/>
 			{/if}
 			<span class="chevron" class:expanded={!isRootCollapsed}>{'\u25B6'}</span>
-			<span class="root-group-name">{rootLabel}</span>
 			{#if isRootCollapsed}
 				<span class="group-count">({totalPortCount})</span>
 			{/if}
@@ -364,14 +362,6 @@
 
 	.root-group-header:hover {
 		background: rgba(255, 255, 255, 0.06);
-	}
-
-	.root-group-name {
-		color: var(--text-primary, #fff);
-		font-size: 11px;
-		font-weight: 600;
-		text-transform: uppercase;
-		letter-spacing: 0.03em;
 	}
 
 	/* Group handle styling — slightly larger, rounded rectangle */
