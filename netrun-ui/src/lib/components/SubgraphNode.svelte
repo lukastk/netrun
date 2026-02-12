@@ -268,4 +268,11 @@
 		height: 12px;
 		border-radius: 3px;
 	}
+
+	/* Root group handle styling — larger than sub-group handles */
+	:global(.subgraph-node .svelte-flow__handle.root-group-handle) {
+		width: 14px;
+		height: 14px;
+		border-radius: 3px;
+	}
 </style>
