@@ -11,6 +11,9 @@ import {
 	type CommandCategory,
 	openCommandPalette,
 } from '$lib/stores/commandStore';
+import { LAYOUT_ALGORITHMS, computeLayout } from '$lib/utils/autoLayout';
+import { svelteFlowRef } from '$lib/stores/svelteFlowStore';
+import { toasts } from '$lib/stores/toastStore';
 import {
 	recipes,
 	getRecipePrompts,
@@ -40,6 +43,9 @@ import {
 	selectedNode,
 	selectedNodeIds,
 	nodes,
+	edges,
+	pushHistory,
+	updateNodePositions,
 	addNode,
 	createRegularNode,
 	createFactoryNode,
@@ -546,6 +552,47 @@ const recipeStaticCommands: Command[] = [
 	},
 ];
 
+// --- Layout Commands ---
+
+async function runLayout(algorithmId: string): Promise<void> {
+	const currentNodes = get(nodes);
+	if (currentNodes.length < 2) {
+		toasts.info(currentNodes.length === 0 ? 'No nodes to layout.' : 'Need at least 2 nodes to layout.');
+		return;
+	}
+
+	const flowRef = get(svelteFlowRef);
+	if (!flowRef) {
+		toasts.error('Flow editor not available.');
+		return;
+	}
+
+	const measuredNodes = flowRef.getNodes();
+	const nodeDimensions = new Map<string, { width: number; height: number }>();
+	for (const n of measuredNodes) {
+		if (n.measured?.width && n.measured?.height) {
+			nodeDimensions.set(n.id, { width: n.measured.width, height: n.measured.height });
+		}
+	}
+
+	const currentEdges = get(edges);
+	const result = await computeLayout(currentNodes, currentEdges, algorithmId, nodeDimensions);
+
+	pushHistory();
+	updateNodePositions(result.positions);
+	flowRef.fitView({ padding: 0.2, maxZoom: 1.5 });
+}
+
+const layoutCommands: Command[] = LAYOUT_ALGORITHMS.map((algo) => ({
+	id: `layout.${algo.id}`,
+	label: `Layout: ${algo.label}`,
+	category: 'layout' as CommandCategory,
+	keywords: ['layout', 'arrange', 'auto', 'graph', algo.elkAlgorithm],
+	shortcut: algo.id === 'layered-lr' ? '\u21E7\u2318L' : undefined,
+	action: () => runLayout(algo.id),
+	enabled: () => get(nodes).length >= 2,
+}));
+
 // --- Tab Commands ---
 
 const tabCommands: Command[] = [
@@ -650,6 +697,9 @@ const keyboardShortcuts: ShortcutBinding[] = [
 	// View
 	{ key: 'p', metaKey: true, shiftKey: true, commandId: 'view.commandPalette' },
 
+	// Layout
+	{ key: 'l', metaKey: true, shiftKey: true, commandId: 'layout.layered-lr' },
+
 	// Subgraph
 	{ key: 'g', metaKey: true, commandId: 'subgraph.create' },
 
@@ -745,6 +795,7 @@ export function initializeCommands(): void {
 		...fileCommands,
 		...editCommands,
 		...viewCommands,
+		...layoutCommands,
 		...nodeCommands,
 		...subgraphCommands,
 		...recipeStaticCommands,
