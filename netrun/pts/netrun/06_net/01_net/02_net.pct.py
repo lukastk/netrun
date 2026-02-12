@@ -2057,7 +2057,7 @@ class Net:
         from netrun.packets import LazyPacketValueSpec
 
         fs_config = self._file_storage_store.get_config(node_name)
-        project_root = Path(self._config_resolved.project_root) if self._config_resolved.project_root else None
+        project_root = self._config_resolved.project_root_path
         backend = self._file_storage_store.resolve_backend(node_name, project_root=project_root)
 
         # Build serialization config for retrieval
@@ -2226,7 +2226,7 @@ class Net:
             execution_result: The successful execution result.
         """
         fs_config = self._file_storage_store.get_config(node_name)
-        project_root = Path(self._config_resolved.project_root) if self._config_resolved.project_root else None
+        project_root = self._config_resolved.project_root_path
         backend = self._file_storage_store.resolve_backend(node_name, project_root=project_root)
 
         ser_method = fs_config.serialization

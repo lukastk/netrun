@@ -105,7 +105,7 @@ class TestSchemaClassification:
 
     def test_str_or_null_field(self):
         schema = get_model_schema(NetConfig, "NetConfig")
-        field = next(f for f in schema.fields if f.name == "project_root")
+        field = next(f for f in schema.fields if f.name == "project_root_override")
         assert field.category == FieldCategory.STR_OR_NULL
 
     def test_error_on_undeclared_output(self):

@@ -1360,28 +1360,28 @@ def test_subgraph_circular_reference():
 
 # %% pts/tests/06_net/test_config.pct.py 150
 def test_netconfig_project_root_default_cwd():
-    """Test project_root_path defaults to cwd when both project_root and _file_path are None."""
+    """Test project_root_path defaults to cwd when both project_root_override and _file_path are None."""
     config = NetConfig(
         graph=GraphConfig(nodes=[NodeConfig(name="A")]),
     )
-    assert config.project_root is None
+    assert config.project_root_override is None
     assert config._file_path is None
     assert config.project_root_path == Path(os.getcwd())
 
 # %% pts/tests/06_net/test_config.pct.py 152
 def test_netconfig_project_root_absolute():
-    """Test project_root_path with an absolute project_root."""
+    """Test project_root_path with an absolute project_root_override."""
     config = NetConfig(
-        project_root="/tmp/my_project",
+        project_root_override="/tmp/my_project",
         graph=GraphConfig(nodes=[NodeConfig(name="A")]),
     )
     assert config.project_root_path == Path("/tmp/my_project")
 
 # %% pts/tests/06_net/test_config.pct.py 154
 def test_netconfig_project_root_relative_with_file():
-    """Test project_root_path resolves relative project_root from file location."""
+    """Test project_root_path resolves relative project_root_override from file location."""
     config = NetConfig(
-        project_root="../other",
+        project_root_override="../other",
         graph=GraphConfig(nodes=[NodeConfig(name="A")]),
     )
     config._file_path = Path("/home/user/configs/net.json")
@@ -1412,7 +1412,7 @@ def test_netconfig_from_file_json(tmp_path):
 
     config = NetConfig.from_file(file_path)
 
-    assert config.project_root == "./src"
+    assert config.project_root_override == "./src"
     assert config._file_path == file_path.resolve()
     assert len(config.graph.nodes) == 1
 
@@ -1431,7 +1431,7 @@ edges = []
 
     config = NetConfig.from_file(file_path)
 
-    assert config.project_root == "/absolute/path"
+    assert config.project_root_override == "/absolute/path"
     assert config._file_path == file_path.resolve()
     assert len(config.graph.nodes) == 0
 
@@ -1439,19 +1439,19 @@ edges = []
 def test_netconfig_serialization_excludes_file_path():
     """Test that _file_path (PrivateAttr) is not included in serialization."""
     config = NetConfig(
-        project_root="./src",
+        project_root_override="./src",
         graph=GraphConfig(nodes=[NodeConfig(name="A")]),
     )
     config._file_path = Path("/some/path/net.json")
 
     dumped = config.model_dump()
     assert "_file_path" not in dumped
-    assert "project_root" in dumped
-    assert dumped["project_root"] == "./src"
+    assert "project_root_override" in dumped
+    assert dumped["project_root_override"] == "./src"
 
     json_str = config.model_dump_json()
     assert "_file_path" not in json_str
-    assert "project_root" in json_str
+    assert "project_root_override" in json_str
 
 # %% pts/tests/06_net/test_config.pct.py 164
 def test_netconfig_resolve_preserves_file_path():
@@ -1798,7 +1798,7 @@ def test_node_config_resolve_factory_file_path():
             factory=str(factory_file),
         )
 
-        _nc = NetConfig(project_root=str(tmp), graph=GraphConfig(nodes=[]))
+        _nc = NetConfig(project_root_override=str(tmp), graph=GraphConfig(nodes=[]))
         resolved = config.resolve(net_config=_nc)
 
         assert resolved.name == "TestNode"
@@ -1864,7 +1864,7 @@ def test_graph_config_resolve_with_project_root():
             ],
         )
 
-        _nc = NetConfig(project_root=str(tmp), graph=GraphConfig(nodes=[]))
+        _nc = NetConfig(project_root_override=str(tmp), graph=GraphConfig(nodes=[]))
         resolved = graph.resolve(net_config=_nc)
 
         # The factory node should have been resolved
@@ -1899,7 +1899,7 @@ def test_net_config_resolve_with_file_path_factory():
                     ),
                 ],
             ),
-            project_root=str(tmp),
+            project_root_override=str(tmp),
         )
 
         resolved = net.resolve()
@@ -1940,7 +1940,7 @@ def test_net_config_resolve_relative_factory_path():
                     ),
                 ],
             ),
-            project_root=str(tmp),
+            project_root_override=str(tmp),
         )
 
         resolved = net.resolve()
@@ -2068,7 +2068,7 @@ def test_factory_returns_subgraph_basic():
             ],
         )
 
-        _nc = NetConfig(project_root=str(tmp), graph=GraphConfig(nodes=[]))
+        _nc = NetConfig(project_root_override=str(tmp), graph=GraphConfig(nodes=[]))
         resolved = graph.resolve(net_config=_nc)
 
         # Should have 2 flattened nodes
@@ -2133,7 +2133,7 @@ def test_factory_returns_subgraph_exposed_ports():
             ],
         )
 
-        _nc = NetConfig(project_root=str(tmp), graph=GraphConfig(nodes=[]))
+        _nc = NetConfig(project_root_override=str(tmp), graph=GraphConfig(nodes=[]))
         resolved = graph.resolve(net_config=_nc)
 
         # 4 nodes: Source, middle.A, middle.B, Sink
@@ -2179,7 +2179,7 @@ def test_factory_returns_subgraph_name_override():
                 )
         """))
 
-        _nc = NetConfig(project_root=str(tmp), graph=GraphConfig(nodes=[]))
+        _nc = NetConfig(project_root_override=str(tmp), graph=GraphConfig(nodes=[]))
 
         # NodeConfig has explicit name that overrides factory's
         node = NodeConfig(name="custom_name", factory=str(factory_file))
@@ -2222,7 +2222,7 @@ def test_factory_returns_subgraph_extra_merge():
             factory=str(factory_file),
             extra={"node_key": "node_value", "shared_key": "from_node"},
         )
-        _nc = NetConfig(project_root=str(tmp), graph=GraphConfig(nodes=[]))
+        _nc = NetConfig(project_root_override=str(tmp), graph=GraphConfig(nodes=[]))
         resolved = node.resolve(net_config=_nc)
 
         assert isinstance(resolved, SubgraphConfig)
@@ -2291,7 +2291,7 @@ def test_factory_returns_subgraph_serialization():
         assert loaded.factory == str(factory_file)
 
         # Resolve produces subgraph
-        _nc = NetConfig(project_root=str(tmp), graph=GraphConfig(nodes=[]))
+        _nc = NetConfig(project_root_override=str(tmp), graph=GraphConfig(nodes=[]))
         resolved = loaded.resolve(net_config=_nc)
         assert isinstance(resolved, SubgraphConfig)
         assert resolved.name == "my_sg"
@@ -2336,7 +2336,7 @@ def test_factory_nodes_inside_subgraph_resolved():
             ],
         )
 
-        _nc = NetConfig(project_root=str(tmp), graph=GraphConfig(nodes=[]))
+        _nc = NetConfig(project_root_override=str(tmp), graph=GraphConfig(nodes=[]))
         resolved = graph.resolve(net_config=_nc)
 
         # The factory node inside the subgraph should have been resolved
@@ -2534,13 +2534,13 @@ def test_env_var_json_roundtrip():
     """NetConfig with EnvVar fields -> model_dump_json -> model_validate_json -> same EnvVar."""
     nc = NetConfig(
         graph=GraphConfig(nodes=[]),
-        project_root=EnvVar(env="PROJECT_ROOT"),
+        project_root_override=EnvVar(env="PROJECT_ROOT"),
         type_checking_enabled=EnvVar(env="TYPE_CHECK", default=True),
     )
     json_str = nc.model_dump_json()
     restored = NetConfig.model_validate_json(json_str)
-    assert isinstance(restored.project_root, EnvVar)
-    assert restored.project_root.env == "PROJECT_ROOT"
+    assert isinstance(restored.project_root_override, EnvVar)
+    assert restored.project_root_override.env == "PROJECT_ROOT"
     assert isinstance(restored.type_checking_enabled, EnvVar)
     assert restored.type_checking_enabled.env == "TYPE_CHECK"
     assert restored.type_checking_enabled.default is True
@@ -2945,7 +2945,7 @@ def test_resolve_var_refs_empty_vars_returns_self():
 def test_resolve_var_refs_casts_string_to_enum():
     """resolve_var_refs() casts string var value to enum field."""
     cfg = NetConfig(
-        project_root="/tmp",
+        project_root_override="/tmp",
         default_pool_allocation_method=VarRef(var="alloc_method"),
         graph=GraphConfig(nodes=[], edges=[]),
     )
@@ -2975,15 +2975,15 @@ def test_node_variable_rejects_var_ref():
 def test_varref_json_roundtrip():
     """NetConfig with VarRef fields -> model_dump_json -> model_validate_json -> same VarRef."""
     nc = NetConfig(
-        project_root=VarRef(env="PROJECT_ROOT"),
+        project_root_override=VarRef(env="PROJECT_ROOT"),
         type_checking_enabled=VarRef(var="tc_enabled", default=True),
         graph=GraphConfig(nodes=[], edges=[]),
     )
     json_str = nc.model_dump_json(by_alias=True)
     restored = NetConfig.model_validate_json(json_str)
 
-    assert isinstance(restored.project_root, VarRef)
-    assert restored.project_root.env == "PROJECT_ROOT"
+    assert isinstance(restored.project_root_override, VarRef)
+    assert restored.project_root_override.env == "PROJECT_ROOT"
     assert isinstance(restored.type_checking_enabled, VarRef)
     assert restored.type_checking_enabled.var == "tc_enabled"
     assert restored.type_checking_enabled.default is True
@@ -2993,7 +2993,7 @@ def test_netconfig_resolve_with_var_refs(monkeypatch, tmp_path):
     """NetConfig.resolve() resolves $var refs from net-level node_vars."""
     monkeypatch.delenv("PROJECT_ROOT", raising=False)
     nc = NetConfig(
-        project_root=str(tmp_path),
+        project_root_override=str(tmp_path),
         type_checking_enabled=VarRef(var="tc_enabled"),
         node_vars={
             "tc_enabled": NodeVariable(value="true", type="bool"),
@@ -3008,7 +3008,7 @@ def test_node_var_refs_merged_resolution(monkeypatch, tmp_path):
     """GraphConfig.resolve() resolves per-node $var refs with merged net+node vars."""
     monkeypatch.delenv("PROJECT_ROOT", raising=False)
     nc = NetConfig(
-        project_root=str(tmp_path),
+        project_root_override=str(tmp_path),
         node_vars={
             "max_ep": NodeVariable(value="5", type="int"),
         },
@@ -3038,7 +3038,7 @@ def test_two_phase_resolution_order(monkeypatch, tmp_path):
     """$env in NodeVariable.value resolved first, then $var refs use resolved values."""
     monkeypatch.setenv("MY_MAX", "7")
     nc = NetConfig(
-        project_root=str(tmp_path),
+        project_root_override=str(tmp_path),
         node_vars={
             "max_ep": NodeVariable(value=VarRef(env="MY_MAX"), type="int"),
         },
