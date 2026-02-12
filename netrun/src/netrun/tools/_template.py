@@ -70,11 +70,33 @@ def build_template_variables(context: ActionContext) -> dict[str, str]:
     return variables
 
 
+def _substitute_outside_single_quotes(template: str, variables: dict[str, str]) -> str:
+    """Substitute variables only in segments outside single quotes.
+
+    Single-quoted segments are preserved literally, matching shell behaviour.
+    """
+    # Split on single quotes — odd-indexed segments are inside quotes
+    parts = template.split("'")
+    for i in range(0, len(parts), 2):  # only even indices (outside quotes)
+        segment = parts[i]
+        # Replace ${VAR} syntax first (more specific)
+        for var_name, var_value in variables.items():
+            segment = segment.replace(f"${{{var_name}}}", var_value)
+        # Replace $VAR syntax (word boundary aware)
+        for var_name, var_value in variables.items():
+            pattern = rf"\${var_name}(?=\W|$)"
+            segment = re.sub(pattern, lambda _: var_value, segment)
+        parts[i] = segment
+    return "'".join(parts)
+
+
 def resolve_template(template: str, context: ActionContext) -> str:
     """Resolve template variables in a command string.
 
     Supported syntax:
     - $VAR or ${VAR}
+
+    Variables inside single quotes are not substituted, matching shell behaviour.
 
     Args:
         template: Command string with template variables.
@@ -83,19 +105,8 @@ def resolve_template(template: str, context: ActionContext) -> str:
     Returns:
         The template with variables resolved.
     """
-    result = template
     variables = build_template_variables(context)
-
-    # Replace ${VAR} syntax first (more specific)
-    for var_name, var_value in variables.items():
-        result = result.replace(f"${{{var_name}}}", var_value)
-
-    # Replace $VAR syntax (word boundary aware)
-    for var_name, var_value in variables.items():
-        pattern = rf"\${var_name}(?=\W|$)"
-        result = re.sub(pattern, lambda _: var_value, result)
-
-    return result
+    return _substitute_outside_single_quotes(template, variables)
 
 
 def resolve_working_directory(context: ActionContext) -> str | None:
