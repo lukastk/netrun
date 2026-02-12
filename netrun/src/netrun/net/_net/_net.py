@@ -199,6 +199,12 @@ class Net:
             if node_config.execution_config is not None:
                 self._node_execution_configs[node_config.name] = node_config.execution_config
 
+        # Disabled nodes set (populated from config, mutated at runtime)
+        self._disabled_nodes: set[str] = set()
+        for node_name, exec_config in self._node_execution_configs.items():
+            if not exec_config.enabled:
+                self._disabled_nodes.add(node_name)
+
         # Build node output ports lookup (for type validation)
         self._node_out_ports: dict[str, dict[str, PortConfig]] = {}
         for node_config in self._config_resolved.graph.nodes:
@@ -1129,8 +1135,10 @@ class Net:
 
         self._started = True
 
-        # Execute run_on_startup nodes
+        # Execute run_on_startup nodes (skip disabled)
         for node_config in self._config_resolved.graph.nodes:
+            if node_config.name in self._disabled_nodes:
+                continue
             config = self._get_node_execution_config(node_config.name)
             if config is not None and config.run_on_startup:
                 await self.execute_node(node_config.name)
@@ -1287,14 +1295,37 @@ class Net:
         Returns:
             True if no packets can move and no epochs are running.
         """
-        # Check if there are any startable or running epochs
-        if self.get_startable_epochs():
-            return False
         if self._running_epochs:
             return False
 
+        # Check if there are startable epochs on enabled nodes
+        startable = self.get_startable_epochs()
+        if startable:
+            for eid in startable:
+                epoch = self._netsim.get_epoch(eid)
+                if epoch.node_name not in self._disabled_nodes:
+                    return False
+
         # Check if any packets can move from edges to input ports
         return self._netsim.is_blocked()
+
+    def enable_node(self, node_name: str) -> None:
+        """Enable a node, allowing its epochs to execute."""
+        if node_name not in {n.name for n in self._config_resolved.graph.nodes}:
+            raise KeyError(f"Node '{node_name}' not found in graph")
+        self._disabled_nodes.discard(node_name)
+
+    def disable_node(self, node_name: str) -> None:
+        """Disable a node, preventing its epochs from executing."""
+        if node_name not in {n.name for n in self._config_resolved.graph.nodes}:
+            raise KeyError(f"Node '{node_name}' not found in graph")
+        self._disabled_nodes.add(node_name)
+
+    def is_node_enabled(self, node_name: str) -> bool:
+        """Check if a node is enabled."""
+        if node_name not in {n.name for n in self._config_resolved.graph.nodes}:
+            raise KeyError(f"Node '{node_name}' not found in graph")
+        return node_name not in self._disabled_nodes
 
     async def run_step(self, *, auto_start_epochs: bool = True) -> tuple[bool, list]:
         """Run one simulation step.
@@ -1326,7 +1357,7 @@ class Net:
         if auto_start_epochs:
             startable = self.get_startable_epochs()
             if startable:
-                startable = self._filter_by_max_parallel_epochs(startable)
+                startable = self._filter_startable_epochs(startable)
             if startable:
                 # Execute epochs concurrently
                 tasks = [
@@ -1379,12 +1410,11 @@ class Net:
         """Get list of currently running epoch IDs."""
         return list(self._running_epochs)
 
-    def _filter_by_max_parallel_epochs(self, epoch_ids: list[str]) -> list[str]:
-        """Filter startable epochs based on max_parallel_epochs limits.
+    def _filter_startable_epochs(self, epoch_ids: list[str]) -> list[str]:
+        """Filter startable epochs based on enabled state and max_parallel_epochs limits.
 
-        For each node, only allows up to max_parallel_epochs concurrent
-        running epochs. Epochs beyond the limit are skipped and will remain
-        startable for future run_step() calls.
+        Skips epochs for disabled nodes and enforces max_parallel_epochs limits.
+        Epochs that are filtered out remain startable for future run_step() calls.
 
         Args:
             epoch_ids: List of startable epoch IDs.
@@ -1406,6 +1436,11 @@ class Net:
         for epoch_id in epoch_ids:
             epoch = self._netsim.get_epoch(epoch_id)
             node_name = epoch.node_name
+
+            # Skip disabled nodes
+            if node_name in self._disabled_nodes:
+                continue
+
             config = self._get_node_execution_config(node_name)
             max_parallel = config.max_parallel_epochs if config else None
 
@@ -3153,7 +3188,7 @@ class Net:
                 break
 
             # Execute upstream epochs (respecting max_parallel_epochs)
-            upstream_epochs = self._filter_by_max_parallel_epochs(upstream_epochs)
+            upstream_epochs = self._filter_startable_epochs(upstream_epochs)
             if not upstream_epochs:
                 break
             tasks = [asyncio.create_task(self._execute_epoch(eid)) for eid in upstream_epochs]

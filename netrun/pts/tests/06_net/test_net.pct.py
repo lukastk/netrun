@@ -5871,3 +5871,294 @@ async def test_run_on_startup_outputs_flow_downstream():
         # Sink should have been executed
         assert "sink" in execution_log
         assert "consumed:42" in execution_log
+
+# %% [markdown]
+# ## Node Enabled/Disabled Tests
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_node_disabled_via_config():
+    """Node with enabled=False in config should not execute epochs."""
+    execution_log = []
+
+    def node_func(ctx, packets):
+        execution_log.append(ctx.node_name)
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="A",
+                    in_ports={"in": PortConfig()},
+                    execution_config=NodeExecutionConfig(
+                        exec_node_func=node_func,
+                        enabled=False,
+                    ),
+                ),
+            ],
+            edges=[],
+        ),
+    )
+
+    async with Net(config) as net:
+        net.inject_data("A", "in", [1])
+        await net.run_step()
+
+        # Epoch should be created (startable) but NOT executed
+        startable = net.get_startable_epochs()
+        assert len(startable) == 1
+        assert len(execution_log) == 0
+
+# %%
+asyncio.get_event_loop().run_until_complete(test_node_disabled_via_config())
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_node_disable_at_runtime():
+    """Disabling a node at runtime prevents its epochs from executing."""
+    execution_log = []
+
+    def node_func(ctx, packets):
+        execution_log.append(ctx.node_name)
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="A",
+                    in_ports={"in": PortConfig()},
+                    execution_config=NodeExecutionConfig(
+                        exec_node_func=node_func,
+                    ),
+                ),
+            ],
+            edges=[],
+        ),
+    )
+
+    async with Net(config) as net:
+        # Disable at runtime
+        net.disable_node("A")
+        assert not net.is_node_enabled("A")
+
+        net.inject_data("A", "in", [1])
+        await net.run_step()
+
+        # Should NOT have executed
+        assert len(execution_log) == 0
+        assert len(net.get_startable_epochs()) == 1
+
+# %%
+asyncio.get_event_loop().run_until_complete(test_node_disable_at_runtime())
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_node_enable_at_runtime():
+    """Re-enabling a node allows pending startable epochs to execute."""
+    execution_log = []
+
+    def node_func(ctx, packets):
+        execution_log.append(ctx.node_name)
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="A",
+                    in_ports={"in": PortConfig()},
+                    execution_config=NodeExecutionConfig(
+                        exec_node_func=node_func,
+                        enabled=False,
+                    ),
+                ),
+            ],
+            edges=[],
+        ),
+    )
+
+    async with Net(config) as net:
+        net.inject_data("A", "in", [1])
+        await net.run_step()
+        assert len(execution_log) == 0
+
+        # Re-enable and run again
+        net.enable_node("A")
+        assert net.is_node_enabled("A")
+        await net.run_step()
+
+        assert len(execution_log) == 1
+        assert execution_log[0] == "A"
+
+# %%
+asyncio.get_event_loop().run_until_complete(test_node_enable_at_runtime())
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_is_blocked_with_disabled_node():
+    """is_blocked() returns True when only disabled nodes have startable epochs."""
+    def node_func(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="A",
+                    in_ports={"in": PortConfig()},
+                    execution_config=NodeExecutionConfig(
+                        exec_node_func=node_func,
+                        enabled=False,
+                    ),
+                ),
+            ],
+            edges=[],
+        ),
+    )
+
+    async with Net(config) as net:
+        net.inject_data("A", "in", [1])
+        await net.run_step()
+
+        # There are startable epochs, but all on disabled nodes → blocked
+        assert len(net.get_startable_epochs()) == 1
+        assert net.is_blocked() is True
+
+# %%
+asyncio.get_event_loop().run_until_complete(test_is_blocked_with_disabled_node())
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_disabled_node_nodeinfo_api():
+    """NodeInfo.enabled, enable(), disable() convenience methods."""
+    def node_func(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="A",
+                    in_ports={"in": PortConfig()},
+                    execution_config=NodeExecutionConfig(
+                        exec_node_func=node_func,
+                    ),
+                ),
+            ],
+            edges=[],
+        ),
+    )
+
+    async with Net(config) as net:
+        info = net.nodes["A"]
+        assert info.enabled is True
+
+        info.disable()
+        assert info.enabled is False
+        assert not net.is_node_enabled("A")
+
+        info.enable()
+        assert info.enabled is True
+        assert net.is_node_enabled("A")
+
+# %%
+asyncio.get_event_loop().run_until_complete(test_disabled_node_nodeinfo_api())
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_enable_disable_unknown_node():
+    """enable_node/disable_node/is_node_enabled raise KeyError for unknown nodes."""
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="A",
+                    in_ports={"in": PortConfig()},
+                    execution_config=NodeExecutionConfig(
+                        exec_node_func=lambda ctx, packets: None,
+                    ),
+                ),
+            ],
+            edges=[],
+        ),
+    )
+
+    net = Net(config)
+    with pytest.raises(KeyError, match="not found"):
+        net.enable_node("NONEXISTENT")
+    with pytest.raises(KeyError, match="not found"):
+        net.disable_node("NONEXISTENT")
+    with pytest.raises(KeyError, match="not found"):
+        net.is_node_enabled("NONEXISTENT")
+
+# %%
+asyncio.get_event_loop().run_until_complete(test_enable_disable_unknown_node())
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_run_on_startup_disabled():
+    """Node with run_on_startup=True and enabled=False should NOT run on startup."""
+    execution_log = []
+
+    def source_func(ctx, packets):
+        execution_log.append("source")
+        out_id = ctx.create_packet(42)
+        ctx.load_output_port("out", out_id)
+        ctx.send_output_salvo("default")
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="Source",
+                    out_ports={"out": PortConfig()},
+                    in_salvo_conditions={
+                        "default": SalvoConditionConfig(
+                            max_salvos=MaxSalvosFiniteConfig(max=1),
+                            ports={},
+                            term=SalvoConditionTermTrueConfig(),
+                        ),
+                    },
+                    execution_config=NodeExecutionConfig(
+                        exec_node_func=source_func,
+                        run_on_startup=True,
+                        enabled=False,
+                    ),
+                ),
+            ],
+            edges=[],
+        ),
+    )
+
+    async with Net(config) as net:
+        # Source should NOT have been executed despite run_on_startup
+        assert "source" not in execution_log
+
+# %%
+asyncio.get_event_loop().run_until_complete(test_run_on_startup_disabled())

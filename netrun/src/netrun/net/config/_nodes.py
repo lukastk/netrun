@@ -169,6 +169,8 @@ class NodeExecutionConfig(EnvVarResolvableModel):
     """Runtime configuration for a node's execution behavior."""
     model_config = {"arbitrary_types_allowed": True}
 
+    enabled: bool | VarRef = Field(default=True, description="Whether this node is enabled. Disabled nodes will not execute epochs even when salvo conditions are met.")
+
     pools: list[str] | VarRef = Field(default_factory=lambda: ["main"], description="Which pools can execute this node.")
     exec_node_func: NodeExecutionFunc | str | VarRef | None = Field(default=None, description="Function to execute the node. Can be a callable or import path string.")
 
