@@ -14,6 +14,7 @@
 		deleteNodes,
 		pushHistory,
 		activeTab,
+		currentFilePath,
 		isNewFile,
 		extraData,
 		graphExtra,
@@ -67,6 +68,17 @@
 	import { unregisteredFields, configSchema, getFieldDescription } from '$lib/stores/schemaStore';
 	import { tooltip } from '$lib/utils/tooltip';
 	import { isEnvVar, makeEnvVar, getEnvVarName, getEnvVarDefault } from '$lib/utils/envvar';
+
+	function resolvePath(base: string, rel: string): string {
+		const parts = (base + '/' + rel).split('/');
+		const resolved: string[] = [];
+		for (const p of parts) {
+			if (p === '' || p === '.') continue;
+			if (p === '..') resolved.pop();
+			else resolved.push(p);
+		}
+		return '/' + resolved.join('/');
+	}
 
 	function descNet(field: string): string | undefined {
 		return getFieldDescription($configSchema, 'NetConfig', field);
@@ -1453,7 +1465,24 @@
 								/>
 							{/if}
 							<div class="field-hint">
-								Base path for file references. Relative paths resolve from the project root.
+								{#if !$currentFilePath}
+									Save file first to see resolved path
+								{:else}
+									{@const fileDir = $currentFilePath.replace(/\/[^/]*$/, '')}
+									{@const prVal = ($extraData as Record<string, unknown>)?.project_root}
+									{#if projectRootEnvMode}
+										Resolves from <code>{fileDir}/</code> (+ env var)
+									{:else}
+										{@const raw = String(prVal ?? '')}
+										{#if raw === ''}
+											Resolves to <code>{fileDir}</code>
+										{:else if raw.startsWith('/')}
+											Resolves to <code>{resolvePath('', raw)}</code>
+										{:else}
+											Resolves to <code>{resolvePath(fileDir, raw)}</code>
+										{/if}
+									{/if}
+								{/if}
 							</div>
 						</div>
 					</div>
