@@ -426,7 +426,7 @@ class TestConverterWithFilePaths:
         )
 
         assert result is not None
-        in_ports, out_ports, _description = result
+        in_ports, out_ports, _description, _extra = result
         assert "data_in" in in_ports
         assert in_ports["data_in"]["port_type"] == "str"
         assert "data_out" in out_ports
@@ -466,6 +466,6 @@ class TestConverterWithFilePaths:
         )
 
         assert result is not None
-        in_ports, out_ports, _description = result
+        in_ports, out_ports, _description, _extra = result
         assert len(in_ports) == 0
         assert "out" in out_ports
