@@ -1680,6 +1680,7 @@ function convertApiNodes(apiNodes: UINode[]): FlowNode[] {
 					source: node.data.source,
 					nodeCount: node.data.nodeCount,
 					_subgraphConfig: node.data._subgraphConfig,
+					_config: node.data._config as Record<string, unknown> | undefined,
 				}
 			} as SubgraphNode;
 		} else {
@@ -1978,6 +1979,7 @@ export async function saveToFile(path?: string): Promise<void> {
 					source: subgraphData.source,
 					nodeCount: subgraphData.nodeCount,
 					_subgraphConfig: subgraphData._subgraphConfig,
+					_config: (data as Record<string, unknown>)._config as Record<string, unknown> | undefined,
 				}
 			};
 		} else {
@@ -2148,6 +2150,7 @@ export async function createSubgraphFromSelection(subgraphName: string): Promise
 					source: subgraphData.source,
 					nodeCount: subgraphData.nodeCount,
 					_subgraphConfig: subgraphData._subgraphConfig,
+					_config: (node.data as Record<string, unknown>)._config as Record<string, unknown> | undefined,
 				}
 			};
 		} else {
@@ -2188,6 +2191,7 @@ export async function createSubgraphFromSelection(subgraphName: string): Promise
 					source: subgraphData.source,
 					nodeCount: subgraphData.nodeCount,
 					_subgraphConfig: subgraphData._subgraphConfig,
+					_config: (node.data as Record<string, unknown>)._config as Record<string, unknown> | undefined,
 				}
 			};
 		} else {
@@ -2238,6 +2242,7 @@ export async function createSubgraphFromSelection(subgraphName: string): Promise
 				source: response.subgraph_node.data.source,
 				nodeCount: response.subgraph_node.data.nodeCount,
 				_subgraphConfig: response.subgraph_node.data._subgraphConfig,
+				_config: response.subgraph_node.data._config as Record<string, unknown> | undefined,
 			}
 		};
 
@@ -2258,6 +2263,7 @@ export async function createSubgraphFromSelection(subgraphName: string): Promise
 						source: node.data.source,
 						nodeCount: node.data.nodeCount,
 						_subgraphConfig: node.data._subgraphConfig,
+						_config: node.data._config as Record<string, unknown> | undefined,
 					}
 				} as SubgraphNode;
 			} else {

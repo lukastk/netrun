@@ -273,6 +273,8 @@ def graph_config_to_ui(
                         k: v for k, v in node.items()
                         if k not in ("extra",)  # Exclude extra, we handle it separately
                     },
+                    # Store extra in _config so UI state (e.g. expanded) round-trips
+                    "_config": {"extra": extra} if extra else {},
                 },
             }
             if node.get("description"):
