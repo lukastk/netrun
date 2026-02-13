@@ -296,7 +296,6 @@
 		display: flex;
 		align-items: center;
 		gap: 4px;
-		position: relative;
 		min-height: 18px;
 	}
 
