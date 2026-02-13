@@ -84,6 +84,14 @@ def get_node_config(_net_config=None, *, num_inputs: int = 1, num_outputs: int, 
         out_ports=out_ports,
         in_salvo_conditions=in_salvo_conditions,
         out_salvo_conditions=out_salvo_conditions,
+        extra={
+            "ui": {
+                "shape": "triangle-left",
+                "hideLabel": True,
+                "hideDescription": True,
+                "hidePortNames": True,
+            }
+        },
     )
 
 
