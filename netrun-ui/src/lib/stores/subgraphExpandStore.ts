@@ -99,6 +99,7 @@ async function loadSubgraphContent(
 		else break;
 	}
 	const basePath = rootTab.filePath || undefined;
+	const projectRoot = (rootTab.extraData as Record<string, unknown> | null)?.project_root as string | undefined;
 
 	const configPath = subgraphConfig?.path as string | undefined;
 	const configNodes = subgraphConfig?.nodes as unknown[] | undefined;
@@ -109,7 +110,7 @@ async function loadSubgraphContent(
 
 	if (isFileReference) {
 		const filePath = configPath || data.source;
-		const response = await api.loadSubgraph(filePath, undefined, basePath);
+		const response = await api.loadSubgraph(filePath, undefined, basePath, projectRoot);
 		loadedNodes = response.nodes.map(node => ({
 			id: node.id,
 			type: node.type as 'netrunNode' | 'subgraphNode',
@@ -125,7 +126,7 @@ async function loadSubgraphContent(
 			type: e.type || 'smoothstep',
 		}));
 	} else if (subgraphConfig && (configNodes || subgraphConfig.edges)) {
-		const response = await api.loadSubgraph(undefined, subgraphConfig, basePath);
+		const response = await api.loadSubgraph(undefined, subgraphConfig, basePath, projectRoot);
 		loadedNodes = response.nodes.map(node => ({
 			id: node.id,
 			type: node.type as 'netrunNode' | 'subgraphNode',
