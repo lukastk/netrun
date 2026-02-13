@@ -858,6 +858,10 @@
 
 			<!-- Subgraph Section (only for subgraph nodes) -->
 			{#if $selectedNode.data.nodeType === 'subgraph'}
+				{@const subCfg = ($selectedNode.data._subgraphConfig ?? {}) as Record<string, unknown>}
+				{@const subSourceType = 'path' in subCfg ? 'file' : 'inline'}
+				{@const exposedIn = (subCfg.exposed_in_ports ?? {}) as Record<string, Record<string, string>>}
+				{@const exposedOut = (subCfg.exposed_out_ports ?? {}) as Record<string, Record<string, string>>}
 				<section class="section">
 					<button
 						class="section-header"
@@ -868,13 +872,70 @@
 					</button>
 					{#if sectionsOpen.subgraph}
 						<div class="section-content">
+							<!-- Source type -->
 							<div class="field">
-								<label>Source</label>
-								<div class="readonly-value mono">
-									{$selectedNode.data.source || 'Inline'}
-								</div>
+								<label for="subgraph-source-type">Source</label>
+								<select
+									id="subgraph-source-type"
+									value={subSourceType}
+									onchange={(e) => {
+										if (!$selectedNode) return;
+										const val = (e.target as HTMLSelectElement).value;
+										const cfg = { ...($selectedNode.data._subgraphConfig ?? {}) } as Record<string, unknown>;
+										if (val === 'file') {
+											cfg.path = '';
+											delete cfg.nodes;
+											delete cfg.edges;
+											updateNodeDataLive($selectedNode.id, {
+												source: '',
+												_subgraphConfig: cfg,
+												nodeCount: undefined,
+											});
+										} else {
+											delete cfg.path;
+											cfg.nodes = [];
+											cfg.edges = [];
+											updateNodeDataLive($selectedNode.id, {
+												source: 'Inline',
+												_subgraphConfig: cfg,
+												nodeCount: 0,
+											});
+										}
+										pushHistory();
+									}}
+								>
+									<option value="inline">Inline</option>
+									<option value="file">File reference</option>
+								</select>
 							</div>
-							{#if $selectedNode.data.nodeCount !== undefined}
+
+							<!-- File path (when source is file) -->
+							{#if subSourceType === 'file'}
+								<div class="field">
+									<label for="subgraph-path">File Path</label>
+									<input
+										id="subgraph-path"
+										type="text"
+										value={String(subCfg.path ?? '')}
+										placeholder="./path/to/subgraph.netrun.toml"
+										class="mono"
+										oninput={(e) => {
+											if (!$selectedNode) return;
+											const path = (e.target as HTMLInputElement).value;
+											const cfg = { ...($selectedNode.data._subgraphConfig ?? {}) } as Record<string, unknown>;
+											cfg.path = path;
+											updateNodeDataLive($selectedNode.id, {
+												source: path || '',
+												_subgraphConfig: cfg,
+											});
+										}}
+										onblur={() => pushHistory()}
+									/>
+									<div class="field-hint">
+										Relative paths resolve from the project root.
+									</div>
+								</div>
+							{:else if $selectedNode.data.nodeCount !== undefined}
 								<div class="field">
 									<label>Node Count</label>
 									<div class="readonly-value">
@@ -882,6 +943,199 @@
 									</div>
 								</div>
 							{/if}
+
+							<!-- Exposed Input Ports -->
+							<div class="field">
+								<label>Exposed Input Ports</label>
+								{#each Object.entries(exposedIn) as [portName, mapping]}
+									<div class="exposed-port-editor">
+										<div class="exposed-port-fields">
+											<input
+												type="text"
+												value={portName}
+												placeholder="exposed name"
+												title="Exposed port name"
+												onblur={(e) => {
+													if (!$selectedNode) return;
+													const newName = (e.target as HTMLInputElement).value.trim();
+													if (!newName || newName === portName) return;
+													const cfg = { ...($selectedNode.data._subgraphConfig ?? {}) } as Record<string, unknown>;
+													const ports = { ...(cfg.exposed_in_ports ?? {}) } as Record<string, unknown>;
+													if (newName in ports) return;
+													const entry = ports[portName];
+													delete ports[portName];
+													ports[newName] = entry;
+													cfg.exposed_in_ports = ports;
+													const inPorts = $selectedNode.data.inPorts.map(p =>
+														p.name === portName ? { ...p, name: newName } : p
+													);
+													updateNodeDataLive($selectedNode.id, { _subgraphConfig: cfg, inPorts });
+													pushHistory();
+												}}
+											/>
+											<input
+												type="text"
+												value={mapping.internal_node ?? ''}
+												placeholder="node"
+												title="Internal node name"
+												oninput={(e) => {
+													if (!$selectedNode) return;
+													const cfg = { ...($selectedNode.data._subgraphConfig ?? {}) } as Record<string, unknown>;
+													const ports = { ...(cfg.exposed_in_ports ?? {}) } as Record<string, Record<string, string>>;
+													ports[portName] = { ...ports[portName], internal_node: (e.target as HTMLInputElement).value };
+													cfg.exposed_in_ports = ports;
+													updateNodeDataLive($selectedNode.id, { _subgraphConfig: cfg });
+												}}
+												onblur={() => pushHistory()}
+											/>
+											<input
+												type="text"
+												value={mapping.internal_port ?? ''}
+												placeholder="port"
+												title="Internal port name"
+												oninput={(e) => {
+													if (!$selectedNode) return;
+													const cfg = { ...($selectedNode.data._subgraphConfig ?? {}) } as Record<string, unknown>;
+													const ports = { ...(cfg.exposed_in_ports ?? {}) } as Record<string, Record<string, string>>;
+													ports[portName] = { ...ports[portName], internal_port: (e.target as HTMLInputElement).value };
+													cfg.exposed_in_ports = ports;
+													updateNodeDataLive($selectedNode.id, { _subgraphConfig: cfg });
+												}}
+												onblur={() => pushHistory()}
+											/>
+										</div>
+										<button
+											class="remove-btn"
+											onclick={() => {
+												if (!$selectedNode) return;
+												const cfg = { ...($selectedNode.data._subgraphConfig ?? {}) } as Record<string, unknown>;
+												const ports = { ...(cfg.exposed_in_ports ?? {}) } as Record<string, unknown>;
+												delete ports[portName];
+												cfg.exposed_in_ports = ports;
+												const inPorts = $selectedNode.data.inPorts.filter(p => p.name !== portName);
+												updateNodeData($selectedNode.id, { _subgraphConfig: cfg, inPorts });
+											}}
+											title="Remove exposed port"
+										>
+											&times;
+										</button>
+									</div>
+								{/each}
+								<button
+									class="add-btn"
+									onclick={() => {
+										if (!$selectedNode) return;
+										const cfg = { ...($selectedNode.data._subgraphConfig ?? {}) } as Record<string, unknown>;
+										const ports = { ...(cfg.exposed_in_ports ?? {}) } as Record<string, Record<string, string>>;
+										let idx = Object.keys(ports).length;
+										let name = `in_${idx}`;
+										while (name in ports) { idx++; name = `in_${idx}`; }
+										ports[name] = { internal_node: '', internal_port: '' };
+										cfg.exposed_in_ports = ports;
+										const inPorts = [...$selectedNode.data.inPorts, { name, type: 'any' }];
+										updateNodeData($selectedNode.id, { _subgraphConfig: cfg, inPorts });
+									}}
+								>
+									+ Add Exposed Input
+								</button>
+							</div>
+
+							<!-- Exposed Output Ports -->
+							<div class="field">
+								<label>Exposed Output Ports</label>
+								{#each Object.entries(exposedOut) as [portName, mapping]}
+									<div class="exposed-port-editor">
+										<div class="exposed-port-fields">
+											<input
+												type="text"
+												value={portName}
+												placeholder="exposed name"
+												title="Exposed port name"
+												onblur={(e) => {
+													if (!$selectedNode) return;
+													const newName = (e.target as HTMLInputElement).value.trim();
+													if (!newName || newName === portName) return;
+													const cfg = { ...($selectedNode.data._subgraphConfig ?? {}) } as Record<string, unknown>;
+													const ports = { ...(cfg.exposed_out_ports ?? {}) } as Record<string, unknown>;
+													if (newName in ports) return;
+													const entry = ports[portName];
+													delete ports[portName];
+													ports[newName] = entry;
+													cfg.exposed_out_ports = ports;
+													const outPorts = $selectedNode.data.outPorts.map(p =>
+														p.name === portName ? { ...p, name: newName } : p
+													);
+													updateNodeDataLive($selectedNode.id, { _subgraphConfig: cfg, outPorts });
+													pushHistory();
+												}}
+											/>
+											<input
+												type="text"
+												value={mapping.internal_node ?? ''}
+												placeholder="node"
+												title="Internal node name"
+												oninput={(e) => {
+													if (!$selectedNode) return;
+													const cfg = { ...($selectedNode.data._subgraphConfig ?? {}) } as Record<string, unknown>;
+													const ports = { ...(cfg.exposed_out_ports ?? {}) } as Record<string, Record<string, string>>;
+													ports[portName] = { ...ports[portName], internal_node: (e.target as HTMLInputElement).value };
+													cfg.exposed_out_ports = ports;
+													updateNodeDataLive($selectedNode.id, { _subgraphConfig: cfg });
+												}}
+												onblur={() => pushHistory()}
+											/>
+											<input
+												type="text"
+												value={mapping.internal_port ?? ''}
+												placeholder="port"
+												title="Internal port name"
+												oninput={(e) => {
+													if (!$selectedNode) return;
+													const cfg = { ...($selectedNode.data._subgraphConfig ?? {}) } as Record<string, unknown>;
+													const ports = { ...(cfg.exposed_out_ports ?? {}) } as Record<string, Record<string, string>>;
+													ports[portName] = { ...ports[portName], internal_port: (e.target as HTMLInputElement).value };
+													cfg.exposed_out_ports = ports;
+													updateNodeDataLive($selectedNode.id, { _subgraphConfig: cfg });
+												}}
+												onblur={() => pushHistory()}
+											/>
+										</div>
+										<button
+											class="remove-btn"
+											onclick={() => {
+												if (!$selectedNode) return;
+												const cfg = { ...($selectedNode.data._subgraphConfig ?? {}) } as Record<string, unknown>;
+												const ports = { ...(cfg.exposed_out_ports ?? {}) } as Record<string, unknown>;
+												delete ports[portName];
+												cfg.exposed_out_ports = ports;
+												const outPorts = $selectedNode.data.outPorts.filter(p => p.name !== portName);
+												updateNodeData($selectedNode.id, { _subgraphConfig: cfg, outPorts });
+											}}
+											title="Remove exposed port"
+										>
+											&times;
+										</button>
+									</div>
+								{/each}
+								<button
+									class="add-btn"
+									onclick={() => {
+										if (!$selectedNode) return;
+										const cfg = { ...($selectedNode.data._subgraphConfig ?? {}) } as Record<string, unknown>;
+										const ports = { ...(cfg.exposed_out_ports ?? {}) } as Record<string, Record<string, string>>;
+										let idx = Object.keys(ports).length;
+										let name = `out_${idx}`;
+										while (name in ports) { idx++; name = `out_${idx}`; }
+										ports[name] = { internal_node: '', internal_port: '' };
+										cfg.exposed_out_ports = ports;
+										const outPorts = [...$selectedNode.data.outPorts, { name, type: 'any' }];
+										updateNodeData($selectedNode.id, { _subgraphConfig: cfg, outPorts });
+									}}
+								>
+									+ Add Exposed Output
+								</button>
+							</div>
+
 							<div class="subgraph-hint">
 								Double-click the node to edit its contents
 							</div>
@@ -1199,7 +1453,7 @@
 								/>
 							{/if}
 							<div class="field-hint">
-								Base path for file references. Relative paths resolve from the net file location.
+								Base path for file references. Relative paths resolve from the project root.
 							</div>
 						</div>
 					</div>
@@ -2016,6 +2270,26 @@
 
 	.error-message {
 		color: var(--error-color, #ef4444);
+		font-size: 11px;
+	}
+
+	.exposed-port-editor {
+		display: flex;
+		gap: 8px;
+		align-items: center;
+		margin-bottom: 8px;
+	}
+
+	.exposed-port-fields {
+		flex: 1;
+		min-width: 0;
+		display: flex;
+		gap: 4px;
+	}
+
+	.exposed-port-fields input {
+		flex: 1;
+		min-width: 0;
 		font-size: 11px;
 	}
 

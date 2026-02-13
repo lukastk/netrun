@@ -1171,6 +1171,20 @@ function validateNode(node: FlowNode, allNodes: FlowNode[]): string[] {
 		}
 	}
 
+	// Check subgraph file-reference nodes have a valid path
+	if (node.data.nodeType === 'subgraph') {
+		const data = node.data as SubgraphNodeData;
+		const isFileRef = data.source && data.source !== 'Inline';
+		if (isFileRef) {
+			const path = data.source!.trim();
+			if (path === '') {
+				errors.push('Subgraph file path must not be empty');
+			} else if (!path.endsWith('.netrun.json') && !path.endsWith('.netrun.toml')) {
+				errors.push('Subgraph file must be .netrun.json or .netrun.toml');
+			}
+		}
+	}
+
 	// Check ports have names
 	for (const port of node.data.inPorts) {
 		if (!port.name || port.name.trim() === '') {
@@ -1426,6 +1440,7 @@ activeTab.subscribe((tab) => {
 		label: n.data.label,
 		nodeType: n.data.nodeType,
 		factory: (n.data as NetrunNodeData).factory,
+		source: (n.data as SubgraphNodeData).source,
 		inPorts: n.data.inPorts.map(p => p.name),
 		outPorts: n.data.outPorts.map(p => p.name),
 	}));
