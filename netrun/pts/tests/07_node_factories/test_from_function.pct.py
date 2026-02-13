@@ -312,3 +312,98 @@ def test_manual_output_get_node_config():
     # execution_config should be stripped per factory protocol
     assert config.execution_config is None
     assert "x" in config.in_ports
+
+# %% [markdown]
+# ## Tests for single-output dict unwrapping
+
+# %%
+#|export
+import asyncio
+from netrun.net import Net
+from netrun.net.config import (
+    NetConfig, GraphConfig, NodeConfig, NodeExecutionConfig,
+    PoolConfig, MainPoolConfig, EdgeConfig,
+    SalvoConditionConfig, MaxSalvosFiniteConfig, PacketCountAllConfig,
+    SalvoConditionTermPortConfig, SalvoConditionTermTrueConfig,
+    PortStateNonEmptyConfig,
+)
+
+
+def test_single_output_dict_return_unwrapped():
+    """Single-output function returning {"port_name": value} should unwrap the dict."""
+    def producer() -> {"data": dict}:
+        return {"data": {"key": "value"}}
+
+    received = {}
+    def consumer(data: dict):
+        received["data"] = data
+
+    net_config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig.from_factory(
+                    factory="netrun.node_factories.from_function",
+                    args={"func": producer},
+                ),
+                NodeConfig.from_factory(
+                    factory="netrun.node_factories.from_function",
+                    args={"func": consumer},
+                ),
+            ],
+            edges=[EdgeConfig(source_str="producer.data", target_str="consumer.data")],
+        ),
+    )
+
+    async def _run():
+        async with Net(net_config) as net:
+            await net.execute_node("producer")
+            await net.run_until_blocked()
+            return received
+
+    result = asyncio.get_event_loop().run_until_complete(_run())
+    # Consumer should receive the unwrapped value, not the full dict
+    assert result["data"] == {"key": "value"}
+
+# %%
+test_single_output_dict_return_unwrapped()
+
+# %%
+#|export
+def test_single_output_plain_return_unchanged():
+    """Single-output function returning a plain value (not dict with port key) passes through."""
+    def producer() -> int:
+        return 42
+
+    received = {}
+    def consumer(out: int):
+        received["out"] = out
+
+    net_config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig.from_factory(
+                    factory="netrun.node_factories.from_function",
+                    args={"func": producer},
+                ),
+                NodeConfig.from_factory(
+                    factory="netrun.node_factories.from_function",
+                    args={"func": consumer},
+                ),
+            ],
+            edges=[EdgeConfig(source_str="producer.out", target_str="consumer.out")],
+        ),
+    )
+
+    async def _run():
+        async with Net(net_config) as net:
+            await net.execute_node("producer")
+            await net.run_until_blocked()
+            return received
+
+    result = asyncio.get_event_loop().run_until_complete(_run())
+    assert result["out"] == 42
+
+# %%
+test_single_output_plain_return_unchanged()
