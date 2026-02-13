@@ -300,10 +300,6 @@
 	.netrun-node.shape-triangle-right .ports-container {
 		padding-right: 30%;
 	}
-	/* Move output handles to the triangle tip */
-	:global(.netrun-node.shape-triangle-right .svelte-flow__handle-right) {
-		right: -1px;
-	}
 
 	/* ── Shape: triangle-left ───────────────────────── */
 	.netrun-node.shape-triangle-left {
@@ -341,10 +337,6 @@
 	}
 	.netrun-node.shape-triangle-left .ports-container {
 		padding-left: 30%;
-	}
-	/* Move input handles to the triangle tip */
-	:global(.netrun-node.shape-triangle-left .svelte-flow__handle-left) {
-		left: -1px;
 	}
 
 	.netrun-node.factory .node-header {
@@ -445,12 +437,10 @@
 	}
 
 	:global(.netrun-node .svelte-flow__handle-left) {
-		left: -12px;
 		background: var(--port-input, #22c55e);
 	}
 
 	:global(.netrun-node .svelte-flow__handle-right) {
-		right: -12px;
 		background: var(--port-output, #f59e0b);
 	}
 
