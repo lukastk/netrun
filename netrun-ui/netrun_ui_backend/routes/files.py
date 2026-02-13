@@ -735,12 +735,14 @@ async def validate_config(request: ValidateRequest) -> ValidateResponse:
                     ))
 
         # Step 4: Resolve each node individually for per-node error attribution
+        # Derive base_path from file_path for resolving relative subgraph paths
+        resolve_base_path = Path(request.file_path).parent if request.file_path else None
         for idx, node in enumerate(graph.nodes):
             if hasattr(node, 'resolve'):
                 try:
                     if isinstance(node, SubgraphConfig):
                         # SubgraphConfig.resolve() only accepts base_path, not net_config
-                        node.resolve()
+                        node.resolve(base_path=resolve_base_path)
                     else:
                         node.resolve(net_config=net_config)
                 except Exception as e:
