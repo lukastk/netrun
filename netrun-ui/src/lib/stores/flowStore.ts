@@ -30,6 +30,28 @@ import {
 } from '$lib/utils/portGroups';
 import { isPortGroupCollapsed } from './portGroupStore';
 
+// Node shape types
+export type NodeShape =
+	| 'rectangle'
+	| 'rounded'
+	| 'pill'
+	| 'diamond'
+	| 'hexagon'
+	| 'cylinder'
+	| 'triangle-right'
+	| 'triangle-left';
+
+export const NODE_SHAPES: { value: NodeShape; label: string }[] = [
+	{ value: 'rectangle', label: 'Rectangle' },
+	{ value: 'rounded', label: 'Rounded' },
+	{ value: 'pill', label: 'Pill' },
+	{ value: 'diamond', label: 'Diamond' },
+	{ value: 'hexagon', label: 'Hexagon' },
+	{ value: 'cylinder', label: 'Cylinder' },
+	{ value: 'triangle-right', label: 'Triangle \u25B6' },
+	{ value: 'triangle-left', label: 'Triangle \u25C0' },
+];
+
 // Types for netrun node data
 export interface PortConfig {
 	name: string;
@@ -267,6 +289,101 @@ export function toggleNodeDescExpanded(nodeId: string): void {
 					...ui,
 					descriptionExpanded: !current,
 				},
+			},
+		},
+	});
+}
+
+/**
+ * Get the shape for a node from its _config.extra.ui.shape.
+ * Defaults to 'rectangle'.
+ */
+export function getNodeShape(nodeData: AnyNodeData): NodeShape {
+	const config = (nodeData._config || (nodeData as Record<string, unknown>)._config || {}) as Record<string, unknown>;
+	const extra = (config.extra || {}) as Record<string, unknown>;
+	const ui = (extra.ui || {}) as Record<string, unknown>;
+	return (ui.shape as NodeShape) ?? 'rectangle';
+}
+
+/**
+ * Update a node's shape. Pushes history.
+ */
+export function updateNodeShape(nodeId: string, shape: NodeShape): void {
+	const tab = get(activeTab);
+	if (!tab) return;
+
+	const node = tab.nodes.find(n => n.id === nodeId);
+	if (!node) return;
+
+	pushHistory();
+
+	const config = (node.data._config || (node.data as Record<string, unknown>)._config || {}) as Record<string, unknown>;
+	const extra = (config.extra || {}) as Record<string, unknown>;
+	const ui = (extra.ui || {}) as Record<string, unknown>;
+
+	const newUi = shape === 'rectangle'
+		? (() => { const { shape: _s, ...rest } = ui; return rest; })()
+		: { ...ui, shape };
+
+	updateNodeDataLive(nodeId, {
+		_config: {
+			...config,
+			extra: {
+				...extra,
+				ui: newUi,
+			},
+		},
+	});
+}
+
+/**
+ * Get visibility flags for a node from _config.extra.ui.
+ */
+export function getNodeVisibility(nodeData: AnyNodeData): {
+	hideLabel: boolean;
+	hideDescription: boolean;
+	hidePortNames: boolean;
+} {
+	const config = (nodeData._config || (nodeData as Record<string, unknown>)._config || {}) as Record<string, unknown>;
+	const extra = (config.extra || {}) as Record<string, unknown>;
+	const ui = (extra.ui || {}) as Record<string, unknown>;
+	return {
+		hideLabel: (ui.hideLabel as boolean) ?? false,
+		hideDescription: (ui.hideDescription as boolean) ?? false,
+		hidePortNames: (ui.hidePortNames as boolean) ?? false,
+	};
+}
+
+/**
+ * Toggle a single visibility flag on a node. Pushes history.
+ */
+export function updateNodeVisibility(
+	nodeId: string,
+	key: 'hideLabel' | 'hideDescription' | 'hidePortNames',
+	value: boolean,
+): void {
+	const tab = get(activeTab);
+	if (!tab) return;
+
+	const node = tab.nodes.find(n => n.id === nodeId);
+	if (!node) return;
+
+	pushHistory();
+
+	const config = (node.data._config || (node.data as Record<string, unknown>)._config || {}) as Record<string, unknown>;
+	const extra = (config.extra || {}) as Record<string, unknown>;
+	const ui = (extra.ui || {}) as Record<string, unknown>;
+
+	const newUi = value
+		? { ...ui, [key]: true }
+		: (() => { const { [key]: _removed, ...rest } = ui; return rest; })();
+
+	updateNodeDataLive(nodeId, {
+		_config: {
+			...config,
+			extra: {
+				...extra,
+				ui: newUi,
 			},
 		},
 	});
