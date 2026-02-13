@@ -1703,6 +1703,57 @@
 								<option value="none">None</option>
 							</select>
 						</div>
+						<div class="field">
+							<label for="min-zoom">Min Zoom</label>
+							<input
+								id="min-zoom"
+								type="number"
+								min="0.01"
+								max="1"
+								step="0.01"
+								value={uiMeta.minZoom ?? 0.05}
+								onchange={(e) => {
+									updateGraphExtraLive({
+										ui: { ...uiMeta, minZoom: parseFloat((e.target as HTMLInputElement).value) }
+									});
+									pushHistory();
+								}}
+							/>
+						</div>
+						<div class="field">
+							<label for="max-zoom">Max Zoom</label>
+							<input
+								id="max-zoom"
+								type="number"
+								min="1"
+								max="10"
+								step="0.5"
+								value={uiMeta.maxZoom ?? 4}
+								onchange={(e) => {
+									updateGraphExtraLive({
+										ui: { ...uiMeta, maxZoom: parseFloat((e.target as HTMLInputElement).value) }
+									});
+									pushHistory();
+								}}
+							/>
+						</div>
+						<div class="field">
+							<label for="node-font-size">Node Font Size (px)</label>
+							<input
+								id="node-font-size"
+								type="number"
+								min="6"
+								max="24"
+								step="1"
+								value={uiMeta.nodeFontSize ?? 12}
+								onchange={(e) => {
+									updateGraphExtraLive({
+										ui: { ...uiMeta, nodeFontSize: parseFloat((e.target as HTMLInputElement).value) }
+									});
+									pushHistory();
+								}}
+							/>
+						</div>
 					</div>
 				{/if}
 			</section>

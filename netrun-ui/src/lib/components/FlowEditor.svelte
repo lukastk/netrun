@@ -68,6 +68,23 @@
 		return (ui?.edgeMarkers as string) ?? 'arrow-end';
 	});
 
+	// Zoom limits from graph extra
+	const minZoom = derived(graphExtra, ($graphExtra) => {
+		const ui = ($graphExtra as Record<string, unknown>)?.ui as Record<string, unknown> | undefined;
+		return (ui?.minZoom as number) ?? 0.05;
+	});
+
+	const maxZoom = derived(graphExtra, ($graphExtra) => {
+		const ui = ($graphExtra as Record<string, unknown>)?.ui as Record<string, unknown> | undefined;
+		return (ui?.maxZoom as number) ?? 4;
+	});
+
+	// Node font size from graph extra
+	const nodeFontSize = derived(graphExtra, ($graphExtra) => {
+		const ui = ($graphExtra as Record<string, unknown>)?.ui as Record<string, unknown> | undefined;
+		return (ui?.nodeFontSize as number) ?? 12;
+	});
+
 	// Arrow marker configuration
 	const arrowMarker = {
 		type: MarkerType.ArrowClosed,
@@ -399,7 +416,7 @@
 	}
 </script>
 
-<div class="flow-editor">
+<div class="flow-editor" style:--node-font-size="{$nodeFontSize}px">
 	<SvelteFlow
 		nodes={$nodesWithSelection}
 		edges={$edgesWithSelection}
@@ -426,6 +443,8 @@
 		deleteKey={['Delete', 'Backspace']}
 		selectionKey="Shift"
 		colorMode="dark"
+		minZoom={$minZoom}
+		maxZoom={$maxZoom}
 	>
 		<Background variant={BackgroundVariant.Dots} gap={20} size={1} />
 		<Controls />
