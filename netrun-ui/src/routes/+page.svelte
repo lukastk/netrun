@@ -146,6 +146,34 @@
 	// File explorer visibility state
 	let showFileExplorer = $state(true);
 
+	// File explorer resize state
+	const MIN_EXPLORER_WIDTH = 150;
+	const MAX_EXPLORER_WIDTH = 500;
+	let explorerWidth = $state(250);
+	let isExplorerResizing = $state(false);
+
+	function startExplorerResize(e: MouseEvent) {
+		e.preventDefault();
+		isExplorerResizing = true;
+		document.addEventListener('mousemove', handleExplorerResize);
+		document.addEventListener('mouseup', stopExplorerResize);
+		document.body.style.cursor = 'ew-resize';
+		document.body.style.userSelect = 'none';
+	}
+
+	function handleExplorerResize(e: MouseEvent) {
+		if (!isExplorerResizing) return;
+		explorerWidth = Math.min(MAX_EXPLORER_WIDTH, Math.max(MIN_EXPLORER_WIDTH, e.clientX));
+	}
+
+	function stopExplorerResize() {
+		isExplorerResizing = false;
+		document.removeEventListener('mousemove', handleExplorerResize);
+		document.removeEventListener('mouseup', stopExplorerResize);
+		document.body.style.cursor = '';
+		document.body.style.userSelect = '';
+	}
+
 	// Handle opening a recent file
 	async function openRecentFile(path: string) {
 		try {
@@ -166,10 +194,18 @@
 	<TabBar />
 	<Breadcrumb />
 	<div class="main-content">
-		<!-- File Explorer (left, collapsible) -->
+		<!-- File Explorer (left, collapsible, resizable) -->
 		{#if showFileExplorer}
-			<div class="file-explorer-container">
+			<div class="file-explorer-container" style="width: {explorerWidth}px">
 				<FileExplorer initialPath={initialPath} onClose={() => showFileExplorer = false} />
+				<div
+					class="explorer-resize-handle"
+					class:resizing={isExplorerResizing}
+					onmousedown={startExplorerResize}
+					role="separator"
+					aria-orientation="vertical"
+					tabindex="0"
+				></div>
 			</div>
 		{:else}
 			<button class="show-explorer-btn" onclick={() => showFileExplorer = true} title="Show file explorer">
@@ -305,9 +341,26 @@
 	}
 
 	.file-explorer-container {
-		width: 250px;
 		flex-shrink: 0;
 		height: 100%;
+		position: relative;
+	}
+
+	.explorer-resize-handle {
+		position: absolute;
+		right: 0;
+		top: 0;
+		bottom: 0;
+		width: 4px;
+		cursor: ew-resize;
+		background: transparent;
+		z-index: 10;
+		transition: background-color 0.15s ease;
+	}
+
+	.explorer-resize-handle:hover,
+	.explorer-resize-handle.resizing {
+		background: var(--accent-color, #3b82f6);
 	}
 
 	.show-explorer-btn {

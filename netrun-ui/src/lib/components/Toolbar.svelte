@@ -19,6 +19,8 @@
 		createSubgraphFromSelection,
 		nodes,
 		edges,
+		interactionMode,
+		toggleInteractionMode,
 	} from '$lib/stores/flowStore';
 	import { tick } from 'svelte';
 	import { openCommandPalette } from '$lib/stores/commandStore';
@@ -273,6 +275,23 @@
 	</div>
 
 	<div class="toolbar-section right">
+		<button
+			onclick={toggleInteractionMode}
+			title={$interactionMode === 'pan'
+				? 'Pan mode: drag to pan, Shift+drag to select. Click to switch to Select mode.'
+				: 'Select mode: drag to select, right-click drag to pan. Click to switch to Pan mode.'}
+			class="mode-toggle"
+			class:select-mode={$interactionMode === 'select'}
+		>
+			{#if $interactionMode === 'pan'}
+				<span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 11V6a2 2 0 0 0-4 0v1M14 10V4a2 2 0 0 0-4 0v6M10 10V6a2 2 0 0 0-4 0v8c0 4.4 3.6 8 8 8h.5a8 8 0 0 0 8-8v-4a2 2 0 0 0-4 0"/></svg></span>
+				<span class="label">Pan</span>
+			{:else}
+				<span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="1" stroke-dasharray="4 2"/></svg></span>
+				<span class="label">Select</span>
+			{/if}
+		</button>
+		<div class="separator"></div>
 		<button onclick={openCommandPalette} title="Command Palette (Cmd+Shift+P)" class="command-palette">
 			<span class="icon">⌘</span>
 		</button>
@@ -399,6 +418,19 @@
 
 	button.subgraph:hover:not(:disabled) {
 		background: linear-gradient(135deg, #16a34a 0%, #15803d 100%);
+	}
+
+	button.mode-toggle {
+		border: 1px solid var(--border-color, #404040);
+	}
+
+	button.mode-toggle.select-mode {
+		background: var(--accent-color, #3b82f6);
+		border-color: var(--accent-color, #3b82f6);
+	}
+
+	button.mode-toggle.select-mode:hover:not(:disabled) {
+		background: var(--accent-hover, #2563eb);
 	}
 
 	button.command-palette {

@@ -142,6 +142,35 @@ export const isNewFile = derived(activeTab, ($activeTab) => $activeTab?.isNewFil
 export const selectedNodeIds = writable<Set<string>>(new Set());
 export const selectedEdgeIds = writable<Set<string>>(new Set());
 
+// Interaction mode: 'pan' (default) or 'select'
+export type InteractionMode = 'pan' | 'select';
+
+export const interactionMode = derived(graphExtra, ($graphExtra) => {
+	const ui = ($graphExtra as Record<string, unknown>)?.ui as Record<string, unknown> | undefined;
+	return ((ui?.interactionMode as InteractionMode) ?? 'pan');
+});
+
+export const panOnDrag = derived(interactionMode, ($mode) =>
+	$mode === 'pan' ? true : [2]
+);
+
+export const selectionOnDrag = derived(interactionMode, ($mode) =>
+	$mode === 'select'
+);
+
+export function toggleInteractionMode(): void {
+	const current = get(interactionMode);
+	const newMode: InteractionMode = current === 'pan' ? 'select' : 'pan';
+	const tab = get(activeTab);
+	if (!tab) return;
+
+	const ge = (tab.graphExtra || {}) as Record<string, unknown>;
+	const ui = ((ge.ui || {}) as Record<string, unknown>);
+	updateGraphExtraLive({
+		ui: { ...ui, interactionMode: newMode },
+	});
+}
+
 /**
  * All visible nodes including expanded subgraph children.
  * Set by the subgraphExpandStore to break the circular dependency.
