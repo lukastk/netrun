@@ -169,15 +169,20 @@ export async function expandSubgraph(nodeId: string): Promise<void> {
 	try {
 		const content = await loadSubgraphContent(nodeId, node.data as SubgraphNodeData);
 
-		// Store original dimensions
-		content.originalWidth = node.width as number | undefined;
-		content.originalHeight = node.height as number | undefined;
+		// Store original (collapsed) dimensions.
+		// If the node already has the expanded flag set (i.e., we're restoring from file),
+		// there are no collapsed dimensions to restore — use undefined so collapse removes them.
+		const ui = getUiConfig(node.data);
+		const isRestoring = ui.expanded === true;
+		content.originalWidth = isRestoring ? undefined : node.width as number | undefined;
+		content.originalHeight = isRestoring ? undefined : node.height as number | undefined;
 
 		// Cache the content
 		contentCache.set(cacheKey(tabId, nodeId), content);
 
 		// Compute bounding box of child nodes to size the parent
-		if (content.nodes.length > 0) {
+		// Skip auto-sizing if the node already has saved dimensions (e.g., restored from file)
+		if (content.nodes.length > 0 && (node.width == null || node.height == null)) {
 			let maxX = 0;
 			let maxY = 0;
 			for (const child of content.nodes) {
