@@ -747,6 +747,9 @@ async def validate_config(request: ValidateRequest) -> ValidateResponse:
             full_config = merge_graph_with_extras(graph_dict, request.extra_data or {})
             try:
                 net_config = NetConfig.model_validate(full_config)
+                # Set _file_path so project_root_path resolves relative paths correctly
+                if request.file_path:
+                    net_config._file_path = Path(request.file_path)
             except ValidationError as e:
                 for err in e.errors():
                     errors.append(ValidationError_(
@@ -757,7 +760,9 @@ async def validate_config(request: ValidateRequest) -> ValidateResponse:
 
         # Step 4: Resolve each node individually for per-node error attribution
         # Derive base_path from project_root_override (or fall back to file_path dir)
-        pr_override = (request.extra_data or {}).get("project_root_override")
+        # Check both "project_root_override" (field name) and "project_root" (alias)
+        ed = request.extra_data or {}
+        pr_override = ed.get("project_root_override") or ed.get("project_root")
         if pr_override:
             p = Path(pr_override)
             if p.is_absolute():
