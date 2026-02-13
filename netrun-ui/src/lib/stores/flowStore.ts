@@ -100,6 +100,27 @@ export type NetrunNode = Node<NetrunNodeData, 'netrunNode'>;
 export type SubgraphNode = Node<SubgraphNodeData, 'subgraphNode'>;
 export type NetrunEdge = Edge;
 
+// Expanded subgraph child node ID helpers
+const CHILD_SEPARATOR = '::';
+
+export function isExpandedChildNode(nodeId: string): boolean {
+	return nodeId.includes(CHILD_SEPARATOR);
+}
+
+export function getParentSubgraphId(childNodeId: string): string {
+	const idx = childNodeId.indexOf(CHILD_SEPARATOR);
+	return idx >= 0 ? childNodeId.substring(0, idx) : childNodeId;
+}
+
+export function getOriginalChildId(childNodeId: string): string {
+	const idx = childNodeId.indexOf(CHILD_SEPARATOR);
+	return idx >= 0 ? childNodeId.substring(idx + CHILD_SEPARATOR.length) : childNodeId;
+}
+
+export function makeChildNodeId(parentId: string, childId: string): string {
+	return `${parentId}${CHILD_SEPARATOR}${childId}`;
+}
+
 // Re-export tab stores for convenience
 export { tabs, activeTab, activeTabId } from './tabsStore';
 export { createTab, switchTab, closeTab, closeActiveTab, switchToTabIndex, switchToNextTab, switchToPreviousTab, hasUnsavedChanges } from './tabsStore';
@@ -120,6 +141,57 @@ export const isNewFile = derived(activeTab, ($activeTab) => $activeTab?.isNewFil
 export const selectedNodeIds = writable<Set<string>>(new Set());
 export const selectedEdgeIds = writable<Set<string>>(new Set());
 
+/**
+ * All visible nodes including expanded subgraph children.
+ * Set by the subgraphExpandStore to break the circular dependency.
+ */
+export const allVisibleNodes = writable<FlowNode[]>([]);
+
+/**
+ * All visible edges including expanded subgraph internal edges.
+ * Set by the subgraphExpandStore to break the circular dependency.
+ */
+export const allVisibleEdges = writable<NetrunEdge[]>([]);
+
+// ── Child node callback handlers ────────────────────────────────
+// These allow subgraphExpandStore to handle mutations for expanded child nodes
+// without creating a circular dependency.
+type ChildNodeDataHandler = (childNodeId: string, dataUpdates: Partial<AnyNodeData>) => void;
+type ChildNodeDimensionHandler = (updates: Array<{ id: string; width: number; height: number; position: { x: number; y: number } }>) => void;
+
+let _childNodeDataHandler: ChildNodeDataHandler | null = null;
+let _childNodeDimensionHandler: ChildNodeDimensionHandler | null = null;
+
+export function registerChildNodeHandlers(
+	dataHandler: ChildNodeDataHandler,
+	dimensionHandler: ChildNodeDimensionHandler
+): void {
+	_childNodeDataHandler = dataHandler;
+	_childNodeDimensionHandler = dimensionHandler;
+}
+
+/**
+ * Find a node for reading its data.
+ * Checks allVisibleNodes for expanded child nodes, tab.nodes for regular nodes.
+ */
+function findNodeForRead(nodeId: string): FlowNode | undefined {
+	if (isExpandedChildNode(nodeId)) {
+		return get(allVisibleNodes).find(n => n.id === nodeId);
+	}
+	const tab = get(activeTab);
+	return tab?.nodes.find(n => n.id === nodeId);
+}
+
+// Keep allVisibleNodes/Edges in sync with base data when no expansion is active
+nodes.subscribe($nodes => {
+	// This will be overridden by subgraphExpandStore when expansions are active
+	allVisibleNodes.set($nodes);
+});
+edges.subscribe($edges => {
+	// This will be overridden by subgraphExpandStore when expansions are active
+	allVisibleEdges.set($edges);
+});
+
 // Track current tab to detect real tab switches vs. data updates
 let previousTabId: string | null = null;
 
@@ -132,10 +204,10 @@ activeTabId.subscribe((newTabId) => {
 	previousTabId = newTabId;
 });
 
-// Derived: selected nodes
+// Derived: selected nodes (searches all visible nodes including expanded children)
 export const selectedNodes = derived(
-	[nodes, selectedNodeIds],
-	([$nodes, $selectedIds]) => $nodes.filter(n => $selectedIds.has(n.id))
+	[allVisibleNodes, selectedNodeIds],
+	([$allVisibleNodes, $selectedIds]) => $allVisibleNodes.filter(n => $selectedIds.has(n.id))
 );
 
 // Derived: selected node (single selection for sidebar)
@@ -253,7 +325,11 @@ export function updateNodeData(id: string, dataUpdates: Partial<NetrunNodeData>)
 }
 
 // Update node data without pushing history (for live editing like typing)
-export function updateNodeDataLive(id: string, dataUpdates: Partial<NetrunNodeData>) {
+export function updateNodeDataLive(id: string, dataUpdates: Partial<AnyNodeData>) {
+	if (isExpandedChildNode(id)) {
+		if (_childNodeDataHandler) _childNodeDataHandler(id, dataUpdates);
+		return;
+	}
 	const tab = get(activeTab);
 	if (!tab) return;
 	updateActiveTab({
@@ -269,10 +345,7 @@ export function updateNodeDataLive(id: string, dataUpdates: Partial<NetrunNodeDa
  * Uses updateNodeDataLive (persistent, no history entry).
  */
 export function toggleNodeDescExpanded(nodeId: string): void {
-	const tab = get(activeTab);
-	if (!tab) return;
-
-	const node = tab.nodes.find(n => n.id === nodeId);
+	const node = findNodeForRead(nodeId);
 	if (!node) return;
 
 	const config = (node.data._config || {}) as Record<string, unknown>;
@@ -309,10 +382,7 @@ export function getNodeShape(nodeData: AnyNodeData): NodeShape {
  * Update a node's shape. Pushes history.
  */
 export function updateNodeShape(nodeId: string, shape: NodeShape): void {
-	const tab = get(activeTab);
-	if (!tab) return;
-
-	const node = tab.nodes.find(n => n.id === nodeId);
+	const node = findNodeForRead(nodeId);
 	if (!node) return;
 
 	pushHistory();
@@ -362,10 +432,7 @@ export function updateNodeVisibility(
 	key: 'hideLabel' | 'hideDescription' | 'hidePortNames',
 	value: boolean,
 ): void {
-	const tab = get(activeTab);
-	if (!tab) return;
-
-	const node = tab.nodes.find(n => n.id === nodeId);
+	const node = findNodeForRead(nodeId);
 	if (!node) return;
 
 	pushHistory();
@@ -414,10 +481,7 @@ export function updateNodeColor(
 	key: 'headerColor' | 'fontColor',
 	value: string | null,
 ): void {
-	const tab = get(activeTab);
-	if (!tab) return;
-
-	const node = tab.nodes.find(n => n.id === nodeId);
+	const node = findNodeForRead(nodeId);
 	if (!node) return;
 
 	pushHistory();
@@ -451,10 +515,7 @@ export function toggleNodePortGroup(
 	groupPath: string,
 	portCount: number
 ): void {
-	const tab = get(activeTab);
-	if (!tab) return;
-
-	const node = tab.nodes.find(n => n.id === nodeId);
+	const node = findNodeForRead(nodeId);
 	if (!node) return;
 
 	const config = (node.data._config || {}) as Record<string, unknown>;
@@ -870,11 +931,20 @@ export function updateNodePositions(updates: Array<{ id: string; position: { x: 
 export function updateNodeDimensions(
 	updates: Array<{ id: string; width: number; height: number; position: { x: number; y: number } }>
 ) {
+	const childUpdates = updates.filter(u => isExpandedChildNode(u.id));
+	const parentUpdates = updates.filter(u => !isExpandedChildNode(u.id));
+
+	if (childUpdates.length > 0 && _childNodeDimensionHandler) {
+		_childNodeDimensionHandler(childUpdates);
+	}
+
+	if (parentUpdates.length === 0) return;
+
 	const tab = get(activeTab);
 	if (!tab) return;
 	updateActiveTab({
 		nodes: tab.nodes.map(node => {
-			const update = updates.find(u => u.id === node.id);
+			const update = parentUpdates.find(u => u.id === node.id);
 			if (update) {
 				return { ...node, width: update.width, height: update.height, position: update.position };
 			}
@@ -912,6 +982,21 @@ export function isValidConnection(connection: {
 	const tab = get(activeTab);
 	if (!tab) return false;
 
+	// Prevent cross-boundary connections involving expanded child nodes
+	const srcIsChild = isExpandedChildNode(connection.source);
+	const tgtIsChild = connection.target ? isExpandedChildNode(connection.target) : false;
+	if (srcIsChild || tgtIsChild) {
+		if (srcIsChild !== tgtIsChild) return false; // Mixed parent/child not allowed
+		if (srcIsChild && tgtIsChild && connection.target) {
+			// Both children must be in the same subgraph
+			if (getParentSubgraphId(connection.source) !== getParentSubgraphId(connection.target)) return false;
+		}
+	}
+
+	// Use all visible nodes/edges which include expanded subgraph children
+	const visibleNodes = get(allVisibleNodes);
+	const visibleEdges = get(allVisibleEdges);
+
 	const sourceIsGroup = isGroupHandleFn(connection.sourceHandle);
 	const targetIsGroup = connection.targetHandle ? isGroupHandleFn(connection.targetHandle) : false;
 
@@ -920,8 +1005,8 @@ export function isValidConnection(connection: {
 
 	// Group-to-group validation
 	if (sourceIsGroup && targetIsGroup && connection.target && connection.targetHandle) {
-		const sourceNode = tab.nodes.find(n => n.id === connection.source);
-		const targetNode = tab.nodes.find(n => n.id === connection.target);
+		const sourceNode = visibleNodes.find(n => n.id === connection.source);
+		const targetNode = visibleNodes.find(n => n.id === connection.target);
 		if (!sourceNode || !targetNode) return false;
 
 		const srcParsed = parseGroupHandleIdFn(connection.sourceHandle);
@@ -932,7 +1017,7 @@ export function isValidConnection(connection: {
 	}
 
 	// Normal port: prevent multiple edges from same output port (fan-out not allowed)
-	const existingFromSource = tab.edges.some(
+	const existingFromSource = visibleEdges.some(
 		e => e.source === connection.source && e.sourceHandle === connection.sourceHandle
 	);
 

@@ -26,9 +26,12 @@
 		getNodeVisibility,
 		updateNodeColor,
 		getNodeColors,
+		isExpandedChildNode,
+		getParentSubgraphId,
 		type NetrunNodeData,
 		type PortConfig
 	} from '$lib/stores/flowStore';
+	import { deleteExpandedChildren } from '$lib/stores/subgraphExpandStore';
 	import SalvoConditionsSection from './SalvoConditionsSection.svelte';
 	import PoolsSection from './PoolsSection.svelte';
 	import NodeExecutionSection from './NodeExecutionSection.svelte';
@@ -72,6 +75,10 @@
 	function descNode(field: string): string | undefined {
 		return getFieldDescription($configSchema, 'NodeConfig', field);
 	}
+
+	// Check if selected node is an expanded child
+	let isChildNode = $derived($selectedNode ? isExpandedChildNode($selectedNode.id) : false);
+	let parentSubgraphId = $derived($selectedNode && isChildNode ? getParentSubgraphId($selectedNode.id) : null);
 
 	// Loading state for factory preview
 	let isRefreshing = $state(false);
@@ -610,6 +617,11 @@
 								{/if}
 							</div>
 						</div>
+						{#if isChildNode && parentSubgraphId}
+							<div class="child-node-indicator">
+								Part of subgraph: <strong>{parentSubgraphId}</strong>
+							</div>
+						{/if}
 						<div class="field">
 							<label for="node-shape">Shape</label>
 							<select
@@ -700,7 +712,11 @@
 							class="delete-node-btn"
 							onclick={() => {
 								if ($selectedNode) {
-									deleteNodes([$selectedNode.id]);
+									if (isChildNode) {
+										deleteExpandedChildren([$selectedNode.id], []);
+									} else {
+										deleteNodes([$selectedNode.id]);
+									}
 									selectedNodeIds.set(new Set());
 								}
 							}}
@@ -2139,6 +2155,21 @@
 		text-align: center;
 		padding: 8px;
 		margin: 0;
+	}
+
+	/* Child node indicator */
+	.child-node-indicator {
+		margin-bottom: 12px;
+		padding: 6px 10px;
+		background: rgba(34, 197, 94, 0.1);
+		border: 1px solid rgba(34, 197, 94, 0.3);
+		border-radius: 4px;
+		color: var(--text-secondary, #a0a0a0);
+		font-size: 11px;
+	}
+
+	.child-node-indicator strong {
+		color: #22c55e;
 	}
 
 	/* Delete node button */

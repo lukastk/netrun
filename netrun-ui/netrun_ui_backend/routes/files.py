@@ -16,7 +16,7 @@ from ..converter import (
     dump_graph_config,
 )
 
-from netrun.net.config import NetConfig, GraphConfig
+from netrun.net.config import NetConfig, GraphConfig, SubgraphConfig
 from netrun.tools._models import ActionConfig, RecipeConfig
 
 router = APIRouter()
@@ -738,7 +738,11 @@ async def validate_config(request: ValidateRequest) -> ValidateResponse:
         for idx, node in enumerate(graph.nodes):
             if hasattr(node, 'resolve'):
                 try:
-                    node.resolve(net_config=net_config)
+                    if isinstance(node, SubgraphConfig):
+                        # SubgraphConfig.resolve() only accepts base_path, not net_config
+                        node.resolve()
+                    else:
+                        node.resolve(net_config=net_config)
                 except Exception as e:
                     errors.append(ValidationError_(
                         loc=["graph", "nodes", str(idx)],
