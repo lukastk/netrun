@@ -48,6 +48,18 @@
 		return (ui?.hidePortNames as boolean) ?? false;
 	})());
 
+	let headerColor = $derived((() => {
+		const extra = (data._config?.extra ?? undefined) as Record<string, unknown> | undefined;
+		const ui = (extra?.ui ?? undefined) as Record<string, unknown> | undefined;
+		return (ui?.headerColor as string) ?? null;
+	})());
+
+	let fontColor = $derived((() => {
+		const extra = (data._config?.extra ?? undefined) as Record<string, unknown> | undefined;
+		const ui = (extra?.ui ?? undefined) as Record<string, unknown> | undefined;
+		return (ui?.fontColor as string) ?? null;
+	})());
+
 	function handleResizeEnd(_event: unknown, params: { x: number; y: number; width: number; height: number }) {
 		updateNodeDimensions([{
 			id,
@@ -64,6 +76,7 @@
 	class:selected
 	class:factory={data.nodeType === 'factory'}
 	class:invalid={data.isValid === false}
+	style:background={headerColor ? headerColor + '22' : undefined}
 >
 	<NodeResizer
 		minWidth={150}
@@ -74,11 +87,11 @@
 	/>
 	<!-- Header -->
 	{#if !hideLabel}
-		<div class="node-header">
+		<div class="node-header" style:background={headerColor || undefined} style:color={fontColor || undefined}>
 			{#if data.nodeType === 'factory'}
 				<span class="factory-badge">F</span>
 			{/if}
-			<span class="node-label">{data.label}</span>
+			<span class="node-label" style:color={fontColor || undefined}>{data.label}</span>
 		</div>
 	{/if}
 

@@ -24,6 +24,8 @@
 		NODE_SHAPES,
 		updateNodeVisibility,
 		getNodeVisibility,
+		updateNodeColor,
+		getNodeColors,
 		type NetrunNodeData,
 		type PortConfig
 	} from '$lib/stores/flowStore';
@@ -569,6 +571,7 @@
 					<span class="section-toggle">{sectionsOpen.general ? '−' : '+'}</span>
 				</button>
 				{#if sectionsOpen.general}
+					{@const colors = getNodeColors($selectedNode.data)}
 					<div class="section-content">
 						<div class="field">
 							<label for="node-label">Name{#if descNode('name')}<span class="has-tooltip-icon" use:tooltip={descNode('name')}>?</span>{/if}</label>
@@ -622,6 +625,43 @@
 									<option value={shape.value}>{shape.label}</option>
 								{/each}
 							</select>
+						</div>
+						<div class="field">
+							<label>Colors</label>
+							<div class="color-row">
+								<span class="color-label">Header</span>
+								<input
+									type="color"
+									value={colors.headerColor || '#3d3d3d'}
+									oninput={(e) => {
+										if ($selectedNode) updateNodeColor($selectedNode.id, 'headerColor', (e.target as HTMLInputElement).value);
+									}}
+								/>
+								{#if colors.headerColor}
+									<button
+										class="color-clear-btn"
+										onclick={() => { if ($selectedNode) updateNodeColor($selectedNode.id, 'headerColor', null); }}
+										title="Reset to default"
+									>&times;</button>
+								{/if}
+							</div>
+							<div class="color-row">
+								<span class="color-label">Font</span>
+								<input
+									type="color"
+									value={colors.fontColor || '#ffffff'}
+									oninput={(e) => {
+										if ($selectedNode) updateNodeColor($selectedNode.id, 'fontColor', (e.target as HTMLInputElement).value);
+									}}
+								/>
+								{#if colors.fontColor}
+									<button
+										class="color-clear-btn"
+										onclick={() => { if ($selectedNode) updateNodeColor($selectedNode.id, 'fontColor', null); }}
+										title="Reset to default"
+									>&times;</button>
+								{/if}
+							</div>
 						</div>
 						<div class="field">
 							<label>Visibility</label>
@@ -2245,6 +2285,61 @@
 		outline: none;
 		border-color: var(--accent-color, #3b82f6);
 		color: var(--text-primary, #fff);
+	}
+
+	/* Color picker rows */
+	.color-row {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 4px 0;
+	}
+
+	.color-label {
+		font-size: 12px;
+		color: var(--text-secondary, #a0a0a0);
+		width: 50px;
+		flex-shrink: 0;
+	}
+
+	.color-row input[type="color"] {
+		width: 32px;
+		height: 24px;
+		padding: 0;
+		border: 1px solid var(--border-color, #404040);
+		border-radius: 4px;
+		background: transparent;
+		cursor: pointer;
+	}
+
+	.color-row input[type="color"]::-webkit-color-swatch-wrapper {
+		padding: 2px;
+	}
+
+	.color-row input[type="color"]::-webkit-color-swatch {
+		border: none;
+		border-radius: 2px;
+	}
+
+	.color-clear-btn {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 20px;
+		height: 20px;
+		padding: 0;
+		background: transparent;
+		border: none;
+		border-radius: 3px;
+		color: var(--text-secondary, #a0a0a0);
+		font-size: 14px;
+		cursor: pointer;
+		line-height: 1;
+	}
+
+	.color-clear-btn:hover {
+		color: var(--error-color, #ef4444);
+		background: rgba(239, 68, 68, 0.1);
 	}
 
 </style>

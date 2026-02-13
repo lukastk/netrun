@@ -55,6 +55,20 @@
 		return (ui?.hidePortNames as boolean) ?? false;
 	})());
 
+	let headerColor = $derived((() => {
+		const config = (data as Record<string, unknown>)._config as Record<string, unknown> | undefined;
+		const extra = config?.extra as Record<string, unknown> | undefined;
+		const ui = extra?.ui as Record<string, unknown> | undefined;
+		return (ui?.headerColor as string) ?? null;
+	})());
+
+	let fontColor = $derived((() => {
+		const config = (data as Record<string, unknown>)._config as Record<string, unknown> | undefined;
+		const extra = config?.extra as Record<string, unknown> | undefined;
+		const ui = extra?.ui as Record<string, unknown> | undefined;
+		return (ui?.fontColor as string) ?? null;
+	})());
+
 	function handleResizeEnd(_event: unknown, params: { x: number; y: number; width: number; height: number }) {
 		updateNodeDimensions([{
 			id,
@@ -85,6 +99,7 @@
 	class:selected
 	class:invalid={data.isValid === false}
 	ondblclick={handleDoubleClick}
+	style:background={headerColor ? headerColor + '22' : undefined}
 >
 	<NodeResizer
 		minWidth={160}
@@ -95,9 +110,9 @@
 	/>
 	<!-- Header -->
 	{#if !hideLabel}
-		<div class="node-header">
+		<div class="node-header" style:background={headerColor || undefined} style:color={fontColor || undefined}>
 			<span class="subgraph-badge">SG</span>
-			<span class="node-label">{data.label}</span>
+			<span class="node-label" style:color={fontColor || undefined}>{data.label}</span>
 		</div>
 	{/if}
 

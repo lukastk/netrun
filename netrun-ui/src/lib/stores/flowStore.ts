@@ -390,6 +390,58 @@ export function updateNodeVisibility(
 }
 
 /**
+ * Get custom colors for a node from _config.extra.ui.
+ */
+export function getNodeColors(nodeData: AnyNodeData): {
+	headerColor: string | null;
+	fontColor: string | null;
+} {
+	const config = (nodeData._config || (nodeData as Record<string, unknown>)._config || {}) as Record<string, unknown>;
+	const extra = (config.extra || {}) as Record<string, unknown>;
+	const ui = (extra.ui || {}) as Record<string, unknown>;
+	return {
+		headerColor: (ui.headerColor as string) ?? null,
+		fontColor: (ui.fontColor as string) ?? null,
+	};
+}
+
+/**
+ * Update a node's custom color. Pushes history.
+ * When value is null, the key is deleted from extra.ui.
+ */
+export function updateNodeColor(
+	nodeId: string,
+	key: 'headerColor' | 'fontColor',
+	value: string | null,
+): void {
+	const tab = get(activeTab);
+	if (!tab) return;
+
+	const node = tab.nodes.find(n => n.id === nodeId);
+	if (!node) return;
+
+	pushHistory();
+
+	const config = (node.data._config || (node.data as Record<string, unknown>)._config || {}) as Record<string, unknown>;
+	const extra = (config.extra || {}) as Record<string, unknown>;
+	const ui = (extra.ui || {}) as Record<string, unknown>;
+
+	const newUi = value !== null
+		? { ...ui, [key]: value }
+		: (() => { const { [key]: _removed, ...rest } = ui; return rest; })();
+
+	updateNodeDataLive(nodeId, {
+		_config: {
+			...config,
+			extra: {
+				...extra,
+				ui: newUi,
+			},
+		},
+	});
+}
+
+/**
  * Toggle a node's port group collapsed state.
  * Uses updateNodeDataLive (persistent, no history entry).
  */
