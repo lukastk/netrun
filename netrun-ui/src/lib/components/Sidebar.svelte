@@ -32,7 +32,7 @@
 		type NetrunNodeData,
 		type PortConfig
 	} from '$lib/stores/flowStore';
-	import { deleteExpandedChildren } from '$lib/stores/subgraphExpandStore';
+	import { deleteExpandedChildren, renameExpandedChildNode } from '$lib/stores/subgraphExpandStore';
 	import SalvoConditionsSection from './SalvoConditionsSection.svelte';
 	import PoolsSection from './PoolsSection.svelte';
 	import NodeExecutionSection from './NodeExecutionSection.svelte';
@@ -254,20 +254,36 @@
 		const oldName = $selectedNode.id;
 		const newName = localNodeName.trim();
 
-		if (!newName || newName === oldName) {
+		if (!newName) {
 			// Revert to current name if empty
 			localNodeName = $selectedNode.data.label;
 			return;
 		}
 
-		pushHistory();
-		const success = renameNode(oldName, newName);
-		if (!success) {
-			// Duplicate or invalid - revert
-			localNodeName = $selectedNode.data.label;
+		if (isExpandedChildNode(oldName)) {
+			// For child nodes in expanded subgraphs, compare against the original child ID
+			const originalId = oldName.substring(oldName.indexOf('::') + 2);
+			if (newName === originalId) return;
+
+			const success = renameExpandedChildNode(oldName, newName);
+			if (!success) {
+				localNodeName = $selectedNode.data.label;
+			} else {
+				const parentId = getParentSubgraphId(oldName);
+				lastSyncedNodeId = `${parentId}::${newName}`;
+			}
 		} else {
-			// Update lastSyncedNodeId to the new name so $effect doesn't overwrite
-			lastSyncedNodeId = newName;
+			if (newName === oldName) return;
+
+			pushHistory();
+			const success = renameNode(oldName, newName);
+			if (!success) {
+				// Duplicate or invalid - revert
+				localNodeName = $selectedNode.data.label;
+			} else {
+				// Update lastSyncedNodeId to the new name so $effect doesn't overwrite
+				lastSyncedNodeId = newName;
+			}
 		}
 	}
 

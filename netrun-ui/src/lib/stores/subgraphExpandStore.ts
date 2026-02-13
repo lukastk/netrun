@@ -6,7 +6,7 @@
  * using SvelteFlow's built-in parentId mechanism.
  */
 import { writable, derived, get } from 'svelte/store';
-import { api } from '$lib/api';
+import { api, type UINode, type UIEdge } from '$lib/api';
 import {
 	nodes,
 	edges,
@@ -14,6 +14,9 @@ import {
 	activeTabId,
 	updateNodeDataLive,
 	registerChildNodeHandlers,
+	registerNodeRenamedHandler,
+	registerTabReloadHandler,
+	registerSaveExpandedHandler,
 	pushHistory,
 	isExpandedChildNode,
 	getParentSubgraphId,
@@ -35,6 +38,10 @@ interface ExpandedContent {
 	edges: NetrunEdge[];
 	originalWidth?: number;
 	originalHeight?: number;
+	/** Resolved absolute path for file-referenced subgraphs. */
+	resolvedFilePath?: string;
+	/** True when cache has been modified since loading (file-referenced only). */
+	dirty?: boolean;
 }
 
 // ── State ──────────────────────────────────────────────────────
@@ -79,6 +86,19 @@ function getUiConfig(data: AnyNodeData): Record<string, unknown> {
 	return (extra.ui || {}) as Record<string, unknown>;
 }
 
+/** True if the subgraph config references an external file (has 'path'). */
+function isFileReferencedConfig(config: Record<string, unknown> | undefined): boolean {
+	return !!config?.path;
+}
+
+/** Mark a cached entry as dirty (modified since load). Only relevant for file-referenced. */
+function markCacheDirty(tabId: string, parentId: string): void {
+	const cached = contentCache.get(cacheKey(tabId, parentId));
+	if (cached?.resolvedFilePath) {
+		cached.dirty = true;
+	}
+}
+
 // ── Load subgraph content ──────────────────────────────────────
 
 async function loadSubgraphContent(
@@ -108,9 +128,12 @@ async function loadSubgraphContent(
 	let loadedNodes: FlowNode[] = [];
 	let loadedEdges: NetrunEdge[] = [];
 
+	let resolvedFilePath: string | undefined;
+
 	if (isFileReference) {
 		const filePath = configPath || data.source;
 		const response = await api.loadSubgraph(filePath, undefined, basePath, projectRoot);
+		resolvedFilePath = response.source || undefined;
 		loadedNodes = response.nodes.map(node => ({
 			id: node.id,
 			type: node.type as 'netrunNode' | 'subgraphNode',
@@ -143,7 +166,7 @@ async function loadSubgraphContent(
 		}));
 	}
 
-	return { nodes: loadedNodes, edges: loadedEdges };
+	return { nodes: loadedNodes, edges: loadedEdges, resolvedFilePath };
 }
 
 // ── Expand / Collapse ──────────────────────────────────────────
@@ -455,16 +478,17 @@ export function updateExpandedChildPosition(
 				x: newPosition.x - PADDING,
 				y: newPosition.y - HEADER_OFFSET_Y - PADDING,
 			};
+			markCacheDirty(tabId, parentId);
 		}
 	}
 
-	// Update _subgraphConfig on the parent node
+	// Update _subgraphConfig on the parent node (skip for file-referenced subgraphs)
 	const parentNode = tab.nodes.find(n => n.id === parentId);
 	if (!parentNode || parentNode.data.nodeType !== 'subgraph') return;
 
 	const subgraphData = parentNode.data as SubgraphNodeData;
 	const config = subgraphData._subgraphConfig;
-	if (!config) return;
+	if (!config || isFileReferencedConfig(config)) return;
 
 	const configNodes = config.nodes as Array<Record<string, unknown>> | undefined;
 	if (!configNodes) return;
@@ -544,15 +568,16 @@ export function deleteExpandedChildren(
 			cached.edges = cached.edges.filter(e =>
 				!nodeIds.has(e.source) && !nodeIds.has(e.target)
 			);
+			markCacheDirty(tabId, parentId);
 		}
 
-		// Update _subgraphConfig
+		// Update _subgraphConfig (skip for file-referenced subgraphs)
 		const parentNode = tab.nodes.find(n => n.id === parentId);
 		if (!parentNode || parentNode.data.nodeType !== 'subgraph') continue;
 
 		const subgraphData = parentNode.data as SubgraphNodeData;
 		const config = subgraphData._subgraphConfig;
-		if (!config) continue;
+		if (!config || isFileReferencedConfig(config)) continue;
 
 		const configNodes = (config.nodes as Array<Record<string, unknown>> | undefined) || [];
 		const configEdges = (config.edges as Array<Record<string, unknown>> | undefined) || [];
@@ -621,15 +646,16 @@ export function addExpandedChildEdge(connection: {
 			targetHandle: connection.targetHandle ?? undefined,
 			type: 'smoothstep',
 		});
+		markCacheDirty(tabId, parentId);
 	}
 
-	// Update _subgraphConfig
+	// Update _subgraphConfig (skip for file-referenced subgraphs)
 	const parentNode = tab.nodes.find(n => n.id === parentId);
 	if (!parentNode || parentNode.data.nodeType !== 'subgraph') return;
 
 	const subgraphData = parentNode.data as SubgraphNodeData;
 	const config = subgraphData._subgraphConfig;
-	if (!config) return;
+	if (!config || isFileReferencedConfig(config)) return;
 
 	const configEdges = (config.edges as Array<Record<string, unknown>> | undefined) || [];
 
@@ -646,6 +672,137 @@ export function addExpandedChildEdge(connection: {
 			],
 		},
 	} as Partial<SubgraphNodeData>);
+}
+
+// ── Rename child node in expanded subgraph ─────────────────────
+
+/**
+ * Rename a child node inside an expanded subgraph.
+ * Updates the content cache, parent's _subgraphConfig, and edge references.
+ * Returns true on success, false if the name is invalid or duplicate.
+ */
+export function renameExpandedChildNode(oldChildNodeId: string, newName: string): boolean {
+	const parentId = getParentSubgraphId(oldChildNodeId);
+	const originalId = getOriginalChildId(oldChildNodeId);
+	const trimmed = newName.trim();
+
+	if (!trimmed || trimmed === originalId) return false;
+
+	const tab = get(activeTab);
+	if (!tab) return false;
+
+	const tabId = get(activeTabId);
+	if (!tabId) return false;
+
+	// Check for duplicate names within the same subgraph's cached nodes
+	const key = cacheKey(tabId, parentId);
+	const cached = contentCache.get(key);
+	if (!cached) return false;
+
+	if (cached.nodes.some(n => n.id !== originalId && n.id === trimmed)) {
+		return false; // Duplicate name
+	}
+
+	pushHistory();
+
+	// Update content cache: rename node ID and label, update edge references
+	cached.nodes = cached.nodes.map(n => {
+		if (n.id !== originalId) return n;
+		return { ...n, id: trimmed, data: { ...n.data, label: trimmed } };
+	});
+	cached.edges = cached.edges.map(e => {
+		let changed = false;
+		const newEdge = { ...e };
+		if (e.source === originalId) { newEdge.source = trimmed; changed = true; }
+		if (e.target === originalId) { newEdge.target = trimmed; changed = true; }
+		return changed ? newEdge : e;
+	});
+	markCacheDirty(tabId, parentId);
+
+	// Update parent's _subgraphConfig (skip for file-referenced subgraphs)
+	const parentNode = tab.nodes.find(n => n.id === parentId);
+	if (!parentNode || parentNode.data.nodeType !== 'subgraph') return false;
+
+	const subgraphData = parentNode.data as SubgraphNodeData;
+	const config = subgraphData._subgraphConfig;
+	if (!config) return false;
+
+	if (isFileReferencedConfig(config)) {
+		// For file-referenced subgraphs, only the cache was updated (temporary).
+		// Touch expandedByTab to trigger expandedView recompute.
+		setTabExpandedSet(tabId, new Set(getTabExpandedSet(tabId)));
+		return true;
+	}
+
+	const configNodes = (config.nodes as Array<Record<string, unknown>>) || [];
+	const configEdges = (config.edges as Array<Record<string, unknown>>) || [];
+
+	// Rename in config nodes
+	const updatedNodes = configNodes.map(cn => {
+		if (cn.name !== originalId) return cn;
+		return { ...cn, name: trimmed };
+	});
+
+	// Update edges where source_str/target_str start with oldName.
+	const updatedEdges = configEdges.map(ce => {
+		let changed = false;
+		const newCe = { ...ce };
+		const srcStr = ce.source_str as string | undefined;
+		const tgtStr = ce.target_str as string | undefined;
+		if (srcStr) {
+			const parts = srcStr.split('.');
+			if (parts[0] === originalId) {
+				newCe.source_str = [trimmed, ...parts.slice(1)].join('.');
+				changed = true;
+			}
+		}
+		if (tgtStr) {
+			const parts = tgtStr.split('.');
+			if (parts[0] === originalId) {
+				newCe.target_str = [trimmed, ...parts.slice(1)].join('.');
+				changed = true;
+			}
+		}
+		return changed ? newCe : ce;
+	});
+
+	// Update exposed_in_ports / exposed_out_ports
+	const updateExposedPorts = (ports: Record<string, { internal_node: string; internal_port: string }> | undefined) => {
+		if (!ports) return ports;
+		let changed = false;
+		const updated: Record<string, { internal_node: string; internal_port: string }> = {};
+		for (const [portName, mapping] of Object.entries(ports)) {
+			if (mapping.internal_node === originalId) {
+				updated[portName] = { ...mapping, internal_node: trimmed };
+				changed = true;
+			} else {
+				updated[portName] = mapping;
+			}
+		}
+		return changed ? updated : ports;
+	};
+
+	const updatedExposedIn = updateExposedPorts(
+		config.exposed_in_ports as Record<string, { internal_node: string; internal_port: string }> | undefined
+	);
+	const updatedExposedOut = updateExposedPorts(
+		config.exposed_out_ports as Record<string, { internal_node: string; internal_port: string }> | undefined
+	);
+
+	updateNodeDataLive(parentId, {
+		_subgraphConfig: {
+			...config,
+			nodes: updatedNodes,
+			edges: updatedEdges,
+			...(updatedExposedIn !== config.exposed_in_ports ? { exposed_in_ports: updatedExposedIn } : {}),
+			...(updatedExposedOut !== config.exposed_out_ports ? { exposed_out_ports: updatedExposedOut } : {}),
+		},
+	} as Partial<SubgraphNodeData>);
+
+	// Touch expandedByTab to trigger expandedView recompute
+	setTabExpandedSet(tabId, new Set(getTabExpandedSet(tabId)));
+
+	return true;
 }
 
 // ── Restore expansion state on load ────────────────────────────
@@ -667,6 +824,61 @@ export async function restoreExpansionState(): Promise<void> {
 	}
 }
 
+// ── Refresh expanded subgraphs (pick up tab edits) ─────────────
+
+/**
+ * Refresh a single expanded subgraph by re-loading its content from source.
+ * Preserves originalWidth/originalHeight from the old cache entry.
+ * Triggers expandedView recompute without collapse/expand flicker.
+ */
+export async function refreshExpandedSubgraph(nodeId: string): Promise<void> {
+	const tab = get(activeTab);
+	if (!tab) return;
+
+	const tabId = get(activeTabId);
+	if (!tabId) return;
+
+	const ids = getTabExpandedSet(tabId);
+	if (!ids.has(nodeId)) return;
+
+	const node = tab.nodes.find(n => n.id === nodeId);
+	if (!node || node.data.nodeType !== 'subgraph') return;
+
+	try {
+		const newContent = await loadSubgraphContent(nodeId, node.data as SubgraphNodeData);
+
+		// Preserve original dimensions from old cache
+		const oldKey = cacheKey(tabId, nodeId);
+		const oldCached = contentCache.get(oldKey);
+		if (oldCached) {
+			newContent.originalWidth = oldCached.originalWidth;
+			newContent.originalHeight = oldCached.originalHeight;
+		}
+
+		// Overwrite cache atomically
+		contentCache.set(oldKey, newContent);
+
+		// Touch expandedByTab to trigger expandedView recompute
+		setTabExpandedSet(tabId, new Set(ids));
+	} catch (error) {
+		console.error('Failed to refresh expanded subgraph:', error);
+	}
+}
+
+/**
+ * Refresh all expanded subgraphs in the current tab.
+ * Called on tab switch to pick up changes made in child subgraph tabs.
+ */
+export async function refreshAllExpandedSubgraphs(): Promise<void> {
+	const tabId = get(activeTabId);
+	if (!tabId) return;
+
+	const ids = getTabExpandedSet(tabId);
+	for (const nodeId of ids) {
+		await refreshExpandedSubgraph(nodeId);
+	}
+}
+
 // ── Cleanup on tab close ───────────────────────────────────────
 
 /**
@@ -683,6 +895,22 @@ export function cleanupExpandedSubgraph(nodeId: string): void {
 		setTabExpandedSet(tabId, newIds);
 		contentCache.delete(cacheKey(tabId, nodeId));
 	}
+}
+
+/**
+ * Clear all expansion state for a tab (expanded set + cache entries).
+ * Used before reloading a file so stale state doesn't persist.
+ */
+function clearAllExpansions(tabId: string): void {
+	const ids = getTabExpandedSet(tabId);
+	for (const nodeId of ids) {
+		contentCache.delete(cacheKey(tabId, nodeId));
+	}
+	expandedByTab.update(map => {
+		const newMap = new Map(map);
+		newMap.delete(tabId);
+		return newMap;
+	});
 }
 
 /**
@@ -712,7 +940,7 @@ function persistChildUiToConfig(
 
 	const subgraphData = parentNode.data as SubgraphNodeData;
 	const config = subgraphData._subgraphConfig;
-	if (!config) return;
+	if (!config || isFileReferencedConfig(config)) return;
 
 	const configNodes = (config.nodes as Array<Record<string, unknown>>) || [];
 	const updatedNodes = configNodes.map(cn => {
@@ -759,6 +987,7 @@ function handleChildNodeDataUpdate(childNodeId: string, dataUpdates: Partial<Any
 			if (n.id !== originalId) return n;
 			return { ...n, data: { ...n.data, ...dataUpdates } };
 		});
+		markCacheDirty(tabId, parentId);
 	}
 
 	// 2. Persist UI state from _config to parent's _subgraphConfig
@@ -819,9 +1048,10 @@ function handleChildNodeDimensionUpdate(
 					};
 				}
 			}
+			markCacheDirty(tabId, parentId);
 		}
 
-		// Persist to _subgraphConfig
+		// Persist to _subgraphConfig (skip for file-referenced subgraphs)
 		const tab = get(activeTab);
 		if (!tab) continue;
 
@@ -830,7 +1060,7 @@ function handleChildNodeDimensionUpdate(
 
 		const subgraphData = parentNode.data as SubgraphNodeData;
 		const config = subgraphData._subgraphConfig;
-		if (!config) continue;
+		if (!config || isFileReferencedConfig(config)) continue;
 
 		const configNodes = (config.nodes as Array<Record<string, unknown>>) || [];
 		const updatedConfigNodes = configNodes.map(cn => {
@@ -863,5 +1093,117 @@ function handleChildNodeDimensionUpdate(
 	}
 }
 
+// ── Re-key expansion state when a subgraph node is renamed ─────
+
+function reKeyExpandedSubgraph(tabId: string, oldId: string, newId: string): void {
+	const ids = getTabExpandedSet(tabId);
+	if (!ids.has(oldId)) return;
+
+	// Re-key contentCache FIRST — before the store update triggers expandedView recompute.
+	// contentCache is a plain Map (not reactive), so it must be updated before any
+	// reactive dependency change causes expandedView to look up the new key.
+	const oldKey = cacheKey(tabId, oldId);
+	const newKey = cacheKey(tabId, newId);
+	const cached = contentCache.get(oldKey);
+	if (cached) {
+		contentCache.delete(oldKey);
+		contentCache.set(newKey, cached);
+	}
+
+	// Re-key expandedByTab (triggers expandedView recompute — cache is ready)
+	const newIds = new Set(ids);
+	newIds.delete(oldId);
+	newIds.add(newId);
+	setTabExpandedSet(tabId, newIds);
+}
+
+// ── Save dirty file-referenced subgraph caches to their files ──
+
+/**
+ * Convert cached FlowNodes back to UINodes for the save API.
+ */
+function flowNodeToUINode(node: FlowNode): UINode {
+	const data = node.data;
+	const base: UINode = {
+		id: node.id,
+		type: node.type || (data.nodeType === 'subgraph' ? 'subgraphNode' : 'netrunNode'),
+		position: node.position,
+		...(node.width != null ? { width: node.width } : {}),
+		...(node.height != null ? { height: node.height } : {}),
+		data: {
+			label: data.label,
+			nodeType: data.nodeType,
+			inPorts: data.inPorts.map(p => ({ name: p.name, type: p.type })),
+			outPorts: data.outPorts.map(p => ({ name: p.name, type: p.type })),
+			description: data.description,
+			_config: (data as Record<string, unknown>)._config as Record<string, unknown> | undefined,
+		},
+	};
+	if (data.nodeType === 'factory') {
+		base.data.factory = (data as Record<string, unknown>).factory as string | undefined;
+		base.data.factoryArgs = (data as Record<string, unknown>).factoryArgs as Record<string, unknown> | undefined;
+	}
+	if (data.nodeType === 'subgraph') {
+		base.data.source = (data as Record<string, unknown>).source as string | undefined;
+		base.data.nodeCount = (data as Record<string, unknown>).nodeCount as number | undefined;
+		base.data._subgraphConfig = (data as Record<string, unknown>)._subgraphConfig as Record<string, unknown> | undefined;
+	}
+	return base;
+}
+
+function flowEdgeToUIEdge(edge: NetrunEdge): UIEdge {
+	return {
+		id: edge.id,
+		source: edge.source,
+		target: edge.target,
+		sourceHandle: edge.sourceHandle ?? undefined,
+		targetHandle: edge.targetHandle ?? undefined,
+		type: edge.type,
+	};
+}
+
+/**
+ * Save any dirty file-referenced expanded subgraph content back to their files.
+ * Called as part of the parent file's save operation.
+ */
+async function saveExpandedFileSubgraphs(): Promise<void> {
+	const tabId = get(activeTabId);
+	if (!tabId) return;
+
+	const ids = getTabExpandedSet(tabId);
+	for (const nodeId of ids) {
+		const cached = contentCache.get(cacheKey(tabId, nodeId));
+		if (!cached?.dirty || !cached?.resolvedFilePath) continue;
+
+		try {
+			// Read the original file to preserve extra/extraData/format
+			const original = await api.readFile(cached.resolvedFilePath);
+
+			// Replace nodes and edges with the cached (modified) versions
+			const apiNodes = cached.nodes.map(flowNodeToUINode);
+			const apiEdges = cached.edges.map(flowEdgeToUIEdge);
+
+			await api.saveFile(
+				cached.resolvedFilePath,
+				original.format,
+				apiNodes,
+				apiEdges,
+				original.extra,
+				original.extra_data
+			);
+
+			cached.dirty = false;
+		} catch (error) {
+			console.error(`Failed to save expanded subgraph to ${cached.resolvedFilePath}:`, error);
+		}
+	}
+}
+
 // ── Register handlers with flowStore ───────────────────────────
 registerChildNodeHandlers(handleChildNodeDataUpdate, handleChildNodeDimensionUpdate);
+registerNodeRenamedHandler(reKeyExpandedSubgraph);
+registerTabReloadHandler({
+	before: clearAllExpansions,
+	after: () => setTimeout(() => restoreExpansionState(), 50),
+});
+registerSaveExpandedHandler(saveExpandedFileSubgraphs);

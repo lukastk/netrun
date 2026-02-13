@@ -18,6 +18,7 @@ import {
 	switchTab,
 	getTabByFilePath,
 	createEmptyTabState,
+	registerBeforeTabSwitchHandler,
 	type TabState,
 } from './tabsStore';
 import { triggerFileExplorerRefresh } from './fileExplorerStore';
@@ -168,6 +169,33 @@ export function registerChildNodeHandlers(
 ): void {
 	_childNodeDataHandler = dataHandler;
 	_childNodeDimensionHandler = dimensionHandler;
+}
+
+// Node renamed handler — allows subgraphExpandStore to re-key expansion state
+type NodeRenamedHandler = (tabId: string, oldId: string, newId: string) => void;
+let _nodeRenamedHandler: NodeRenamedHandler | null = null;
+
+export function registerNodeRenamedHandler(handler: NodeRenamedHandler): void {
+	_nodeRenamedHandler = handler;
+}
+
+// Tab reload handler — allows subgraphExpandStore to clear and restore expansion state
+type TabReloadHandler = {
+	before: (tabId: string) => void;
+	after: (tabId: string) => void;
+};
+let _tabReloadHandler: TabReloadHandler | null = null;
+
+export function registerTabReloadHandler(handler: TabReloadHandler): void {
+	_tabReloadHandler = handler;
+}
+
+// Save expanded subgraphs handler — saves dirty file-referenced subgraph content
+type SaveExpandedHandler = () => Promise<void>;
+let _saveExpandedHandler: SaveExpandedHandler | null = null;
+
+export function registerSaveExpandedHandler(handler: SaveExpandedHandler): void {
+	_saveExpandedHandler = handler;
 }
 
 /**
@@ -669,6 +697,15 @@ export function renameNode(oldName: string, newName: string): boolean {
 		newSelected.delete(oldName);
 		newSelected.add(trimmed);
 		selectedNodeIds.set(newSelected);
+	}
+
+	// Re-key expansion state BEFORE updating nodes — the handler updates the
+	// contentCache (plain Map) and expandedByTab (reactive). Doing this first
+	// ensures that when updateActiveTab triggers expandedView to recompute,
+	// both the cache keys and expanded IDs already reflect the new name.
+	const tabId = get(activeTabId);
+	if (tabId && _nodeRenamedHandler) {
+		_nodeRenamedHandler(tabId, oldName, trimmed);
 	}
 
 	updateActiveTab({
@@ -1787,6 +1824,13 @@ export async function reloadFile(): Promise<void> {
 	}
 
 	try {
+		const tabId = get(activeTabId);
+
+		// Clear expansion state before replacing tab data
+		if (tabId && _tabReloadHandler) {
+			_tabReloadHandler.before(tabId);
+		}
+
 		const response = await api.readFile(tab.filePath);
 		updateActiveTab({
 			nodes: convertApiNodes(response.nodes),
@@ -1797,6 +1841,12 @@ export async function reloadFile(): Promise<void> {
 			isDirty: false,
 			history: { past: [], future: [] },
 		});
+
+		// Restore expansion state from freshly loaded data
+		if (tabId && _tabReloadHandler) {
+			_tabReloadHandler.after(tabId);
+		}
+
 		toasts.success('File reloaded from disk');
 	} catch (e) {
 		await showAlert({
@@ -2015,6 +2065,11 @@ export async function saveToFile(path?: string): Promise<void> {
 		tab.graphExtra ?? undefined,
 		tab.extraData ?? undefined
 	);
+
+	// Save dirty expanded file-referenced subgraph content to their files
+	if (_saveExpandedHandler) {
+		await _saveExpandedHandler();
+	}
 
 	updateActiveTab({
 		filePath: savePath,
@@ -2408,3 +2463,71 @@ export function applyConfig(config: Record<string, unknown>): void {
 		});
 	}
 }
+
+// ── Auto-save inline subgraph to parent on tab switch ──────────
+registerBeforeTabSwitchHandler((fromTab: TabState) => {
+	if (fromTab.subgraphContext?.isInline && fromTab.isDirty) {
+		// Temporarily switch active tab to the departing tab so saveInlineSubgraphToParent works
+		// (it uses get(activeTab) internally)
+		// Actually, we can just call the save logic directly since we have the tab
+		const parentTab = get(tabs).find(t => t.id === fromTab.subgraphContext!.parentTabId);
+		if (!parentTab) return;
+
+		const nodeId = fromTab.subgraphContext.nodeId;
+		const parentNode = parentTab.nodes.find(n => n.id === nodeId);
+		if (!parentNode || parentNode.data.nodeType !== 'subgraph') return;
+
+		const updatedConfig = {
+			...(parentNode.data as SubgraphNodeData)._subgraphConfig,
+			nodes: fromTab.nodes.map(n => {
+				const nodeData = n.data;
+				if (nodeData.nodeType === 'subgraph') {
+					const subgraphData = nodeData as SubgraphNodeData;
+					return {
+						type: 'subgraph',
+						name: nodeData.label,
+						...(subgraphData._subgraphConfig || {}),
+						extra: { ui: { position: n.position } },
+					};
+				} else {
+					return {
+						type: 'node',
+						name: nodeData.label,
+						in_ports: Object.fromEntries(
+							nodeData.inPorts.map(p => [p.name, { port_type: p.type || null }])
+						),
+						out_ports: Object.fromEntries(
+							nodeData.outPorts.map(p => [p.name, { port_type: p.type || null }])
+						),
+						extra: { ui: { position: n.position } },
+					};
+				}
+			}),
+			edges: fromTab.edges.map(e => ({
+				source_str: `${e.source}.${e.sourceHandle || 'out'}`,
+				target_str: `${e.target}.${e.targetHandle || 'in'}`,
+			})),
+		};
+
+		const updatedNodes = parentTab.nodes.map(n => {
+			if (n.id === nodeId) {
+				return {
+					...n,
+					data: {
+						...n.data,
+						nodeCount: fromTab.nodes.length,
+						_subgraphConfig: updatedConfig,
+					}
+				};
+			}
+			return n;
+		});
+
+		updateTab(parentTab.id, {
+			nodes: updatedNodes as FlowNode[],
+			isDirty: true,
+		});
+
+		updateTab(fromTab.id, { isDirty: false });
+	}
+});
