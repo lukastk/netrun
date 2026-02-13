@@ -113,11 +113,27 @@ export function createTab(filePath?: string | null, switchTo: boolean = true): s
 	return newTab.id;
 }
 
+// ── Tab switch hook ─────────────────────────────────────────────
+// Allows flowStore/subgraphExpandStore to run logic before a tab switch
+// (e.g., auto-save inline subgraph to parent).
+type BeforeTabSwitchHandler = (fromTab: TabState) => void;
+let _beforeTabSwitchHandler: BeforeTabSwitchHandler | null = null;
+
+export function registerBeforeTabSwitchHandler(handler: BeforeTabSwitchHandler): void {
+	_beforeTabSwitchHandler = handler;
+}
+
 // Switch to a tab by ID
 export function switchTab(tabId: string): void {
 	const tabList = get(tabs);
 	const targetTab = tabList.find(t => t.id === tabId);
 	if (targetTab) {
+		// Run pre-switch hook (e.g., auto-save inline subgraph)
+		const currentTab = tabList.find(t => t.id === get(activeTabId));
+		if (currentTab && currentTab.id !== tabId && _beforeTabSwitchHandler) {
+			_beforeTabSwitchHandler(currentTab);
+		}
+
 		activeTabId.set(tabId);
 		// Update URL to reflect the active file
 		updateUrlWithFile(targetTab.filePath);

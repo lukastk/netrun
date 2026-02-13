@@ -15,7 +15,7 @@
 	import { api } from '$lib/api';
 	import { loadConfigSchema } from '$lib/stores/schemaStore';
 	import { nodes, currentFilePath, activeTab, activeTabId, recentFiles, loadFromFile, clearFlow, isNewFile, saveToFile, selectNodeByName, extraData, hasUnsavedChanges } from '$lib/stores/flowStore';
-	import { restoreExpansionState } from '$lib/stores/subgraphExpandStore';
+	import { restoreExpansionState, refreshAllExpandedSubgraphs } from '$lib/stores/subgraphExpandStore';
 	import { factorySelectorState, closeFactorySelector } from '$lib/stores/factorySelectorStore';
 	import { recipeModalState } from '$lib/stores/recipeStore';
 	import { resolveFilePath } from '$lib/stores/fileExplorerStore';
@@ -40,6 +40,20 @@
 			restoredTabs.add(tab.id);
 			// Defer to avoid issues during initialization
 			setTimeout(() => restoreExpansionState(), 50);
+		}
+	});
+
+	// Refresh expanded subgraphs when switching tabs (picks up edits from child tabs)
+	let previousEffectTabId: string | null = null;
+	$effect(() => {
+		const tab = $activeTab;
+		if (tab && tab.id !== previousEffectTabId) {
+			const prev = previousEffectTabId;
+			previousEffectTabId = tab.id;
+			if (prev !== null) {
+				// Tab switched — refresh expanded subgraphs to pick up changes
+				setTimeout(() => refreshAllExpandedSubgraphs(), 50);
+			}
 		}
 	});
 
