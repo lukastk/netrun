@@ -130,7 +130,7 @@ def resolve_factory_ports(
     factory_path: str,
     factory_args: dict[str, Any],
     working_dir: str | None = None,
-) -> tuple[dict[str, Any], dict[str, Any], str | None] | None:
+) -> tuple[dict[str, Any], dict[str, Any], str | None, dict[str, Any] | None] | None:
     """Resolve ports from a factory by calling get_node_config.
 
     Args:
@@ -139,7 +139,7 @@ def resolve_factory_ports(
         working_dir: Optional working directory to add to sys.path for imports.
 
     Returns:
-        Tuple of (in_ports, out_ports, description) dicts, or None if resolution fails.
+        Tuple of (in_ports, out_ports, description, extra) dicts, or None if resolution fails.
     """
     import sys
 
@@ -189,7 +189,10 @@ def resolve_factory_ports(
             out_ports[name] = port_dict
 
         description = getattr(node_config, 'description', None)
-        return in_ports, out_ports, description
+        factory_extra = None
+        if hasattr(node_config, 'extra') and node_config.extra:
+            factory_extra = node_config.extra if isinstance(node_config.extra, dict) else node_config.extra.copy()
+        return in_ports, out_ports, description, factory_extra
 
     except Exception as e:
         logger.warning(f"Failed to resolve factory '{factory_path}': {e}")
@@ -289,12 +292,13 @@ def graph_config_to_ui(
 
             # For factory nodes without explicit ports, try to resolve from factory
             factory_description = None
+            factory_extra = None
             if is_factory and not config_in_ports and not config_out_ports:
                 factory_path = node.get("factory")
                 factory_args = node.get("factory_args", {})
                 resolved = resolve_factory_ports(factory_path, factory_args, working_dir)
                 if resolved:
-                    config_in_ports, config_out_ports, factory_description = resolved
+                    config_in_ports, config_out_ports, factory_description, factory_extra = resolved
 
             # Convert ports to UI format
             in_ports = [
@@ -330,6 +334,15 @@ def graph_config_to_ui(
                 k: v for k, v in node.items()
                 if k not in ("name", "in_ports", "out_ports", "factory", "factory_args", "type", "description")
             }
+
+            # Merge factory extra.ui defaults (node's own values take precedence)
+            if factory_extra and "ui" in factory_extra:
+                config = ui_node["data"]["_config"]
+                config_extra = config.setdefault("extra", {})
+                config_ui = config_extra.setdefault("ui", {})
+                for key, value in factory_extra["ui"].items():
+                    if key not in config_ui:
+                        config_ui[key] = value
 
             # Promote description to a first-class UI field
             # Use explicit node description, falling back to factory-resolved description

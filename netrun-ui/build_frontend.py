@@ -45,18 +45,17 @@ def build_frontend(project_root: Path) -> bool:
     """Build the frontend with npm."""
     print("Building frontend...")
 
-    # Check if node_modules exists
-    if not (project_root / "node_modules").exists():
-        print("Installing npm dependencies...")
-        result = subprocess.run(
-            ["npm", "install"],
-            cwd=str(project_root),
-            capture_output=True,
-            text=True,
-        )
-        if result.returncode != 0:
-            print(f"Error installing dependencies: {result.stderr}", file=sys.stderr)
-            return False
+    # Always run npm install to ensure dependencies are up to date
+    print("Installing npm dependencies...")
+    result = subprocess.run(
+        ["npm", "install"],
+        cwd=str(project_root),
+        capture_output=True,
+        text=True,
+    )
+    if result.returncode != 0:
+        print(f"Error installing dependencies: {result.stderr}", file=sys.stderr)
+        return False
 
     # Build the frontend
     result = subprocess.run(
