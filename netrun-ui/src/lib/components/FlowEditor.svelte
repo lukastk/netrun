@@ -16,7 +16,7 @@
 	import '@xyflow/svelte/dist/style.css';
 	import { tick, onMount, onDestroy } from 'svelte';
 	import { derived, get } from 'svelte/store';
-	import { isValidConnection, activeTabId } from '$lib/stores/flowStore';
+	import { isValidConnection, activeTabId, panOnDrag, selectionOnDrag } from '$lib/stores/flowStore';
 	import { svelteFlowRef } from '$lib/stores/svelteFlowStore';
 
 	import NetrunNodeComponent from './NetrunNode.svelte';
@@ -451,6 +451,8 @@
 		}}
 		connectionLineType={getConnectionLineType($edgeStyle)}
 		deleteKey={['Delete', 'Backspace']}
+		panOnDrag={$panOnDrag}
+		selectionOnDrag={$selectionOnDrag}
 		selectionKey="Shift"
 		colorMode="dark"
 		minZoom={$minZoom}
