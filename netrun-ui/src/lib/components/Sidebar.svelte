@@ -19,6 +19,11 @@
 		graphExtra,
 		updateExtraDataLive,
 		updateGraphExtraLive,
+		updateNodeShape,
+		getNodeShape,
+		NODE_SHAPES,
+		updateNodeVisibility,
+		getNodeVisibility,
 		type NetrunNodeData,
 		type PortConfig
 	} from '$lib/stores/flowStore';
@@ -601,6 +606,55 @@
 									Regular Node
 								{/if}
 							</div>
+						</div>
+						<div class="field">
+							<label for="node-shape">Shape</label>
+							<select
+								id="node-shape"
+								value={getNodeShape($selectedNode.data)}
+								onchange={(e) => {
+									if ($selectedNode) {
+										updateNodeShape($selectedNode.id, (e.target as HTMLSelectElement).value as import('$lib/stores/flowStore').NodeShape);
+									}
+								}}
+							>
+								{#each NODE_SHAPES as shape}
+									<option value={shape.value}>{shape.label}</option>
+								{/each}
+							</select>
+						</div>
+						<div class="field">
+							<label>Visibility</label>
+							<label class="checkbox-label">
+								<input
+									type="checkbox"
+									checked={getNodeVisibility($selectedNode.data).hideLabel}
+									onchange={(e) => {
+										if ($selectedNode) updateNodeVisibility($selectedNode.id, 'hideLabel', (e.target as HTMLInputElement).checked);
+									}}
+								/>
+								<span class="checkbox-text">Hide name</span>
+							</label>
+							<label class="checkbox-label">
+								<input
+									type="checkbox"
+									checked={getNodeVisibility($selectedNode.data).hideDescription}
+									onchange={(e) => {
+										if ($selectedNode) updateNodeVisibility($selectedNode.id, 'hideDescription', (e.target as HTMLInputElement).checked);
+									}}
+								/>
+								<span class="checkbox-text">Hide description</span>
+							</label>
+							<label class="checkbox-label">
+								<input
+									type="checkbox"
+									checked={getNodeVisibility($selectedNode.data).hidePortNames}
+									onchange={(e) => {
+										if ($selectedNode) updateNodeVisibility($selectedNode.id, 'hidePortNames', (e.target as HTMLInputElement).checked);
+									}}
+								/>
+								<span class="checkbox-text">Hide port names</span>
+							</label>
 						</div>
 						<button
 							class="delete-node-btn"
@@ -1781,6 +1835,30 @@
 	.factory-arg input.required-missing:focus {
 		border-color: var(--error-color, #ef4444);
 		box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
+	}
+
+	/* Checkbox styling (reused for visibility toggles and factory args) */
+	.field .checkbox-label {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 4px 0;
+		cursor: pointer;
+		text-transform: none;
+		letter-spacing: 0;
+	}
+
+	.field .checkbox-label input[type="checkbox"] {
+		width: 14px;
+		height: 14px;
+		margin: 0;
+		cursor: pointer;
+		accent-color: var(--accent-color, #3b82f6);
+	}
+
+	.field .checkbox-text {
+		font-size: 12px;
+		color: var(--text-secondary, #a0a0a0);
 	}
 
 	.factory-arg .checkbox-label {
