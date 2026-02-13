@@ -138,6 +138,12 @@
 		flex-direction: column;
 	}
 
+	/* Larger resize handles when selected */
+	:global(.netrun-node .svelte-flow__resize-control.handle) {
+		width: 12px;
+		height: 12px;
+	}
+
 	.netrun-node.selected {
 		border-color: var(--node-selected, #3b82f6);
 		box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
