@@ -3,6 +3,7 @@
 	import type { SubgraphNodeData } from '$lib/stores/flowStore';
 	import { updateNodeDimensions, pushHistory, toggleNodeDescExpanded } from '$lib/stores/flowStore';
 	import { openSubgraphTab } from '$lib/stores/tabsStore';
+	import { toggleSubgraphExpansion, isSubgraphExpanded } from '$lib/stores/subgraphExpandStore';
 	import PortList from './PortList.svelte';
 
 	interface Props {
@@ -69,6 +70,30 @@
 		return (ui?.fontColor as string) ?? null;
 	})());
 
+	let isExpanded = $derived((() => {
+		const config = (data as Record<string, unknown>)._config as Record<string, unknown> | undefined;
+		const extra = config?.extra as Record<string, unknown> | undefined;
+		const ui = extra?.ui as Record<string, unknown> | undefined;
+		return (ui?.expanded as boolean) ?? false;
+	})());
+
+	// Exposed port names for inner handles (only needed when expanded)
+	let exposedInPortNames = $derived((() => {
+		if (!isExpanded) return [] as string[];
+		const sgConfig = data._subgraphConfig;
+		if (!sgConfig) return [] as string[];
+		const exposed = sgConfig.exposed_in_ports as Record<string, unknown> | undefined;
+		return exposed ? Object.keys(exposed) : [] as string[];
+	})());
+
+	let exposedOutPortNames = $derived((() => {
+		if (!isExpanded) return [] as string[];
+		const sgConfig = data._subgraphConfig;
+		if (!sgConfig) return [] as string[];
+		const exposed = sgConfig.exposed_out_ports as Record<string, unknown> | undefined;
+		return exposed ? Object.keys(exposed) : [] as string[];
+	})());
+
 	function handleResizeEnd(_event: unknown, params: { x: number; y: number; width: number; height: number }) {
 		updateNodeDimensions([{
 			id,
@@ -91,6 +116,12 @@
 	function handleDoubleClick() {
 		openSubgraphTab(id, data);
 	}
+
+	// Handle expand/collapse toggle
+	function handleToggleExpand(e: MouseEvent) {
+		e.stopPropagation();
+		toggleSubgraphExpansion(id);
+	}
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -98,12 +129,13 @@
 	class="subgraph-node shape-{shape}"
 	class:selected
 	class:invalid={data.isValid === false}
+	class:expanded={isExpanded}
 	ondblclick={handleDoubleClick}
 	style:background={headerColor ? headerColor + '22' : undefined}
 >
 	<NodeResizer
-		minWidth={160}
-		minHeight={80}
+		minWidth={isExpanded ? 400 : 160}
+		minHeight={isExpanded ? 300 : 80}
 		isVisible={selected}
 		color="var(--node-selected, #3b82f6)"
 		onResizeEnd={handleResizeEnd}
@@ -111,40 +143,56 @@
 	<!-- Header -->
 	{#if !hideLabel}
 		<div class="node-header" style:background={headerColor || undefined} style:color={fontColor || undefined}>
+			<button class="expand-toggle" onclick={handleToggleExpand} title={isExpanded ? 'Collapse subgraph' : 'Expand subgraph inline'}>
+				{isExpanded ? '\u25BC' : '\u25B6'}
+			</button>
 			<span class="subgraph-badge">SG</span>
 			<span class="node-label" style:color={fontColor || undefined}>{data.label}</span>
 		</div>
 	{/if}
 
-	<!-- Description -->
-	{#if data.description && !hideDescription}
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div class="node-description" onclick={(e) => { e.stopPropagation(); toggleNodeDescExpanded(id); }}>
-			<span class="desc-chevron" class:expanded={descExpanded}>&#9656;</span>
-			{#if descExpanded}
-				<span class="desc-content">{data.description}</span>
-			{:else}
-				<span class="desc-preview">{data.description.split('\n')[0]}</span>
+	{#if !isExpanded}
+		<!-- Description (collapsed view only) -->
+		{#if data.description && !hideDescription}
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div class="node-description" onclick={(e) => { e.stopPropagation(); toggleNodeDescExpanded(id); }}>
+				<span class="desc-chevron" class:expanded={descExpanded}>&#9656;</span>
+				{#if descExpanded}
+					<span class="desc-content">{data.description}</span>
+				{:else}
+					<span class="desc-preview">{data.description.split('\n')[0]}</span>
+				{/if}
+			</div>
+		{/if}
+
+		<!-- Ports container (collapsed view) -->
+		<div class="ports-container">
+			<PortList nodeId={id} ports={data.inPorts} side="in" {portGroupStates} {hidePortNames} />
+			<PortList nodeId={id} ports={data.outPorts} side="out" {portGroupStates} {hidePortNames} />
+		</div>
+
+		<!-- Subgraph info footer -->
+		<div class="subgraph-info">
+			{#if data.nodeCount !== undefined && data.nodeCount !== null}
+				<span class="node-count">{data.nodeCount} node{data.nodeCount !== 1 ? 's' : ''}</span>
 			{/if}
+			<span class="source-info" title={data.source}>{getDisplaySource(data.source || 'Inline')}</span>
+		</div>
+
+		<!-- Double-click hint -->
+		<div class="edit-hint">Double-click to edit</div>
+	{:else}
+		<!-- Expanded view: ports on edges, body is container for child nodes -->
+		<div class="expanded-ports">
+			<PortList nodeId={id} ports={data.inPorts} side="in" {portGroupStates} {hidePortNames}
+				exposedPortNames={exposedInPortNames} />
+			<PortList nodeId={id} ports={data.outPorts} side="out" {portGroupStates} {hidePortNames}
+				exposedPortNames={exposedOutPortNames} />
+		</div>
+		<div class="expanded-body">
+			<!-- Child nodes rendered by SvelteFlow via parentId -->
 		</div>
 	{/if}
-
-	<!-- Ports container -->
-	<div class="ports-container">
-		<PortList nodeId={id} ports={data.inPorts} side="in" {portGroupStates} {hidePortNames} />
-		<PortList nodeId={id} ports={data.outPorts} side="out" {portGroupStates} {hidePortNames} />
-	</div>
-
-	<!-- Subgraph info footer -->
-	<div class="subgraph-info">
-		{#if data.nodeCount !== undefined && data.nodeCount !== null}
-			<span class="node-count">{data.nodeCount} node{data.nodeCount !== 1 ? 's' : ''}</span>
-		{/if}
-		<span class="source-info" title={data.source}>{getDisplaySource(data.source || 'Inline')}</span>
-	</div>
-
-	<!-- Double-click hint -->
-	<div class="edit-hint">Double-click to edit</div>
 
 	<!-- Validation errors -->
 	{#if data.isValid === false && data.validationErrors}
@@ -183,6 +231,52 @@
 
 	.subgraph-node.invalid {
 		border-color: var(--error-color, #ef4444);
+	}
+
+	/* ── Expanded state ────────────────────────────── */
+	.subgraph-node.expanded {
+		border-style: dashed;
+		border-width: 2px;
+		background: var(--bg-primary, #1a1a1a);
+		min-width: 400px;
+		min-height: 300px;
+	}
+
+	.subgraph-node.expanded.selected {
+		border-color: var(--node-selected, #3b82f6);
+	}
+
+	.expand-toggle {
+		display: flex;
+		align-items: center;
+		justify-content: center;
+		width: 20px;
+		height: 20px;
+		padding: 0;
+		background: rgba(255, 255, 255, 0.15);
+		border: none;
+		border-radius: 3px;
+		color: white;
+		font-size: 10px;
+		cursor: pointer;
+		flex-shrink: 0;
+		transition: background 0.15s ease;
+	}
+
+	.expand-toggle:hover {
+		background: rgba(255, 255, 255, 0.3);
+	}
+
+	.expanded-ports {
+		display: flex;
+		justify-content: space-between;
+		padding: 4px 0;
+	}
+
+	.expanded-body {
+		flex: 1;
+		min-height: 200px;
+		/* This space is where SvelteFlow renders child nodes via parentId */
 	}
 
 	/* ── Shape: rounded ─────────────────────────────── */

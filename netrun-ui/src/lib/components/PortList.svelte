@@ -18,9 +18,11 @@
 		side: 'in' | 'out';
 		portGroupStates?: Record<string, boolean>;
 		hidePortNames?: boolean;
+		/** Port names that need inner handles for exposed port edges (expanded subgraphs) */
+		exposedPortNames?: string[];
 	}
 
-	let { nodeId, ports, side, portGroupStates, hidePortNames = false }: Props = $props();
+	let { nodeId, ports, side, portGroupStates, hidePortNames = false, exposedPortNames }: Props = $props();
 
 	// Build the port tree reactively
 	let portTree = $derived(buildPortTree(ports));
@@ -92,7 +94,6 @@
 					type={handleType}
 					position={handlePosition}
 					id={item.port.name}
-					style={getHandleStyle(item.port.name)}
 				/>
 			{/if}
 			{#if !hidePortNames}
@@ -109,7 +110,16 @@
 					type={handleType}
 					position={handlePosition}
 					id={item.port.name}
-					style={getHandleStyle(item.port.name)}
+				/>
+			{/if}
+			{#if exposedPortNames?.includes(item.port.name)}
+				<!-- Inner handle for exposed port edges: opposite type/position so edges curve inward -->
+				<Handle
+					type={side === 'in' ? 'source' : 'target'}
+					position={side === 'in' ? Position.Right : Position.Left}
+					id={item.port.name}
+					class="inner-exposed-handle {side === 'in' ? 'inner-exposed-left' : 'inner-exposed-right'}"
+					style="opacity:0;width:0;height:0;min-width:0;min-height:0;pointer-events:none;"
 				/>
 			{/if}
 		</div>
@@ -198,9 +208,9 @@
 	{/each}
 {/snippet}
 
+<div class="ports {side}-ports">
 {#if ports.length > 0}
 	{@const isRootCollapsed = rootCollapsed()}
-	<div class="ports {side}-ports">
 		{#if ports.length > 1}
 			<!-- Root group header (only for 2+ ports) -->
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
@@ -272,8 +282,8 @@
 				{/if}
 			{/each}
 		{/if}
-	</div>
 {/if}
+</div>
 
 <style>
 	.ports {
@@ -293,10 +303,31 @@
 	}
 
 	.port-row {
+		position: relative;
 		display: flex;
 		align-items: center;
 		gap: 4px;
 		min-height: 18px;
+	}
+
+	/* Offset handles to reach node edge (compensating for .in-ports/.out-ports padding) */
+	.in-ports .port-row :global(.svelte-flow__handle-left:not(.inner-exposed-handle)) {
+		left: -12px !important;
+	}
+	.out-ports .port-row :global(.svelte-flow__handle-right:not(.inner-exposed-handle)) {
+		right: -12px !important;
+	}
+
+	/* Inner exposed handles: positioned at same edge but with opposite routing direction */
+	.port-row :global(.inner-exposed-left.svelte-flow__handle-right) {
+		right: auto !important;
+		left: -12px !important;
+		transform: translate(-50%, -50%) !important;
+	}
+	.port-row :global(.inner-exposed-right.svelte-flow__handle-left) {
+		left: auto !important;
+		right: -12px !important;
+		transform: translate(50%, -50%) !important;
 	}
 
 	.port-label {

@@ -14,7 +14,8 @@
 	import '$lib/configFieldRegistrations';
 	import { api } from '$lib/api';
 	import { loadConfigSchema } from '$lib/stores/schemaStore';
-	import { nodes, currentFilePath, activeTab, recentFiles, loadFromFile, clearFlow, isNewFile, saveToFile, selectNodeByName, extraData, hasUnsavedChanges } from '$lib/stores/flowStore';
+	import { nodes, currentFilePath, activeTab, activeTabId, recentFiles, loadFromFile, clearFlow, isNewFile, saveToFile, selectNodeByName, extraData, hasUnsavedChanges } from '$lib/stores/flowStore';
+	import { restoreExpansionState } from '$lib/stores/subgraphExpandStore';
 	import { factorySelectorState, closeFactorySelector } from '$lib/stores/factorySelectorStore';
 	import { recipeModalState } from '$lib/stores/recipeStore';
 	import { resolveFilePath } from '$lib/stores/fileExplorerStore';
@@ -28,6 +29,19 @@
 
 	// Track if we've processed initial files to avoid re-processing on HMR
 	let initialFilesProcessed = $state(false);
+
+	// Track tabs we've already restored expansion state for
+	let restoredTabs = new Set<string>();
+
+	// Restore subgraph expansion state when switching to a tab we haven't processed yet
+	$effect(() => {
+		const tab = $activeTab;
+		if (tab && tab.nodes.length > 0 && !restoredTabs.has(tab.id)) {
+			restoredTabs.add(tab.id);
+			// Defer to avoid issues during initialization
+			setTimeout(() => restoreExpansionState(), 50);
+		}
+	});
 
 	// Initial path for file explorer - fetched from server, with fallback
 	let initialPath = $state('~');
