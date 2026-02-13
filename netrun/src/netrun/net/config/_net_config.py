@@ -296,9 +296,9 @@ class NetConfig(EnvVarResolvableModel):
                 resolved = resolved.model_copy(update=var_updates)
                 resolved._file_path = self._file_path
 
-        # Auto-derive base_path from _file_path when not provided
-        if base_path is None and resolved._file_path is not None:
-            base_path = resolved._file_path.parent
+        # Auto-derive base_path from project_root when not provided
+        if base_path is None:
+            base_path = resolved.project_root_path
 
         updates = {}
 

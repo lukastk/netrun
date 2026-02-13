@@ -16,7 +16,7 @@ from ..converter import (
     dump_graph_config,
 )
 
-from netrun.net.config import NetConfig, GraphConfig
+from netrun.net.config import NetConfig, GraphConfig, SubgraphConfig
 from netrun.tools._models import ActionConfig, RecipeConfig
 
 router = APIRouter()
@@ -288,6 +288,7 @@ class SubgraphLoadRequest(BaseModel):
     """Request to load subgraph content."""
     path: str | None = None  # Path to external file
     base_path: str | None = None  # Base path for resolving relative paths
+    project_root: str | None = None  # Explicit project root for resolving relative paths
     inline_config: dict[str, Any] | None = None  # Inline subgraph config
 
 
@@ -325,13 +326,28 @@ async def load_subgraph(request: SubgraphLoadRequest) -> SubgraphLoadResponse:
             # Load from file
             path = Path(request.path)
 
-            # If path is relative and we have a base_path, resolve it
-            if not path.is_absolute() and request.base_path:
-                base_dir = Path(request.base_path).parent
-                path = (base_dir / path).resolve()
+            # If path is relative, resolve against project_root or base_path
+            if not path.is_absolute():
+                if request.project_root:
+                    base_dir = Path(request.project_root)
+                elif request.base_path:
+                    base_dir = Path(request.base_path).parent
+                else:
+                    base_dir = None
+                if base_dir:
+                    path = (base_dir / path).resolve()
 
             if not path.exists():
                 raise HTTPException(status_code=404, detail=f"File not found: {path}")
+
+            if not path.is_file():
+                raise HTTPException(status_code=400, detail=f"Path is not a file: {path}")
+
+            if not (path.name.endswith('.netrun.json') or path.name.endswith('.netrun.toml')):
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Not a valid netrun file (expected .netrun.json or .netrun.toml): {path.name}"
+                )
 
             content = path.read_text()
             data = json.loads(content)
@@ -355,8 +371,13 @@ async def load_subgraph(request: SubgraphLoadRequest) -> SubgraphLoadResponse:
             edges_data = config.get("edges", [])
 
             graph_data = {"nodes": nodes_data, "edges": edges_data}
-            # Use base_path's directory for factory resolution if available
-            working_dir = str(Path(request.base_path).parent) if request.base_path else None
+            # Use project_root or base_path's directory for factory resolution
+            if request.project_root:
+                working_dir = request.project_root
+            elif request.base_path:
+                working_dir = str(Path(request.base_path).parent)
+            else:
+                working_dir = None
             nodes, edges = graph_config_to_ui(graph_data, working_dir=working_dir)
 
             source = "Inline"
@@ -735,10 +756,28 @@ async def validate_config(request: ValidateRequest) -> ValidateResponse:
                     ))
 
         # Step 4: Resolve each node individually for per-node error attribution
+        # Derive base_path from project_root_override (or fall back to file_path dir)
+        pr_override = (request.extra_data or {}).get("project_root_override")
+        if pr_override:
+            p = Path(pr_override)
+            if p.is_absolute():
+                resolve_base_path = p
+            elif request.file_path:
+                resolve_base_path = (Path(request.file_path).parent / p).resolve()
+            else:
+                resolve_base_path = None
+        elif request.file_path:
+            resolve_base_path = Path(request.file_path).parent
+        else:
+            resolve_base_path = None
         for idx, node in enumerate(graph.nodes):
             if hasattr(node, 'resolve'):
                 try:
-                    node.resolve(net_config=net_config)
+                    if isinstance(node, SubgraphConfig):
+                        # SubgraphConfig.resolve() only accepts base_path, not net_config
+                        node.resolve(base_path=resolve_base_path)
+                    else:
+                        node.resolve(net_config=net_config)
                 except Exception as e:
                     errors.append(ValidationError_(
                         loc=["graph", "nodes", str(idx)],

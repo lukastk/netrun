@@ -7,7 +7,6 @@
     "nodes": [
       {
         "name": "DataSource",
-        "in_ports": {},
         "out_ports": {
           "stream1": {
             "port_type": "any"
@@ -16,19 +15,17 @@
             "port_type": "any"
           }
         },
-        "meta": {
+        "extra": {
           "ui": {
-            "id": "node-source",
-            "label": "DataSource",
             "position": {
-              "x": 50,
-              "y": 150
+              "x": 0,
+              "y": 100
             }
           }
-        }
+        },
+        "type": "node"
       },
       {
-        "type": "subgraph",
         "name": "InlineProcessor",
         "nodes": [
           {
@@ -46,13 +43,14 @@
                 "port_type": "any"
               }
             },
-            "meta": {
+            "extra": {
               "ui": {
-                "id": "subnode-filter",
-                "label": "Filter",
                 "position": {
-                  "x": 100,
-                  "y": 50
+                  "x": -10,
+                  "y": 90
+                },
+                "portGroups": {
+                  "out:__all__": false
                 }
               }
             }
@@ -67,16 +65,6 @@
             "out_ports": {
               "enriched": {
                 "port_type": "any"
-              }
-            },
-            "meta": {
-              "ui": {
-                "id": "subnode-enrich",
-                "label": "Enrich",
-                "position": {
-                  "x": 350,
-                  "y": 50
-                }
               }
             }
           }
@@ -103,19 +91,21 @@
             "internal_port": "rejected"
           }
         },
-        "meta": {
+        "extra": {
           "ui": {
-            "id": "subgraph-inline",
-            "label": "InlineProcessor",
             "position": {
-              "x": 300,
-              "y": 50
+              "x": 60,
+              "y": -330
+            },
+            "dimensions": {
+              "width": 440,
+              "height": 310
             }
           }
-        }
+        },
+        "type": "subgraph"
       },
       {
-        "type": "subgraph",
         "name": "FileProcessor",
         "path": "./subgraph_internal.netrun.json",
         "exposed_in_ports": {
@@ -130,16 +120,15 @@
             "internal_port": "output"
           }
         },
-        "meta": {
+        "extra": {
           "ui": {
-            "id": "subgraph-file",
-            "label": "FileProcessor",
             "position": {
-              "x": 300,
-              "y": 250
+              "x": 400,
+              "y": 100
             }
           }
-        }
+        },
+        "type": "subgraph"
       },
       {
         "name": "Merger",
@@ -156,16 +145,15 @@
             "port_type": "any"
           }
         },
-        "meta": {
+        "extra": {
           "ui": {
-            "id": "node-merger",
-            "label": "Merger",
             "position": {
-              "x": 550,
-              "y": 150
+              "x": 600,
+              "y": 100
             }
           }
-        }
+        },
+        "type": "node"
       },
       {
         "name": "Sink",
@@ -174,17 +162,15 @@
             "port_type": "any"
           }
         },
-        "out_ports": {},
-        "meta": {
+        "extra": {
           "ui": {
-            "id": "node-sink",
-            "label": "Sink",
             "position": {
-              "x": 750,
-              "y": 150
+              "x": 800,
+              "y": 100
             }
           }
-        }
+        },
+        "type": "node"
       }
     ],
     "edges": [

@@ -34,9 +34,18 @@
 		pushHistory,
 		updateNodePositions,
 		graphExtra,
+		isExpandedChildNode,
+		getParentSubgraphId,
 		type NetrunNodeData,
 		type NetrunEdge
 	} from '$lib/stores/flowStore';
+	import {
+		expandedView,
+		updateExpandedChildPosition,
+		deleteExpandedChildren,
+		addExpandedChildEdge,
+		cleanupExpandedSubgraph,
+	} from '$lib/stores/subgraphExpandStore';
 	import {
 		isGroupHandle,
 		parseGroupHandleId,
@@ -83,20 +92,20 @@
 	}
 
 	// Derive nodes and edges with selection state applied
-	// This ensures SvelteFlow sees the correct selection even after data updates
+	// Uses expandedView which includes child nodes from expanded subgraphs
 	const nodesWithSelection = derived(
-		[nodes, selectedNodeIds],
-		([$nodes, $selectedNodeIds]) => $nodes.map(node => ({
+		[expandedView, selectedNodeIds],
+		([{ allNodes }, $selectedNodeIds]) => allNodes.map(node => ({
 			...node,
 			selected: $selectedNodeIds.has(node.id)
 		}))
 	);
 
 	const edgesWithSelection = derived(
-		[edges, selectedEdgeIds, edgeStyle, edgeMarkers],
-		([$edges, $selectedEdgeIds, $edgeStyle, $edgeMarkers]) => {
+		[expandedView, selectedEdgeIds, edgeStyle, edgeMarkers],
+		([{ allEdges }, $selectedEdgeIds, $edgeStyle, $edgeMarkers]) => {
 			const markers = getMarkers($edgeMarkers);
-			return $edges.map(edge => ({
+			return allEdges.map(edge => ({
 				...edge,
 				type: $edgeStyle,
 				markerStart: markers.markerStart,
@@ -160,35 +169,76 @@
 
 	// Handle new connections (for normal single-port connections)
 	function onConnect(connection: Connection) {
-		if (connection.source && connection.target) {
-			const markers = getMarkers(get(edgeMarkers));
-			const newEdge: NetrunEdge = {
-				id: generateEdgeId(),
+		if (!connection.source || !connection.target) return;
+
+		const srcIsChild = isExpandedChildNode(connection.source);
+		const tgtIsChild = isExpandedChildNode(connection.target);
+
+		if (srcIsChild && tgtIsChild) {
+			// Both are children — must be in same subgraph
+			const srcParent = getParentSubgraphId(connection.source);
+			const tgtParent = getParentSubgraphId(connection.target);
+			if (srcParent !== tgtParent) return; // Cross-subgraph not allowed
+
+			addExpandedChildEdge({
 				source: connection.source,
 				target: connection.target,
 				sourceHandle: connection.sourceHandle,
 				targetHandle: connection.targetHandle,
-				type: get(edgeStyle),
-				animated: false,
-				...markers
-			};
-			addEdgeToStore(newEdge);
+			});
+			return;
 		}
+
+		if (srcIsChild || tgtIsChild) {
+			// Mixed: one child, one parent-level — not allowed (must use subgraph ports)
+			return;
+		}
+
+		// Normal parent-level connection
+		const markers = getMarkers(get(edgeMarkers));
+		const newEdge: NetrunEdge = {
+			id: generateEdgeId(),
+			source: connection.source,
+			target: connection.target,
+			sourceHandle: connection.sourceHandle,
+			targetHandle: connection.targetHandle,
+			type: get(edgeStyle),
+			animated: false,
+			...markers
+		};
+		addEdgeToStore(newEdge);
 	}
 
 	// Handle deletion
 	// When deleting an edge whose ports on both sides belong to collapsed groups,
 	// delete all sibling edges between those two groups.
 	function onDelete(params: { nodes: Node[]; edges: Edge[] }) {
-		if (params.nodes.length > 0) {
-			deleteNodes(params.nodes.map(n => n.id));
+		// Separate child nodes/edges from parent-level ones
+		const childNodeIds = params.nodes.filter(n => isExpandedChildNode(n.id)).map(n => n.id);
+		const parentNodeIds = params.nodes.filter(n => !isExpandedChildNode(n.id)).map(n => n.id);
+		const childEdgeIds = params.edges.filter(e => isExpandedChildNode(e.id)).map(e => e.id);
+		const parentEdges = params.edges.filter(e => !isExpandedChildNode(e.id));
+
+		// Handle child deletions via expand store
+		if (childNodeIds.length > 0 || childEdgeIds.length > 0) {
+			deleteExpandedChildren(childNodeIds, childEdgeIds);
 		}
-		if (params.edges.length > 0) {
-			const edgeIdsToDelete = new Set<string>(params.edges.map(e => e.id));
+
+		// Handle parent-level node deletions
+		if (parentNodeIds.length > 0) {
+			// Clean up expansion state for any deleted subgraph nodes
+			for (const id of parentNodeIds) {
+				cleanupExpandedSubgraph(id);
+			}
+			deleteNodes(parentNodeIds);
+		}
+
+		if (parentEdges.length > 0) {
+			const edgeIdsToDelete = new Set<string>(parentEdges.map(e => e.id));
 			const currentNodes = get(nodes);
 			const currentEdges = get(edges);
 
-			for (const edge of params.edges) {
+			for (const edge of parentEdges) {
 				if (!edge.sourceHandle || !edge.targetHandle) continue;
 
 				const srcNode = currentNodes.find(n => n.id === edge.source);
@@ -246,12 +296,24 @@
 
 	// Handle node drag end - sync positions to store and push history
 	function onNodeDragStop(event: { nodes: Node[] }) {
-		// Update positions in our store
-		const updates = event.nodes.map(node => ({
-			id: node.id,
-			position: node.position
-		}));
-		updateNodePositions(updates);
+		// Separate child nodes from parent-level nodes
+		const childNodes = event.nodes.filter(n => isExpandedChildNode(n.id));
+		const parentNodes = event.nodes.filter(n => !isExpandedChildNode(n.id));
+
+		// Update child node positions via expand store
+		for (const node of childNodes) {
+			updateExpandedChildPosition(node.id, node.position);
+		}
+
+		// Update parent-level positions in our store
+		if (parentNodes.length > 0) {
+			const updates = parentNodes.map(node => ({
+				id: node.id,
+				position: node.position
+			}));
+			updateNodePositions(updates);
+		}
+
 		pushHistory();
 	}
 
