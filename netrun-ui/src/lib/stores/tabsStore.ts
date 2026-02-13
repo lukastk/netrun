@@ -324,6 +324,7 @@ export async function openSubgraphTab(nodeId: string, data: SubgraphNodeData): P
 			}
 		}
 		const basePath = rootTab.filePath || undefined;
+		const projectRoot = (rootTab.extraData as Record<string, unknown> | null)?.project_root as string | undefined;
 
 		// Determine if this is an inline or file-referenced subgraph
 		// subgraphConfig may have 'path' (file ref) or 'nodes' (inline)
@@ -338,7 +339,7 @@ export async function openSubgraphTab(nodeId: string, data: SubgraphNodeData): P
 		if (isFileReference) {
 			// Load from file - use path from config or source
 			const filePath = configPath || data.source;
-			const response = await api.loadSubgraph(filePath, undefined, basePath);
+			const response = await api.loadSubgraph(filePath, undefined, basePath, projectRoot);
 			nodes = response.nodes.map(node => ({
 				id: node.id,
 				type: node.type as 'netrunNode' | 'subgraphNode',
@@ -351,7 +352,7 @@ export async function openSubgraphTab(nodeId: string, data: SubgraphNodeData): P
 		} else if (isInline) {
 			// Load from inline config - may be empty if subgraph has no nodes yet
 			if (subgraphConfig && (configNodes || subgraphConfig.edges)) {
-				const response = await api.loadSubgraph(undefined, subgraphConfig, basePath);
+				const response = await api.loadSubgraph(undefined, subgraphConfig, basePath, projectRoot);
 				nodes = response.nodes.map(node => ({
 					id: node.id,
 					type: node.type as 'netrunNode' | 'subgraphNode',

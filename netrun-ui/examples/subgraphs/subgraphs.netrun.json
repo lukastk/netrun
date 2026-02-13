@@ -1,0 +1,182 @@
+{
+  "graph": {
+    "nodes": [
+      {
+        "name": "ingest",
+        "in_ports": {
+          "trigger": {}
+        },
+        "out_ports": {
+          "data": {}
+        },
+        "extra": {
+          "ui": {
+            "position": {
+              "x": 12,
+              "y": 123.5
+            }
+          }
+        },
+        "type": "node"
+      },
+      {
+        "name": "preprocess",
+        "path": "./preprocessing.netrun.json",
+        "exposed_in_ports": {
+          "raw": {
+            "internal_node": "clean",
+            "internal_port": "raw"
+          }
+        },
+        "exposed_out_ports": {
+          "out": {
+            "internal_node": "normalize",
+            "internal_port": "normalized"
+          }
+        },
+        "extra": {
+          "ui": {
+            "position": {
+              "x": 262,
+              "y": 12
+            },
+            "dimensions": {
+              "width": 540,
+              "height": 300
+            }
+          }
+        },
+        "type": "subgraph"
+      },
+      {
+        "name": "score",
+        "nodes": [
+          {
+            "name": "compute",
+            "in_ports": {
+              "input": {}
+            },
+            "out_ports": {
+              "value": {}
+            },
+            "extra": {
+              "ui": {
+                "position": {
+                  "x": 50,
+                  "y": 50
+                }
+              }
+            }
+          },
+          {
+            "name": "threshold",
+            "in_ports": {
+              "value": {}
+            },
+            "out_ports": {
+              "passed": {},
+              "rejected": {}
+            },
+            "extra": {
+              "ui": {
+                "position": {
+                  "x": 300,
+                  "y": 50
+                }
+              }
+            }
+          }
+        ],
+        "edges": [
+          {
+            "source_str": "compute.value",
+            "target_str": "threshold.value"
+          }
+        ],
+        "exposed_in_ports": {
+          "input": {
+            "internal_node": "compute",
+            "internal_port": "input"
+          }
+        },
+        "exposed_out_ports": {
+          "passed": {
+            "internal_node": "threshold",
+            "internal_port": "passed"
+          },
+          "rejected": {
+            "internal_node": "threshold",
+            "internal_port": "rejected"
+          }
+        },
+        "extra": {
+          "ui": {
+            "position": {
+              "x": 902,
+              "y": 12
+            },
+            "dimensions": {
+              "width": 540,
+              "height": 300
+            }
+          }
+        },
+        "type": "subgraph"
+      },
+      {
+        "name": "accept",
+        "in_ports": {
+          "data": {}
+        },
+        "out_ports": {
+          "result": {}
+        },
+        "extra": {
+          "ui": {
+            "position": {
+              "x": 1542,
+              "y": 29.333333333333343
+            }
+          }
+        },
+        "type": "node"
+      },
+      {
+        "name": "reject",
+        "in_ports": {
+          "data": {}
+        },
+        "out_ports": {
+          "result": {}
+        },
+        "extra": {
+          "ui": {
+            "position": {
+              "x": 1542,
+              "y": 186.33333333333334
+            }
+          }
+        },
+        "type": "node"
+      }
+    ],
+    "edges": [
+      {
+        "source_str": "ingest.data",
+        "target_str": "preprocess.raw"
+      },
+      {
+        "source_str": "preprocess.out",
+        "target_str": "score.input"
+      },
+      {
+        "source_str": "score.passed",
+        "target_str": "accept.data"
+      },
+      {
+        "source_str": "score.rejected",
+        "target_str": "reject.data"
+      }
+    ]
+  }
+}

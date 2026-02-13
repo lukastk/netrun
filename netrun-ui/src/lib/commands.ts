@@ -57,11 +57,17 @@ import {
 	hasClipboardContent,
 	extraData,
 	updateExtraData,
+	isExpandedChildNode,
 } from '$lib/stores/flowStore';
 import { showFactorySelector } from '$lib/stores/factorySelectorStore';
 import { get, derived } from 'svelte/store';
 import { resolveFilePath } from '$lib/stores/fileExplorerStore';
 import { showPrompt, showAlert, showConfirm } from '$lib/stores/modalStore';
+import {
+	toggleSubgraphExpansion,
+	expandAllSubgraphs,
+	collapseAllSubgraphs,
+} from '$lib/stores/subgraphExpandStore';
 
 // --- File Commands ---
 
@@ -527,6 +533,47 @@ const subgraphCommands: Command[] = [
 		},
 		enabled: () => get(selectedNodeIds).size >= 2,
 	},
+	{
+		id: 'subgraph.toggleExpand',
+		label: 'Toggle Subgraph Expansion',
+		category: 'subgraph',
+		keywords: ['expand', 'collapse', 'inline', 'preview'],
+		action: async () => {
+			const selected = get(selectedNode);
+			if (!selected || selected.data.nodeType !== 'subgraph') {
+				await showAlert({
+					title: 'No Subgraph Selected',
+					message: 'Select a subgraph node to toggle expansion.',
+				});
+				return;
+			}
+			await toggleSubgraphExpansion(selected.id);
+		},
+		enabled: () => {
+			const node = get(selectedNode);
+			return node !== null && node.data.nodeType === 'subgraph';
+		},
+	},
+	{
+		id: 'subgraph.expandAll',
+		label: 'Expand All Subgraphs',
+		category: 'subgraph',
+		keywords: ['expand', 'all', 'inline'],
+		action: async () => {
+			await expandAllSubgraphs();
+		},
+		enabled: () => get(nodes).some(n => n.data.nodeType === 'subgraph'),
+	},
+	{
+		id: 'subgraph.collapseAll',
+		label: 'Collapse All Subgraphs',
+		category: 'subgraph',
+		keywords: ['collapse', 'all'],
+		action: () => {
+			collapseAllSubgraphs();
+		},
+		enabled: () => get(nodes).some(n => n.data.nodeType === 'subgraph'),
+	},
 ];
 
 // --- Recipe Commands ---
@@ -610,8 +657,10 @@ const recipeStaticCommands: Command[] = [
 
 async function runLayout(algorithmId: string): Promise<void> {
 	const currentNodes = get(nodes);
-	if (currentNodes.length < 2) {
-		toasts.info(currentNodes.length === 0 ? 'No nodes to layout.' : 'Need at least 2 nodes to layout.');
+	// Filter out expanded child nodes - only layout parent-level nodes
+	const layoutNodes = currentNodes.filter(n => !isExpandedChildNode(n.id));
+	if (layoutNodes.length < 2) {
+		toasts.info(layoutNodes.length === 0 ? 'No nodes to layout.' : 'Need at least 2 nodes to layout.');
 		return;
 	}
 
@@ -629,8 +678,11 @@ async function runLayout(algorithmId: string): Promise<void> {
 		}
 	}
 
-	const currentEdges = get(edges);
-	const result = await computeLayout(currentNodes, currentEdges, algorithmId, nodeDimensions);
+	// Filter edges to only include parent-level edges
+	const currentEdges = get(edges).filter(e =>
+		!isExpandedChildNode(e.source) && !isExpandedChildNode(e.target)
+	);
+	const result = await computeLayout(layoutNodes, currentEdges, algorithmId, nodeDimensions);
 
 	pushHistory();
 	updateNodePositions(result.positions);
@@ -756,6 +808,7 @@ const keyboardShortcuts: ShortcutBinding[] = [
 
 	// Subgraph
 	{ key: 'g', metaKey: true, commandId: 'subgraph.create' },
+	{ key: 'e', metaKey: true, commandId: 'subgraph.toggleExpand' },
 
 	// Tab navigation
 	{ key: 'Tab', ctrlKey: true, commandId: 'tab.next' },
