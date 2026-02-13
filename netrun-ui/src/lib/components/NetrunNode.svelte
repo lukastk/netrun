@@ -130,7 +130,7 @@
 		border: 2px solid var(--node-border, #404040);
 		border-radius: 8px;
 		min-width: 150px;
-		font-size: var(--node-font-size, 12px);
+		font-size: var(--node-title-font-size, 12px);
 		width: 100%;
 		height: 100%;
 		box-sizing: border-box;
@@ -395,7 +395,7 @@
 		display: flex;
 		align-items: flex-start;
 		gap: 4px;
-		font-size: 10px;
+		font-size: var(--node-desc-font-size, 10px);
 		color: var(--text-secondary, #a0a0a0);
 		overflow: hidden;
 		width: 0;

@@ -332,12 +332,12 @@
 
 	.port-label {
 		color: var(--text-secondary, #a0a0a0);
-		font-size: 11px;
+		font-size: var(--node-port-font-size, 11px);
 	}
 
 	.port-type {
 		color: var(--text-secondary, #666);
-		font-size: 10px;
+		font-size: var(--node-port-font-size, 11px);
 		opacity: 0.7;
 	}
 
@@ -377,7 +377,7 @@
 
 	.group-name {
 		color: var(--text-primary, #fff);
-		font-size: 11px;
+		font-size: var(--node-port-font-size, 11px);
 		font-weight: 500;
 	}
 

@@ -79,10 +79,20 @@
 		return (ui?.maxZoom as number) ?? 4;
 	});
 
-	// Node font size from graph extra
-	const nodeFontSize = derived(graphExtra, ($graphExtra) => {
+	// Node font sizes from graph extra
+	const nodeTitleFontSize = derived(graphExtra, ($graphExtra) => {
 		const ui = ($graphExtra as Record<string, unknown>)?.ui as Record<string, unknown> | undefined;
-		return (ui?.nodeFontSize as number) ?? 12;
+		return (ui?.nodeTitleFontSize as number) ?? 12;
+	});
+
+	const nodeDescFontSize = derived(graphExtra, ($graphExtra) => {
+		const ui = ($graphExtra as Record<string, unknown>)?.ui as Record<string, unknown> | undefined;
+		return (ui?.nodeDescFontSize as number) ?? 10;
+	});
+
+	const nodePortFontSize = derived(graphExtra, ($graphExtra) => {
+		const ui = ($graphExtra as Record<string, unknown>)?.ui as Record<string, unknown> | undefined;
+		return (ui?.nodePortFontSize as number) ?? 11;
 	});
 
 	// Arrow marker configuration
@@ -416,7 +426,7 @@
 	}
 </script>
 
-<div class="flow-editor" style:--node-font-size="{$nodeFontSize}px">
+<div class="flow-editor" style:--node-title-font-size="{$nodeTitleFontSize}px" style:--node-desc-font-size="{$nodeDescFontSize}px" style:--node-port-font-size="{$nodePortFontSize}px">
 	<SvelteFlow
 		nodes={$nodesWithSelection}
 		edges={$edgesWithSelection}

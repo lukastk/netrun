@@ -1738,17 +1738,51 @@
 							/>
 						</div>
 						<div class="field">
-							<label for="node-font-size">Node Font Size (px)</label>
+							<label for="node-title-font-size">Title Font Size (px)</label>
 							<input
-								id="node-font-size"
+								id="node-title-font-size"
 								type="number"
 								min="6"
 								max="24"
 								step="1"
-								value={uiMeta.nodeFontSize ?? 12}
+								value={uiMeta.nodeTitleFontSize ?? 12}
 								onchange={(e) => {
 									updateGraphExtraLive({
-										ui: { ...uiMeta, nodeFontSize: parseFloat((e.target as HTMLInputElement).value) }
+										ui: { ...uiMeta, nodeTitleFontSize: parseFloat((e.target as HTMLInputElement).value) }
+									});
+									pushHistory();
+								}}
+							/>
+						</div>
+						<div class="field">
+							<label for="node-desc-font-size">Description Font Size (px)</label>
+							<input
+								id="node-desc-font-size"
+								type="number"
+								min="6"
+								max="24"
+								step="1"
+								value={uiMeta.nodeDescFontSize ?? 10}
+								onchange={(e) => {
+									updateGraphExtraLive({
+										ui: { ...uiMeta, nodeDescFontSize: parseFloat((e.target as HTMLInputElement).value) }
+									});
+									pushHistory();
+								}}
+							/>
+						</div>
+						<div class="field">
+							<label for="node-port-font-size">Port Font Size (px)</label>
+							<input
+								id="node-port-font-size"
+								type="number"
+								min="6"
+								max="24"
+								step="1"
+								value={uiMeta.nodePortFontSize ?? 11}
+								onchange={(e) => {
+									updateGraphExtraLive({
+										ui: { ...uiMeta, nodePortFontSize: parseFloat((e.target as HTMLInputElement).value) }
 									});
 									pushHistory();
 								}}
