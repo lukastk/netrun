@@ -24,6 +24,30 @@
 		return ui?.portGroups as Record<string, boolean> | undefined;
 	})());
 
+	let shape = $derived((() => {
+		const extra = (data._config?.extra ?? undefined) as Record<string, unknown> | undefined;
+		const ui = (extra?.ui ?? undefined) as Record<string, unknown> | undefined;
+		return (ui?.shape as string) ?? 'rectangle';
+	})());
+
+	let hideLabel = $derived((() => {
+		const extra = (data._config?.extra ?? undefined) as Record<string, unknown> | undefined;
+		const ui = (extra?.ui ?? undefined) as Record<string, unknown> | undefined;
+		return (ui?.hideLabel as boolean) ?? false;
+	})());
+
+	let hideDescription = $derived((() => {
+		const extra = (data._config?.extra ?? undefined) as Record<string, unknown> | undefined;
+		const ui = (extra?.ui ?? undefined) as Record<string, unknown> | undefined;
+		return (ui?.hideDescription as boolean) ?? false;
+	})());
+
+	let hidePortNames = $derived((() => {
+		const extra = (data._config?.extra ?? undefined) as Record<string, unknown> | undefined;
+		const ui = (extra?.ui ?? undefined) as Record<string, unknown> | undefined;
+		return (ui?.hidePortNames as boolean) ?? false;
+	})());
+
 	function handleResizeEnd(_event: unknown, params: { x: number; y: number; width: number; height: number }) {
 		updateNodeDimensions([{
 			id,
@@ -36,7 +60,7 @@
 </script>
 
 <div
-	class="netrun-node"
+	class="netrun-node shape-{shape}"
 	class:selected
 	class:factory={data.nodeType === 'factory'}
 	class:invalid={data.isValid === false}
@@ -49,15 +73,17 @@
 		onResizeEnd={handleResizeEnd}
 	/>
 	<!-- Header -->
-	<div class="node-header">
-		{#if data.nodeType === 'factory'}
-			<span class="factory-badge">F</span>
-		{/if}
-		<span class="node-label">{data.label}</span>
-	</div>
+	{#if !hideLabel}
+		<div class="node-header">
+			{#if data.nodeType === 'factory'}
+				<span class="factory-badge">F</span>
+			{/if}
+			<span class="node-label">{data.label}</span>
+		</div>
+	{/if}
 
 	<!-- Description -->
-	{#if data.description}
+	{#if data.description && !hideDescription}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="node-description" onclick={() => toggleNodeDescExpanded(id)}>
 			<span class="desc-chevron" class:expanded={descExpanded}>&#9656;</span>
@@ -71,8 +97,8 @@
 
 	<!-- Ports container -->
 	<div class="ports-container">
-		<PortList nodeId={id} ports={data.inPorts} side="in" {portGroupStates} />
-		<PortList nodeId={id} ports={data.outPorts} side="out" {portGroupStates} />
+		<PortList nodeId={id} ports={data.inPorts} side="in" {portGroupStates} {hidePortNames} />
+		<PortList nodeId={id} ports={data.outPorts} side="out" {portGroupStates} {hidePortNames} />
 	</div>
 
 	<!-- Validation errors -->
@@ -106,6 +132,219 @@
 
 	.netrun-node.invalid {
 		border-color: var(--error-color, #ef4444);
+	}
+
+	/* ── Shape: rounded ─────────────────────────────── */
+	.netrun-node.shape-rounded {
+		border-radius: 16px;
+	}
+	.netrun-node.shape-rounded .node-header {
+		border-radius: 14px 14px 0 0;
+	}
+
+	/* ── Shape: pill / stadium ──────────────────────── */
+	.netrun-node.shape-pill {
+		border-radius: 999px;
+	}
+	.netrun-node.shape-pill .node-header {
+		background: transparent;
+		border-bottom: none;
+		border-radius: 0;
+		justify-content: center;
+	}
+	.netrun-node.shape-pill .ports-container {
+		padding-left: 16px;
+		padding-right: 16px;
+	}
+
+	/* ── Shape: diamond ─────────────────────────────── */
+	.netrun-node.shape-diamond {
+		background: transparent;
+		border-color: transparent;
+		position: relative;
+		overflow: visible;
+	}
+	.netrun-node.shape-diamond::before {
+		content: '';
+		position: absolute;
+		inset: -2px;
+		clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+		background: var(--node-border, #404040);
+		z-index: -2;
+	}
+	.netrun-node.shape-diamond::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+		background: var(--node-bg, #2d2d2d);
+		z-index: -1;
+	}
+	.netrun-node.shape-diamond.selected::before {
+		background: var(--node-selected, #3b82f6);
+	}
+	.netrun-node.shape-diamond.invalid::before {
+		background: var(--error-color, #ef4444);
+	}
+	.netrun-node.shape-diamond .node-header {
+		background: transparent;
+		border-bottom: none;
+		border-radius: 0;
+		justify-content: center;
+	}
+	.netrun-node.shape-diamond .ports-container {
+		padding: 0 25%;
+	}
+
+	/* ── Shape: hexagon ─────────────────────────────── */
+	.netrun-node.shape-hexagon {
+		background: transparent;
+		border-color: transparent;
+		position: relative;
+		overflow: visible;
+	}
+	.netrun-node.shape-hexagon::before {
+		content: '';
+		position: absolute;
+		inset: -2px;
+		clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+		background: var(--node-border, #404040);
+		z-index: -2;
+	}
+	.netrun-node.shape-hexagon::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+		background: var(--node-bg, #2d2d2d);
+		z-index: -1;
+	}
+	.netrun-node.shape-hexagon.selected::before {
+		background: var(--node-selected, #3b82f6);
+	}
+	.netrun-node.shape-hexagon.invalid::before {
+		background: var(--error-color, #ef4444);
+	}
+	.netrun-node.shape-hexagon .node-header {
+		background: transparent;
+		border-bottom: none;
+		border-radius: 0;
+		justify-content: center;
+	}
+	.netrun-node.shape-hexagon .ports-container {
+		padding: 0 15%;
+	}
+
+	/* ── Shape: cylinder ────────────────────────────── */
+	.netrun-node.shape-cylinder {
+		border-radius: 50% / 12px;
+		position: relative;
+		padding-bottom: 10px;
+	}
+	.netrun-node.shape-cylinder .node-header {
+		border-radius: 50% 50% 0 0 / 12px 12px 0 0;
+	}
+	.netrun-node.shape-cylinder::after {
+		content: '';
+		position: absolute;
+		bottom: -2px;
+		left: -2px;
+		right: -2px;
+		height: 16px;
+		border-radius: 0 0 50% 50% / 0 0 100% 100%;
+		border: 2px solid var(--node-border, #404040);
+		border-top: none;
+		background: var(--node-bg, #2d2d2d);
+	}
+	.netrun-node.shape-cylinder.selected::after {
+		border-color: var(--node-selected, #3b82f6);
+	}
+	.netrun-node.shape-cylinder.invalid::after {
+		border-color: var(--error-color, #ef4444);
+	}
+
+	/* ── Shape: triangle-right ──────────────────────── */
+	.netrun-node.shape-triangle-right {
+		background: transparent;
+		border-color: transparent;
+		position: relative;
+		overflow: visible;
+	}
+	.netrun-node.shape-triangle-right::before {
+		content: '';
+		position: absolute;
+		inset: -2px;
+		clip-path: polygon(0% 0%, 100% 50%, 0% 100%);
+		background: var(--node-border, #404040);
+		z-index: -2;
+	}
+	.netrun-node.shape-triangle-right::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		clip-path: polygon(0% 0%, 100% 50%, 0% 100%);
+		background: var(--node-bg, #2d2d2d);
+		z-index: -1;
+	}
+	.netrun-node.shape-triangle-right.selected::before {
+		background: var(--node-selected, #3b82f6);
+	}
+	.netrun-node.shape-triangle-right.invalid::before {
+		background: var(--error-color, #ef4444);
+	}
+	.netrun-node.shape-triangle-right .node-header {
+		background: transparent;
+		border-bottom: none;
+		border-radius: 0;
+	}
+	.netrun-node.shape-triangle-right .ports-container {
+		padding-right: 30%;
+	}
+	/* Move output handles to the triangle tip */
+	:global(.netrun-node.shape-triangle-right .svelte-flow__handle-right) {
+		right: -1px;
+	}
+
+	/* ── Shape: triangle-left ───────────────────────── */
+	.netrun-node.shape-triangle-left {
+		background: transparent;
+		border-color: transparent;
+		position: relative;
+		overflow: visible;
+	}
+	.netrun-node.shape-triangle-left::before {
+		content: '';
+		position: absolute;
+		inset: -2px;
+		clip-path: polygon(100% 0%, 0% 50%, 100% 100%);
+		background: var(--node-border, #404040);
+		z-index: -2;
+	}
+	.netrun-node.shape-triangle-left::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		clip-path: polygon(100% 0%, 0% 50%, 100% 100%);
+		background: var(--node-bg, #2d2d2d);
+		z-index: -1;
+	}
+	.netrun-node.shape-triangle-left.selected::before {
+		background: var(--node-selected, #3b82f6);
+	}
+	.netrun-node.shape-triangle-left.invalid::before {
+		background: var(--error-color, #ef4444);
+	}
+	.netrun-node.shape-triangle-left .node-header {
+		background: transparent;
+		border-bottom: none;
+		border-radius: 0;
+	}
+	.netrun-node.shape-triangle-left .ports-container {
+		padding-left: 30%;
+	}
+	/* Move input handles to the triangle tip */
+	:global(.netrun-node.shape-triangle-left .svelte-flow__handle-left) {
+		left: -1px;
 	}
 
 	.netrun-node.factory .node-header {
