@@ -151,20 +151,20 @@
 		</div>
 	{/if}
 
-	{#if !isExpanded}
-		<!-- Description (collapsed view only) -->
-		{#if data.description && !hideDescription}
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<div class="node-description" onclick={(e) => { e.stopPropagation(); toggleNodeDescExpanded(id); }}>
-				<span class="desc-chevron" class:expanded={descExpanded}>&#9656;</span>
-				{#if descExpanded}
-					<span class="desc-content">{data.description}</span>
-				{:else}
-					<span class="desc-preview">{data.description.split('\n')[0]}</span>
-				{/if}
-			</div>
-		{/if}
+	<!-- Description (shown in both collapsed and expanded views) -->
+	{#if data.description && !hideDescription}
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="node-description" onclick={(e) => { e.stopPropagation(); toggleNodeDescExpanded(id); }}>
+			<span class="desc-chevron" class:expanded={descExpanded}>&#9656;</span>
+			{#if descExpanded}
+				<span class="desc-content">{data.description}</span>
+			{:else}
+				<span class="desc-preview">{data.description.split('\n')[0]}</span>
+			{/if}
+		</div>
+	{/if}
 
+	{#if !isExpanded}
 		<!-- Ports container (collapsed view) -->
 		<div class="ports-container">
 			<PortList nodeId={id} ports={data.inPorts} side="in" {portGroupStates} {hidePortNames} />
