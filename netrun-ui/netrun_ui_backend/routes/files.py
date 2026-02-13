@@ -330,6 +330,9 @@ async def load_subgraph(request: SubgraphLoadRequest) -> SubgraphLoadResponse:
             if not path.is_absolute():
                 if request.project_root:
                     base_dir = Path(request.project_root)
+                    # Relative project_root must be resolved against the config file's directory
+                    if not base_dir.is_absolute() and request.base_path:
+                        base_dir = (Path(request.base_path).parent / base_dir).resolve()
                 elif request.base_path:
                     base_dir = Path(request.base_path).parent
                 else:
