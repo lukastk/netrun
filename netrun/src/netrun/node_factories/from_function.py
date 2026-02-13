@@ -380,13 +380,14 @@ def _create_exec_func(func: Callable, parsed_sig: _ParsedSignature, manual_outpu
         """Route function result to output ports and send salvo."""
         if parsed_sig.out_ports:
             if len(parsed_sig.out_ports) == 1:
-                # Single output port - send result directly
+                # Single output port - unwrap dict if keyed by port name
                 port_name = list(parsed_sig.out_ports.keys())[0]
+                value = result[port_name] if isinstance(result, dict) and port_name in result else result
                 if port_name in parsed_sig.packet_ports:
-                    # PreCreatedPacket: result is already a packet ID
-                    ctx.load_output_port(port_name, result)
+                    # PreCreatedPacket: value is already a packet ID
+                    ctx.load_output_port(port_name, value)
                 else:
-                    packet_id = ctx.create_packet(result)
+                    packet_id = ctx.create_packet(value)
                     ctx.load_output_port(port_name, packet_id)
             else:
                 # Multiple output ports - result must be a dict
