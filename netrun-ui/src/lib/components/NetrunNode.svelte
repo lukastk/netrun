@@ -130,7 +130,7 @@
 		border: 2px solid var(--node-border, #404040);
 		border-radius: 8px;
 		min-width: 150px;
-		font-size: 12px;
+		font-size: var(--node-font-size, 12px);
 		width: 100%;
 		height: 100%;
 		box-sizing: border-box;

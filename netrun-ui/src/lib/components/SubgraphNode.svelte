@@ -210,7 +210,7 @@
 		border: 2px solid var(--subgraph-border, #22c55e);
 		border-radius: 8px;
 		min-width: 160px;
-		font-size: 12px;
+		font-size: var(--node-font-size, 12px);
 		width: 100%;
 		height: 100%;
 		box-sizing: border-box;
