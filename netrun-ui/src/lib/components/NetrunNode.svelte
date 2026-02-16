@@ -60,6 +60,12 @@
 		return (ui?.fontColor as string) ?? null;
 	})());
 
+	// True when the pointy side of a triangle has exactly 1 port
+	let singleTipPort = $derived(
+		(shape === 'triangle-right' && data.outPorts.length === 1) ||
+		(shape === 'triangle-left' && data.inPorts.length === 1)
+	);
+
 	function handleResizeEnd(_event: unknown, params: { x: number; y: number; width: number; height: number }) {
 		updateNodeDimensions([{
 			id,
@@ -76,6 +82,7 @@
 	class:selected
 	class:factory={data.nodeType === 'factory'}
 	class:invalid={data.isValid === false}
+	class:single-tip-port={singleTipPort}
 	style:background={headerColor ? headerColor + '22' : undefined}
 >
 	<NodeResizer
@@ -319,6 +326,13 @@
 	.netrun-node.shape-triangle-right .ports-container {
 		padding-right: 30%;
 	}
+	/* Single output handle on the pointy (right) side: pin to the tip */
+	.netrun-node.shape-triangle-right.single-tip-port :global(.out-ports .port-row) {
+		position: static;
+	}
+	.netrun-node.shape-triangle-right.single-tip-port :global(.out-ports .svelte-flow__handle-right:not(.hidden-handle)) {
+		top: 50% !important;
+	}
 
 	/* ── Shape: triangle-left ───────────────────────── */
 	.netrun-node.shape-triangle-left {
@@ -356,6 +370,13 @@
 	}
 	.netrun-node.shape-triangle-left .ports-container {
 		padding-left: 30%;
+	}
+	/* Single input handle on the pointy (left) side: pin to the tip */
+	.netrun-node.shape-triangle-left.single-tip-port :global(.in-ports .port-row) {
+		position: static;
+	}
+	.netrun-node.shape-triangle-left.single-tip-port :global(.in-ports .svelte-flow__handle-left:not(.hidden-handle)) {
+		top: 50% !important;
 	}
 
 	.netrun-node.factory .node-header {
