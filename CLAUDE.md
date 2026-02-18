@@ -266,7 +266,7 @@ A factory module must export exactly **two functions**:
 - Can capture `factory_args` in closures (functions are resolved on each worker)
 - Not needed for subgraph factories
 
-The `_net_config` parameter provides access to the full `NetConfig`, enabling factories to resolve relative file paths against `project_root`. The underscore prefix signals it is internal and not user-facing. It is filtered from CLI `factory-info` output and UI parameter displays.
+The `_net_config` parameter provides access to the full `NetConfig`, enabling factories to resolve relative file paths against `project_root_path`. The underscore prefix signals it is internal and not user-facing. It is filtered from CLI `factory-info` output and UI parameter displays.
 
 #### Resolution Lifecycle
 

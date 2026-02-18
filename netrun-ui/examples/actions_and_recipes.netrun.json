@@ -1,5 +1,5 @@
 {
-  "project_root": ".",
+  "project_root_override": "../",
   "recipes": {
     "add_greeter_node": {
       "path": "./recipes/add_greeter_node.py",

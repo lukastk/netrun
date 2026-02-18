@@ -173,21 +173,21 @@
 		allNodeVariables: false,
 	});
 
-	// Env var mode for project_root
+	// Env var mode for project_root_override
 	let projectRootEnvMode = $state(false);
 	$effect(() => {
 		const ed = $extraData as Record<string, unknown> | null;
-		projectRootEnvMode = isEnvVar(ed?.project_root);
+		projectRootEnvMode = isEnvVar(ed?.project_root_override);
 	});
 
 	function toggleProjectRootEnvMode() {
 		const ed = ($extraData as Record<string, unknown>) ?? {};
 		if (projectRootEnvMode) {
-			const def = isEnvVar(ed.project_root) ? getEnvVarDefault(ed.project_root) : null;
-			updateExtraDataLive({ project_root: def || undefined });
+			const def = isEnvVar(ed.project_root_override) ? getEnvVarDefault(ed.project_root_override) : null;
+			updateExtraDataLive({ project_root_override: def || undefined });
 		} else {
-			const current = typeof ed.project_root === 'string' ? ed.project_root : null;
-			updateExtraDataLive({ project_root: makeEnvVar('', current) });
+			const current = typeof ed.project_root_override === 'string' ? ed.project_root_override : null;
+			updateExtraDataLive({ project_root_override: makeEnvVar('', current) });
 		}
 		projectRootEnvMode = !projectRootEnvMode;
 		pushHistory();
@@ -406,7 +406,7 @@
 		lastFactoryPath = factoryPath;
 
 		try {
-			const projectRoot = ($extraData as Record<string, unknown>)?.project_root as string | undefined;
+			const projectRoot = ($extraData as Record<string, unknown>)?.project_root_override as string | undefined;
 			const response = await api.getFactorySignature(factoryPath, projectRoot);
 			factoryParams = response.parameters;
 		} catch (e) {
@@ -1427,7 +1427,7 @@
 							></textarea>
 						</div>
 						<div class="field">
-							<label for="project-root">Project Root{#if descNet('project_root')}<span class="has-tooltip-icon" use:tooltip={descNet('project_root')}>?</span>{/if}
+							<label for="project-root">Project Root{#if descNet('project_root_override')}<span class="has-tooltip-icon" use:tooltip={descNet('project_root_override')}>?</span>{/if}
 								<button
 									class="envvar-toggle"
 									class:active={projectRootEnvMode}
@@ -1436,7 +1436,7 @@
 								>$</button>
 							</label>
 							{#if projectRootEnvMode}
-								{@const prVal = ($extraData as Record<string, unknown>)?.project_root}
+								{@const prVal = ($extraData as Record<string, unknown>)?.project_root_override}
 								<div class="envvar-input-group">
 									<div class="envvar-name-row">
 										<span class="envvar-prefix">$</span>
@@ -1448,7 +1448,7 @@
 											oninput={(e) => {
 												const name = (e.target as HTMLInputElement).value;
 												const def = isEnvVar(prVal) ? getEnvVarDefault(prVal) : null;
-												updateExtraDataLive({ project_root: makeEnvVar(name, def) });
+												updateExtraDataLive({ project_root_override: makeEnvVar(name, def) });
 											}}
 											onblur={() => pushHistory()}
 										/>
@@ -1463,7 +1463,7 @@
 											oninput={(e) => {
 												const def = (e.target as HTMLInputElement).value || null;
 												const name = isEnvVar(prVal) ? getEnvVarName(prVal) : '';
-												updateExtraDataLive({ project_root: makeEnvVar(name, def) });
+												updateExtraDataLive({ project_root_override: makeEnvVar(name, def) });
 											}}
 											onblur={() => pushHistory()}
 										/>
@@ -1473,8 +1473,8 @@
 								<input
 									id="project-root"
 									type="text"
-									value={String(($extraData as Record<string, unknown>)?.project_root ?? '')}
-									oninput={(e) => updateExtraDataLive({ project_root: (e.target as HTMLInputElement).value || undefined })}
+									value={String(($extraData as Record<string, unknown>)?.project_root_override ?? '')}
+									oninput={(e) => updateExtraDataLive({ project_root_override: (e.target as HTMLInputElement).value || undefined })}
 									onblur={() => pushHistory()}
 									placeholder="./ (relative to net file)"
 									class="mono"
@@ -1485,7 +1485,7 @@
 									Save file first to see resolved path
 								{:else}
 									{@const fileDir = $currentFilePath.replace(/\/[^/]*$/, '')}
-									{@const prVal = ($extraData as Record<string, unknown>)?.project_root}
+									{@const prVal = ($extraData as Record<string, unknown>)?.project_root_override}
 									{#if projectRootEnvMode}
 										Resolves from <code>{fileDir}/</code> (+ env var)
 									{:else}

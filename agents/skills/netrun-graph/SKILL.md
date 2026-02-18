@@ -78,7 +78,7 @@ External edges connect to exposed ports: `"source_str": "source.out", "target_st
 }
 ```
 
-The `path` is relative to `project_root`. The referenced file contains `nodes` and `edges` arrays.
+The `path` is relative to `project_root_override`. The referenced file contains `nodes` and `edges` arrays.
 
 ### Factory-Generated Subgraph
 

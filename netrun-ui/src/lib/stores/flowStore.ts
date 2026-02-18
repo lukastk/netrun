@@ -2150,7 +2150,7 @@ export async function updateFactoryNodePreview(nodeId: string): Promise<void> {
 	}
 
 	try {
-		const projectRoot = (tab.extraData as Record<string, unknown>)?.project_root as string | undefined;
+		const projectRoot = (tab.extraData as Record<string, unknown>)?.project_root_override as string | undefined;
 		const preview = await api.previewFactory(
 			node.data.factory,
 			node.data.factoryArgs || {},

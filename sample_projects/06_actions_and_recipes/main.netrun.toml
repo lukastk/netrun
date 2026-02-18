@@ -3,7 +3,7 @@
 # project-level and node-level env, recipes with all prompt types,
 # file-path imports (./nodes.py::func syntax)
 
-project_root = "."
+project_root_override = "."
 
 # --- Recipes ---
 [recipes.add_node]

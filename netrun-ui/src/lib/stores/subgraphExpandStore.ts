@@ -119,7 +119,7 @@ async function loadSubgraphContent(
 		else break;
 	}
 	const basePath = rootTab.filePath || undefined;
-	const projectRoot = (rootTab.extraData as Record<string, unknown> | null)?.project_root as string | undefined;
+	const projectRoot = (rootTab.extraData as Record<string, unknown> | null)?.project_root_override as string | undefined;
 
 	const configPath = subgraphConfig?.path as string | undefined;
 	const configNodes = subgraphConfig?.nodes as unknown[] | undefined;

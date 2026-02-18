@@ -48,7 +48,7 @@ asyncio.run(main())
 
 - Files: `.netrun.json` or `.netrun.toml`. Load via `NetConfig.from_file(path)`.
 - Convert: `netrun convert file.netrun.json -o file.netrun.toml`
-- `project_root` defaults to the config file's directory; controls relative path resolution.
+- `project_root_override` defaults to the config file's directory; controls relative path resolution.
 - **Env vars**: Any field accepts `{"$env": "VAR", "default": val}` (JSON) or `{"$env" = "VAR", default = val}` (TOML).
 
 ## Function Factory
@@ -61,7 +61,7 @@ asyncio.run(main())
 - **Batch input**: `data: list[str]` consumes all packets at that port.
 - **Port groups**: dot notation in keys (`"features.color"`) creates UI groups.
 - **`_node_config`**: attach as attribute (TOML string, dict, or NodeConfig) for extra metadata.
-- **Import formats**: `"nodes.func"` (dotted) or `"./nodes.py::func"` (file-path, relative to `project_root`).
+- **Import formats**: `"nodes.func"` (dotted) or `"./nodes.py::func"` (file-path, relative to `project_root_override`).
 - **Factory args**: `func` (required), `include_port_types` (default true), `manual_output` (default false).
 
 ## Graph

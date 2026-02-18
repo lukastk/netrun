@@ -37,14 +37,14 @@ export interface ActionExecution {
 // Store for tracking action execution state
 export const actionExecutions = writable<Map<string, ActionExecution>>(new Map());
 
-// Derived: get action settings from extraData (project_root) and graph meta (rest)
+// Derived: get action settings from extraData (project_root_override) and graph meta (rest)
 export const actionSettings = derived(
 	[graphExtra, extraData],
 	([$graphExtra, $extraData]): ActionSettings => {
 		const ui = ($graphExtra as Record<string, unknown>)?.ui as Record<string, unknown> | undefined;
 		const extra = $extraData as Record<string, unknown> | null;
-		// project_root: prefer extraData.project_root, fall back to legacy graphExtra.ui.projectRoot
-		const projectRoot = (extra?.project_root as string | undefined) ?? (ui?.projectRoot as string | undefined);
+		// project_root_override: prefer extraData.project_root_override, fall back to legacy graphExtra.ui.projectRoot
+		const projectRoot = (extra?.project_root_override as string | undefined) ?? (ui?.projectRoot as string | undefined);
 		return {
 			projectRoot,
 			defaultCmd: ui?.defaultCmd as string | undefined,
@@ -153,9 +153,9 @@ export function updateActionSettings(updates: Partial<ActionSettings>): void {
 	const graphExtraVal = get(graphExtra) || {};
 	const ui = (graphExtraVal as Record<string, unknown>).ui as Record<string, unknown> || {};
 
-	// projectRoot is stored in extraData.project_root (top-level NetConfig field)
+	// projectRoot is stored in extraData.project_root_override (top-level NetConfig field)
 	if (updates.projectRoot !== undefined) {
-		updateExtraDataLive({ project_root: updates.projectRoot || undefined });
+		updateExtraDataLive({ project_root_override: updates.projectRoot || undefined });
 		// Remove legacy key from graphExtra.ui if present
 		if ('projectRoot' in ui) {
 			const { projectRoot: _, ...restUi } = ui;

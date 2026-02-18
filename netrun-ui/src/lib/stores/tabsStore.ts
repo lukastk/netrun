@@ -340,7 +340,7 @@ export async function openSubgraphTab(nodeId: string, data: SubgraphNodeData): P
 			}
 		}
 		const basePath = rootTab.filePath || undefined;
-		const projectRoot = (rootTab.extraData as Record<string, unknown> | null)?.project_root as string | undefined;
+		const projectRoot = (rootTab.extraData as Record<string, unknown> | null)?.project_root_override as string | undefined;
 
 		// Determine if this is an inline or file-referenced subgraph
 		// subgraphConfig may have 'path' (file ref) or 'nodes' (inline)
