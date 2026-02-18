@@ -320,14 +320,15 @@ export async function resolveCommand(command: string): Promise<string> {
 			...(node.data.nodeType !== 'subgraph' && (node.data as any)._config ? { _config: (node.data as any)._config } : {}),
 		}) : undefined;
 
+		// For preview, pass $VAR_NAME as fallback so unresolved vars stay visible
 		const result = await api.resolveTemplate(command, {
-			node_name: node?.data.label,
-			net_file_path: filePath || undefined,
-			project_root: settings.projectRoot,
-			default_cmd: settings.defaultCmd,
+			node_name: node?.data.label || '$NODE_NAME',
+			net_file_path: filePath || '$NET_FILE_PATH',
+			project_root: settings.projectRoot || '$PROJECT_ROOT',
+			default_cmd: settings.defaultCmd || '$DEFAULT_CMD',
 			env: settings.env,
 			node_env: nodeEnvVars,
-			node_config: nodeConfig,
+			node_config: nodeConfig || '$NODE_CONFIG',
 		});
 		return result.resolved;
 	} catch {
