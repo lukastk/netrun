@@ -361,7 +361,7 @@ def test_single_output_dict_return_unwrapped():
             await net.run_until_blocked()
             return received
 
-    result = asyncio.get_event_loop().run_until_complete(_run())
+    result = asyncio.run(_run())
     # Consumer should receive the unwrapped value, not the full dict
     assert result["data"] == {"key": "value"}
 
@@ -402,7 +402,7 @@ def test_single_output_plain_return_unchanged():
             await net.run_until_blocked()
             return received
 
-    result = asyncio.get_event_loop().run_until_complete(_run())
+    result = asyncio.run(_run())
     assert result["out"] == 42
 
 # %%
