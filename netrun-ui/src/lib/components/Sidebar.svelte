@@ -46,6 +46,7 @@
 	import ActionsPanel from './ActionsPanel.svelte';
 	import ProjectSettings from './ProjectSettings.svelte';
 	import ActionEditor from './ActionEditor.svelte';
+	import RecipeEditor from './RecipeEditor.svelte';
 	import TextInputModal from './TextInputModal.svelte';
 	import {
 		projectActions,
@@ -65,6 +66,13 @@
 	} from '$lib/stores/variablesStore';
 	import NodeVariablesSection from './NodeVariablesSection.svelte';
 	import AllNodeVariablesSection from './AllNodeVariablesSection.svelte';
+	import {
+		recipes,
+		addRecipe,
+		updateRecipe,
+		removeRecipe,
+		type RecipeDefinition,
+	} from '$lib/stores/recipeStore';
 	import { unregisteredFields, configSchema, getFieldDescription } from '$lib/stores/schemaStore';
 	import { tooltip } from '$lib/utils/tooltip';
 	import { isEnvVar, makeEnvVar, getEnvVarName, getEnvVarDefault } from '$lib/utils/envvar';
@@ -105,6 +113,11 @@
 	let showActionEditor = $state(false);
 	let editingAction = $state<Action | null>(null);
 	let editingNodeAction = $state(false); // true = node-level, false = project-level
+
+	// Modal state for recipes
+	let showRecipeEditor = $state(false);
+	let editingRecipeName = $state<string | null>(null);
+	let editingRecipeDefinition = $state<RecipeDefinition | null>(null);
 
 	// Modal state for factory creation
 	let showAddFactoryModal = $state(false);
@@ -148,6 +161,28 @@
 		showActionEditor = false;
 		editingAction = null;
 		editingNodeAction = false;
+	}
+
+	// Handle recipe editor save
+	function handleSaveRecipe(name: string, definition: RecipeDefinition) {
+		if (editingRecipeName) {
+			updateRecipe(editingRecipeName, name, definition);
+		} else {
+			addRecipe(name, definition);
+		}
+		showRecipeEditor = false;
+		editingRecipeName = null;
+		editingRecipeDefinition = null;
+	}
+
+	// Handle recipe delete
+	function handleDeleteRecipe() {
+		if (editingRecipeName) {
+			removeRecipe(editingRecipeName);
+		}
+		showRecipeEditor = false;
+		editingRecipeName = null;
+		editingRecipeDefinition = null;
 	}
 
 	// Collapsible sections state
@@ -1862,6 +1897,48 @@
 					Add Action
 				</button>
 			</div>
+
+			<!-- Recipes bottom panel -->
+			<div class="actions-footer">
+				<div class="actions-footer-header">
+					<span class="actions-footer-title">Recipes</span>
+				</div>
+
+				<div class="actions-footer-list">
+					{#if Object.keys($recipes).length === 0}
+						<div class="actions-footer-empty">
+							No recipes defined.
+						</div>
+					{:else}
+						{#each Object.entries($recipes) as [rName, rDef] (rName)}
+							<div class="actions-footer-item">
+								<span class="actions-footer-item-label">{rName}</span>
+								<button
+									class="actions-footer-edit-btn"
+									onclick={() => { editingRecipeName = rName; editingRecipeDefinition = rDef; showRecipeEditor = true; }}
+									title="Edit recipe"
+								>
+									<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+										<path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+										<path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
+									</svg>
+								</button>
+							</div>
+						{/each}
+					{/if}
+				</div>
+
+				<button
+					class="actions-footer-add-btn"
+					onclick={() => { editingRecipeName = null; editingRecipeDefinition = null; showRecipeEditor = true; }}
+				>
+					<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+						<line x1="12" y1="5" x2="12" y2="19"/>
+						<line x1="5" y1="12" x2="19" y2="12"/>
+					</svg>
+					Add Recipe
+				</button>
+			</div>
 		{/if}
 	</div>
 </aside>
@@ -1878,6 +1955,17 @@
 		onSave={handleSaveAction}
 		onCancel={() => { showActionEditor = false; editingAction = null; }}
 		onDelete={editingAction ? handleDeleteAction : undefined}
+	/>
+{/if}
+
+{#if showRecipeEditor}
+	<RecipeEditor
+		recipeName={editingRecipeName}
+		recipeDefinition={editingRecipeDefinition}
+		existingNames={Object.keys($recipes)}
+		onSave={handleSaveRecipe}
+		onCancel={() => { showRecipeEditor = false; editingRecipeName = null; editingRecipeDefinition = null; }}
+		onDelete={editingRecipeName ? handleDeleteRecipe : undefined}
 	/>
 {/if}
 
