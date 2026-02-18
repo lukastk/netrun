@@ -21,6 +21,7 @@
 
 	import NetrunNodeComponent from './NetrunNode.svelte';
 	import SubgraphNodeComponent from './SubgraphNode.svelte';
+	import DecorationNodeComponent from './DecorationNode.svelte';
 	import {
 		nodes,
 		edges,
@@ -145,7 +146,8 @@
 	// Register custom node types
 	const nodeTypes: NodeTypes = {
 		netrunNode: NetrunNodeComponent,
-		subgraphNode: SubgraphNodeComponent
+		subgraphNode: SubgraphNodeComponent,
+		decorationNode: DecorationNodeComponent,
 	};
 
 	/**
@@ -462,6 +464,7 @@
 		<Controls />
 		<MiniMap
 			nodeColor={(node) => {
+				if (node.data?.nodeType === 'decoration') return '#6b7280';
 				if (node.data?.nodeType === 'subgraph') return '#22c55e';
 				if (node.data?.nodeType === 'factory') return '#7c3aed';
 				return '#3b82f6';

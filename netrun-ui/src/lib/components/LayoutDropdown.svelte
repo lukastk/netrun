@@ -20,8 +20,10 @@
 		isOpen = false;
 
 		const currentNodes = get(nodes);
-		if (currentNodes.length < 2) {
-			toasts.info(currentNodes.length === 0 ? 'No nodes to layout.' : 'Need at least 2 nodes to layout.');
+		// Filter out decoration nodes — they don't participate in layout
+		const layoutNodes = currentNodes.filter(n => (n.data as Record<string, unknown>)?.nodeType !== 'decoration');
+		if (layoutNodes.length < 2) {
+			toasts.info(layoutNodes.length === 0 ? 'No nodes to layout.' : 'Need at least 2 nodes to layout.');
 			return;
 		}
 
@@ -43,7 +45,7 @@
 			}
 
 			const currentEdges = get(edges);
-			const result = await computeLayout(currentNodes, currentEdges, algorithmId, nodeDimensions);
+			const result = await computeLayout(layoutNodes, currentEdges, algorithmId, nodeDimensions);
 
 			pushHistory();
 			updateNodePositions(result.positions);

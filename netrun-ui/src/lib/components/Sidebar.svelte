@@ -35,6 +35,7 @@
 		type PortConfig
 	} from '$lib/stores/flowStore';
 	import { deleteExpandedChildren, renameExpandedChildNode } from '$lib/stores/subgraphExpandStore';
+	import DecorationProperties from './DecorationProperties.svelte';
 	import SalvoConditionsSection from './SalvoConditionsSection.svelte';
 	import PoolsSection from './PoolsSection.svelte';
 	import NodeExecutionSection from './NodeExecutionSection.svelte';
@@ -654,7 +655,9 @@
 	{/if}
 
 	<div class="sidebar-content">
-		{#if $selectedNode}
+		{#if $selectedNode && $selectedNode.data.nodeType === 'decoration'}
+			<DecorationProperties node={$selectedNode} />
+		{:else if $selectedNode}
 			<!-- General Section -->
 			<section class="section">
 				<button
