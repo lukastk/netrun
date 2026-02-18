@@ -14,6 +14,10 @@ description = "Add a new node to the graph with configurable settings"
 path = "./recipes/set_defaults.py"
 description = "Set default node variables for all nodes"
 
+[recipes.add_function_node]
+path = "./recipes/add_function_node.py"
+description = "Add a function factory node backed by a Python function"
+
 # --- Global node variables (accessible via ctx.vars) ---
 [node_vars.greeting_template]
 value = "Hello, {name}!"
