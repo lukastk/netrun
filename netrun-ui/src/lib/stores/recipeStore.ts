@@ -5,7 +5,7 @@
  * can transform the NetConfig through the command palette.
  */
 import { derived, writable, get } from 'svelte/store';
-import { extraData, currentFilePath } from './flowStore';
+import { extraData, currentFilePath, updateExtraData } from './flowStore';
 import { api, type RecipePrompt } from '$lib/api';
 import { toasts } from './toastStore';
 
@@ -126,4 +126,35 @@ export function showRecipeModal(
  */
 export function closeRecipeModal(): void {
 	recipeModalState.update(s => ({ ...s, show: false }));
+}
+
+// --- Recipe CRUD ---
+
+/**
+ * Add a new recipe to extraData.recipes.
+ */
+export function addRecipe(name: string, definition: RecipeDefinition): void {
+	const current = get(recipes);
+	updateExtraData({ recipes: { ...current, [name]: definition } });
+}
+
+/**
+ * Update an existing recipe (supports renaming).
+ */
+export function updateRecipe(originalName: string, newName: string, definition: RecipeDefinition): void {
+	const current = { ...get(recipes) };
+	if (newName !== originalName) {
+		delete current[originalName];
+	}
+	current[newName] = definition;
+	updateExtraData({ recipes: current });
+}
+
+/**
+ * Remove a recipe by name.
+ */
+export function removeRecipe(name: string): void {
+	const current = { ...get(recipes) };
+	delete current[name];
+	updateExtraData({ recipes: current });
 }
