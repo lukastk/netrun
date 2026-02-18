@@ -1,6 +1,6 @@
 ---
 name: netrun-config
-description: "Detailed netrun configuration reference: JSON/TOML file formats, NetConfig.from_file(), environment variable substitution ($env), project_root resolution, and complete field reference tables for NetConfig, NodeConfig, NodeExecutionConfig, PortConfig, CacheConfig, PoolConfig, NodeVariable, and OutputQueueConfig."
+description: "Detailed netrun configuration reference: JSON/TOML file formats, NetConfig.from_file(), environment variable substitution ($env), project_root_override resolution, and complete field reference tables for NetConfig, NodeConfig, NodeExecutionConfig, PortConfig, CacheConfig, PoolConfig, NodeVariable, and OutputQueueConfig."
 ---
 
 # netrun Configuration Reference
@@ -63,11 +63,11 @@ netrun convert main.netrun.toml -o main.netrun.json
 
 ## Project Root
 
-`project_root` controls how relative file paths are resolved (for imports, subgraph files, etc.). If not set explicitly, it defaults to the directory containing the config file.
+`project_root_override` controls how relative file paths are resolved (for imports, subgraph files, etc.). If not set explicitly, it defaults to the directory containing the config file.
 
 ```json
 {
-  "project_root": ".",
+  "project_root_override": ".",
   "graph": { ... }
 }
 ```
@@ -105,7 +105,7 @@ Environment variables are resolved when the Net is created. If a variable is mis
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `project_root` | `str` | config file dir | Base path for relative imports |
+| `project_root_override` | `str` | config file dir | Base path for relative imports |
 | `graph` | `GraphConfig` | *required* | Graph definition |
 | `pools` | `dict[str, PoolConfig]` | auto `main` | Worker pool definitions |
 | `output_queues` | `dict[str, OutputQueueConfig]` | `null` | Output queue mappings |
@@ -219,5 +219,5 @@ Same fields as CacheConfig (except `include_all_nodes`, `include_nodes`, `exclud
 
 ## Sample Projects
 
-- **06** (`sample_projects/06_actions_and_recipes/`): TOML format, env var substitution, file-path imports, `project_root`
+- **06** (`sample_projects/06_actions_and_recipes/`): TOML format, env var substitution, file-path imports, `project_root_override`
 - **00** (`sample_projects/00_basic_net_project/`): JSON format basics

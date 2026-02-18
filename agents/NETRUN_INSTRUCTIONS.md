@@ -220,11 +220,11 @@ netrun convert main.netrun.toml -o main.netrun.json
 
 ### Project Root
 
-`project_root` controls how relative file paths are resolved (for imports, subgraph files, etc.). If not set explicitly, it defaults to the directory containing the config file.
+`project_root_override` controls how relative file paths are resolved (for imports, subgraph files, etc.). If not set explicitly, it defaults to the directory containing the config file.
 
 ```json
 {
-  "project_root": ".",
+  "project_root_override": ".",
   "graph": { ... }
 }
 ```
@@ -347,7 +347,7 @@ The `func` argument in `factory_args` supports two formats:
 | Format | Example | Description |
 |--------|---------|-------------|
 | Dotted path | `"nodes.my_func"` | Standard Python import path |
-| File path | `"./nodes.py::my_func"` | Relative to `project_root`, `::` separates file from attribute |
+| File path | `"./nodes.py::my_func"` | Relative to `project_root_override`, `::` separates file from attribute |
 
 ```json
 {"factory_args": {"func": "nodes.double"}}
@@ -453,7 +453,7 @@ External edges connect to exposed ports: `"source_str": "source.out", "target_st
 }
 ```
 
-The `path` is relative to `project_root`. The referenced file contains `nodes` and `edges` arrays.
+The `path` is relative to `project_root_override`. The referenced file contains `nodes` and `edges` arrays.
 
 #### Factory-Generated Subgraph
 
@@ -1561,7 +1561,7 @@ netrun-ui --dev                        # Development mode with hot reload
 
 | Field | Type | Default | Description |
 |-------|------|---------|-------------|
-| `project_root` | `str` | config file dir | Base path for relative imports |
+| `project_root_override` | `str` | config file dir | Base path for relative imports |
 | `graph` | `GraphConfig` | *required* | Graph definition |
 | `pools` | `dict[str, PoolConfig]` | auto `main` | Worker pool definitions |
 | `output_queues` | `dict[str, OutputQueueConfig]` | `null` | Output queue mappings |
@@ -1708,7 +1708,7 @@ The table below maps every netrun concept and API to the sample project(s) that 
 | `NetConfig.from_file()` | 00, 01, 04, 05, 07, 08 |
 | JSON config format | 00, 01, 03, 04, 05, 07, 08 |
 | TOML config format | 06 |
-| `project_root` | 06 |
+| `project_root_override` | 06 |
 | Env var substitution (`$env`) | 06 |
 | File-path imports (`./nodes.py::func`) | 06 |
 | Dotted import paths (`nodes.my_func`) | 00, 01, 04, 05, 07, 08 |

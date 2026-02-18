@@ -1736,7 +1736,7 @@ test_netconfig_project_root_none_with_file();
 def test_netconfig_from_file_json(tmp_path):
     """Test NetConfig.from_file() with a JSON file."""
     data = {
-        "project_root": "./src",
+        "project_root_override": "./src",
         "graph": {
             "nodes": [{"name": "A", "out_ports": {"out": {"slots_spec": {"type": "infinite"}}}}],
             "edges": [],
@@ -1759,7 +1759,7 @@ test_netconfig_from_file_json(Path(tempfile.mkdtemp()));
 def test_netconfig_from_file_toml(tmp_path):
     """Test NetConfig.from_file() with a TOML file."""
     toml_content = """
-project_root = "/absolute/path"
+project_root_override = "/absolute/path"
 
 [graph]
 nodes = []

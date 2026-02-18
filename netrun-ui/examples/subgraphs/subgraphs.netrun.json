@@ -1,4 +1,5 @@
 {
+  "project_root_override": "..",
   "graph": {
     "nodes": [
       {
@@ -21,7 +22,7 @@
       },
       {
         "name": "preprocess",
-        "path": "./preprocessing.netrun.json",
+        "path": "./subgraphs/preprocessing.netrun.json",
         "exposed_in_ports": {
           "raw": {
             "internal_node": "clean",
@@ -43,7 +44,8 @@
             "dimensions": {
               "width": 540,
               "height": 300
-            }
+            },
+            "expanded": true
           }
         },
         "type": "subgraph"
@@ -62,8 +64,8 @@
             "extra": {
               "ui": {
                 "position": {
-                  "x": 50,
-                  "y": 50
+                  "x": 18,
+                  "y": 48
                 }
               }
             }
@@ -118,7 +120,8 @@
             "dimensions": {
               "width": 540,
               "height": 300
-            }
+            },
+            "expanded": true
           }
         },
         "type": "subgraph"

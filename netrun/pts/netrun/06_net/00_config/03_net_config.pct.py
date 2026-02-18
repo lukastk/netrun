@@ -15,7 +15,7 @@ from nblite import nbl_export; nbl_export();
 
 # %%
 #|export
-from pydantic import AliasChoices, BaseModel, Field, PrivateAttr, model_validator, field_serializer
+from pydantic import BaseModel, Field, PrivateAttr, model_validator, field_serializer
 from typing import Annotated, Literal, Any
 from collections.abc import Callable
 from pathlib import Path
@@ -154,7 +154,7 @@ class NetConfig(EnvVarResolvableModel):
     """Configuration for a Net."""
     model_config = {"arbitrary_types_allowed": True, "populate_by_name": True}
 
-    project_root_override: str | VarRef | None = Field(default=None, description="Project root path override. Relative paths resolve from the config file's directory.", validation_alias=AliasChoices("project_root", "project_root_override"))
+    project_root_override: str | VarRef | None = Field(default=None, description="Project root path override. Relative paths resolve from the config file's directory.")
 
     _file_path: Path | None = PrivateAttr(default=None)
 

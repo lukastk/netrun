@@ -92,7 +92,7 @@ The `func` argument in `factory_args` supports two formats:
 | Format | Example | Description |
 |--------|---------|-------------|
 | Dotted path | `"nodes.my_func"` | Standard Python import path |
-| File path | `"./nodes.py::my_func"` | Relative to `project_root`, `::` separates file from attribute |
+| File path | `"./nodes.py::my_func"` | Relative to `project_root_override`, `::` separates file from attribute |
 
 ```json
 {"factory_args": {"func": "nodes.double"}}
