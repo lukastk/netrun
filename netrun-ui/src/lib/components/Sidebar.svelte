@@ -29,6 +29,8 @@
 		getNodeColors,
 		isExpandedChildNode,
 		getParentSubgraphId,
+		getCurrentConfig,
+		applyConfig,
 		type NetrunNodeData,
 		type PortConfig
 	} from '$lib/stores/flowStore';
@@ -71,6 +73,9 @@
 		addRecipe,
 		updateRecipe,
 		removeRecipe,
+		getRecipePrompts,
+		executeRecipe,
+		showRecipeModal,
 		type RecipeDefinition,
 	} from '$lib/stores/recipeStore';
 	import { unregisteredFields, configSchema, getFieldDescription } from '$lib/stores/schemaStore';
@@ -183,6 +188,25 @@
 		showRecipeEditor = false;
 		editingRecipeName = null;
 		editingRecipeDefinition = null;
+	}
+
+	// Handle clicking a recipe name to execute it
+	async function handleRunRecipe(name: string, path: string) {
+		try {
+			const config = getCurrentConfig();
+			const prompts = await getRecipePrompts(path, config);
+			if (prompts.length === 0) {
+				const newConfig = await executeRecipe(path, config, {});
+				applyConfig(newConfig);
+			} else {
+				showRecipeModal(name, prompts, async (inputs) => {
+					try {
+						const newConfig = await executeRecipe(path, config, inputs);
+						applyConfig(newConfig);
+					} catch (_e) { /* error toast shown by executeRecipe */ }
+				});
+			}
+		} catch (_e) { /* error toast shown by getRecipePrompts */ }
 	}
 
 	// Collapsible sections state
@@ -1912,7 +1936,11 @@
 					{:else}
 						{#each Object.entries($recipes) as [rName, rDef] (rName)}
 							<div class="actions-footer-item">
-								<span class="actions-footer-item-label">{rName}</span>
+								<button
+									class="actions-footer-item-label actions-footer-item-clickable"
+									onclick={() => handleRunRecipe(rName, rDef.path)}
+									title={rDef.description || `Run recipe: ${rName}`}
+								>{rName}</button>
 								<button
 									class="actions-footer-edit-btn"
 									onclick={() => { editingRecipeName = rName; editingRecipeDefinition = rDef; showRecipeEditor = true; }}
@@ -2108,12 +2136,23 @@
 		flex: 1;
 		padding: 8px 10px;
 		background: var(--bg-tertiary, #2d2d2d);
+		border: none;
 		border-radius: 4px;
 		color: var(--text-primary, #fff);
 		font-size: 12px;
+		font-family: inherit;
+		text-align: left;
 		overflow: hidden;
 		text-overflow: ellipsis;
 		white-space: nowrap;
+	}
+
+	.actions-footer-item-clickable {
+		cursor: pointer;
+	}
+
+	.actions-footer-item-clickable:hover {
+		background: var(--border-color, #404040);
 	}
 
 	.actions-footer-edit-btn {

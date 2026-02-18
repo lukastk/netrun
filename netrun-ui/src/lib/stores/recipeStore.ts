@@ -5,7 +5,7 @@
  * can transform the NetConfig through the command palette.
  */
 import { derived, writable, get } from 'svelte/store';
-import { extraData, currentFilePath, updateExtraData } from './flowStore';
+import { extraData, currentFilePath, updateExtraData, getCurrentConfig } from './flowStore';
 import { api, type RecipePrompt } from '$lib/api';
 import { toasts } from './toastStore';
 
@@ -26,23 +26,30 @@ export const recipes = derived(extraData, ($extraData) => {
 });
 
 /**
- * Resolve a recipe path relative to the current file's directory.
+ * Resolve a recipe path relative to the project root.
+ * Falls back to the current file's directory if project_root_path is not set.
  */
 export function resolveRecipePath(recipePath: string): string {
-	const filePath = get(currentFilePath);
-	if (!filePath) {
-		// No file open, return as-is
-		return recipePath;
-	}
-
 	// If path is absolute, return as-is
 	if (recipePath.startsWith('/')) {
 		return recipePath;
 	}
 
-	// Resolve relative to current file's directory
-	const fileDir = filePath.substring(0, filePath.lastIndexOf('/'));
-	return `${fileDir}/${recipePath}`;
+	// Resolve relative to project_root_path
+	const config = getCurrentConfig();
+	const projectRoot = config.project_root_path as string | undefined;
+	if (projectRoot) {
+		return `${projectRoot}/${recipePath}`;
+	}
+
+	// Fallback: resolve relative to current file's directory
+	const filePath = get(currentFilePath);
+	if (filePath) {
+		const fileDir = filePath.substring(0, filePath.lastIndexOf('/'));
+		return `${fileDir}/${recipePath}`;
+	}
+
+	return recipePath;
 }
 
 /**
