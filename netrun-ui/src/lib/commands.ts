@@ -42,6 +42,7 @@ import {
 	cutSelectedNodes,
 	selectedNode,
 	selectedNodeIds,
+	selectedEdgeIds,
 	nodes,
 	edges,
 	pushHistory,
@@ -49,6 +50,7 @@ import {
 	addNode,
 	createRegularNode,
 	createFactoryNode,
+	createDecorationNode,
 	updateFactoryNodePreview,
 	validateAllNodes,
 	createSubgraphFromSelection,
@@ -58,6 +60,7 @@ import {
 	extraData,
 	updateExtraData,
 	isExpandedChildNode,
+	type DecorationType,
 } from '$lib/stores/flowStore';
 import { showFactorySelector } from '$lib/stores/factorySelectorStore';
 import { get, derived } from 'svelte/store';
@@ -576,6 +579,74 @@ const subgraphCommands: Command[] = [
 	},
 ];
 
+// --- Decoration Commands ---
+
+function addDecorationOfType(type: DecorationType) {
+	const node = createDecorationNode({ x: 200, y: 200 }, type);
+	addNode(node);
+	selectedNodeIds.set(new Set([node.id]));
+	selectedEdgeIds.set(new Set());
+}
+
+const decorationCommands: Command[] = [
+	{
+		id: 'decoration.addRectangle',
+		label: 'Add Rectangle Decoration',
+		category: 'decoration',
+		keywords: ['shape', 'box', 'decoration'],
+		action: () => addDecorationOfType('rectangle'),
+	},
+	{
+		id: 'decoration.addRoundedRectangle',
+		label: 'Add Rounded Rectangle Decoration',
+		category: 'decoration',
+		keywords: ['shape', 'box', 'rounded', 'decoration'],
+		action: () => addDecorationOfType('rounded-rectangle'),
+	},
+	{
+		id: 'decoration.addCircle',
+		label: 'Add Circle Decoration',
+		category: 'decoration',
+		keywords: ['shape', 'oval', 'decoration'],
+		action: () => addDecorationOfType('circle'),
+	},
+	{
+		id: 'decoration.addTriangle',
+		label: 'Add Triangle Decoration',
+		category: 'decoration',
+		keywords: ['shape', 'decoration'],
+		action: () => addDecorationOfType('triangle'),
+	},
+	{
+		id: 'decoration.addDivider',
+		label: 'Add Divider',
+		category: 'decoration',
+		keywords: ['separator', 'divider', 'line', 'decoration'],
+		action: () => addDecorationOfType('divider'),
+	},
+	{
+		id: 'decoration.addLabel',
+		label: 'Add Label',
+		category: 'decoration',
+		keywords: ['label', 'annotation', 'decoration', 'text'],
+		action: () => addDecorationOfType('label'),
+	},
+	{
+		id: 'decoration.addTextbox',
+		label: 'Add Textbox',
+		category: 'decoration',
+		keywords: ['text', 'multiline', 'paragraph', 'decoration'],
+		action: () => addDecorationOfType('textbox'),
+	},
+	{
+		id: 'decoration.addImage',
+		label: 'Add Image Decoration',
+		category: 'decoration',
+		keywords: ['picture', 'photo', 'decoration', 'image'],
+		action: () => addDecorationOfType('image'),
+	},
+];
+
 // --- Recipe Commands ---
 
 const recipeStaticCommands: Command[] = [
@@ -657,8 +728,8 @@ const recipeStaticCommands: Command[] = [
 
 async function runLayout(algorithmId: string): Promise<void> {
 	const currentNodes = get(nodes);
-	// Filter out expanded child nodes - only layout parent-level nodes
-	const layoutNodes = currentNodes.filter(n => !isExpandedChildNode(n.id));
+	// Filter out expanded child nodes and decoration nodes - only layout parent-level functional nodes
+	const layoutNodes = currentNodes.filter(n => !isExpandedChildNode(n.id) && n.data.nodeType !== 'decoration');
 	if (layoutNodes.length < 2) {
 		toasts.info(layoutNodes.length === 0 ? 'No nodes to layout.' : 'Need at least 2 nodes to layout.');
 		return;
@@ -905,6 +976,7 @@ export function initializeCommands(): void {
 		...layoutCommands,
 		...nodeCommands,
 		...subgraphCommands,
+		...decorationCommands,
 		...recipeStaticCommands,
 		...tabCommands,
 	]);
