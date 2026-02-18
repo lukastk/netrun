@@ -1,4 +1,5 @@
 """Recipe execution endpoints — delegates to netrun.tools."""
+import traceback
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
@@ -31,6 +32,7 @@ class ExecuteRequest(BaseModel):
 class ExecuteResponse(BaseModel):
     """Response containing the modified config."""
     config: dict[str, Any]
+    stdout: str = ""
 
 
 @router.post("/get-prompts", response_model=GetPromptsResponse)
@@ -41,25 +43,19 @@ async def get_prompts(request: GetPromptsRequest) -> GetPromptsResponse:
         return GetPromptsResponse(prompts=prompts)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except (AttributeError, TypeError) as e:
-        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error loading recipe: {e}")
+        tb = traceback.format_exc()
+        raise HTTPException(status_code=500, detail=f"{e}\n\n{tb}")
 
 
 @router.post("/execute", response_model=ExecuteResponse)
 async def execute(request: ExecuteRequest) -> ExecuteResponse:
     """Execute a recipe with the given inputs and return the modified config."""
     try:
-        result = execute_recipe(request.recipe_path, request.config, request.inputs)
-        return ExecuteResponse(config=result)
+        result, stdout = execute_recipe(request.recipe_path, request.config, request.inputs)
+        return ExecuteResponse(config=result, stdout=stdout)
     except FileNotFoundError as e:
         raise HTTPException(status_code=404, detail=str(e))
-    except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
-    except (AttributeError, TypeError) as e:
-        raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error executing recipe: {e}")
+        tb = traceback.format_exc()
+        raise HTTPException(status_code=500, detail=f"{e}\n\n{tb}")

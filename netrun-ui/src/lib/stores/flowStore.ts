@@ -2441,6 +2441,8 @@ export function getCurrentConfig(): Record<string, unknown> {
 			id: n.id,
 			type: n.type,
 			position: n.position,
+			...(n.width != null ? { width: n.width } : {}),
+			...(n.height != null ? { height: n.height } : {}),
 			data: n.data
 		})),
 		edges: tab.edges.map(e => ({
@@ -2469,31 +2471,32 @@ export function applyConfig(config: Record<string, unknown>): void {
 	const configNodes = (config.nodes as unknown[]) ?? [];
 	const configEdges = (config.edges as unknown[]) ?? [];
 
-	// Convert to internal node format
 	const newNodes: FlowNode[] = configNodes.map((n: unknown) => {
 		const node = n as Record<string, unknown>;
 		const data = (node.data ?? {}) as Record<string, unknown>;
 		const nodeType = (data.nodeType as string) || 'regular';
 
+		// In the UI format, id = node name = label. Fall back to data.label if id is missing
+		// so that recipes don't need to set both.
+		const nodeId = (node.id as string) ?? (data.label as string);
+
 		return {
-			id: node.id as string,
+			id: nodeId,
 			type: (node.type as string) ?? (nodeType === 'subgraph' ? 'subgraphNode' : 'netrunNode'),
 			position: (node.position as { x: number; y: number }) ?? { x: 0, y: 0 },
+			...(node.width != null ? { width: node.width as number } : {}),
+			...(node.height != null ? { height: node.height as number } : {}),
 			data: {
-				label: (data.label as string) ?? (node.id as string),
+				...data,
+				label: (data.label as string) ?? nodeId,
 				nodeType: nodeType as 'regular' | 'factory' | 'subgraph',
 				inPorts: (data.inPorts as PortConfig[]) ?? [],
 				outPorts: (data.outPorts as PortConfig[]) ?? [],
-				factory: data.factory as string | undefined,
-				factoryArgs: data.factoryArgs as Record<string, unknown> | undefined,
-				isValid: true,
-				_config: data._config as Record<string, unknown> | undefined,
-				_subgraphConfig: data._subgraphConfig as Record<string, unknown> | undefined,
+				isValid: data.isValid ?? true,
 			}
 		} as FlowNode;
 	});
 
-	// Convert to internal edge format
 	const newEdges: NetrunEdge[] = configEdges.map((e: unknown) => {
 		const edge = e as Record<string, unknown>;
 		return {
