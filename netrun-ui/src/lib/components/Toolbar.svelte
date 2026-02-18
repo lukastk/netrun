@@ -25,6 +25,7 @@
 	import { tick } from 'svelte';
 	import { openCommandPalette } from '$lib/stores/commandStore';
 	import LayoutDropdown from './LayoutDropdown.svelte';
+	import DecorationDropdown from './DecorationDropdown.svelte';
 	import { resolveFilePath } from '$lib/stores/fileExplorerStore';
 	import { showPrompt, showAlert, showConfirm } from '$lib/stores/modalStore';
 	import { showFactorySelector } from '$lib/stores/factorySelectorStore';
@@ -235,130 +236,146 @@
 </script>
 
 <header class="toolbar">
-	<div class="toolbar-section left">
-		<button onclick={handleNew} title="New file (Cmd+N)">
-			<span class="icon">📄</span>
-			<span class="label">New</span>
-		</button>
-		<button onclick={handleOpen} title="Open file (Cmd+O)">
-			<span class="icon">📂</span>
-			<span class="label">Open</span>
-		</button>
-		<button onclick={handleSave} title="Save file (Cmd+S)" disabled={!$isDirty}>
-			<span class="icon">💾</span>
-			<span class="label">Save</span>
-		</button>
-		<button onclick={handleReload} title="Reload file from disk (Cmd+Shift+R)" disabled={!$currentFilePath}>
-			<span class="icon">🔄</span>
-			<span class="label">Reload</span>
-		</button>
-		<div class="separator"></div>
-		<button onclick={handleUndo} title="Undo (Cmd+Z)" disabled={$history.past.length === 0}>
-			<span class="icon">↩</span>
-			<span class="label">Undo</span>
-		</button>
-		<button onclick={handleRedo} title="Redo (Cmd+Shift+Z)" disabled={$history.future.length === 0}>
-			<span class="icon">↪</span>
-			<span class="label">Redo</span>
-		</button>
+	<div class="toolbar-row">
+		<div class="toolbar-section left">
+			<button onclick={handleNew} title="New file (Cmd+N)">
+				<span class="icon">📄</span>
+				<span class="label">New</span>
+			</button>
+			<button onclick={handleOpen} title="Open file (Cmd+O)">
+				<span class="icon">📂</span>
+				<span class="label">Open</span>
+			</button>
+			<button onclick={handleSave} title="Save file (Cmd+S)" disabled={!$isDirty}>
+				<span class="icon">💾</span>
+				<span class="label">Save</span>
+			</button>
+			<button onclick={handleReload} title="Reload file from disk (Cmd+Shift+R)" disabled={!$currentFilePath}>
+				<span class="icon">🔄</span>
+				<span class="label">Reload</span>
+			</button>
+			<div class="separator"></div>
+			<button onclick={handleUndo} title="Undo (Cmd+Z)" disabled={$history.past.length === 0}>
+				<span class="icon">↩</span>
+				<span class="label">Undo</span>
+			</button>
+			<button onclick={handleRedo} title="Redo (Cmd+Shift+Z)" disabled={$history.future.length === 0}>
+				<span class="icon">↪</span>
+				<span class="label">Redo</span>
+			</button>
+		</div>
+
+		<div class="toolbar-section center">
+			{#if $currentFilePath}
+				<span class="file-name">
+					{$currentFilePath.split('/').pop()}
+					{#if $isDirty}<span class="dirty-indicator">*</span>{/if}
+				</span>
+			{:else}
+				<span class="file-name untitled">Untitled</span>
+			{/if}
+		</div>
+
+		<div class="toolbar-section right">
+			<button onclick={openCommandPalette} title="Command Palette (Cmd+Shift+P)" class="command-palette">
+				<span class="icon">⌘</span>
+			</button>
+		</div>
 	</div>
 
-	<div class="toolbar-section center">
-		{#if $currentFilePath}
-			<span class="file-name">
-				{$currentFilePath.split('/').pop()}
-				{#if $isDirty}<span class="dirty-indicator">*</span>{/if}
-			</span>
-		{:else}
-			<span class="file-name untitled">Untitled</span>
-		{/if}
-	</div>
+	<div class="toolbar-row">
+		<div class="toolbar-section left">
+			<button
+				onclick={toggleInteractionMode}
+				title={$interactionMode === 'pan'
+					? 'Pan mode: drag to pan, Shift+drag to select. Click to switch to Select mode.'
+					: 'Select mode: drag to select, right-click drag to pan. Click to switch to Pan mode.'}
+				class="mode-toggle"
+				class:select-mode={$interactionMode === 'select'}
+			>
+				{#if $interactionMode === 'pan'}
+					<span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 11V6a2 2 0 0 0-4 0v1M14 10V4a2 2 0 0 0-4 0v6M10 10V6a2 2 0 0 0-4 0v8c0 4.4 3.6 8 8 8h.5a8 8 0 0 0 8-8v-4a2 2 0 0 0-4 0"/></svg></span>
+					<span class="label">Pan</span>
+				{:else}
+					<span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="1" stroke-dasharray="4 2"/></svg></span>
+					<span class="label">Select</span>
+				{/if}
+			</button>
+			<div class="separator"></div>
+			<button
+				onclick={async () => {
+					isValidating = true;
+					lastValidationResult = await validateAllNodes();
+					skipNextReset = true;
+					isValidating = false;
+					if (!lastValidationResult.valid && lastValidationResult.configErrors.length > 0) {
+						await showAlert({
+							title: 'Config Errors',
+							message: lastValidationResult.configErrors.join('\n'),
+						});
+					}
+				}}
+				title="Validate all nodes"
+				disabled={isValidating}
+				class:has-errors={lastValidationResult && !lastValidationResult.valid}
+				class:has-success={lastValidationResult && lastValidationResult.valid}
+			>
+				<span class="icon">✓</span>
+				{#if isValidating}
+					<span class="label">Validating...</span>
+				{:else if lastValidationResult && lastValidationResult.valid}
+					<span class="label">Valid</span>
+				{:else}
+					<span class="label">Validate</span>
+				{/if}
+				{#if lastValidationResult && !lastValidationResult.valid}
+					<span class="error-badge">{lastValidationResult.errorCount + lastValidationResult.configErrors.length}</span>
+				{/if}
+			</button>
+			<div class="separator"></div>
+			<LayoutDropdown />
+			<DecorationDropdown />
+		</div>
 
-	<div class="toolbar-section right">
-		<button
-			onclick={toggleInteractionMode}
-			title={$interactionMode === 'pan'
-				? 'Pan mode: drag to pan, Shift+drag to select. Click to switch to Select mode.'
-				: 'Select mode: drag to select, right-click drag to pan. Click to switch to Pan mode.'}
-			class="mode-toggle"
-			class:select-mode={$interactionMode === 'select'}
-		>
-			{#if $interactionMode === 'pan'}
-				<span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 11V6a2 2 0 0 0-4 0v1M14 10V4a2 2 0 0 0-4 0v6M10 10V6a2 2 0 0 0-4 0v8c0 4.4 3.6 8 8 8h.5a8 8 0 0 0 8-8v-4a2 2 0 0 0-4 0"/></svg></span>
-				<span class="label">Pan</span>
-			{:else}
-				<span class="icon"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="1" stroke-dasharray="4 2"/></svg></span>
-				<span class="label">Select</span>
-			{/if}
-		</button>
-		<div class="separator"></div>
-		<button onclick={openCommandPalette} title="Command Palette (Cmd+Shift+P)" class="command-palette">
-			<span class="icon">⌘</span>
-		</button>
-		<div class="separator"></div>
-		<button
-			onclick={async () => {
-				isValidating = true;
-				lastValidationResult = await validateAllNodes();
-				skipNextReset = true;
-				isValidating = false;
-				if (!lastValidationResult.valid && lastValidationResult.configErrors.length > 0) {
-					await showAlert({
-						title: 'Config Errors',
-						message: lastValidationResult.configErrors.join('\n'),
-					});
-				}
-			}}
-			title="Validate all nodes"
-			disabled={isValidating}
-			class:has-errors={lastValidationResult && !lastValidationResult.valid}
-			class:has-success={lastValidationResult && lastValidationResult.valid}
-		>
-			<span class="icon">✓</span>
-			{#if isValidating}
-				<span class="label">Validating...</span>
-			{:else if lastValidationResult && lastValidationResult.valid}
-				<span class="label">Valid</span>
-			{:else}
-				<span class="label">Validate</span>
-			{/if}
-			{#if lastValidationResult && !lastValidationResult.valid}
-				<span class="error-badge">{lastValidationResult.errorCount + lastValidationResult.configErrors.length}</span>
-			{/if}
-		</button>
-		<div class="separator"></div>
-		<LayoutDropdown />
-		<div class="separator"></div>
-		<button onclick={handleAddNode} title="Add regular node">
-			<span class="icon">+</span>
-			<span class="label">Add Node</span>
-		</button>
-		<button onclick={handleAddFactoryNode} title="Add factory node" class="factory">
-			<span class="icon">⚙</span>
-			<span class="label">Add Factory</span>
-		</button>
-		<button
-			onclick={handleCreateSubgraph}
-			title="Create subgraph from selection (Cmd+G)"
-			class="subgraph"
-			disabled={$selectedNodeIds.size < 2}
-		>
-			<span class="icon">SG</span>
-			<span class="label">Subgraph</span>
-		</button>
+		<div class="toolbar-section right">
+			<button onclick={handleAddNode} title="Add regular node">
+				<span class="icon">+</span>
+				<span class="label">Add Node</span>
+			</button>
+			<button onclick={handleAddFactoryNode} title="Add factory node" class="factory">
+				<span class="icon">⚙</span>
+				<span class="label">Add Factory</span>
+			</button>
+			<button
+				onclick={handleCreateSubgraph}
+				title="Create subgraph from selection (Cmd+G)"
+				class="subgraph"
+				disabled={$selectedNodeIds.size < 2}
+			>
+				<span class="icon">SG</span>
+				<span class="label">Subgraph</span>
+			</button>
+		</div>
 	</div>
 </header>
 
 
 <style>
 	.toolbar {
-		height: var(--toolbar-height, 48px);
+		height: var(--toolbar-height, 80px);
 		background: var(--bg-secondary, #242424);
 		border-bottom: 1px solid var(--border-color, #404040);
 		display: flex;
+		flex-direction: column;
+		justify-content: center;
+		padding: 4px 12px;
+		gap: 2px;
+	}
+
+	.toolbar-row {
+		display: flex;
 		align-items: center;
 		justify-content: space-between;
-		padding: 0 12px;
 		gap: 16px;
 	}
 
@@ -375,9 +392,9 @@
 
 	.separator {
 		width: 1px;
-		height: 24px;
+		height: 20px;
 		background: var(--border-color, #404040);
-		margin: 0 8px;
+		margin: 0 6px;
 	}
 
 	button {

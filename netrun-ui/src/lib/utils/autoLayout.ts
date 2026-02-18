@@ -90,8 +90,13 @@ export async function computeLayout(
 
 	const isHorizontal = algorithm.elkDirection === 'RIGHT' || algorithm.elkDirection === 'LEFT';
 
+	// Filter out decoration nodes — they should not participate in layout
+	const layoutNodes = nodes.filter(
+		(n) => (n.data as Record<string, unknown>)?.nodeType !== 'decoration'
+	);
+
 	// Build ELK graph
-	const elkNodes: ElkNode[] = nodes.map((node) => {
+	const elkNodes: ElkNode[] = layoutNodes.map((node) => {
 		const dims = nodeDimensions?.get(node.id);
 		const width = dims?.width ?? DEFAULT_WIDTH;
 		const height = dims?.height ?? DEFAULT_HEIGHT;

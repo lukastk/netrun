@@ -445,6 +445,9 @@ def _ui_to_graph_config_model(
 
     for node in ui_nodes:
         data = node.get("data", {})
+        # Skip decoration nodes — they are visual-only and not part of the graph config
+        if data.get("nodeType") == "decoration" or node.get("type") == "decorationNode":
+            continue
         position = node.get("position", {"x": 0, "y": 0})
         node_type = data.get("nodeType")
         node_name = node["id"]

@@ -985,7 +985,7 @@ function handleChildNodeDataUpdate(childNodeId: string, dataUpdates: Partial<Any
 	if (cached) {
 		cached.nodes = cached.nodes.map(n => {
 			if (n.id !== originalId) return n;
-			return { ...n, data: { ...n.data, ...dataUpdates } };
+			return { ...n, data: { ...n.data, ...dataUpdates } as AnyNodeData };
 		});
 		markCacheDirty(tabId, parentId);
 	}
@@ -1132,10 +1132,10 @@ function flowNodeToUINode(node: FlowNode): UINode {
 		...(node.height != null ? { height: node.height } : {}),
 		data: {
 			label: data.label,
-			nodeType: data.nodeType,
+			nodeType: data.nodeType as 'regular' | 'factory' | 'subgraph',
 			inPorts: data.inPorts.map(p => ({ name: p.name, type: p.type })),
 			outPorts: data.outPorts.map(p => ({ name: p.name, type: p.type })),
-			description: data.description,
+			description: data.description as string | undefined,
 			_config: (data as Record<string, unknown>)._config as Record<string, unknown> | undefined,
 		},
 	};
