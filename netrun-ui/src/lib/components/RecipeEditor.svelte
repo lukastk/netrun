@@ -79,7 +79,7 @@
 					bind:value={path}
 					placeholder="./recipes/my_recipe.py"
 				/>
-				<div class="field-hint">Relative to the netrun file directory</div>
+				<div class="field-hint">Relative to project root</div>
 			</div>
 
 			<div class="field">
