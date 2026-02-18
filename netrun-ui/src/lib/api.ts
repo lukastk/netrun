@@ -197,6 +197,7 @@ export interface GetRecipePromptsResponse {
 
 export interface ExecuteRecipeResponse {
 	config: Record<string, unknown>;
+	stdout: string;
 }
 
 // Config schema types

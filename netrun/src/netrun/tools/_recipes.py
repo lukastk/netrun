@@ -4,6 +4,7 @@ __all__ = ['execute_recipe', 'get_recipe_prompts', 'load_recipe_module']
 
 # %% pts/netrun/09_tools/03_recipes.pct.py 2
 import importlib.util
+import io
 import sys
 from pathlib import Path
 from types import ModuleType
@@ -90,10 +91,11 @@ def execute_recipe(
     recipe_path: str | Path,
     config: dict[str, Any],
     inputs: dict[str, Any],
-) -> dict[str, Any]:
+) -> tuple[dict[str, Any], str]:
     """Execute a recipe with the given inputs and return the modified config.
 
     The recipe must have a ``run(config, inputs)`` function.
+    Any ``print()`` calls inside ``run()`` are captured and returned as stdout.
 
     Args:
         recipe_path: Path to the .py recipe file.
@@ -101,7 +103,7 @@ def execute_recipe(
         inputs: User-provided inputs from prompts.
 
     Returns:
-        Modified config dict.
+        Tuple of (modified config dict, captured stdout).
 
     Raises:
         AttributeError: If the recipe has no ``run`` function.
@@ -112,8 +114,16 @@ def execute_recipe(
     if not hasattr(module, 'run'):
         raise AttributeError("Recipe missing required 'run' function")
 
-    result = module.run(config, inputs)
+    # Capture stdout from the recipe's run() function
+    captured = io.StringIO()
+    old_stdout = sys.stdout
+    try:
+        sys.stdout = captured
+        result = module.run(config, inputs)
+    finally:
+        sys.stdout = old_stdout
+
     if not isinstance(result, dict):
         raise TypeError("run() must return a dict")
 
-    return result
+    return result, captured.getvalue()

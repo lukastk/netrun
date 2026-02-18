@@ -72,6 +72,7 @@ export async function getRecipePrompts(
 
 /**
  * Execute a recipe with the given inputs.
+ * Validates the returned config before returning it.
  */
 export async function executeRecipe(
 	recipePath: string,
@@ -79,13 +80,55 @@ export async function executeRecipe(
 	inputs: Record<string, unknown>
 ): Promise<Record<string, unknown>> {
 	const absolutePath = resolveRecipePath(recipePath);
+	let result: Record<string, unknown>;
+	let stdout = '';
 	try {
 		const response = await api.executeRecipe(absolutePath, config, inputs);
-		return response.config;
+		result = response.config;
+		stdout = response.stdout ?? '';
 	} catch (e) {
 		toasts.error(`Failed to execute recipe: ${(e as Error).message}`);
 		throw e;
 	}
+
+	// Normalize nodes: in the UI format id = label = node name.
+	// Recipes may omit id since it's redundant with data.label.
+	const nodes = ((result.nodes ?? []) as Record<string, unknown>[]).map(n => {
+		if (!n.id && (n.data as Record<string, unknown>)?.label) {
+			return { ...n, id: (n.data as Record<string, unknown>).label };
+		}
+		return n;
+	});
+	result = { ...result, nodes };
+
+	// Validate the returned config before accepting it
+	try {
+		const filePath = get(currentFilePath);
+		const validation = await api.validateConfig(
+			nodes as unknown as Parameters<typeof api.validateConfig>[0],
+			(result.edges ?? []) as Parameters<typeof api.validateConfig>[1],
+			result.extra as Record<string, unknown> | undefined,
+			result.extraData as Record<string, unknown> | undefined,
+			filePath ?? undefined,
+		);
+		if (!validation.valid) {
+			const msgs = validation.errors.slice(0, 3).map(e => e.msg).join('; ');
+			const suffix = validation.errors.length > 3 ? ` (+${validation.errors.length - 3} more)` : '';
+			toasts.error(`Recipe returned invalid config: ${msgs}${suffix}`);
+			throw new Error('Recipe returned invalid config');
+		}
+	} catch (e) {
+		if ((e as Error).message === 'Recipe returned invalid config') throw e;
+		toasts.error(`Failed to validate recipe output: ${(e as Error).message}`);
+		throw e;
+	}
+
+	// Show captured stdout as info toast (like actions do)
+	if (stdout.trim()) {
+		toasts.info(stdout.trim());
+	}
+
+	return result;
 }
 
 // --- Recipe Modal State ---
