@@ -5,7 +5,8 @@ from typing import Any
 
 import tomli
 import tomli_w
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, ValidationError
 
 from ..converter import (
@@ -716,9 +717,12 @@ async def validate_config(request: ValidateRequest) -> ValidateResponse:
     """
     errors: list[ValidationError_] = []
 
+    # Filter out decoration nodes before validation
+    nodes = [n for n in request.nodes if n.get("data", {}).get("nodeType") != "decoration"]
+
     # Step 1: Build graph config (structural validation via pydantic models)
     try:
-        graph = ui_to_graph_config(request.nodes, request.edges, request.extra)
+        graph = ui_to_graph_config(nodes, request.edges, request.extra)
     except ValidationError as e:
         for err in e.errors():
             errors.append(ValidationError_(
@@ -810,3 +814,33 @@ async def validate_config(request: ValidateRequest) -> ValidateResponse:
                 type="validation_error",
             )],
         )
+
+
+# --- Image serving for decoration nodes ---
+
+_IMAGE_EXTENSIONS = {".png", ".jpg", ".jpeg", ".gif", ".svg", ".webp", ".bmp", ".ico"}
+
+
+@router.get("/image")
+async def serve_image(
+    path: str = Query(..., description="Image path relative to project_root"),
+    project_root: str = Query(..., description="Absolute project root path"),
+) -> FileResponse:
+    """Serve an image file from the project root for decoration nodes."""
+    root = Path(project_root).resolve()
+    image_path = (root / path).resolve()
+
+    # Security: ensure the resolved path is within the project root
+    if not str(image_path).startswith(str(root)):
+        raise HTTPException(status_code=403, detail="Path traversal not allowed")
+
+    if not image_path.exists():
+        raise HTTPException(status_code=404, detail=f"Image not found: {path}")
+
+    if not image_path.is_file():
+        raise HTTPException(status_code=400, detail="Path is not a file")
+
+    if image_path.suffix.lower() not in _IMAGE_EXTENSIONS:
+        raise HTTPException(status_code=400, detail=f"Unsupported image type: {image_path.suffix}")
+
+    return FileResponse(image_path)

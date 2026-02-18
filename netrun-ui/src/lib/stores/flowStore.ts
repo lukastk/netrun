@@ -92,13 +92,57 @@ export interface SubgraphNodeData extends BaseNodeData {
 	_subgraphConfig?: Record<string, unknown>;
 }
 
+// Decoration types
+export type DecorationType =
+	| 'rectangle'
+	| 'rounded-rectangle'
+	| 'circle'
+	| 'triangle'
+	| 'divider'
+	| 'label'
+	| 'textbox'
+	| 'image';
+
+export const DECORATION_TYPES: { value: DecorationType; label: string }[] = [
+	{ value: 'rectangle', label: 'Rectangle' },
+	{ value: 'rounded-rectangle', label: 'Rounded Rectangle' },
+	{ value: 'circle', label: 'Circle' },
+	{ value: 'triangle', label: 'Triangle' },
+	{ value: 'divider', label: 'Divider' },
+	{ value: 'label', label: 'Label' },
+	{ value: 'textbox', label: 'Textbox' },
+	{ value: 'image', label: 'Image' },
+];
+
+// Extended data for decoration nodes (non-functional visual annotations)
+export interface DecorationNodeData extends Record<string, unknown> {
+	label: string;
+	nodeType: 'decoration';
+	decorationType: DecorationType;
+	inPorts: PortConfig[];
+	outPorts: PortConfig[];
+	description?: string;
+	isValid?: boolean;
+	validationErrors?: string[];
+	text?: string;
+	imagePath?: string;
+	orientation?: 'horizontal' | 'vertical';
+	fillColor?: string;
+	strokeColor?: string;
+	strokeWidth?: number;
+	fontSize?: number;
+	fontColor?: string;
+	opacity?: number;
+}
+
 // Combined type for any flow node data
-export type AnyNodeData = NetrunNodeData | SubgraphNodeData;
+export type AnyNodeData = NetrunNodeData | SubgraphNodeData | DecorationNodeData;
 
 // Use generic Node with AnyNodeData to avoid union type issues
 export type FlowNode = Node<AnyNodeData>;
 export type NetrunNode = Node<NetrunNodeData, 'netrunNode'>;
 export type SubgraphNode = Node<SubgraphNodeData, 'subgraphNode'>;
+export type DecorationNode = Node<DecorationNodeData, 'decorationNode'>;
 export type NetrunEdge = Edge;
 
 // Expanded subgraph child node ID helpers
@@ -352,7 +396,7 @@ export function redo() {
 }
 
 // Helper functions
-export function addNode(node: NetrunNode) {
+export function addNode(node: FlowNode) {
 	pushHistory();
 	const tab = get(activeTab);
 	if (!tab) return;
@@ -370,13 +414,13 @@ export function updateNode(id: string, updates: Partial<NetrunNode>) {
 	});
 }
 
-export function updateNodeData(id: string, dataUpdates: Partial<NetrunNodeData>) {
+export function updateNodeData(id: string, dataUpdates: Partial<AnyNodeData>) {
 	pushHistory();
 	const tab = get(activeTab);
 	if (!tab) return;
 	updateActiveTab({
 		nodes: tab.nodes.map(node =>
-			node.id === id ? { ...node, data: { ...node.data, ...dataUpdates } } : node
+			node.id === id ? { ...node, data: { ...node.data, ...dataUpdates } as AnyNodeData } : node
 		)
 	});
 }
@@ -391,7 +435,7 @@ export function updateNodeDataLive(id: string, dataUpdates: Partial<AnyNodeData>
 	if (!tab) return;
 	updateActiveTab({
 		nodes: tab.nodes.map(node =>
-			node.id === id ? { ...node, data: { ...node.data, ...dataUpdates } } : node
+			node.id === id ? { ...node, data: { ...node.data, ...dataUpdates } as AnyNodeData } : node
 		),
 		isDirty: true,
 	});
@@ -1048,6 +1092,12 @@ export function isValidConnection(connection: {
 	const tab = get(activeTab);
 	if (!tab) return false;
 
+	// Reject connections to/from decoration nodes
+	const visNodes = get(allVisibleNodes);
+	const srcNode = visNodes.find(n => n.id === connection.source);
+	const tgtNode = connection.target ? visNodes.find(n => n.id === connection.target) : null;
+	if (srcNode?.data.nodeType === 'decoration' || tgtNode?.data.nodeType === 'decoration') return false;
+
 	// Prevent cross-boundary connections involving expanded child nodes
 	const srcIsChild = isExpandedChildNode(connection.source);
 	const tgtIsChild = connection.target ? isExpandedChildNode(connection.target) : false;
@@ -1214,6 +1264,9 @@ export function updateGraphExtraLive(updates: Record<string, unknown>): void {
  * Validate a single node and return validation errors
  */
 function validateNode(node: FlowNode, allNodes: FlowNode[]): string[] {
+	// Decoration nodes don't need validation
+	if (node.data.nodeType === 'decoration') return [];
+
 	const errors: string[] = [];
 
 	// Check label
@@ -1356,14 +1409,15 @@ async function runBackendValidation(): Promise<BackendValidationResult> {
 	if (!tab) return { nodeErrorCount: 0, configErrors: [] };
 
 	try {
-		// Convert nodes to UINode format for API
-		const apiNodes: UINode[] = tab.nodes.map(n => ({
+		// Convert nodes to UINode format for API, excluding decoration nodes
+		const functionalNodes = tab.nodes.filter(n => n.data.nodeType !== 'decoration');
+		const apiNodes: UINode[] = functionalNodes.map(n => ({
 			id: n.id,
 			type: n.type || 'netrunNode',
 			position: n.position,
 			data: {
 				label: n.data.label,
-				nodeType: n.data.nodeType,
+				nodeType: n.data.nodeType as 'regular' | 'factory' | 'subgraph',
 				inPorts: n.data.inPorts,
 				outPorts: n.data.outPorts,
 				factory: (n.data as NetrunNodeData).factory,
@@ -1500,8 +1554,8 @@ activeTab.subscribe((tab) => {
 	if (!tab) return;
 
 	// Create a simple hash of nodes and edges to detect changes
-	// Only include fields that affect validation
-	const nodesForValidation = tab.nodes.map(n => ({
+	// Only include fields that affect validation (exclude decoration nodes)
+	const nodesForValidation = tab.nodes.filter(n => n.data.nodeType !== 'decoration').map(n => ({
 		id: n.id,
 		label: n.data.label,
 		nodeType: n.data.nodeType,
@@ -1717,6 +1771,82 @@ export function createFactoryNode(
 	};
 }
 
+// Check if a node is a decoration node
+export function isDecorationNode(node: FlowNode): node is DecorationNode {
+	return node.data.nodeType === 'decoration';
+}
+
+// Create a new decoration node
+export function createDecorationNode(
+	position: { x: number; y: number },
+	decorationType: DecorationType = 'rectangle',
+	name?: string,
+): DecorationNode {
+	const tab = get(activeTab);
+	const existingNodes = tab?.nodes || [];
+	const baseName = name || decorationType.charAt(0).toUpperCase() + decorationType.slice(1).replace('-', ' ');
+	const nodeName = generateUniqueNodeName(existingNodes, baseName);
+
+	const defaults: Partial<DecorationNodeData> = {};
+	let width = 150;
+	let height = 100;
+
+	if (decorationType === 'label') {
+		defaults.text = 'Label';
+		defaults.fontSize = 16;
+		width = 120;
+		height = 40;
+	} else if (decorationType === 'textbox') {
+		defaults.text = 'Text';
+		defaults.fontSize = 14;
+		defaults.fillColor = '#1f2937';
+		defaults.strokeColor = '#6b7280';
+		defaults.strokeWidth = 2;
+		width = 200;
+		height = 120;
+	} else if (decorationType === 'divider') {
+		defaults.strokeColor = '#6b7280';
+		defaults.strokeWidth = 2;
+		defaults.orientation = 'vertical';
+		width = 4;
+		height = 200;
+	} else if (decorationType === 'circle') {
+		defaults.fillColor = '#374151';
+		defaults.strokeColor = '#6b7280';
+		defaults.strokeWidth = 2;
+		width = 100;
+		height = 100;
+	} else if (decorationType === 'image') {
+		defaults.fillColor = '#1f2937';
+		defaults.strokeColor = '#6b7280';
+		defaults.strokeWidth = 2;
+		width = 150;
+		height = 150;
+	} else {
+		defaults.fillColor = '#374151';
+		defaults.strokeColor = '#6b7280';
+		defaults.strokeWidth = 2;
+	}
+
+	return {
+		id: nodeName,
+		type: 'decorationNode',
+		position,
+		width,
+		height,
+		zIndex: -1,
+		data: {
+			label: nodeName,
+			nodeType: 'decoration',
+			decorationType,
+			inPorts: [],
+			outPorts: [],
+			opacity: 1,
+			...defaults,
+		},
+	};
+}
+
 // Helper to convert API port info to our PortConfig
 function apiPortToPortConfig(port: { name: string; type?: string | null }): PortConfig {
 	return {
@@ -1784,6 +1914,50 @@ function convertApiEdges(apiEdges: UIEdge[]): NetrunEdge[] {
 	}));
 }
 
+/**
+ * Convert serialized decorations from graphExtra into FlowNode[] and strip them from graphExtra.
+ * Returns { decorationNodes, cleanedExtra }.
+ */
+function extractDecorations(extra: Record<string, unknown> | null): {
+	decorationNodes: FlowNode[];
+	cleanedExtra: Record<string, unknown> | null;
+} {
+	if (!extra || !Array.isArray(extra.decorations)) {
+		return { decorationNodes: [], cleanedExtra: extra };
+	}
+
+	const decorationNodes: FlowNode[] = (extra.decorations as Record<string, unknown>[]).map(d => ({
+		id: d.id as string,
+		type: 'decorationNode',
+		position: d.position as { x: number; y: number },
+		...(d.width != null ? { width: d.width as number } : {}),
+		...(d.height != null ? { height: d.height as number } : {}),
+		zIndex: -1,
+		data: {
+			label: (d.label as string) || (d.id as string),
+			nodeType: 'decoration' as const,
+			decorationType: (d.decorationType as DecorationType) || 'rectangle',
+			inPorts: [],
+			outPorts: [],
+			text: d.text as string | undefined,
+			imagePath: d.imagePath as string | undefined,
+			orientation: d.orientation as 'horizontal' | 'vertical' | undefined,
+			fillColor: d.fillColor as string | undefined,
+			strokeColor: d.strokeColor as string | undefined,
+			strokeWidth: d.strokeWidth as number | undefined,
+			fontSize: d.fontSize as number | undefined,
+			fontColor: d.fontColor as string | undefined,
+			opacity: (d.opacity as number) ?? 1,
+		},
+	}));
+
+	// Remove decorations key from graphExtra to avoid duplication
+	const { decorations: _removed, ...rest } = extra;
+	const cleanedExtra = Object.keys(rest).length > 0 ? rest : null;
+
+	return { decorationNodes, cleanedExtra };
+}
+
 // Load from file via API
 // Creates a new tab if file not already open, or switches to existing tab
 export async function loadFromFile(path: string): Promise<void> {
@@ -1799,6 +1973,10 @@ export async function loadFromFile(path: string): Promise<void> {
 	const loadedNodes = convertApiNodes(response.nodes);
 	const loadedEdges = convertApiEdges(response.edges);
 
+	// Extract decorations from graphExtra and merge into nodes
+	const { decorationNodes, cleanedExtra } = extractDecorations(response.extra || null);
+	const allNodes = [...loadedNodes, ...decorationNodes];
+
 	// Check if current tab is empty and untitled - reuse it
 	const currentTab = get(activeTab);
 	const currentTabList = get(tabs);
@@ -1808,24 +1986,24 @@ export async function loadFromFile(path: string): Promise<void> {
 		updateActiveTab({
 			filePath: path,
 			fileName: path.split('/').pop() || 'Untitled',
-			nodes: loadedNodes,
+			nodes: allNodes,
 			edges: loadedEdges,
 			isDirty: false,
 			history: { past: [], future: [] },
 			extraData: response.extra_data || null,
-			graphExtra: response.extra || null,
+			graphExtra: cleanedExtra,
 			fileFormat: response.format,
 		});
 	} else {
 		// Create a new tab with the loaded content
 		const tabId = createTab(path, true);
 		updateTab(tabId, {
-			nodes: loadedNodes,
+			nodes: allNodes,
 			edges: loadedEdges,
 			isDirty: false,
 			history: { past: [], future: [] },
 			extraData: response.extra_data || null,
-			graphExtra: response.extra || null,
+			graphExtra: cleanedExtra,
 			fileFormat: response.format,
 		});
 	}
@@ -1861,11 +2039,13 @@ export async function reloadFile(): Promise<void> {
 		}
 
 		const response = await api.readFile(tab.filePath);
+		const reloadedNodes = convertApiNodes(response.nodes);
+		const { decorationNodes, cleanedExtra } = extractDecorations(response.extra || null);
 		updateActiveTab({
-			nodes: convertApiNodes(response.nodes),
+			nodes: [...reloadedNodes, ...decorationNodes],
 			edges: convertApiEdges(response.edges),
 			extraData: response.extra_data || null,
-			graphExtra: response.extra || null,
+			graphExtra: cleanedExtra,
 			fileFormat: response.format,
 			isDirty: false,
 			history: { past: [], future: [] },
@@ -1898,10 +2078,11 @@ export function saveInlineSubgraphToParent(): boolean {
 	const parentNode = parentTab.nodes.find(n => n.id === nodeId);
 	if (!parentNode || parentNode.data.nodeType !== 'subgraph') return false;
 
-	// Build the updated subgraph config from current tab's nodes/edges
+	// Build the updated subgraph config from current tab's nodes/edges (exclude decorations)
+	const subgraphNodes = tab.nodes.filter(n => n.data.nodeType !== 'decoration');
 	const updatedConfig = {
 		...(parentNode.data as SubgraphNodeData)._subgraphConfig,
-		nodes: tab.nodes.map(n => {
+		nodes: subgraphNodes.map(n => {
 			// Convert UI node back to config format
 			const nodeData = n.data;
 
@@ -1952,7 +2133,7 @@ export function saveInlineSubgraphToParent(): boolean {
 				...n,
 				data: {
 					...n.data,
-					nodeCount: tab.nodes.length,
+					nodeCount: subgraphNodes.length,
 					_subgraphConfig: updatedConfig,
 				}
 			};
@@ -1986,9 +2167,9 @@ export async function saveToFile(path?: string): Promise<void> {
 		throw new Error('Failed to save inline subgraph to parent');
 	}
 
-	// Check for duplicate node names before saving
+	// Check for duplicate node names before saving (only functional nodes)
 	const nameCount = new Map<string, number>();
-	for (const node of tab.nodes) {
+	for (const node of tab.nodes.filter(n => n.data.nodeType !== 'decoration')) {
 		const name = node.data.label.trim();
 		nameCount.set(name, (nameCount.get(name) || 0) + 1);
 	}
@@ -2016,8 +2197,34 @@ export async function saveToFile(path?: string): Promise<void> {
 		format = 'toml';
 	}
 
+	// Separate decoration nodes from functional nodes
+	const functionalNodes = tab.nodes.filter(n => n.data.nodeType !== 'decoration');
+	const decorationNodes = tab.nodes.filter(n => n.data.nodeType === 'decoration');
+
+	// Serialize decorations for graphExtra
+	const serializedDecorations = decorationNodes.map(n => {
+		const d = n.data as DecorationNodeData;
+		return {
+			id: n.id,
+			position: n.position,
+			...(n.width != null ? { width: n.width } : {}),
+			...(n.height != null ? { height: n.height } : {}),
+			decorationType: d.decorationType,
+			label: d.label,
+			...(d.text ? { text: d.text } : {}),
+			...(d.imagePath ? { imagePath: d.imagePath } : {}),
+			...(d.orientation ? { orientation: d.orientation } : {}),
+			...(d.fillColor ? { fillColor: d.fillColor } : {}),
+			...(d.strokeColor ? { strokeColor: d.strokeColor } : {}),
+			...(d.strokeWidth != null ? { strokeWidth: d.strokeWidth } : {}),
+			...(d.fontSize != null ? { fontSize: d.fontSize } : {}),
+			...(d.fontColor ? { fontColor: d.fontColor } : {}),
+			...(d.opacity != null && d.opacity !== 1 ? { opacity: d.opacity } : {}),
+		};
+	});
+
 	// Convert to API format
-	const apiNodes: UINode[] = tab.nodes.map(node => {
+	const apiNodes: UINode[] = functionalNodes.map(node => {
 		const data = node.data as NetrunNodeData | SubgraphNodeData;
 		const baseData = {
 			label: data.label,
@@ -2086,12 +2293,20 @@ export async function saveToFile(path?: string): Promise<void> {
 		type: edge.type,
 	}));
 
+	// Build graphExtra with decorations
+	const graphExtraForSave: Record<string, unknown> = { ...(tab.graphExtra || {}) };
+	if (serializedDecorations.length > 0) {
+		graphExtraForSave.decorations = serializedDecorations;
+	} else {
+		delete graphExtraForSave.decorations;
+	}
+
 	await api.saveFile(
 		savePath,
 		format,
 		apiNodes,
 		apiEdges,
-		tab.graphExtra ?? undefined,
+		Object.keys(graphExtraForSave).length > 0 ? graphExtraForSave : undefined,
 		tab.extraData ?? undefined
 	);
 
@@ -2209,14 +2424,14 @@ export async function createSubgraphFromSelection(subgraphName: string): Promise
 		return false;
 	}
 
-	// Get selected nodes and all edges
-	const selectedNodes = tab.nodes.filter(n => selectedIds.has(n.id));
+	// Get selected nodes (exclude decorations) and all edges
+	const selectedNodes = tab.nodes.filter(n => selectedIds.has(n.id) && n.data.nodeType !== 'decoration');
 
 	// Convert nodes to API format
 	const apiNodes: UINode[] = selectedNodes.map(node => {
 		const baseData = {
 			label: node.data.label,
-			nodeType: node.data.nodeType,
+			nodeType: node.data.nodeType as 'regular' | 'factory' | 'subgraph',
 			inPorts: node.data.inPorts,
 			outPorts: node.data.outPorts,
 			isValid: node.data.isValid,
@@ -2253,11 +2468,12 @@ export async function createSubgraphFromSelection(subgraphName: string): Promise
 		}
 	});
 
-	// Convert all nodes to API format
-	const allApiNodes: UINode[] = tab.nodes.map(node => {
+	// Convert all nodes to API format (exclude decorations)
+	const allFunctionalNodes = tab.nodes.filter(n => n.data.nodeType !== 'decoration');
+	const allApiNodes: UINode[] = allFunctionalNodes.map(node => {
 		const baseData = {
 			label: node.data.label,
-			nodeType: node.data.nodeType,
+			nodeType: node.data.nodeType as 'regular' | 'factory' | 'subgraph',
 			inPorts: node.data.inPorts,
 			outPorts: node.data.outPorts,
 			isValid: node.data.isValid,
@@ -2541,9 +2757,10 @@ registerBeforeTabSwitchHandler((fromTab: TabState) => {
 		const parentNode = parentTab.nodes.find(n => n.id === nodeId);
 		if (!parentNode || parentNode.data.nodeType !== 'subgraph') return;
 
+		const tabSubgraphNodes = fromTab.nodes.filter(n => n.data.nodeType !== 'decoration');
 		const updatedConfig = {
 			...(parentNode.data as SubgraphNodeData)._subgraphConfig,
-			nodes: fromTab.nodes.map(n => {
+			nodes: tabSubgraphNodes.map(n => {
 				const nodeData = n.data;
 				if (nodeData.nodeType === 'subgraph') {
 					const subgraphData = nodeData as SubgraphNodeData;
@@ -2579,7 +2796,7 @@ registerBeforeTabSwitchHandler((fromTab: TabState) => {
 					...n,
 					data: {
 						...n.data,
-						nodeCount: fromTab.nodes.length,
+						nodeCount: tabSubgraphNodes.length,
 						_subgraphConfig: updatedConfig,
 					}
 				};
