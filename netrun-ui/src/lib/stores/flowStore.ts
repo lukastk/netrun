@@ -2398,12 +2398,43 @@ export async function createSubgraphFromSelection(subgraphName: string): Promise
 }
 
 /**
+ * Resolve a relative path against a base directory, handling `.` and `..`.
+ */
+function resolvePath(base: string, rel: string): string {
+	const parts = (base + '/' + rel).split('/');
+	const resolved: string[] = [];
+	for (const p of parts) {
+		if (p === '' || p === '.') continue;
+		if (p === '..') resolved.pop();
+		else resolved.push(p);
+	}
+	return '/' + resolved.join('/');
+}
+
+/**
  * Get the current config as a serializable object for recipes.
  * This captures the full state that a recipe might want to transform.
  */
 export function getCurrentConfig(): Record<string, unknown> {
 	const tab = get(activeTab);
 	if (!tab) return { nodes: [], edges: [], extra: {}, extraData: {} };
+
+	// Resolve project_root_path (absolute) from project_root_override and file path
+	const extraData = (tab.extraData || {}) as Record<string, unknown>;
+	const projectRootOverride = extraData.project_root_override as string | undefined;
+	const fileDir = tab.filePath ? tab.filePath.replace(/\/[^/]*$/, '') : undefined;
+	let projectRootPath: string | undefined;
+	if (projectRootOverride) {
+		if (projectRootOverride.startsWith('/')) {
+			projectRootPath = projectRootOverride;
+		} else if (fileDir) {
+			projectRootPath = resolvePath(fileDir, projectRootOverride);
+		} else {
+			projectRootPath = projectRootOverride;
+		}
+	} else {
+		projectRootPath = fileDir;
+	}
 
 	return {
 		nodes: tab.nodes.map(n => ({
@@ -2420,7 +2451,8 @@ export function getCurrentConfig(): Record<string, unknown> {
 			targetHandle: e.targetHandle
 		})),
 		extra: tab.graphExtra || {},
-		extraData: tab.extraData || {}
+		extraData: tab.extraData || {},
+		project_root_path: projectRootPath,
 	};
 }
 
