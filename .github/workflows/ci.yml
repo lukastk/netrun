@@ -91,6 +91,7 @@ jobs:
         run: |
           python -m venv test-venv
           source test-venv/bin/activate
+          pip install --upgrade pip
           pip install maturin
           maturin develop --release
           python -c "import netrun_sim; print('netrun-sim Python bindings OK')"
@@ -103,6 +104,7 @@ jobs:
         run: |
           python -m venv test-venv
           test-venv\Scripts\Activate.ps1
+          pip install --upgrade pip
           pip install maturin
           maturin develop --release
           python -c "import netrun_sim; print('netrun-sim Python bindings OK')"
@@ -150,6 +152,7 @@ jobs:
         run: |
           python -m venv test-venv
           source test-venv/bin/activate
+          pip install --upgrade pip
           pip install maturin
           cd ../netrun-sim/python && maturin develop --release
           cd ../../netrun && pip install -e .
@@ -163,6 +166,7 @@ jobs:
         run: |
           python -m venv test-venv
           test-venv\Scripts\Activate.ps1
+          pip install --upgrade pip
           pip install maturin
           cd ../netrun-sim/python
           maturin develop --release
@@ -225,6 +229,7 @@ jobs:
         run: |
           python -m venv test-venv
           source test-venv/bin/activate
+          pip install --upgrade pip
           pip install maturin
           cd ../netrun-sim/python && maturin develop --release
           cd ../../netrun && pip install -e .
