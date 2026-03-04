@@ -20,7 +20,7 @@ from enum import Enum
 from typing import Annotated, Literal
 from pydantic import Field, model_validator
 
-from netrun._iutils.env_var import VarRef, EnvVar, EnvVarResolvableModel
+from netrun._iutils.env_var import VarRef, EnvVar, EnvVarResolvableModel, ProjectRootPath
 from netrun._iutils.hashing import HashMethod
 from netrun._iutils.pickling import PicklingMethod
 from netrun.storage._serialization import SerializationMethod
@@ -53,7 +53,7 @@ class CacheConfig(EnvVarResolvableModel):
     """Net-level cache configuration."""
     enabled: bool | VarRef = False
     version: int | VarRef = Field(default=0, description="Cache version. Changing this invalidates all cached entries.")
-    storage_path: str | VarRef | None = Field(default=None, description="Directory for cache storage. None = auto-generated temp directory.")
+    storage_path: Annotated[str | VarRef | None, ProjectRootPath()] = Field(default=None, description="Directory for cache storage. None = auto-generated temp directory.")
     include_nodes: list[str] | VarRef | None = Field(default=None, description="Glob patterns for node names to cache.")
     exclude_nodes: list[str] | VarRef | None = Field(default=None, description="Glob patterns for node names to exclude from caching.")
     include_all_nodes: bool | VarRef = Field(default=False, description="Cache all nodes (overrides include_nodes).")
@@ -107,7 +107,7 @@ class BundleFormat(str, Enum):
 class LocalBackendConfig(EnvVarResolvableModel):
     """Local filesystem backend configuration."""
     type: Literal["local"] = "local"
-    base_path: str | VarRef = Field(description="Base directory for file storage. Resolved relative to project_root if relative.")
+    base_path: Annotated[str | VarRef, ProjectRootPath()] = Field(description="Base directory for file storage. Resolved relative to project_root if relative.")
 
 
 class S3BackendConfig(EnvVarResolvableModel):
@@ -126,7 +126,7 @@ class GCSBackendConfig(EnvVarResolvableModel):
     type: Literal["gcs"] = "gcs"
     bucket: str | VarRef
     prefix: str | VarRef = ""
-    credentials_path: str | VarRef | None = None
+    credentials_path: Annotated[str | VarRef | None, ProjectRootPath()] = None
 
 
 class SSHBackendConfig(EnvVarResolvableModel):
@@ -136,7 +136,7 @@ class SSHBackendConfig(EnvVarResolvableModel):
     base_path: str | VarRef
     port: int | VarRef = 22
     username: str | VarRef | None = None
-    key_path: str | VarRef | None = None
+    key_path: Annotated[str | VarRef | None, ProjectRootPath()] = None
     password: str | VarRef | None = None
 
 
@@ -144,7 +144,7 @@ class RcloneBackendConfig(EnvVarResolvableModel):
     """Rclone backend configuration."""
     type: Literal["rclone"] = "rclone"
     remote: str | VarRef = Field(description="Rclone remote spec, e.g. 'myremote:bucket/path'.")
-    config_path: str | VarRef | None = Field(default=None, description="Path to rclone config file. None uses rclone default (~/.config/rclone/rclone.conf). Relative paths resolved against project_root.")
+    config_path: Annotated[str | VarRef | None, ProjectRootPath()] = Field(default=None, description="Path to rclone config file. None uses rclone default (~/.config/rclone/rclone.conf). Relative paths resolved against project_root.")
 
 
 BackendConfig = Annotated[
@@ -238,7 +238,7 @@ class StorageConfig(EnvVarResolvableModel):
         description="Named backend registry. Nodes reference these by name.",
     )
     cache: CacheConfig | None = None
-    file_storage_metadata_path: str | VarRef | None = Field(
+    file_storage_metadata_path: Annotated[str | VarRef | None, ProjectRootPath()] = Field(
         default=None,
         description="Diskcache path for file storage hash/manifest tracking. Required if any node uses file storage.",
     )

@@ -17,6 +17,7 @@ from ...net.config._base import (
     VarRef,
     EnvVar,
     EnvVarResolvableModel,
+    ProjectRootPath,
     _extract_target_type,
     _resolve_var_ref_value,
     _resolve_var_refs_in_dict,
@@ -190,7 +191,7 @@ class NetConfig(EnvVarResolvableModel):
     node_vars: dict[str, NodeVariable] | None = Field(default=None, description="Global default node variables, accessible via ctx.vars.")
 
     dead_letter_queue: bool | VarRef = Field(default=True, description="Enable dead letter queue for undeliverable packets.")
-    dead_letter_path: str | VarRef | None = Field(default=None, description="File path for dead letter queue storage.")
+    dead_letter_path: Annotated[str | VarRef | None, ProjectRootPath()] = Field(default=None, description="File path for dead letter queue storage.")
     dead_letter_callback: Callable | str | VarRef | None = Field(default=None, description="Callback function or import path for dead letter handling.")
 
     # Output queue configuration
@@ -295,6 +296,11 @@ class NetConfig(EnvVarResolvableModel):
             if var_updates:
                 resolved = resolved.model_copy(update=var_updates)
                 resolved._file_path = self._file_path
+
+        # Resolve project-root-relative paths
+        project_root = resolved.project_root_path
+        resolved = resolved.resolve_project_root_paths(project_root)
+        resolved._file_path = self._file_path
 
         # Auto-derive base_path from project_root when not provided
         if base_path is None:

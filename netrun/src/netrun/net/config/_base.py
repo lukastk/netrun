@@ -171,6 +171,7 @@ from ..._iutils.env_var import (
     VarRef,
     EnvVar,
     EnvVarResolvableModel,
+    ProjectRootPath,
     _cast_env_var_value,
     _extract_target_type,
     _resolve_env_vars_in_list,
@@ -178,6 +179,9 @@ from ..._iutils.env_var import (
     _resolve_var_ref_value,
     _resolve_var_refs_in_list,
     _resolve_var_refs_in_dict,
+    _has_project_root_path_marker,
+    _resolve_project_root_paths_in_list,
+    _resolve_project_root_paths_in_dict,
 )
 
 # %% pts/netrun/06_net/00_config/00_base.pct.py 8
