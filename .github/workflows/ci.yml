@@ -63,7 +63,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
-        python-version: ['3.8', '3.11', '3.12']
+        python-version: ['3.11', '3.12']
 
     steps:
       - uses: actions/checkout@v4
@@ -91,8 +91,8 @@ jobs:
         run: |
           python -m venv test-venv
           source test-venv/bin/activate
-          pip install --upgrade pip
-          pip install maturin
+          python -m pip install --upgrade pip
+          python -m pip install maturin
           maturin develop --release
           python -c "import netrun_sim; print('netrun-sim Python bindings OK')"
         env:
@@ -104,8 +104,8 @@ jobs:
         run: |
           python -m venv test-venv
           test-venv\Scripts\Activate.ps1
-          pip install --upgrade pip
-          pip install maturin
+          python -m pip install --upgrade pip
+          python -m pip install maturin
           maturin develop --release
           python -c "import netrun_sim; print('netrun-sim Python bindings OK')"
         env:
@@ -152,10 +152,10 @@ jobs:
         run: |
           python -m venv test-venv
           source test-venv/bin/activate
-          pip install --upgrade pip
-          pip install maturin
+          python -m pip install --upgrade pip
+          python -m pip install maturin
           cd ../netrun-sim/python && maturin develop --release
-          cd ../../netrun && pip install -e .
+          cd ../../netrun && python -m pip install -e .
           python -c "import netrun; print('netrun OK')"
         env:
           PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
@@ -166,12 +166,12 @@ jobs:
         run: |
           python -m venv test-venv
           test-venv\Scripts\Activate.ps1
-          pip install --upgrade pip
-          pip install maturin
+          python -m pip install --upgrade pip
+          python -m pip install maturin
           cd ../netrun-sim/python
           maturin develop --release
           cd ../../netrun
-          pip install -e .
+          python -m pip install -e .
           python -c "import netrun; print('netrun OK')"
         env:
           PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
@@ -229,11 +229,11 @@ jobs:
         run: |
           python -m venv test-venv
           source test-venv/bin/activate
-          pip install --upgrade pip
-          pip install maturin
+          python -m pip install --upgrade pip
+          python -m pip install maturin
           cd ../netrun-sim/python && maturin develop --release
-          cd ../../netrun && pip install -e .
-          cd ../netrun-ui && pip install -e .
+          cd ../../netrun && python -m pip install -e .
+          cd ../netrun-ui && python -m pip install -e .
           python -c "import netrun_ui_backend; print('netrun-ui OK')"
         env:
           PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
@@ -241,7 +241,7 @@ jobs:
       - name: Run backend tests
         run: |
           source test-venv/bin/activate
-          pip install pytest httpx
+          python -m pip install pytest httpx
           pytest tests/ -v
         env:
           PYO3_USE_ABI3_FORWARD_COMPATIBILITY: "1"
