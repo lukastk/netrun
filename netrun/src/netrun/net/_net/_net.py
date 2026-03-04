@@ -17,7 +17,7 @@ from ...pool.thread import ThreadPool
 from ...pool.multiprocess import MultiprocessPool
 from ...pool.aio import SingleWorkerPool
 from ...pool.remote import RemotePoolClient
-from ...net.config import NetConfig, NodeExecutionConfig, PortConfig, RemotePoolConfig
+from ...net.config import NetConfig, NodeExecutionConfig, PortConfig, RemotePoolConfig, SignalValue, signal_port_name, is_signal_port
 from ...execution_manager import ExecutionManager, PoolType, RunAllocationMethod
 from ..._iutils import get_timestamp_utc
 from ...packets import PacketStore
@@ -1619,6 +1619,9 @@ class Net:
             # No execution function - just mark as running and finish immediately
             self._netsim.do_action(netrun_sim.NetAction.start_epoch(epoch_id))
             self._epochs[epoch_id].started_at = get_timestamp_utc()
+            self._emit_epoch_signal(epoch_id, node_name, "epoch_started")
+            # Emit epoch_finished signal even for no-exec-func nodes
+            self._emit_epoch_signal(epoch_id, node_name, "epoch_finished")
             self._netsim.do_action(netrun_sim.NetAction.finish_epoch(epoch_id))
             self._epochs[epoch_id].ended_at = get_timestamp_utc()
             self._epochs[epoch_id].state = netrun_sim.EpochState.Finished
@@ -1642,6 +1645,8 @@ class Net:
 
         if effective_max_epochs != -1:
             if self._node_epoch_counts[node_name] > effective_max_epochs:
+                # Epoch is still Startable (not yet Running), so use out-of-epoch emission
+                self._emit_out_of_epoch_signal(node_name, "epoch_cancelled")
                 # Cancel the epoch and raise
                 response, _ = self._netsim.do_action(netrun_sim.NetAction.cancel_epoch(epoch_id))
                 record = self._epochs[epoch_id]
@@ -1714,6 +1719,7 @@ class Net:
         self._epochs[epoch_id].started_at = get_timestamp_utc()
         self._epochs[epoch_id].state = netrun_sim.EpochState.Running
         self._running_epochs.add(epoch_id)
+        self._emit_epoch_signal(epoch_id, node_name, "epoch_started")
 
         try:
             return await self._execute_epoch_with_retry(
@@ -1836,6 +1842,7 @@ class Net:
 
         if execution_result.cancelled:
             # Epoch was cancelled via ctx.cancel_epoch()
+            self._emit_epoch_signal(epoch_id, node_name, "epoch_cancelled")
             response, _ = self._netsim.do_action(netrun_sim.NetAction.cancel_epoch(epoch_id))
             record = self._epochs[epoch_id]
             record.was_cancelled = True
@@ -1862,6 +1869,9 @@ class Net:
             self._store_epoch_in_file_storage(
                 epoch_id, node_name, fs_input_hash, packets, packet_values, execution_result,
             )
+
+        # Emit epoch_finished signal (before finish_epoch, while epoch is still Running)
+        self._emit_epoch_signal(epoch_id, node_name, "epoch_finished")
 
         # Finish the epoch
         self._netsim.do_action(netrun_sim.NetAction.finish_epoch(epoch_id))
@@ -1892,6 +1902,7 @@ class Net:
         self._netsim.do_action(netrun_sim.NetAction.start_epoch(epoch_id))
         self._epochs[epoch_id].started_at = get_timestamp_utc()
         self._epochs[epoch_id].state = netrun_sim.EpochState.Running
+        self._emit_epoch_signal(epoch_id, node_name, "epoch_started")
 
         # Consume input packets
         for port_name in cached.consumed_input_ports:
@@ -1931,6 +1942,9 @@ class Net:
         self._epochs[epoch_id].out_salvos = list(epoch_snapshot.out_salvos)
         self._epochs[epoch_id].orphaned_packets = list(epoch_snapshot.orphaned_packets)
         self._epochs[epoch_id].was_cache_hit = True
+
+        # Emit epoch_finished signal (cache replay counts as successful completion)
+        self._emit_epoch_signal(epoch_id, node_name, "epoch_finished")
 
         self._netsim.do_action(netrun_sim.NetAction.finish_epoch(epoch_id))
         self._epochs[epoch_id].ended_at = get_timestamp_utc()
@@ -2085,6 +2099,7 @@ class Net:
         self._netsim.do_action(netrun_sim.NetAction.start_epoch(epoch_id))
         self._epochs[epoch_id].started_at = get_timestamp_utc()
         self._epochs[epoch_id].state = netrun_sim.EpochState.Running
+        self._emit_epoch_signal(epoch_id, node_name, "epoch_started")
 
         # Consume input packets
         for port_name in manifest.consumed_input_ports:
@@ -2198,6 +2213,9 @@ class Net:
         self._epochs[epoch_id].out_salvos = list(epoch_snapshot.out_salvos)
         self._epochs[epoch_id].orphaned_packets = list(epoch_snapshot.orphaned_packets)
         self._epochs[epoch_id].was_file_storage_hit = True
+
+        # Emit epoch_finished signal (file storage replay counts as successful completion)
+        self._emit_epoch_signal(epoch_id, node_name, "epoch_finished")
 
         self._netsim.do_action(netrun_sim.NetAction.finish_epoch(epoch_id))
         self._epochs[epoch_id].ended_at = get_timestamp_utc()
@@ -2461,6 +2479,11 @@ class Net:
                 fs_input_hash=fs_input_hash,
             )
         else:
+            # Emit epoch_failed signal before cancellation (epoch is still Running,
+            # so the signal packet is created inside the epoch, sent onto the edge,
+            # and escapes before cancel_epoch destroys remaining input packets)
+            self._emit_epoch_signal(epoch_id, node_name, "epoch_failed", error=str(error))
+
             # Max retries exceeded - cancel the epoch
             response, _ = self._netsim.do_action(netrun_sim.NetAction.cancel_epoch(epoch_id))
             record = self._epochs[epoch_id]
@@ -2966,6 +2989,122 @@ class Net:
         if asyncio.iscoroutine(result):
             await result
 
+    # --- Signal emission ---
+
+    def _get_effective_signals(self, node_name: str) -> list[str]:
+        """Get the effective signal types for a node.
+
+        Resolution: node-level signals (if not None) override net-level default_signals.
+        """
+        config = self._get_node_execution_config(node_name)
+        if config is not None and config.signals is not None:
+            return list(config.signals)
+        return list(self._config_resolved.default_signals)
+
+    def _find_edge_from_port(self, node_name: str, port_name: str):
+        """Find the edge originating from a node's output port, or None."""
+        for edge in self._config_resolved.graph.edges:
+            source = edge.get_source()
+            if source.node_name == node_name and source.port_name == port_name:
+                return edge
+        return None
+
+    def _emit_epoch_signal(self, epoch_id: str, node_name: str, signal_type: str, error: str | None = None):
+        """Emit an epoch signal while the epoch is still Running.
+
+        Creates a signal packet inside the epoch, loads it into the signal output port,
+        and sends the signal salvo. Works for both success and failure signals because
+        the epoch is Running in both cases.
+
+        Args:
+            epoch_id: The running epoch ID.
+            node_name: The node name.
+            signal_type: Signal type (e.g. 'epoch_finished', 'epoch_failed').
+            error: Error message (only for 'epoch_failed').
+        """
+        signals = self._get_effective_signals(node_name)
+        if signal_type not in signals:
+            return
+
+        port_name = signal_port_name(signal_type)
+
+        # Create signal packet inside the running epoch
+        response, _ = self._netsim.do_action(netrun_sim.NetAction.create_packet(epoch_id))
+        packet_id = str(response.packet_id)
+
+        # Store signal value
+        self._packet_store.register(packet_id, SignalValue(
+            signal=signal_type,
+            node_name=node_name,
+            epoch_id=epoch_id,
+            timestamp=get_timestamp_utc(),
+            error=error,
+        ))
+
+        # Load into signal output port
+        self._netsim.do_action(
+            netrun_sim.NetAction.load_packet_into_output_port(packet_id, port_name)
+        )
+
+        # Send signal salvo (salvo condition name = port name)
+        self._netsim.do_action(
+            netrun_sim.NetAction.send_output_salvo(epoch_id, port_name)
+        )
+
+        # Handle orphaned packets (if signal port is unconnected)
+        epoch = self._netsim.get_epoch(epoch_id)
+        if epoch.orphaned_packets:
+            for orphaned_info in epoch.orphaned_packets:
+                if str(orphaned_info.from_port) == port_name:
+                    # Silently consume orphaned signal packets
+                    orphaned_id = str(orphaned_info.packet_id)
+                    self._packet_store.consume(orphaned_id)
+                    self._netsim.do_action(netrun_sim.NetAction.consume_packet(orphaned_id))
+
+    def _emit_out_of_epoch_signal(self, node_name: str, signal_type: str):
+        """Emit a signal outside any epoch (for node lifecycle signals).
+
+        Creates a packet outside the net and transports it directly to the edge.
+        Used only for node_started and node_stopped signals.
+
+        Args:
+            node_name: The node name.
+            signal_type: Signal type ('node_started' or 'node_stopped').
+        """
+        signals = self._get_effective_signals(node_name)
+        if signal_type not in signals:
+            return
+
+        port_name = signal_port_name(signal_type)
+
+        # Create packet outside net
+        response, _ = self._netsim.do_action(netrun_sim.NetAction.create_packet(None))
+        packet_id = str(response.packet_id)
+
+        # Store signal value
+        self._packet_store.register(packet_id, SignalValue(
+            signal=signal_type,
+            node_name=node_name,
+            epoch_id=None,
+            timestamp=get_timestamp_utc(),
+            error=None,
+        ))
+
+        # Find the edge from this signal port
+        edge = self._find_edge_from_port(node_name, port_name)
+        if edge is not None:
+            # Transport packet onto the edge
+            netsim_edge = edge.to_netrun_sim()
+            self._netsim.do_action(
+                netrun_sim.NetAction.transport_packet_to_location(
+                    packet_id, netrun_sim.PacketLocation.edge(netsim_edge)
+                )
+            )
+        else:
+            # No connected edge - silently consume
+            self._packet_store.consume(packet_id)
+            self._netsim.do_action(netrun_sim.NetAction.consume_packet(packet_id))
+
     async def _start_node(self, node_name: str) -> None:
         """Call start_node_func for a node if configured and not yet started.
 
@@ -2981,6 +3120,9 @@ class Net:
 
         self._started_nodes.add(node_name)
 
+        # Emit node_started signal
+        self._emit_out_of_epoch_signal(node_name, "node_started")
+
     async def _stop_node(self, node_name: str) -> None:
         """Call stop_node_func for a node if configured and was started.
 
@@ -2995,6 +3137,9 @@ class Net:
             await self._call_lifecycle_func(func, node_name)
 
         self._started_nodes.discard(node_name)
+
+        # Emit node_stopped signal
+        self._emit_out_of_epoch_signal(node_name, "node_stopped")
 
     async def _start_all_nodes(self) -> None:
         """Call start_node_func for all nodes that don't have defer_startup.
