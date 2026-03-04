@@ -5,6 +5,7 @@
 	import { tooltip } from '$lib/utils/tooltip';
 	import { isEnvVar, isVarRef, makeEnvVar, getEnvVarName, getEnvVarDefault } from '$lib/utils/envvar';
 	import { availableVarNames } from '$lib/stores/variablesStore';
+	import { signalTypeInfo } from '$lib/stores/signalStore';
 
 	function desc(field: string): string | undefined {
 		return getFieldDescription($configSchema, 'NodeExecutionConfig', field);
@@ -108,7 +109,7 @@
 	let customPoolInput = $state('');
 
 	// Env var mode tracking for custom fields
-	const envVarFields = ['pools', 'exec_node_func', 'start_node_func', 'stop_node_func', 'on_node_failure'] as const;
+	const envVarFields = ['pools', 'exec_node_func', 'start_node_func', 'stop_node_func', 'on_node_failure', 'signals'] as const;
 	let envVarModes: Record<string, boolean> = $state({});
 
 	$effect(() => {
@@ -318,6 +319,88 @@
 				onUpdateLive={(updates) => onUpdate(updates)}
 				availableVarNames={$availableVarNames}
 			/>
+		</div>
+	{/if}
+
+	<!-- Signals Configuration -->
+	{#if $signalTypeInfo}
+		{@const currentSignals = getValue('signals')}
+		{@const inheriting = currentSignals === null || currentSignals === undefined}
+		<div class="field-group">
+			<div class="field-group-header">Signals{#if desc('signals')}<span class="has-tooltip-icon" use:tooltip={desc('signals')}>?</span>{/if}
+				<button
+					class="envvar-toggle"
+					class:active={envVarModes['signals']}
+					title={envVarModes['signals'] ? 'Switch to literal value' : 'Switch to environment variable'}
+					onclick={() => toggleFieldEnvVar('signals')}
+				>$</button>
+			</div>
+			{#if envVarModes['signals']}
+				<div class="envvar-input-group">
+					<div class="envvar-name-row">
+						<span class="envvar-prefix">$</span>
+						<input
+							type="text"
+							class="envvar-name-input"
+							value={getEnvVarName(getConfig().signals)}
+							placeholder="ENV_VAR_NAME"
+							oninput={(e) => updateFieldEnvVarName('signals', (e.target as HTMLInputElement).value)}
+							onblur={() => pushHistory()}
+						/>
+					</div>
+					<div class="envvar-default-row">
+						<span class="envvar-default-label">default:</span>
+						<input
+							type="text"
+							class="envvar-default-input"
+							value={(() => { const d = getEnvVarDefault(getConfig().signals); return Array.isArray(d) ? d.join(', ') : d ?? ''; })()}
+							placeholder="epoch_finished, epoch_failed"
+							oninput={(e) => {
+								const v = (e.target as HTMLInputElement).value;
+								const arr = v ? v.split(',').map(s => s.trim()).filter(Boolean) : [];
+								updateFieldEnvVarDefault('signals', arr);
+							}}
+							onblur={() => pushHistory()}
+						/>
+					</div>
+				</div>
+			{:else}
+				<label class="checkbox-field">
+					<input
+						type="checkbox"
+						checked={inheriting}
+						onchange={() => {
+							if (inheriting) {
+								updateFieldWithHistory('signals', []);
+							} else {
+								updateFieldWithHistory('signals', undefined as any);
+							}
+						}}
+					/>
+					Inherit from net defaults
+				</label>
+				{#if !inheriting}
+					<div class="signals-selection">
+						{#each $signalTypeInfo.validTypes as sigType}
+							{@const selected = Array.isArray(currentSignals) && currentSignals.includes(sigType)}
+							<label class="pool-checkbox">
+								<input
+									type="checkbox"
+									checked={selected}
+									onchange={() => {
+										const current = Array.isArray(currentSignals) ? currentSignals : [];
+										const newSignals = selected
+											? current.filter((s: string) => s !== sigType)
+											: [...current, sigType];
+										updateFieldWithHistory('signals', newSignals);
+									}}
+								/>
+								<span class="pool-name signal-type-label">{sigType}</span>
+							</label>
+						{/each}
+					</div>
+				{/if}
+			{/if}
 		</div>
 	{/if}
 </div>
@@ -650,5 +733,16 @@
 		outline: none;
 		border-color: var(--accent-color, #3b82f6);
 		color: var(--text-primary, #fff);
+	}
+
+	.signals-selection {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		margin-top: 6px;
+	}
+
+	.signal-type-label {
+		font-size: 10px;
 	}
 </style>

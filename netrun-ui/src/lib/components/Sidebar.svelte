@@ -82,6 +82,7 @@
 	import { unregisteredFields, configSchema, getFieldDescription } from '$lib/stores/schemaStore';
 	import { tooltip } from '$lib/utils/tooltip';
 	import { isEnvVar, makeEnvVar, getEnvVarName, getEnvVarDefault } from '$lib/utils/envvar';
+	import { isSignalPort, signalTypeFromPort } from '$lib/stores/signalStore';
 
 	function resolvePath(base: string, rel: string): string {
 		const parts = (base + '/' + rel).split('/');
@@ -377,11 +378,14 @@
 	function addPort(portType: 'inPorts' | 'outPorts') {
 		if (!$selectedNode) return;
 		const ports = [...$selectedNode.data[portType]];
+		const dataPorts = ports.filter(p => !p.isSignal);
 		const newPort: PortConfig = {
-			name: `port_${ports.length}`,
+			name: `port_${dataPorts.length}`,
 			type: 'any'
 		};
-		updateNodeData($selectedNode.id, { [portType]: [...ports, newPort] });
+		// Insert new port before signal ports (which are always at the end)
+		const signalPorts = ports.filter(p => p.isSignal);
+		updateNodeData($selectedNode.id, { [portType]: [...dataPorts, newPort, ...signalPorts] });
 	}
 
 	function removePort(portType: 'inPorts' | 'outPorts', index: number) {
@@ -1290,33 +1294,43 @@
 					{#if sectionsOpen.outPorts}
 						<div class="section-content">
 							{#each $selectedNode.data.outPorts as port, i}
-								<div class="port-editor">
-									<div class="port-fields">
-										<input
-											type="text"
-											value={port.name}
-											placeholder="name"
-											oninput={(e) => updatePortName('outPorts', i, (e.target as HTMLInputElement).value)}
-										/>
-										<input
-											type="text"
-											value={port.type || ''}
-											placeholder="type"
-											oninput={(e) => updatePortType('outPorts', i, (e.target as HTMLInputElement).value)}
-										/>
+								{#if !port.isSignal}
+									<div class="port-editor">
+										<div class="port-fields">
+											<input
+												type="text"
+												value={port.name}
+												placeholder="name"
+												oninput={(e) => updatePortName('outPorts', i, (e.target as HTMLInputElement).value)}
+											/>
+											<input
+												type="text"
+												value={port.type || ''}
+												placeholder="type"
+												oninput={(e) => updatePortType('outPorts', i, (e.target as HTMLInputElement).value)}
+											/>
+										</div>
+										<button
+											class="remove-btn"
+											onclick={() => removePort('outPorts', i)}
+											title="Remove port"
+										>
+											&times;
+										</button>
 									</div>
-									<button
-										class="remove-btn"
-										onclick={() => removePort('outPorts', i)}
-										title="Remove port"
-									>
-										&times;
-									</button>
-								</div>
+								{/if}
 							{/each}
 							<button class="add-btn" onclick={() => addPort('outPorts')}>
 								+ Add Output Port
 							</button>
+							{#if $selectedNode.data.outPorts.some(p => p.isSignal)}
+								<div class="signal-ports-info">
+									<span class="signal-ports-label">Signal ports:</span>
+									{#each $selectedNode.data.outPorts.filter(p => p.isSignal) as sp}
+										<span class="signal-port-tag">{signalTypeFromPort(sp.name) ?? sp.name}</span>
+									{/each}
+								</div>
+							{/if}
 						</div>
 					{/if}
 				</section>
@@ -2905,6 +2919,32 @@
 	.color-clear-btn:hover {
 		color: var(--error-color, #ef4444);
 		background: rgba(239, 68, 68, 0.1);
+	}
+
+	.signal-ports-info {
+		display: flex;
+		align-items: center;
+		flex-wrap: wrap;
+		gap: 4px;
+		margin-top: 6px;
+		padding: 4px 6px;
+		background: rgba(217, 119, 6, 0.08);
+		border: 1px solid rgba(217, 119, 6, 0.2);
+		border-radius: 3px;
+	}
+
+	.signal-ports-label {
+		font-size: 10px;
+		color: #d97706;
+		font-style: italic;
+	}
+
+	.signal-port-tag {
+		font-size: 10px;
+		color: #d97706;
+		padding: 1px 4px;
+		background: rgba(217, 119, 6, 0.15);
+		border-radius: 2px;
 	}
 
 </style>

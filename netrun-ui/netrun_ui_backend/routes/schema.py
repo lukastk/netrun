@@ -4,6 +4,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from netrun.net.config import NetConfig, NodeConfig, NodeExecutionConfig
+from netrun.net.config._base import VALID_SIGNAL_TYPES, SIGNAL_PORT_PREFIX, SIGNAL_PORT_SUFFIX
 from netrun.net.config._net_config import OutputQueueConfig
 from netrun.storage.config import (
     CacheConfig,
@@ -49,3 +50,17 @@ _SCHEMAS = ConfigSchemaResponse(models={
 async def get_config_schema() -> ConfigSchemaResponse:
     """Return field schemas for NetConfig, NodeConfig, and NodeExecutionConfig."""
     return _SCHEMAS
+
+
+# Pre-compute signal types info at import time (static data)
+_SIGNAL_TYPES_INFO = {
+    "valid_types": sorted(VALID_SIGNAL_TYPES),
+    "port_prefix": SIGNAL_PORT_PREFIX,
+    "port_suffix": SIGNAL_PORT_SUFFIX,
+}
+
+
+@router.get("/signal-types")
+async def get_signal_types() -> dict:
+    """Return valid signal types and naming convention."""
+    return _SIGNAL_TYPES_INFO
