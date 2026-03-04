@@ -1,0 +1,24 @@
+{
+  "graph": {
+    "nodes": [
+      {
+        "name": "broadcast",
+        "extra": {
+          "ui": {
+            "position": {
+              "x": 570,
+              "y": -75
+            }
+          }
+        },
+        "factory": "netrun.node_factories.broadcast",
+        "factory_args": {
+          "num_inputs": 2,
+          "num_outputs": 2
+        },
+        "type": "node"
+      }
+    ],
+    "edges": []
+  }
+}
