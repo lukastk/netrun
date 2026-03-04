@@ -3,7 +3,7 @@
 __all__ = ['MainPoolConfig', 'MultiprocessPoolConfig', 'NetConfig', 'OutputQueueConfig', 'PoolConfig', 'PoolSpecConfig', 'RemotePoolConfig', 'ThreadPoolConfig']
 
 # %% pts/netrun/06_net/00_config/03_net_config.pct.py 2
-from pydantic import BaseModel, Field, PrivateAttr, model_validator, field_serializer
+from pydantic import BaseModel, Field, PrivateAttr, model_validator, field_serializer, field_validator
 from typing import Annotated, Literal, Any
 from collections.abc import Callable
 from pathlib import Path
@@ -20,6 +20,8 @@ from ...net.config._base import (
     _extract_target_type,
     _resolve_var_ref_value,
     _resolve_var_refs_in_dict,
+    validate_signal_types,
+    is_signal_port,
 )
 from ...net.config._nodes import NodeVariable
 from ...net.config._graph import GraphConfig
@@ -108,11 +110,11 @@ def _generate_default_output_queues(graph: "GraphConfig") -> dict[str, "OutputQu
         source = edge.get_source()
         connected_ports.add((source.node_name, source.port_name))
 
-    # Generate queues for unconnected output ports
+    # Generate queues for unconnected output ports (excluding signal ports)
     queues: dict[str, OutputQueueConfig] = {}
     for node in graph.nodes:
         for port_name in node.out_ports:
-            if (node.name, port_name) not in connected_ports:
+            if (node.name, port_name) not in connected_ports and not is_signal_port(port_name):
                 queue_name = f"{node.name}::{port_name}"
                 queues[queue_name] = OutputQueueConfig(ports=[(node.name, port_name)])
 
@@ -208,6 +210,8 @@ class NetConfig(EnvVarResolvableModel):
 
     storage: StorageConfig | None = Field(default=None, description="Storage configuration (caching, file storage, backend registry).")
 
+    default_signals: list[str] | VarRef = Field(default_factory=list, description="Default signal types for all nodes. Nodes inherit this unless they set their own signals list. Valid types: 'epoch_finished', 'epoch_failed', 'node_started', 'node_stopped'.")
+
     @field_serializer("dead_letter_callback", when_used='json')
     def serialize_dead_letter_callback(self, callback: Callable | str | VarRef | None) -> str | dict | None:
         """Serialize dead_letter_callback to import path for JSON.
@@ -225,6 +229,15 @@ class NetConfig(EnvVarResolvableModel):
         if isinstance(callback, str):
             return callback
         return _get_callable_import_path(callback)
+
+    @field_validator("default_signals")
+    @classmethod
+    def validate_default_signals(cls, v):
+        """Validate that default signal types are recognized."""
+        if isinstance(v, VarRef):
+            return v
+        validate_signal_types(v)
+        return v
 
     @model_validator(mode='after')
     def validate_single_main_pool(self) -> "NetConfig":

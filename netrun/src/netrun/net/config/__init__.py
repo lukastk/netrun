@@ -46,6 +46,17 @@ from ._base import (
     SalvoConditionConfig,
     _generate_default_in_salvo_conditions,
     _generate_default_out_salvo_conditions,
+    # Signal utilities
+    SIGNAL_PORT_PREFIX,
+    SIGNAL_PORT_SUFFIX,
+    VALID_SIGNAL_TYPES,
+    signal_port_name,
+    is_signal_port,
+    signal_type_from_port,
+    SignalValue,
+    generate_signal_ports,
+    generate_signal_salvo_conditions,
+    validate_signal_types,
 )
 
 # Re-export from _nodes
