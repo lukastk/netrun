@@ -85,6 +85,31 @@
 		updateNodeNodeVars(nodeId, updated);
 	}
 
+	function addOption(nodeId: string, vars: Record<string, NodeVariable>, name: string, optionValue: string) {
+		const trimmed = optionValue.trim();
+		if (!trimmed) return;
+		const updated = { ...vars };
+		const existing = updated[name];
+		if (!existing) return;
+		const opts = existing.options ? [...existing.options] : [];
+		if (!opts.map(String).includes(trimmed)) {
+			opts.push(trimmed);
+		}
+		updated[name] = { ...existing, options: opts };
+		updateNodeNodeVars(nodeId, updated);
+		pushHistory();
+	}
+
+	function removeOption(nodeId: string, vars: Record<string, NodeVariable>, name: string, index: number) {
+		const updated = { ...vars };
+		const existing = updated[name];
+		if (!existing || !existing.options) return;
+		const opts = existing.options.filter((_, i) => i !== index);
+		updated[name] = { ...existing, options: opts.length > 0 ? opts : undefined };
+		updateNodeNodeVars(nodeId, updated);
+		pushHistory();
+	}
+
 	function removeVar(nodeId: string, vars: Record<string, NodeVariable>, name: string) {
 		const { [name]: _, ...rest } = vars;
 		delete envVarMode[`${nodeId}:${name}`];
@@ -214,6 +239,29 @@
 							</div>
 							{#if error}
 								<div class="var-error">{error}</div>
+							{/if}
+							{#if !inEnvMode}
+								<div class="options-chips">
+									{#if variable.options?.length}
+										{#each variable.options as opt, i}
+											<span class="option-chip">
+												{opt}
+												<button class="chip-remove" onclick={() => removeOption(entry.nodeId, entry.vars, name, i)}>&times;</button>
+											</span>
+										{/each}
+									{/if}
+									<input
+										type="text"
+										class="option-add-input"
+										placeholder="+ option"
+										onkeydown={(e) => {
+											if (e.key === 'Enter') {
+												addOption(entry.nodeId, entry.vars, name, (e.target as HTMLInputElement).value);
+												(e.target as HTMLInputElement).value = '';
+											}
+										}}
+									/>
+								</div>
 							{/if}
 						{/if}
 					</div>
@@ -488,5 +536,56 @@
 	.envvar-controls {
 		margin-top: 4px;
 		justify-content: flex-end;
+	}
+
+	.options-chips {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 4px;
+		margin-top: 4px;
+		align-items: center;
+	}
+
+	.option-chip {
+		display: inline-flex;
+		align-items: center;
+		gap: 2px;
+		padding: 1px 6px;
+		background: var(--bg-tertiary, #2d2d2d);
+		border: 1px solid var(--border-color, #404040);
+		border-radius: 10px;
+		font-size: 10px;
+		color: var(--text-primary, #fff);
+	}
+
+	.chip-remove {
+		background: transparent;
+		border: none;
+		color: var(--text-secondary, #a0a0a0);
+		font-size: 11px;
+		padding: 0 2px;
+		cursor: pointer;
+		line-height: 1;
+	}
+
+	.chip-remove:hover {
+		color: var(--error-color, #ef4444);
+	}
+
+	.option-add-input {
+		flex: 0 1 80px;
+		min-width: 60px;
+		padding: 2px 6px;
+		background: transparent;
+		border: 1px dashed var(--border-color, #404040);
+		border-radius: 10px;
+		color: var(--text-primary, #fff);
+		font-size: 10px;
+	}
+
+	.option-add-input:focus {
+		outline: none;
+		border-color: var(--accent-color, #3b82f6);
+		border-style: solid;
 	}
 </style>
