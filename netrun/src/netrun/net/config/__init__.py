@@ -91,5 +91,8 @@ from ._net_config import (
     RemotePoolConfig,
     PoolSpecConfig,
     PoolConfig,
+    NodeVarValue,
+    _normalize_node_var_to_dict,
+    _set_node_vars_in_data,
     NetConfig,
 )

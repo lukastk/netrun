@@ -3790,3 +3790,232 @@ def test_backwards_compat_env_var_in_config():
 
 # %%
 test_backwards_compat_env_var_in_config()
+
+# %% [markdown]
+# ## from_file Config Override Tests
+
+# %%
+#|export
+def _make_config_file(tmp_path, data, suffix=".json"):
+    """Write a config dict as JSON to a temp file and return the path."""
+    file_path = tmp_path / f"test{suffix}"
+    file_path.write_text(json.dumps(data))
+    return file_path
+
+
+def _basic_graph_data(nodes=None, edges=None):
+    """Return a minimal graph data dict."""
+    if nodes is None:
+        nodes = [{"name": "A", "out_ports": {"out": {"slots_spec": {"type": "infinite"}}}}]
+    return {"graph": {"nodes": nodes, "edges": edges or []}}
+
+# %%
+#|export
+def test_from_file_data_overrides(tmp_path):
+    """data_overrides shallow-merges into raw file data."""
+    data = {**_basic_graph_data(), "propagate_exceptions": True}
+    fp = _make_config_file(tmp_path, data)
+
+    config = NetConfig.from_file(fp, data_overrides={"propagate_exceptions": False})
+    assert config.propagate_exceptions is False
+
+# %%
+test_from_file_data_overrides(Path(tempfile.mkdtemp()));
+
+# %%
+#|export
+def test_from_file_global_node_vars_str(tmp_path):
+    """global_node_vars with bare string convenience format."""
+    data = _basic_graph_data()
+    fp = _make_config_file(tmp_path, data)
+
+    config = NetConfig.from_file(fp, global_node_vars={"model": "gpt-4"})
+    assert config.node_vars is not None
+    assert config.node_vars["model"].value == "gpt-4"
+    assert config.node_vars["model"].type == "str"
+
+# %%
+test_from_file_global_node_vars_str(Path(tempfile.mkdtemp()));
+
+# %%
+#|export
+def test_from_file_global_node_vars_tuple(tmp_path):
+    """global_node_vars with (value, type) tuple convenience format."""
+    data = _basic_graph_data()
+    fp = _make_config_file(tmp_path, data)
+
+    config = NetConfig.from_file(fp, global_node_vars={"count": ("42", "int")})
+    assert config.node_vars["count"].value == "42"
+    assert config.node_vars["count"].type == "int"
+
+# %%
+test_from_file_global_node_vars_tuple(Path(tempfile.mkdtemp()));
+
+# %%
+#|export
+def test_from_file_global_node_vars_model(tmp_path):
+    """global_node_vars with NodeVariable model instance."""
+    data = _basic_graph_data()
+    fp = _make_config_file(tmp_path, data)
+
+    config = NetConfig.from_file(fp, global_node_vars={
+        "flag": NodeVariable(value="true", type="bool"),
+    })
+    assert config.node_vars["flag"].value == "true"
+    assert config.node_vars["flag"].type == "bool"
+
+# %%
+test_from_file_global_node_vars_model(Path(tempfile.mkdtemp()));
+
+# %%
+#|export
+def test_from_file_global_node_vars_dict(tmp_path):
+    """global_node_vars with raw dict passthrough."""
+    data = _basic_graph_data()
+    fp = _make_config_file(tmp_path, data)
+
+    config = NetConfig.from_file(fp, global_node_vars={
+        "x": {"value": "3.14", "type": "float"},
+    })
+    assert config.node_vars["x"].value == "3.14"
+    assert config.node_vars["x"].type == "float"
+
+# %%
+test_from_file_global_node_vars_dict(Path(tempfile.mkdtemp()));
+
+# %%
+#|export
+def test_from_file_global_node_vars_merges_existing(tmp_path):
+    """global_node_vars merges with existing node_vars from file, overriding on conflict."""
+    data = {
+        **_basic_graph_data(),
+        "node_vars": {"existing": {"value": "keep", "type": "str"}, "override": {"value": "old", "type": "str"}},
+    }
+    fp = _make_config_file(tmp_path, data)
+
+    config = NetConfig.from_file(fp, global_node_vars={"override": "new", "added": "hello"})
+    assert config.node_vars["existing"].value == "keep"
+    assert config.node_vars["override"].value == "new"
+    assert config.node_vars["added"].value == "hello"
+
+# %%
+test_from_file_global_node_vars_merges_existing(Path(tempfile.mkdtemp()));
+
+# %%
+#|export
+def test_from_file_node_vars_string_key(tmp_path):
+    """node_vars with string key targets a top-level node."""
+    nodes = [
+        {"name": "worker", "out_ports": {"out": {"slots_spec": {"type": "infinite"}}}},
+    ]
+    data = _basic_graph_data(nodes=nodes)
+    fp = _make_config_file(tmp_path, data)
+
+    config = NetConfig.from_file(fp, node_vars={"worker": {"timeout": ("30", "float")}})
+    worker = config.graph.nodes[0]
+    assert worker.execution_config.node_vars["timeout"].value == "30"
+    assert worker.execution_config.node_vars["timeout"].type == "float"
+
+# %%
+test_from_file_node_vars_string_key(Path(tempfile.mkdtemp()));
+
+# %%
+#|export
+def test_from_file_node_vars_tuple_key_inline_subgraph(tmp_path):
+    """node_vars with tuple key targets a node inside an inline subgraph."""
+    nodes = [
+        {
+            "type": "subgraph",
+            "name": "preprocess",
+            "nodes": [
+                {"name": "normalize", "out_ports": {"out": {"slots_spec": {"type": "infinite"}}}},
+            ],
+            "edges": [],
+            "exposed_in_ports": {},
+            "exposed_out_ports": {},
+        },
+    ]
+    data = _basic_graph_data(nodes=nodes)
+    fp = _make_config_file(tmp_path, data)
+
+    config = NetConfig.from_file(fp, node_vars={
+        ("preprocess", "normalize"): {"batch_size": ("128", "int")},
+    })
+    subgraph = config.graph.nodes[0]
+    inner_node = subgraph.nodes[0]
+    assert inner_node.execution_config.node_vars["batch_size"].value == "128"
+    assert inner_node.execution_config.node_vars["batch_size"].type == "int"
+
+# %%
+test_from_file_node_vars_tuple_key_inline_subgraph(Path(tempfile.mkdtemp()));
+
+# %%
+#|export
+def test_from_file_node_vars_file_based_subgraph_raises(tmp_path):
+    """node_vars with tuple key raises ValueError for file-based subgraph."""
+    nodes = [
+        {
+            "type": "subgraph",
+            "name": "external",
+            "path": "./sub.netrun.json",
+            "exposed_in_ports": {},
+            "exposed_out_ports": {},
+        },
+    ]
+    data = _basic_graph_data(nodes=nodes)
+    fp = _make_config_file(tmp_path, data)
+
+    with pytest.raises(ValueError, match="file-based"):
+        NetConfig.from_file(fp, node_vars={
+            ("external", "inner"): {"x": "1"},
+        })
+
+# %%
+test_from_file_node_vars_file_based_subgraph_raises(Path(tempfile.mkdtemp()));
+
+# %%
+#|export
+def test_from_file_node_vars_nonexistent_node_raises(tmp_path):
+    """node_vars raises KeyError for a node name that doesn't exist."""
+    data = _basic_graph_data()
+    fp = _make_config_file(tmp_path, data)
+
+    with pytest.raises(KeyError, match="not found"):
+        NetConfig.from_file(fp, node_vars={"nonexistent": {"x": "1"}})
+
+# %%
+test_from_file_node_vars_nonexistent_node_raises(Path(tempfile.mkdtemp()));
+
+# %%
+#|export
+def test_from_file_unfilled_var_with_override_succeeds(tmp_path):
+    """Config file with var missing 'value' + global_node_vars fills it → validation passes."""
+    data = {
+        **_basic_graph_data(),
+        "node_vars": {"model": {"type": "str"}},  # no value field
+    }
+    fp = _make_config_file(tmp_path, data)
+
+    # global_node_vars overrides the incomplete var with a complete one
+    config = NetConfig.from_file(fp, global_node_vars={"model": "text-3-small"})
+    assert config.node_vars["model"].value == "text-3-small"
+
+# %%
+test_from_file_unfilled_var_with_override_succeeds(Path(tempfile.mkdtemp()));
+
+# %%
+#|export
+def test_from_file_unfilled_var_without_override_fails(tmp_path):
+    """Config file with var missing 'value' and no override → pydantic validation error."""
+    from pydantic import ValidationError
+    data = {
+        **_basic_graph_data(),
+        "node_vars": {"model": {"type": "str"}},  # no value field
+    }
+    fp = _make_config_file(tmp_path, data)
+
+    with pytest.raises(ValidationError):
+        NetConfig.from_file(fp)
+
+# %%
+test_from_file_unfilled_var_without_override_fails(Path(tempfile.mkdtemp()));
