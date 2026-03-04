@@ -243,6 +243,38 @@ async with manager:
 - `UP_RUN_RESPONSE` - Return result
 - `UP_PRINT_BUFFER` - Captured print statements
 
+### Node Variables (`NodeVariable`)
+
+Node variables are typed key-value pairs accessible to nodes via `ctx.vars`. They support a two-level inheritance model:
+
+- **Net-level** (`NetConfig.node_vars`): Global defaults applied to all nodes
+- **Node-level** (`NodeExecutionConfig.node_vars`): Per-node overrides that take precedence
+
+#### Value-optional design
+
+In the **core netrun package**, `NodeVariable.value` is **required** (`str | int | float | bool | VarRef`). This ensures strict validation at runtime.
+
+However, config files can declare variables **without values** — just a name and type (and optionally `options`). These "placeholder" variables are intended to be filled in at runtime via `NetConfig.from_file()` overrides:
+
+```python
+NetConfig.from_file(
+    "netrun.json",
+    global_node_vars={"run_name": "my_run"},           # fills net-level placeholders
+    node_vars={"my_node": {"model": "gpt-4"}},         # fills node-level placeholders
+)
+```
+
+The **netrun-ui backend** monkey-patches `NodeVariable.value` to be optional (default `None`) at startup (`netrun_ui_backend/__init__.py`). This allows the editor to save configs with unfilled vars. The UI frontend must handle `variable.value` being `undefined` (absent from JSON) gracefully.
+
+#### Key files
+
+- Model definition: `pts/netrun/06_net/00_config/01_nodes.pct.py` (`class NodeVariable`)
+- Variable merge logic: `pts/netrun/06_net/00_config/02_graph.pct.py` (`merged_vars = {**net_vars, **node_exec_vars}`)
+- `from_file` overrides: `pts/netrun/06_net/00_config/03_net_config.pct.py` (`_set_node_vars_in_data`)
+- UI monkey patch: `netrun-ui/netrun_ui_backend/__init__.py` (`_patch_node_variable_optional_value`)
+- UI store: `netrun-ui/src/lib/stores/variablesStore.ts`
+- UI components: `netrun-ui/src/lib/components/NodeVariablesSection.svelte`, `AllNodeVariablesSection.svelte`
+
 ### Node Factories (`netrun.node_factories`)
 
 Node factories provide a way to create `NodeConfig` objects dynamically. This enables reusable node templates, function-based nodes, and configuration-driven node creation.

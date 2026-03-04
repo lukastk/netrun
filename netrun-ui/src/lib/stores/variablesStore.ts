@@ -15,7 +15,7 @@ import {
 import { updateActiveTab } from './tabsStore';
 
 export interface NodeVariable {
-	value: string | number | boolean | { $env: string; default?: unknown };
+	value?: string | number | boolean | { $env: string; default?: unknown };
 	type?: string; // "str" (default), "int", "float", "bool", "json"
 	options?: (string | number | boolean)[];
 }
@@ -24,7 +24,8 @@ export interface NodeVariable {
  * Get the display string from a variable value.
  * Returns '' for EnvVar values (no string validation needed).
  */
-export function getVarValueString(value: string | number | boolean | { $env: string; default?: unknown }): string {
+export function getVarValueString(value: string | number | boolean | { $env: string; default?: unknown } | undefined): string {
+	if (value === undefined || value === null) return '';
 	if (typeof value === 'object' && value !== null && '$env' in value) {
 		return '';
 	}
@@ -37,10 +38,11 @@ export function getVarValueString(value: string | number | boolean | { $env: str
  * EnvVar objects always pass validation (returns null).
  */
 export function validateVarValue(
-	value: string | number | boolean | { $env: string; default?: unknown },
+	value: string | number | boolean | { $env: string; default?: unknown } | undefined,
 	type: string | undefined,
 	options?: (string | number | boolean)[],
 ): string | null {
+	if (value === undefined || value === null) return null; // unset placeholder — valid
 	if (typeof value === 'object' && value !== null && '$env' in value) return null;
 	const strValue = typeof value === 'string' ? value : String(value);
 	const t = type || 'str';
