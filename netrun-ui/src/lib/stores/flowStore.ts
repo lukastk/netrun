@@ -30,6 +30,7 @@ import {
 	ROOT_GROUP_PATH,
 } from '$lib/utils/portGroups';
 import { isPortGroupCollapsed } from './portGroupStore';
+import { isSignalPort, getEffectiveSignals, computeSignalPorts } from './signalStore';
 
 // Node shape types
 export type NodeShape =
@@ -57,6 +58,7 @@ export const NODE_SHAPES: { value: NodeShape; label: string }[] = [
 export interface PortConfig {
 	name: string;
 	type?: string;
+	isSignal?: boolean;
 	[key: string]: unknown; // Allow additional properties
 }
 
@@ -953,6 +955,9 @@ export function updateNodeExecutionConfig(
 		}),
 		isDirty: true,
 	});
+
+	// Recompute signal ports (signals config may have changed)
+	recomputeSignalPortsForNode(id);
 }
 
 // Get execution config from a node's _config
@@ -967,6 +972,82 @@ export function getNodeExecutionConfig(
 	}
 
 	return executionConfig as Record<string, unknown>;
+}
+
+// ── Signal port helpers ────────────────────────────────────────
+
+/** Compute signal output ports for a single node based on its config and net defaults. */
+function computeNodeSignalPorts(node: FlowNode, defaultSignals: unknown): PortConfig[] {
+	if (node.data.nodeType === 'subgraph') return [];
+	const execConfig = ((node.data._config || {}) as Record<string, unknown>).execution_config as Record<string, unknown> | undefined;
+	const nodeSignals = execConfig?.signals ?? null;
+	const effective = getEffectiveSignals(nodeSignals, defaultSignals);
+	return computeSignalPorts(effective);
+}
+
+/** Replace signal ports on a node's outPorts, preserving data ports. */
+function withSignalPorts(outPorts: PortConfig[], signalPorts: PortConfig[]): PortConfig[] {
+	const dataPorts = outPorts.filter(p => !p.isSignal);
+	return [...dataPorts, ...signalPorts];
+}
+
+/** Inject signal ports on all nodes after loading a file. */
+export function injectSignalPortsOnLoad(nodes: FlowNode[], extraData: Record<string, unknown> | null): FlowNode[] {
+	const defaultSignals = extraData?.default_signals ?? null;
+	return nodes.map(node => {
+		if (node.data.nodeType === 'subgraph') return node;
+		const signalPorts = computeNodeSignalPorts(node, defaultSignals);
+		if (signalPorts.length === 0) return node;
+		return {
+			...node,
+			data: {
+				...node.data,
+				outPorts: withSignalPorts(node.data.outPorts, signalPorts),
+			}
+		};
+	});
+}
+
+/** Recompute signal ports for a single node (call after changing its signals config). */
+export function recomputeSignalPortsForNode(nodeId: string): void {
+	const tab = get(activeTab);
+	if (!tab) return;
+	const defaultSignals = (tab.extraData as Record<string, unknown> | null)?.default_signals ?? null;
+
+	updateActiveTab({
+		nodes: tab.nodes.map(node => {
+			if (node.id !== nodeId || node.data.nodeType === 'subgraph') return node;
+			const signalPorts = computeNodeSignalPorts(node, defaultSignals);
+			return {
+				...node,
+				data: {
+					...node.data,
+					outPorts: withSignalPorts(node.data.outPorts, signalPorts),
+				}
+			};
+		}),
+	});
+}
+
+/** Recompute signal ports for all nodes (call after changing net-level default_signals). */
+export function recomputeAllSignalPorts(): void {
+	const tab = get(activeTab);
+	if (!tab) return;
+	const defaultSignals = (tab.extraData as Record<string, unknown> | null)?.default_signals ?? null;
+
+	updateActiveTab({
+		nodes: tab.nodes.map(node => {
+			if (node.data.nodeType === 'subgraph') return node;
+			const signalPorts = computeNodeSignalPorts(node, defaultSignals);
+			return {
+				...node,
+				data: {
+					...node.data,
+					outPorts: withSignalPorts(node.data.outPorts, signalPorts),
+				}
+			};
+		}),
+	});
 }
 
 /**
@@ -1975,7 +2056,9 @@ export async function loadFromFile(path: string): Promise<void> {
 
 	// Extract decorations from graphExtra and merge into nodes
 	const { decorationNodes, cleanedExtra } = extractDecorations(response.extra || null);
-	const allNodes = [...loadedNodes, ...decorationNodes];
+	// Inject signal ports based on config (signal ports are auto-generated, not saved)
+	const nodesWithSignals = injectSignalPortsOnLoad(loadedNodes, response.extra_data || null);
+	const allNodes = [...nodesWithSignals, ...decorationNodes];
 
 	// Check if current tab is empty and untitled - reuse it
 	const currentTab = get(activeTab);
@@ -2040,9 +2123,10 @@ export async function reloadFile(): Promise<void> {
 
 		const response = await api.readFile(tab.filePath);
 		const reloadedNodes = convertApiNodes(response.nodes);
+		const nodesWithSignals = injectSignalPortsOnLoad(reloadedNodes, response.extra_data || null);
 		const { decorationNodes, cleanedExtra } = extractDecorations(response.extra || null);
 		updateActiveTab({
-			nodes: [...reloadedNodes, ...decorationNodes],
+			nodes: [...nodesWithSignals, ...decorationNodes],
 			edges: convertApiEdges(response.edges),
 			extraData: response.extra_data || null,
 			graphExtra: cleanedExtra,
@@ -2230,7 +2314,8 @@ export async function saveToFile(path?: string): Promise<void> {
 			label: data.label,
 			nodeType: data.nodeType as 'regular' | 'factory' | 'subgraph',
 			inPorts: data.inPorts.map(p => ({ name: p.name, type: p.type })),
-			outPorts: data.outPorts.map(p => ({ name: p.name, type: p.type })),
+			// Strip signal ports on save (they are auto-generated at resolve time)
+			outPorts: data.outPorts.filter(p => !p.isSignal).map(p => ({ name: p.name, type: p.type })),
 			isValid: data.isValid,
 			validationErrors: data.validationErrors,
 			description: data.description,
@@ -2659,7 +2744,11 @@ export function getCurrentConfig(): Record<string, unknown> {
 			position: n.position,
 			...(n.width != null ? { width: n.width } : {}),
 			...(n.height != null ? { height: n.height } : {}),
-			data: n.data
+			data: {
+				...n.data,
+				// Strip signal ports - they are auto-generated at resolve time
+				outPorts: n.data.outPorts.filter(p => !p.isSignal),
+			}
 		})),
 		edges: tab.edges.map(e => ({
 			id: e.id,
@@ -2742,6 +2831,9 @@ export function applyConfig(config: Record<string, unknown>): void {
 			extraData: config.extraData as Record<string, unknown>,
 		});
 	}
+
+	// Recompute signal ports after applying config (signals may have changed)
+	recomputeAllSignalPorts();
 }
 
 // ── Auto-save inline subgraph to parent on tab switch ──────────
