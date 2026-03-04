@@ -5,6 +5,8 @@
 	import { tooltip } from '$lib/utils/tooltip';
 	import { isEnvVar, isVarRef, makeEnvVar, getEnvVarName, getEnvVarDefault } from '$lib/utils/envvar';
 	import { projectVarNames } from '$lib/stores/variablesStore';
+	import { signalTypeInfo } from '$lib/stores/signalStore';
+	import { recomputeAllSignalPorts } from '$lib/stores/flowStore';
 
 	function desc(field: string): string | undefined {
 		return getFieldDescription($configSchema, 'NetConfig', field);
@@ -129,6 +131,89 @@
 				{/if}
 				<span class="field-hint">Import path to callback function for dead letter packets</span>
 			</div>
+		</div>
+	{/if}
+
+	<!-- Default Signals -->
+	{#if $signalTypeInfo}
+		{@const currentDefaultSignals = getValue<unknown[]>('default_signals', [])}
+		{@const defaultSignalsEnv = isEnvVar(currentDefaultSignals)}
+		<div class="subsection">
+			<div class="subsection-header">Default Signals{#if desc('default_signals')}<span class="has-tooltip-icon" use:tooltip={desc('default_signals')}>?</span>{/if}
+				<button
+					class="envvar-toggle"
+					class:active={defaultSignalsEnv}
+					title={defaultSignalsEnv ? 'Switch to literal value' : 'Switch to environment variable'}
+					onclick={() => {
+						if (defaultSignalsEnv) {
+							const def = getEnvVarDefault(currentDefaultSignals);
+							const val = Array.isArray(def) ? def : [];
+							onUpdate({ ...extraData, default_signals: val });
+						} else {
+							onUpdate({ ...extraData, default_signals: makeEnvVar('', currentDefaultSignals) });
+						}
+						pushHistory();
+						recomputeAllSignalPorts();
+					}}
+				>$</button>
+			</div>
+			{#if defaultSignalsEnv}
+				<div class="envvar-input-group">
+					<div class="envvar-name-row">
+						<span class="envvar-prefix">$</span>
+						<input
+							type="text"
+							class="envvar-name-input"
+							value={getEnvVarName(currentDefaultSignals)}
+							placeholder="ENV_VAR_NAME"
+							oninput={(e) => {
+								const name = (e.target as HTMLInputElement).value;
+								const def = isEnvVar(currentDefaultSignals) ? getEnvVarDefault(currentDefaultSignals) : [];
+								onUpdate({ ...extraData, default_signals: makeEnvVar(name, def) });
+							}}
+							onblur={() => pushHistory()}
+						/>
+					</div>
+					<div class="envvar-default-row">
+						<span class="envvar-default-label">default:</span>
+						<input
+							type="text"
+							class="envvar-default-input"
+							value={(() => { const d = getEnvVarDefault(currentDefaultSignals); return Array.isArray(d) ? d.join(', ') : d ?? ''; })()}
+							placeholder="epoch_finished, epoch_failed"
+							oninput={(e) => {
+								const v = (e.target as HTMLInputElement).value;
+								const arr = v ? v.split(',').map(s => s.trim()).filter(Boolean) : [];
+								const name = isEnvVar(currentDefaultSignals) ? getEnvVarName(currentDefaultSignals) : '';
+								onUpdate({ ...extraData, default_signals: makeEnvVar(name, arr) });
+							}}
+							onblur={() => pushHistory()}
+						/>
+					</div>
+				</div>
+			{:else}
+				<div class="signals-selection">
+					{#each $signalTypeInfo.validTypes as sigType}
+						{@const selected = Array.isArray(currentDefaultSignals) && currentDefaultSignals.includes(sigType)}
+						<label class="signal-checkbox">
+							<input
+								type="checkbox"
+								checked={selected}
+								onchange={() => {
+									const current = Array.isArray(currentDefaultSignals) ? currentDefaultSignals : [];
+									const newSignals = selected
+										? current.filter((s: unknown) => s !== sigType)
+										: [...current, sigType];
+									onUpdate({ ...extraData, default_signals: newSignals });
+									pushHistory();
+									recomputeAllSignalPorts();
+								}}
+							/>
+							<span class="signal-type-name">{sigType}</span>
+						</label>
+					{/each}
+				</div>
+			{/if}
 		</div>
 	{/if}
 </div>
@@ -309,5 +394,38 @@
 		outline: none;
 		border-color: var(--accent-color, #3b82f6);
 		color: var(--text-primary, #fff);
+	}
+
+	.signals-selection {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+
+	.signal-checkbox {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		padding: 4px 8px;
+		background: var(--bg-tertiary, #2d2d2d);
+		border: 1px solid var(--border-color, #404040);
+		border-radius: 3px;
+		cursor: pointer;
+		font-size: 11px;
+	}
+
+	.signal-checkbox:hover {
+		border-color: var(--accent-color, #3b82f6);
+	}
+
+	.signal-checkbox input {
+		width: 12px;
+		height: 12px;
+		cursor: pointer;
+	}
+
+	.signal-type-name {
+		color: var(--text-primary, #fff);
+		font-size: 10px;
 	}
 </style>

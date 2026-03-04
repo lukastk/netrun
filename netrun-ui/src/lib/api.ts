@@ -225,6 +225,12 @@ export interface ConfigSchemaResponse {
 	models: Record<string, ModelSchema>;
 }
 
+export interface SignalTypesResponse {
+	valid_types: string[];
+	port_prefix: string;
+	port_suffix: string;
+}
+
 class ApiClient {
 	private baseUrl: string;
 
@@ -538,6 +544,15 @@ class ApiClient {
 	 */
 	async getConfigSchema(): Promise<ConfigSchemaResponse> {
 		return this.request<ConfigSchemaResponse>('/config/schema', {
+			method: 'GET',
+		});
+	}
+
+	/**
+	 * Get valid signal types and naming convention
+	 */
+	async getSignalTypes(): Promise<SignalTypesResponse> {
+		return this.request<SignalTypesResponse>('/config/signal-types', {
 			method: 'GET',
 		});
 	}

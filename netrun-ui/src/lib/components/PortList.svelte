@@ -11,6 +11,7 @@
 	import { isPortGroupCollapsed } from '$lib/stores/portGroupStore';
 	import { toggleNodePortGroup } from '$lib/stores/flowStore';
 	import type { PortConfig } from '$lib/stores/flowStore';
+	import { signalTypeFromPort } from '$lib/stores/signalStore';
 
 	interface Props {
 		nodeId: string;
@@ -88,21 +89,27 @@
 			class="hidden-handle"
 		/>
 	{:else}
-		<div class="port-row" class:port-indented={item.depth > 0} style:padding-left="{item.depth * 12}px">
+		{@const signalType = item.port.isSignal ? signalTypeFromPort(item.port.name) : null}
+		<div class="port-row" class:port-indented={item.depth > 0} class:signal-port={!!signalType} style:padding-left="{item.depth * 12}px">
 			{#if side === 'in'}
 				<Handle
 					type={handleType}
 					position={handlePosition}
 					id={item.port.name}
+					class={signalType ? 'signal-handle' : ''}
 				/>
 			{/if}
 			{#if !hidePortNames}
-				{#if side === 'out' && item.port.type && item.port.type !== 'any'}
-					<span class="port-type">{item.port.type}</span>
-				{/if}
-				<span class="port-label">{item.port.name.split('.').pop()}</span>
-				{#if side === 'in' && item.port.type && item.port.type !== 'any'}
-					<span class="port-type">{item.port.type}</span>
+				{#if signalType}
+					<span class="port-label signal-label">{signalType}</span>
+				{:else}
+					{#if side === 'out' && item.port.type && item.port.type !== 'any'}
+						<span class="port-type">{item.port.type}</span>
+					{/if}
+					<span class="port-label">{item.port.name.split('.').pop()}</span>
+					{#if side === 'in' && item.port.type && item.port.type !== 'any'}
+						<span class="port-type">{item.port.type}</span>
+					{/if}
 				{/if}
 			{/if}
 			{#if side === 'out'}
@@ -110,6 +117,7 @@
 					type={handleType}
 					position={handlePosition}
 					id={item.port.name}
+					class={signalType ? 'signal-handle' : ''}
 				/>
 			{/if}
 			{#if exposedPortNames?.includes(item.port.name)}
@@ -418,5 +426,22 @@
 		width: 14px !important;
 		height: 14px !important;
 		border-radius: 3px !important;
+	}
+
+	/* Signal port styling */
+	.signal-port {
+		opacity: 0.7;
+	}
+
+	.signal-label {
+		font-style: italic;
+		color: #d97706 !important;
+		font-size: calc(var(--node-port-font-size, 11px) - 1px);
+	}
+
+	:global(.signal-handle) {
+		background: #d97706 !important;
+		width: 6px !important;
+		height: 6px !important;
 	}
 </style>

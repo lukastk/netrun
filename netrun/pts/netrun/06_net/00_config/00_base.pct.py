@@ -662,6 +662,109 @@ def _generate_default_out_salvo_conditions(
         )
     }
 
+# %% [markdown]
+# # Signal Configuration
+#
+# Signals are packets automatically emitted by the Net orchestrator at node lifecycle events.
+# They use regular ports and edges — no changes to netrun-sim needed.
+
+# %%
+#|export
+from dataclasses import dataclass, field
+from datetime import datetime
+
+SIGNAL_PORT_PREFIX = "__signal_"
+SIGNAL_PORT_SUFFIX = "__"
+
+VALID_SIGNAL_TYPES = frozenset({"epoch_started", "epoch_finished", "epoch_failed", "epoch_cancelled", "node_started", "node_stopped"})
+"""Valid signal type names for the signals configuration."""
+
+
+def signal_port_name(signal_type: str) -> str:
+    """Convert a signal type to its output port name.
+
+    Example:
+        >>> signal_port_name("epoch_finished")
+        '__signal_epoch_finished__'
+    """
+    return f"{SIGNAL_PORT_PREFIX}{signal_type}{SIGNAL_PORT_SUFFIX}"
+
+
+def is_signal_port(port_name: str) -> bool:
+    """Check if a port name is a signal port."""
+    return port_name.startswith(SIGNAL_PORT_PREFIX) and port_name.endswith(SIGNAL_PORT_SUFFIX)
+
+
+def signal_type_from_port(port_name: str) -> str | None:
+    """Extract the signal type from a signal port name. Returns None if not a signal port."""
+    if not is_signal_port(port_name):
+        return None
+    return port_name[len(SIGNAL_PORT_PREFIX):-len(SIGNAL_PORT_SUFFIX)]
+
+
+@dataclass
+class SignalValue:
+    """Value carried by a signal packet.
+
+    This is stored in the PacketStore just like any other packet value.
+    """
+    signal: str
+    """Signal type: 'epoch_started', 'epoch_finished', 'epoch_failed', 'epoch_cancelled', 'node_started', 'node_stopped'."""
+
+    node_name: str
+    """Name of the node that emitted this signal."""
+
+    epoch_id: str | None = None
+    """Epoch that triggered the signal (None for node lifecycle signals)."""
+
+    timestamp: datetime | None = None
+    """When the signal was emitted."""
+
+    error: str | None = None
+    """Error message (only for 'epoch_failed' signals)."""
+
+
+def generate_signal_ports(signal_types: list[str]) -> dict[str, "PortConfig"]:
+    """Generate output port configs for the given signal types.
+
+    Each signal type gets an infinite-capacity output port.
+    """
+    return {signal_port_name(s): PortConfig() for s in signal_types}
+
+
+def generate_signal_salvo_conditions(signal_types: list[str]) -> dict[str, SalvoConditionConfig]:
+    """Generate output salvo conditions for signal ports.
+
+    Each signal type gets its own salvo condition that fires when the port is non-empty.
+    Uses infinite max_salvos since signal ports fire on every epoch.
+    """
+    conditions = {}
+    for s in signal_types:
+        port_name = signal_port_name(s)
+        conditions[port_name] = SalvoConditionConfig(
+            max_salvos=MaxSalvosInfiniteConfig(),
+            ports={port_name: PacketCountAllConfig()},
+            term=SalvoConditionTermPortConfig(
+                port_name=port_name,
+                state=PortStateNonEmptyConfig(),
+            ),
+        )
+    return conditions
+
+
+def validate_signal_types(signal_types: list[str]) -> None:
+    """Validate that all signal types are recognized.
+
+    Raises:
+        ValueError: If any signal type is not in VALID_SIGNAL_TYPES.
+    """
+    invalid = set(signal_types) - VALID_SIGNAL_TYPES
+    if invalid:
+        raise ValueError(
+            f"Invalid signal type(s): {sorted(invalid)}. "
+            f"Valid types: {sorted(VALID_SIGNAL_TYPES)}"
+        )
+
 # %%
 #|export
 from pathlib import Path

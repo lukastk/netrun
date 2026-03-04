@@ -14,6 +14,7 @@
 	import '$lib/configFieldRegistrations';
 	import { api } from '$lib/api';
 	import { loadConfigSchema } from '$lib/stores/schemaStore';
+	import { loadSignalTypes } from '$lib/stores/signalStore';
 	import { nodes, currentFilePath, activeTab, activeTabId, recentFiles, loadFromFile, clearFlow, isNewFile, saveToFile, selectNodeByName, extraData, hasUnsavedChanges } from '$lib/stores/flowStore';
 	import { restoreExpansionState, refreshAllExpandedSubgraphs } from '$lib/stores/subgraphExpandStore';
 	import { factorySelectorState, closeFactorySelector } from '$lib/stores/factorySelectorStore';
@@ -71,6 +72,7 @@
 	onMount(async () => {
 		initializeCommands();
 		loadConfigSchema();
+		loadSignalTypes();
 
 		// Fetch working directory from server
 		let firstNetrunFile: string | null = null;
