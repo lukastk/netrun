@@ -169,12 +169,14 @@ class Net:
     function execution via ExecutionManager.
     """
 
-    def __init__(self, config: NetConfig):
+    def __init__(self, config: NetConfig, run_startup_nodes: bool = True):
         """Initialize the Net with the given configuration.
 
         Args:
             config: The NetConfig defining pools, graph, and execution settings.
+            run_startup_nodes: If False, skip executing run_on_startup nodes during start().
         """
+        self._run_startup_nodes = run_startup_nodes
         self._config: NetConfig = config
         self._config_resolved: NetConfig = config.resolve()
 
@@ -1158,11 +1160,15 @@ class Net:
                     print(self._epoch_header(record))
                     record.print_logs(include_timestamps=include_timestamps)
 
-    async def start(self) -> None:
+    async def start(self, run_startup_nodes: bool | None = None) -> None:
         """Start the Net.
 
         This starts the ExecutionManager, all pools, registers node functions,
         and calls start_node_func for nodes that don't have defer_startup.
+
+        Args:
+            run_startup_nodes: If False, skip executing run_on_startup nodes.
+                If None (default), falls back to the constructor parameter.
         """
         if self._started:
             raise RuntimeError("Net already started")
@@ -1178,19 +1184,25 @@ class Net:
         self._started = True
 
         # Execute run_on_startup nodes (skip disabled)
-        for node_config in self._config_resolved.graph.nodes:
-            if node_config.name in self._disabled_nodes:
-                continue
-            config = self._get_node_execution_config(node_config.name)
-            if config is not None and config.run_on_startup:
-                await self.execute_node(node_config.name)
+        _run_startup = run_startup_nodes if run_startup_nodes is not None else self._run_startup_nodes
+        if _run_startup:
+            for node_config in self._config_resolved.graph.nodes:
+                if node_config.name in self._disabled_nodes:
+                    continue
+                config = self._get_node_execution_config(node_config.name)
+                if config is not None and config.run_on_startup:
+                    await self.execute_node(node_config.name)
 
-    def start_sync(self) -> None:
+    def start_sync(self, run_startup_nodes: bool | None = None) -> None:
         """Start the Net synchronously.
 
         Blocking wrapper for start().
+
+        Args:
+            run_startup_nodes: If False, skip executing run_on_startup nodes.
+                If None (default), falls back to the constructor parameter.
         """
-        asyncio.run(self.start())
+        asyncio.run(self.start(run_startup_nodes=run_startup_nodes))
 
     async def stop(self) -> None:
         """Stop the Net gracefully.
