@@ -44,7 +44,7 @@ class PreCreatedPacket:
 
     Example::
 
-        from ..node_factories.from_function import PreCreatedPacket
+        from netrun.node_factories.from_function import PreCreatedPacket
 
         def my_func(data: str, ctx) -> {"out": str, "lazy": PreCreatedPacket(str)}:
             pid = ctx.create_packet_from_value_func(

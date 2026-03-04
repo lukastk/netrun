@@ -277,7 +277,7 @@ def create_execution_manager_server(
 
     Example - Blocking server:
         ```python
-        from .execution_manager import create_execution_manager_server
+        from netrun.execution_manager import create_execution_manager_server
 
         server = create_execution_manager_server()
         await server.serve("0.0.0.0", 8080)
@@ -293,8 +293,8 @@ def create_execution_manager_server(
 
     Example - Client connection:
         ```python
-        from .execution_manager import ExecutionManager, create_execution_manager_server
-        from .pool.remote import RemotePoolClient
+        from netrun.execution_manager import ExecutionManager, create_execution_manager_server
+        from netrun.pool.remote import RemotePoolClient
 
         # On server:
         server = create_execution_manager_server(worker_name="my_worker")

@@ -220,7 +220,7 @@ def create_thread_channel_pair() -> tuple[ThreadChannel, tuple[queue.Queue, queu
     Example:
         ```python
         import threading
-        from ..rpc.thread import create_thread_channel_pair, SyncThreadChannel
+        from netrun.rpc.thread import create_thread_channel_pair, SyncThreadChannel
 
         def worker(send_q, recv_q):
             channel = SyncThreadChannel(send_q, recv_q)
