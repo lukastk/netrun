@@ -672,7 +672,7 @@ from datetime import datetime
 SIGNAL_PORT_PREFIX = "__signal_"
 SIGNAL_PORT_SUFFIX = "__"
 
-VALID_SIGNAL_TYPES = frozenset({"epoch_finished", "epoch_failed", "node_started", "node_stopped"})
+VALID_SIGNAL_TYPES = frozenset({"epoch_started", "epoch_finished", "epoch_failed", "epoch_cancelled", "node_started", "node_stopped"})
 """Valid signal type names for the signals configuration."""
 
 
@@ -705,7 +705,7 @@ class SignalValue:
     This is stored in the PacketStore just like any other packet value.
     """
     signal: str
-    """Signal type: 'epoch_finished', 'epoch_failed', 'node_started', 'node_stopped'."""
+    """Signal type: 'epoch_started', 'epoch_finished', 'epoch_failed', 'epoch_cancelled', 'node_started', 'node_stopped'."""
 
     node_name: str
     """Name of the node that emitted this signal."""
