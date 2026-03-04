@@ -15,7 +15,7 @@ from nblite import nbl_export; nbl_export();
 
 # %%
 #|export
-from pydantic import BaseModel, Field, model_validator, field_serializer
+from pydantic import BaseModel, Field, model_validator, field_serializer, field_validator
 from typing import Annotated, Literal, Any
 from types import ModuleType
 from collections.abc import Callable
@@ -35,6 +35,11 @@ from netrun.net.config._base import (
     SalvoConditionConfig,
     _generate_default_in_salvo_conditions,
     _generate_default_out_salvo_conditions,
+    VALID_SIGNAL_TYPES,
+    validate_signal_types,
+    generate_signal_ports,
+    generate_signal_salvo_conditions,
+    is_signal_port,
 )
 from netrun.execution_manager import RunAllocationMethod
 from netrun.storage.config import NodeStorageConfig
@@ -249,6 +254,8 @@ class NodeExecutionConfig(EnvVarResolvableModel):
 
     storage: NodeStorageConfig | None = Field(default=None, description="Per-node storage configuration (cache and/or file storage).")
 
+    signals: list[str] | VarRef | None = Field(default=None, description="Signal types to emit on lifecycle events. None = inherit from NetConfig.default_signals. [] = no signals. Valid types: 'epoch_finished', 'epoch_failed', 'node_started', 'node_stopped'.")
+
     @field_serializer("exec_node_func", "start_node_func", "stop_node_func", "on_node_failure", when_used='json')
     def serialize_func(self, func: Callable | str | VarRef | None) -> str | dict | None:
         """Serialize functions to their import path for JSON.
@@ -271,6 +278,15 @@ class NodeExecutionConfig(EnvVarResolvableModel):
         if isinstance(func, str):
             return func
         return _get_callable_import_path(func)
+
+    @field_validator("signals")
+    @classmethod
+    def validate_signals(cls, v):
+        """Validate that signal types are recognized."""
+        if v is None or isinstance(v, VarRef):
+            return v
+        validate_signal_types(v)
+        return v
 
     def resolve(self, project_root: 'Path | None' = None) -> "NodeExecutionConfig":
         """Return a resolved copy with string import paths converted to callables.
@@ -297,6 +313,37 @@ class NodeExecutionConfig(EnvVarResolvableModel):
         if updates:
             return self.model_copy(update=updates)
         return self
+
+# %%
+#|export
+def _get_effective_signals(node_config: "NodeConfig", net_config: "Any | None") -> list[str]:
+    """Determine the effective signal types for a node.
+
+    Resolution order:
+    1. If node has execution_config.signals set (not None), use that (even if empty list = opt-out)
+    2. Otherwise, inherit from net_config.default_signals
+    3. If no net_config, default to empty list (no signals)
+
+    Args:
+        node_config: The resolved NodeConfig.
+        net_config: The NetConfig (may be None).
+
+    Returns:
+        List of signal type strings to generate ports for.
+    """
+    if node_config.execution_config is not None and node_config.execution_config.signals is not None:
+        signals = node_config.execution_config.signals
+        if isinstance(signals, VarRef):
+            return []  # VarRef not yet resolved, skip
+        return list(signals)
+
+    if net_config is not None and hasattr(net_config, 'default_signals'):
+        default = net_config.default_signals
+        if isinstance(default, VarRef):
+            return []  # VarRef not yet resolved, skip
+        return list(default)
+
+    return []
 
 # %%
 #|export
@@ -554,14 +601,45 @@ class NodeConfig(EnvVarResolvableModel):
             if resolved_exec is not result.execution_config:
                 result = result.model_copy(update={"execution_config": resolved_exec})
 
+        # Auto-generate signal ports and salvo conditions
+        effective_signals = _get_effective_signals(result, net_config)
+        if effective_signals:
+            sig_updates = {}
+            signal_ports = generate_signal_ports(effective_signals)
+            signal_salvos = generate_signal_salvo_conditions(effective_signals)
+            # Add signal ports that don't already exist
+            new_out_ports = {**result.out_ports}
+            for pname, pconfig in signal_ports.items():
+                if pname not in new_out_ports:
+                    new_out_ports[pname] = pconfig
+            if new_out_ports != result.out_ports:
+                sig_updates["out_ports"] = new_out_ports
+            # Signal salvo conditions are added separately (not merged into default)
+            # They'll be added after default generation below
+            if sig_updates:
+                result = result.model_copy(update=sig_updates)
+
         # Generate default salvo conditions if None
         updates = {}
         if result.in_salvo_conditions is None:
             updates["in_salvo_conditions"] = _generate_default_in_salvo_conditions(result.in_ports)
         if result.out_salvo_conditions is None:
-            updates["out_salvo_conditions"] = _generate_default_out_salvo_conditions(result.out_ports)
+            # Generate defaults for non-signal ports only
+            non_signal_out_ports = {k: v for k, v in result.out_ports.items() if not is_signal_port(k)}
+            updates["out_salvo_conditions"] = _generate_default_out_salvo_conditions(non_signal_out_ports)
         if updates:
             result = result.model_copy(update=updates)
+
+        # Add signal salvo conditions (after default generation, so they don't interfere)
+        if effective_signals:
+            signal_salvos = generate_signal_salvo_conditions(effective_signals)
+            existing_out_salvos = result.out_salvo_conditions or {}
+            merged_out_salvos = {**existing_out_salvos}
+            for sname, sconfig in signal_salvos.items():
+                if sname not in merged_out_salvos:
+                    merged_out_salvos[sname] = sconfig
+            if merged_out_salvos != existing_out_salvos:
+                result = result.model_copy(update={"out_salvo_conditions": merged_out_salvos})
 
         return result
 
