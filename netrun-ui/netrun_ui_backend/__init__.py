@@ -22,7 +22,7 @@ def _patch_node_variable_optional_value():
     # Make value optional (default None)
     field = NodeVariable.model_fields['value']
     field.default = None
-    field.annotation = str | VarRef | None
+    field.annotation = str | int | float | bool | VarRef | None
     NodeVariable.model_rebuild(force=True)
 
     # Rebuild all models that (transitively) reference NodeVariable
