@@ -175,6 +175,7 @@ class NodeVariable(EnvVarResolvableModel):
     """A typed variable accessible to nodes via ctx.vars."""
     value: str | int | float | bool | VarRef
     type: str = "str"  # "str", "int", "float", "bool", "json"
+    options: list[str | int | float | bool] | None = None
 
     @model_validator(mode='after')
     def check_no_var_ref(self):
@@ -187,28 +188,37 @@ class NodeVariable(EnvVarResolvableModel):
         v = self.value
         match self.type:
             case "str" | "":
-                return str(v)
+                resolved = str(v)
             case "int":
-                return int(v)
+                resolved = int(v)
             case "float":
-                return float(v)
+                resolved = float(v)
             case "bool":
                 if isinstance(v, bool):
-                    return v
-                if isinstance(v, (int, float)):
-                    return bool(v)
-                l = v.lower().strip()
-                if l in ("true", "1", "yes"):
-                    return True
-                if l in ("false", "0", "no"):
-                    return False
-                raise ValueError(f"Cannot parse '{v}' as bool")
+                    resolved = v
+                elif isinstance(v, (int, float)):
+                    resolved = bool(v)
+                else:
+                    l = v.lower().strip()
+                    if l in ("true", "1", "yes"):
+                        resolved = True
+                    elif l in ("false", "0", "no"):
+                        resolved = False
+                    else:
+                        raise ValueError(f"Cannot parse '{v}' as bool")
             case "json":
                 if isinstance(v, str):
-                    return _json_module.loads(v)
-                return v
+                    resolved = _json_module.loads(v)
+                else:
+                    resolved = v
             case _:
                 raise ValueError(f"Unsupported NodeVariable type: '{self.type}'")
+
+        if self.options is not None and resolved not in self.options:
+            raise ValueError(
+                f"Value {resolved!r} not in allowed options: {self.options}"
+            )
+        return resolved
 
 # %%
 #|export

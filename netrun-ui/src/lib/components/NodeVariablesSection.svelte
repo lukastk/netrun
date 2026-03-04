@@ -149,7 +149,7 @@
 		onUpdate(current);
 	}
 
-	function formatVarValuePreview(value: string | { $env: string; default?: unknown }): string {
+	function formatVarValuePreview(value: string | number | boolean | { $env: string; default?: unknown }): string {
 		if (isEnvVar(value)) {
 			return `$${getEnvVarName(value) || '...'}`;
 		}
@@ -233,16 +233,31 @@
 						</button>
 					</div>
 				{:else}
-					{@const error = validateVarValue(variable.value, variable.type)}
+					{@const error = validateVarValue(variable.value, variable.type, variable.options)}
 					<div class="var-edit-row">
-						<input
-							type="text"
-							value={typeof variable.value === 'string' ? variable.value : ''}
-							placeholder="value"
-							class:invalid={error !== null}
-							title={error || ''}
-							oninput={(e) => updateVarValue(name, (e.target as HTMLInputElement).value)}
-						/>
+						{#if variable.options?.length}
+							<select
+								class="options-select"
+								value={typeof variable.value === 'string' ? variable.value : String(variable.value)}
+								onchange={(e) => updateVarValue(name, (e.target as HTMLSelectElement).value)}
+							>
+								{#if variable.value === '' || (variable.options && !variable.options.map(String).includes(String(variable.value)))}
+									<option value={typeof variable.value === 'string' ? variable.value : String(variable.value)}>{variable.value === '' ? '(select)' : variable.value}</option>
+								{/if}
+								{#each variable.options as opt}
+									<option value={String(opt)}>{opt}</option>
+								{/each}
+							</select>
+						{:else}
+							<input
+								type="text"
+								value={typeof variable.value === 'string' ? variable.value : ''}
+								placeholder="value"
+								class:invalid={error !== null}
+								title={error || ''}
+								oninput={(e) => updateVarValue(name, (e.target as HTMLInputElement).value)}
+							/>
+						{/if}
 						<select
 							value={variable.type || 'str'}
 							onchange={(e) => updateVarType(name, (e.target as HTMLSelectElement).value)}
@@ -438,6 +453,23 @@
 		color: var(--error-color, #ef4444);
 		margin-top: 3px;
 		padding-left: 2px;
+	}
+
+	.options-select {
+		flex: 1;
+		min-width: 0;
+		padding: 4px 6px;
+		background: var(--bg-tertiary, #2d2d2d);
+		border: 1px solid var(--border-color, #404040);
+		border-radius: 3px;
+		color: var(--text-primary, #fff);
+		font-size: 12px;
+		cursor: pointer;
+	}
+
+	.options-select:focus {
+		outline: none;
+		border-color: var(--accent-color, #3b82f6);
 	}
 
 	.var-edit-row select {

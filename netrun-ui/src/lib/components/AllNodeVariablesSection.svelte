@@ -104,7 +104,7 @@
 					{@const isNetDefault = name in $projectNodeVars}
 					{@const key = `${entry.nodeId}:${name}`}
 					{@const inEnvMode = envVarMode[key] || false}
-					{@const error = validateVarValue(variable.value, variable.type)}
+					{@const error = validateVarValue(variable.value, variable.type, variable.options)}
 					<div class="var-row">
 						<div class="var-header">
 							<span class="var-name">{name}</span>
@@ -166,15 +166,33 @@
 							</div>
 						{:else}
 							<div class="var-edit-row">
-								<input
-									type="text"
-									value={typeof variable.value === 'string' ? variable.value : ''}
-									placeholder="value"
-									class:invalid={error !== null}
-									title={error || ''}
-									oninput={(e) => updateVarValue(entry.nodeId, entry.vars, name, (e.target as HTMLInputElement).value)}
-									onblur={() => pushHistory()}
-								/>
+								{#if variable.options?.length}
+									<select
+										class="options-select"
+										value={typeof variable.value === 'string' ? variable.value : String(variable.value)}
+										onchange={(e) => {
+											updateVarValue(entry.nodeId, entry.vars, name, (e.target as HTMLSelectElement).value);
+											pushHistory();
+										}}
+									>
+										{#if variable.value === '' || (variable.options && !variable.options.map(String).includes(String(variable.value)))}
+											<option value={typeof variable.value === 'string' ? variable.value : String(variable.value)}>{variable.value === '' ? '(select)' : variable.value}</option>
+										{/if}
+										{#each variable.options as opt}
+											<option value={String(opt)}>{opt}</option>
+										{/each}
+									</select>
+								{:else}
+									<input
+										type="text"
+										value={typeof variable.value === 'string' ? variable.value : ''}
+										placeholder="value"
+										class:invalid={error !== null}
+										title={error || ''}
+										oninput={(e) => updateVarValue(entry.nodeId, entry.vars, name, (e.target as HTMLInputElement).value)}
+										onblur={() => pushHistory()}
+									/>
+								{/if}
 								<select
 									value={variable.type || 'str'}
 									onchange={(e) => {
@@ -315,6 +333,23 @@
 		color: var(--error-color, #ef4444);
 		margin-top: 2px;
 		padding-left: 2px;
+	}
+
+	.options-select {
+		flex: 1;
+		min-width: 0;
+		padding: 3px 6px;
+		background: var(--bg-tertiary, #2d2d2d);
+		border: 1px solid var(--border-color, #404040);
+		border-radius: 3px;
+		color: var(--text-primary, #fff);
+		font-size: 11px;
+		cursor: pointer;
+	}
+
+	.options-select:focus {
+		outline: none;
+		border-color: var(--accent-color, #3b82f6);
 	}
 
 	.var-edit-row select {
