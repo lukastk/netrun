@@ -305,11 +305,21 @@ class Net:
 
 
     @classmethod
-    def from_file(cls, path: 'str | Path') -> "Net":
+    def from_file(
+        cls,
+        path: 'str | Path',
+        *,
+        data_overrides: dict | None = None,
+        global_node_vars: dict | None = None,
+        node_vars: dict | None = None,
+    ) -> "Net":
         """Load a Net from a JSON or TOML configuration file.
 
         Args:
             path: Path to the config file (.json or .toml).
+            data_overrides: Shallow-merged into the raw file data before validation.
+            global_node_vars: Convenience node_var values merged into net-level ``node_vars``.
+            node_vars: Per-node node_var values (see ``NetConfig.from_file``).
 
         Returns:
             A Net instance initialized from the config file.
@@ -318,7 +328,12 @@ class Net:
             FileNotFoundError: If the file does not exist.
             ValueError: If the file format is unsupported.
         """
-        config = NetConfig.from_file(path)
+        config = NetConfig.from_file(
+            path,
+            data_overrides=data_overrides,
+            global_node_vars=global_node_vars,
+            node_vars=node_vars,
+        )
         return cls(config)
 
     @staticmethod
