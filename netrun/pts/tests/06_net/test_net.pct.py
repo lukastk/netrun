@@ -5948,6 +5948,182 @@ async def test_run_on_startup_outputs_flow_downstream():
         assert "sink" in execution_log
         assert "consumed:42" in execution_log
 
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_run_on_startup_skip_via_start_param():
+    """Test that start(run_startup_nodes=False) skips startup nodes."""
+    execution_log = []
+
+    def source_node(ctx, packets):
+        execution_log.append("executed")
+        out_id = ctx.create_packet("startup_value")
+        ctx.load_output_port("out", out_id)
+        ctx.send_output_salvo("send")
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Source",
+                out_ports={"out": PortConfig()},
+                in_salvo_conditions={
+                    "trigger": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={},
+                        term=SalvoConditionTermTrueConfig(),
+                    ),
+                },
+                out_salvo_conditions={
+                    "send": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"out": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="out",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="Source",
+                    pools=["main"],
+                    exec_node_func=source_node,
+                    run_on_startup=True,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    net = Net(config)
+    await net.start(run_startup_nodes=False)
+    try:
+        # Startup node should NOT have been executed
+        assert execution_log == []
+        # But Net is fully functional — can execute manually
+        await net.execute_node("Source")
+        assert execution_log == ["executed"]
+    finally:
+        await net.stop()
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_run_on_startup_skip_via_constructor():
+    """Test that Net(config, run_startup_nodes=False) skips startup nodes via context manager."""
+    execution_log = []
+
+    def source_node(ctx, packets):
+        execution_log.append("executed")
+        out_id = ctx.create_packet("startup_value")
+        ctx.load_output_port("out", out_id)
+        ctx.send_output_salvo("send")
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Source",
+                out_ports={"out": PortConfig()},
+                in_salvo_conditions={
+                    "trigger": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={},
+                        term=SalvoConditionTermTrueConfig(),
+                    ),
+                },
+                out_salvo_conditions={
+                    "send": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"out": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="out",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="Source",
+                    pools=["main"],
+                    exec_node_func=source_node,
+                    run_on_startup=True,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config, run_startup_nodes=False) as net:
+        # Startup node should NOT have been executed
+        assert execution_log == []
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_run_on_startup_start_param_overrides_constructor():
+    """Test that start(run_startup_nodes=True) overrides constructor's False."""
+    execution_log = []
+
+    def source_node(ctx, packets):
+        execution_log.append("executed")
+        out_id = ctx.create_packet("startup_value")
+        ctx.load_output_port("out", out_id)
+        ctx.send_output_salvo("send")
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Source",
+                out_ports={"out": PortConfig()},
+                in_salvo_conditions={
+                    "trigger": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={},
+                        term=SalvoConditionTermTrueConfig(),
+                    ),
+                },
+                out_salvo_conditions={
+                    "send": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"out": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="out",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="Source",
+                    pools=["main"],
+                    exec_node_func=source_node,
+                    run_on_startup=True,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    net = Net(config, run_startup_nodes=False)
+    await net.start(run_startup_nodes=True)
+    try:
+        # start() param overrides constructor — startup node SHOULD have executed
+        assert execution_log == ["executed"]
+    finally:
+        await net.stop()
+
 # %% [markdown]
 # ## Node Enabled/Disabled Tests
 
