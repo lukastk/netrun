@@ -62,7 +62,7 @@ async def read_file(request: FileReadRequest) -> FileReadResponse:
     When loading NetConfig, non-graph data (pools, etc.) is returned in extra_data
     so it can be preserved when saving.
     """
-    path = Path(request.path)
+    path = Path(request.path).resolve()
 
     if not path.exists():
         raise HTTPException(status_code=404, detail=f"File not found: {path}")
@@ -340,6 +340,8 @@ async def load_subgraph(request: SubgraphLoadRequest) -> SubgraphLoadResponse:
                     base_dir = None
                 if base_dir:
                     path = (base_dir / path).resolve()
+            else:
+                path = path.resolve()
 
             if not path.exists():
                 raise HTTPException(status_code=404, detail=f"File not found: {path}")
@@ -756,7 +758,7 @@ async def validate_config(request: ValidateRequest) -> ValidateResponse:
                 net_config = NetConfig.model_validate(full_config)
                 # Set _file_path so project_root_path resolves relative paths correctly
                 if request.file_path:
-                    net_config._file_path = Path(request.file_path)
+                    net_config._file_path = Path(request.file_path).resolve()
             except ValidationError as e:
                 for err in e.errors():
                     errors.append(ValidationError_(
@@ -775,11 +777,11 @@ async def validate_config(request: ValidateRequest) -> ValidateResponse:
             if p.is_absolute():
                 resolve_base_path = p
             elif request.file_path:
-                resolve_base_path = (Path(request.file_path).parent / p).resolve()
+                resolve_base_path = (Path(request.file_path).resolve().parent / p).resolve()
             else:
                 resolve_base_path = None
         elif request.file_path:
-            resolve_base_path = Path(request.file_path).parent
+            resolve_base_path = Path(request.file_path).resolve().parent
         else:
             resolve_base_path = None
         for idx, node in enumerate(graph.nodes):
