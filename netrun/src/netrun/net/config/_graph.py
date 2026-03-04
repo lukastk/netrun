@@ -15,6 +15,7 @@ from ...net.config._nodes import (
     EnvVarResolvableModel,
     ConfigValidationError,
 )
+from ...net.config._base import is_signal_port
 import netrun_sim
 
 # %% pts/netrun/06_net/00_config/02_graph.pct.py 4
@@ -279,8 +280,9 @@ class GraphConfig(EnvVarResolvableModel):
                 ))
             else:
                 # Check source port exists (if ports are known)
+                # Signal ports are auto-generated during resolve(), so skip them here
                 out_ports = node_out_ports.get(source.node_name)
-                if out_ports is not None and source.port_name not in out_ports:
+                if out_ports is not None and source.port_name not in out_ports and not is_signal_port(source.port_name):
                     errors.append(ConfigValidationError(
                         loc=["edges", idx],
                         msg=f"Edge source references non-existent port '{source.port_name}' on node '{source.node_name}'",
