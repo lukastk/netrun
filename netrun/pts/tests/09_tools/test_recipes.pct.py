@@ -69,7 +69,7 @@ def test_execute_recipe_basic(tmp_path):
         "    config['modified'] = True\n"
         "    return config\n"
     )
-    result = execute_recipe(str(f), {"nodes": []}, {})
+    result, stdout = execute_recipe(str(f), {"nodes": []}, {})
     assert result["modified"] is True
     assert result["nodes"] == []
 
