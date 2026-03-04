@@ -1619,6 +1619,7 @@ class Net:
             # No execution function - just mark as running and finish immediately
             self._netsim.do_action(netrun_sim.NetAction.start_epoch(epoch_id))
             self._epochs[epoch_id].started_at = get_timestamp_utc()
+            self._emit_epoch_signal(epoch_id, node_name, "epoch_started")
             # Emit epoch_finished signal even for no-exec-func nodes
             self._emit_epoch_signal(epoch_id, node_name, "epoch_finished")
             self._netsim.do_action(netrun_sim.NetAction.finish_epoch(epoch_id))
@@ -1644,6 +1645,8 @@ class Net:
 
         if effective_max_epochs != -1:
             if self._node_epoch_counts[node_name] > effective_max_epochs:
+                # Epoch is still Startable (not yet Running), so use out-of-epoch emission
+                self._emit_out_of_epoch_signal(node_name, "epoch_cancelled")
                 # Cancel the epoch and raise
                 response, _ = self._netsim.do_action(netrun_sim.NetAction.cancel_epoch(epoch_id))
                 record = self._epochs[epoch_id]
@@ -1716,6 +1719,7 @@ class Net:
         self._epochs[epoch_id].started_at = get_timestamp_utc()
         self._epochs[epoch_id].state = netrun_sim.EpochState.Running
         self._running_epochs.add(epoch_id)
+        self._emit_epoch_signal(epoch_id, node_name, "epoch_started")
 
         try:
             return await self._execute_epoch_with_retry(
@@ -1838,6 +1842,7 @@ class Net:
 
         if execution_result.cancelled:
             # Epoch was cancelled via ctx.cancel_epoch()
+            self._emit_epoch_signal(epoch_id, node_name, "epoch_cancelled")
             response, _ = self._netsim.do_action(netrun_sim.NetAction.cancel_epoch(epoch_id))
             record = self._epochs[epoch_id]
             record.was_cancelled = True
@@ -1897,6 +1902,7 @@ class Net:
         self._netsim.do_action(netrun_sim.NetAction.start_epoch(epoch_id))
         self._epochs[epoch_id].started_at = get_timestamp_utc()
         self._epochs[epoch_id].state = netrun_sim.EpochState.Running
+        self._emit_epoch_signal(epoch_id, node_name, "epoch_started")
 
         # Consume input packets
         for port_name in cached.consumed_input_ports:
@@ -2093,6 +2099,7 @@ class Net:
         self._netsim.do_action(netrun_sim.NetAction.start_epoch(epoch_id))
         self._epochs[epoch_id].started_at = get_timestamp_utc()
         self._epochs[epoch_id].state = netrun_sim.EpochState.Running
+        self._emit_epoch_signal(epoch_id, node_name, "epoch_started")
 
         # Consume input packets
         for port_name in manifest.consumed_input_ports:

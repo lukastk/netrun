@@ -219,7 +219,7 @@ class NodeExecutionConfig(EnvVarResolvableModel):
 
     storage: NodeStorageConfig | None = Field(default=None, description="Per-node storage configuration (cache and/or file storage).")
 
-    signals: list[str] | VarRef | None = Field(default=None, description="Signal types to emit on lifecycle events. None = inherit from NetConfig.default_signals. [] = no signals. Valid types: 'epoch_finished', 'epoch_failed', 'node_started', 'node_stopped'.")
+    signals: list[str] | VarRef | None = Field(default=None, description="Signal types to emit on lifecycle events. None = inherit from NetConfig.default_signals. [] = no signals. Valid types: 'epoch_started', 'epoch_finished', 'epoch_failed', 'epoch_cancelled', 'node_started', 'node_stopped'.")
 
     @field_serializer("exec_node_func", "start_node_func", "stop_node_func", "on_node_failure", when_used='json')
     def serialize_func(self, func: Callable | str | VarRef | None) -> str | dict | None:
