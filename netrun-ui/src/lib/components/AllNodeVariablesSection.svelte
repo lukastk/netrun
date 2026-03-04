@@ -127,14 +127,20 @@
 				<div class="node-group-header">{entry.nodeName}</div>
 				{#each Object.entries(entry.vars) as [name, variable] (name)}
 					{@const isNetDefault = name in $projectNodeVars}
+					{@const isInheritVar = variable.inherit === true}
+					{@const globalVar = $projectNodeVars[name]}
+					{@const effectiveType = isInheritVar && globalVar ? (globalVar.type || 'str') : (variable.type || 'str')}
+					{@const effectiveOptions = isInheritVar && globalVar ? globalVar.options : variable.options}
 					{@const key = `${entry.nodeId}:${name}`}
 					{@const inEnvMode = envVarMode[key] || false}
-					{@const error = validateVarValue(variable.value, variable.type, variable.options)}
+					{@const error = validateVarValue(variable.value, effectiveType, effectiveOptions)}
 					<div class="var-row">
 						<div class="var-header">
 							<span class="var-name">{name}</span>
-							<span class="var-type-badge">{variable.type || 'str'}</span>
-							{#if isNetDefault}
+							<span class="var-type-badge">{effectiveType}</span>
+							{#if isInheritVar}
+								<span class="var-badge inherit">inherit</span>
+							{:else if isNetDefault}
 								<span class="var-badge override">override</span>
 							{/if}
 							<button
@@ -191,7 +197,7 @@
 							</div>
 						{:else}
 							<div class="var-edit-row">
-								{#if variable.options?.length}
+								{#if effectiveOptions?.length}
 									<select
 										class="options-select"
 										value={variable.value != null ? (typeof variable.value === 'string' ? variable.value : String(variable.value)) : ''}
@@ -200,10 +206,10 @@
 											pushHistory();
 										}}
 									>
-										{#if variable.value == null || variable.value === '' || (variable.options && !variable.options.map(String).includes(String(variable.value ?? '')))}
+										{#if variable.value == null || variable.value === '' || (effectiveOptions && !effectiveOptions.map(String).includes(String(variable.value ?? '')))}
 											<option value={variable.value != null ? (typeof variable.value === 'string' ? variable.value : String(variable.value)) : ''}>{variable.value == null || variable.value === '' ? '(select)' : variable.value}</option>
 										{/if}
-										{#each variable.options as opt}
+										{#each effectiveOptions as opt}
 											<option value={String(opt)}>{opt}</option>
 										{/each}
 									</select>
@@ -218,17 +224,19 @@
 										onblur={() => pushHistory()}
 									/>
 								{/if}
-								<select
-									value={variable.type || 'str'}
-									onchange={(e) => {
-										updateVarType(entry.nodeId, entry.vars, name, (e.target as HTMLSelectElement).value);
-										pushHistory();
-									}}
-								>
-									{#each VAR_TYPES as t}
-										<option value={t}>{t}</option>
-									{/each}
-								</select>
+								{#if !isInheritVar}
+									<select
+										value={variable.type || 'str'}
+										onchange={(e) => {
+											updateVarType(entry.nodeId, entry.vars, name, (e.target as HTMLSelectElement).value);
+											pushHistory();
+										}}
+									>
+										{#each VAR_TYPES as t}
+											<option value={t}>{t}</option>
+										{/each}
+									</select>
+								{/if}
 								<button
 									class="remove-btn"
 									onclick={() => removeVar(entry.nodeId, entry.vars, name)}
@@ -240,7 +248,7 @@
 							{#if error}
 								<div class="var-error">{error}</div>
 							{/if}
-							{#if !inEnvMode}
+							{#if !inEnvMode && !isInheritVar}
 								<div class="options-chips">
 									{#if variable.options?.length}
 										{#each variable.options as opt, i}
@@ -342,6 +350,11 @@
 	.var-badge.override {
 		background: rgba(234, 179, 8, 0.15);
 		color: #eab308;
+	}
+
+	.var-badge.inherit {
+		background: rgba(34, 197, 94, 0.15);
+		color: #22c55e;
 	}
 
 	.var-edit-row {

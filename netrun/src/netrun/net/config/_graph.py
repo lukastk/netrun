@@ -14,6 +14,7 @@ from ...net.config._nodes import (
     PortRefConfig,
     EnvVarResolvableModel,
     ConfigValidationError,
+    NodeVariable,
 )
 from ...net.config._base import is_signal_port
 import netrun_sim
@@ -187,20 +188,39 @@ class GraphConfig(EnvVarResolvableModel):
             seen_names.add(name)
 
         # Resolve $var refs per-node with merged variables (net-level + node-level override)
-        net_vars = {}
+        net_var_models: dict[str, 'NodeVariable'] = {}
         if net_config is not None and getattr(net_config, 'node_vars', None):
-            net_vars = {
-                name: var.resolve_value()
-                for name, var in net_config.node_vars.items()
-            }
+            for name, var in net_config.node_vars.items():
+                if var.inherit:
+                    raise ValueError(f"Net-level variable '{name}' must not have inherit=True")
+                net_var_models[name] = var
+
+        net_vars = {name: var.resolve_value() for name, var in net_var_models.items()}
 
         for i, node in enumerate(resolved_nodes):
             node_exec_vars = {}
             if node.execution_config and node.execution_config.node_vars:
-                node_exec_vars = {
-                    name: var.resolve_value()
-                    for name, var in node.execution_config.node_vars.items()
-                }
+                for name, var in node.execution_config.node_vars.items():
+                    if var.inherit:
+                        if name not in net_var_models:
+                            raise ValueError(
+                                f"Node '{node.name}' variable '{name}' has inherit=True "
+                                f"but no net-level variable '{name}' exists"
+                            )
+                        global_var = net_var_models[name]
+                        if var.value is not None:
+                            # Override just the value, use global type/options
+                            effective = NodeVariable(
+                                value=var.value,
+                                type=global_var.type,
+                                options=global_var.options,
+                            )
+                            node_exec_vars[name] = effective.resolve_value()
+                        else:
+                            # Inherit everything from global
+                            node_exec_vars[name] = global_var.resolve_value()
+                    else:
+                        node_exec_vars[name] = var.resolve_value()
             merged_vars = {**net_vars, **node_exec_vars}
             if merged_vars:
                 new_node = node.resolve_var_refs(merged_vars)

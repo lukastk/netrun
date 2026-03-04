@@ -2606,6 +2606,82 @@ def test_ctx_vars_merging():
 # %%
 test_ctx_vars_merging()
 
+# %%
+#|export
+def test_ctx_vars_merging_with_inherit():
+    """Test inherit=True vars use global type/options in preprocessor merge."""
+    node_configs = {
+        "InheritNode": NodeExecutionConfig(
+            node_vars={
+                "model": NodeVariable(inherit=True, value="gpt-4"),
+                "env": NodeVariable(inherit=True),
+                "local_only": NodeVariable(value="42", type="int"),
+            }
+        )
+    }
+
+    net_vars = {
+        "model": NodeVariable(value="gpt-3.5", type="str", options=["gpt-3.5", "gpt-4"]),
+        "env": NodeVariable(value="production", type="str"),
+        "global_only": NodeVariable(value="true", type="bool"),
+    }
+
+    preprocessor = create_net_func_preprocessor(
+        node_configs,
+        net_node_vars=net_vars,
+    )
+
+    captured_ctx = None
+
+    def test_func(ctx, packets):
+        nonlocal captured_ctx
+        captured_ctx = ctx
+        return "ok"
+
+    wrapped = preprocessor(test_func)
+
+    result = wrapped(
+        epoch_id="inherit_test",
+        node_name="InheritNode",
+        packets={},
+        packet_values={},
+    )
+
+    assert result.func_result == "ok"
+    v = captured_ctx.vars
+    # inherit with value override: uses node value + global type (still "str")
+    assert v["model"] == "gpt-4"
+    # inherit without value: uses global value
+    assert v["env"] == "production"
+    # Non-inherit node var
+    assert v["local_only"] == 42
+    # Global-only var
+    assert v["global_only"] is True
+
+# %%
+test_ctx_vars_merging_with_inherit()
+
+# %%
+#|export
+def test_ctx_vars_inherit_missing_global_raises():
+    """inherit=True without matching global var raises ValueError."""
+    node_configs = {
+        "BadNode": NodeExecutionConfig(
+            node_vars={
+                "missing": NodeVariable(inherit=True),
+            }
+        )
+    }
+
+    with pytest.raises(ValueError, match="no net-level variable 'missing' exists"):
+        create_net_func_preprocessor(
+            node_configs,
+            net_node_vars=None,
+        )
+
+# %%
+test_ctx_vars_inherit_missing_global_raises()
+
 # %% [markdown]
 # ## Net.from_file Tests
 

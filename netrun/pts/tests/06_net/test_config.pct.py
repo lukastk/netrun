@@ -1925,7 +1925,7 @@ def test_node_variable_serialization_roundtrip():
     """Test NodeVariable Pydantic model_dump / model_validate roundtrip."""
     var = NodeVariable(value="42", type="int")
     dumped = var.model_dump()
-    assert dumped == {"value": "42", "type": "int", "options": None}
+    assert dumped == {"value": "42", "type": "int", "options": None, "inherit": False}
 
     restored = NodeVariable.model_validate(dumped)
     assert restored.value == "42"
@@ -2007,7 +2007,7 @@ def test_node_variable_options_serialization_roundtrip():
     """Test NodeVariable with options round-trips through serialization."""
     var = NodeVariable(value="production", type="str", options=["production", "staging", "dev"])
     dumped = var.model_dump()
-    assert dumped == {"value": "production", "type": "str", "options": ["production", "staging", "dev"]}
+    assert dumped == {"value": "production", "type": "str", "options": ["production", "staging", "dev"], "inherit": False}
 
     restored = NodeVariable.model_validate(dumped)
     assert restored.options == ["production", "staging", "dev"]
@@ -2021,7 +2021,7 @@ def test_node_variable_options_serialization_roundtrip():
     # Without options, field is omitted with exclude_none
     var_no_opts = NodeVariable(value="hello", type="str")
     dumped2 = var_no_opts.model_dump()
-    assert dumped2 == {"value": "hello", "type": "str", "options": None}
+    assert dumped2 == {"value": "hello", "type": "str", "options": None, "inherit": False}
 
 # %%
 test_node_variable_options_serialization_roundtrip();
@@ -4091,17 +4091,92 @@ test_from_file_unfilled_var_with_override_succeeds(Path(tempfile.mkdtemp()));
 
 # %%
 #|export
-def test_from_file_unfilled_var_without_override_fails(tmp_path):
-    """Config file with var missing 'value' and no override → pydantic validation error."""
-    from pydantic import ValidationError
+def test_from_file_unfilled_var_without_override_loads(tmp_path):
+    """Config file with var missing 'value' loads ok (value=None placeholder)."""
     data = {
         **_basic_graph_data(),
         "node_vars": {"model": {"type": "str"}},  # no value field
     }
     fp = _make_config_file(tmp_path, data)
 
-    with pytest.raises(ValidationError):
-        NetConfig.from_file(fp)
+    config = NetConfig.from_file(fp)
+    assert config.node_vars["model"].value is None
+    # resolve_value() raises because value is None
+    with pytest.raises(ValueError, match="placeholder not filled in"):
+        config.node_vars["model"].resolve_value()
 
 # %%
-test_from_file_unfilled_var_without_override_fails(Path(tempfile.mkdtemp()));
+test_from_file_unfilled_var_without_override_loads(Path(tempfile.mkdtemp()));
+
+# %% [markdown]
+# ## NodeVariable inherit Tests
+
+# %%
+#|export
+def test_node_variable_inherit_basic():
+    """NodeVariable(inherit=True) validates without type/options."""
+    var = NodeVariable(inherit=True)
+    assert var.inherit is True
+    assert var.value is None
+    assert var.type == "str"  # default, but not explicitly set
+
+# %%
+test_node_variable_inherit_basic();
+
+# %%
+#|export
+def test_node_variable_inherit_with_value():
+    """NodeVariable(inherit=True, value=...) is valid."""
+    var = NodeVariable(inherit=True, value="override")
+    assert var.inherit is True
+    assert var.value == "override"
+
+# %%
+test_node_variable_inherit_with_value();
+
+# %%
+#|export
+def test_node_variable_inherit_rejects_explicit_type():
+    """NodeVariable(inherit=True, type=...) raises because type must be inherited."""
+    with pytest.raises(ValueError, match="inherit=True must not explicitly set 'type'"):
+        NodeVariable(inherit=True, type="int")
+
+# %%
+test_node_variable_inherit_rejects_explicit_type();
+
+# %%
+#|export
+def test_node_variable_inherit_rejects_explicit_options():
+    """NodeVariable(inherit=True, options=...) raises because options must be inherited."""
+    with pytest.raises(ValueError, match="inherit=True must not explicitly set 'options'"):
+        NodeVariable(inherit=True, options=["a", "b"])
+
+# %%
+test_node_variable_inherit_rejects_explicit_options();
+
+# %%
+#|export
+def test_node_variable_resolve_value_none_raises():
+    """NodeVariable with value=None raises on resolve_value()."""
+    var = NodeVariable(value=None, type="str")
+    with pytest.raises(ValueError, match="placeholder not filled in"):
+        var.resolve_value()
+
+# %%
+test_node_variable_resolve_value_none_raises();
+
+# %%
+#|export
+def test_node_variable_inherit_serialization_roundtrip():
+    """NodeVariable with inherit round-trips through serialization."""
+    var = NodeVariable(inherit=True, value="override")
+    dumped = var.model_dump()
+    assert dumped["inherit"] is True
+    assert dumped["value"] == "override"
+
+    restored = NodeVariable.model_validate(dumped)
+    assert restored.inherit is True
+    assert restored.value == "override"
+
+# %%
+test_node_variable_inherit_serialization_roundtrip();

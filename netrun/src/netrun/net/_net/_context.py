@@ -910,14 +910,33 @@ def create_net_func_preprocessor(
         factory = factory_info[0] if factory_info else None
         factory_args = factory_info[1] if factory_info else {}
 
-        # Merge net-level + node-level vars (node overrides net)
+        # Merge net-level + node-level vars (node overrides net, inherit-aware)
         merged_vars = None
         if net_node_vars or config.node_vars:
             merged = {}
             if net_node_vars:
                 merged.update({k: v.model_dump() for k, v in net_node_vars.items()})
             if config.node_vars:
-                merged.update({k: v.model_dump() for k, v in config.node_vars.items()})
+                for k, v in config.node_vars.items():
+                    if v.inherit:
+                        if net_node_vars and k in net_node_vars:
+                            global_var = net_node_vars[k]
+                            if v.value is not None:
+                                # Override just the value, use global type/options
+                                effective = NodeVariable(
+                                    value=v.value,
+                                    type=global_var.type,
+                                    options=global_var.options,
+                                )
+                                merged[k] = effective.model_dump()
+                            # else: global already in merged, keep it
+                        else:
+                            raise ValueError(
+                                f"Node '{node_name}' variable '{k}' has inherit=True "
+                                f"but no net-level variable '{k}' exists"
+                            )
+                    else:
+                        merged[k] = v.model_dump()
             if merged:
                 merged_vars = merged
 

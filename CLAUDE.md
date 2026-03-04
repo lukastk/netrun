@@ -252,9 +252,7 @@ Node variables are typed key-value pairs accessible to nodes via `ctx.vars`. The
 
 #### Value-optional design
 
-In the **core netrun package**, `NodeVariable.value` is **required** (`str | int | float | bool | VarRef`). This ensures strict validation at runtime.
-
-However, config files can declare variables **without values** — just a name and type (and optionally `options`). These "placeholder" variables are intended to be filled in at runtime via `NetConfig.from_file()` overrides:
+`NodeVariable.value` is optional (`str | int | float | bool | VarRef | None`, default `None`). Variables without values are placeholders that can be filled in via `NetConfig.from_file()` overrides:
 
 ```python
 NetConfig.from_file(
@@ -264,14 +262,27 @@ NetConfig.from_file(
 )
 ```
 
-The **netrun-ui backend** monkey-patches `NodeVariable.value` to be optional (default `None`) at startup (`netrun_ui_backend/__init__.py`). This allows the editor to save configs with unfilled vars. The UI frontend must handle `variable.value` being `undefined` (absent from JSON) gracefully.
+Calling `resolve_value()` on a variable with `value=None` raises `ValueError`. The UI frontend must handle `variable.value` being `undefined` (absent from JSON) gracefully.
+
+#### Inherit field
+
+`NodeVariable.inherit: bool = False` enables node-level vars to inherit from net-level vars of the same name. When `inherit=True` on a **node-level** var:
+
+- Requires a net-level var of the same name (errors if missing at resolve time)
+- `type` and `options` must not be explicitly set (they are inherited from the global var)
+- `value` may optionally be set to override just the value; type/options still come from global
+- If `value` is not set, the global value is used entirely
+
+Net-level vars must **never** have `inherit=True` (error at resolve time).
+
+The inherit validation uses `model_fields_set` but only rejects if the value differs from the default (to allow serialization round-trips where `model_dump()` includes `type: "str"`).
 
 #### Key files
 
 - Model definition: `pts/netrun/06_net/00_config/01_nodes.pct.py` (`class NodeVariable`)
-- Variable merge logic: `pts/netrun/06_net/00_config/02_graph.pct.py` (`merged_vars = {**net_vars, **node_exec_vars}`)
+- Variable merge logic (graph resolve): `pts/netrun/06_net/00_config/02_graph.pct.py`
+- Variable merge logic (preprocessor): `pts/netrun/06_net/01_net/00_context.pct.py` (`create_net_func_preprocessor`)
 - `from_file` overrides: `pts/netrun/06_net/00_config/03_net_config.pct.py` (`_set_node_vars_in_data`)
-- UI monkey patch: `netrun-ui/netrun_ui_backend/__init__.py` (`_patch_node_variable_optional_value`)
 - UI store: `netrun-ui/src/lib/stores/variablesStore.ts`
 - UI components: `netrun-ui/src/lib/components/NodeVariablesSection.svelte`, `AllNodeVariablesSection.svelte`
 
