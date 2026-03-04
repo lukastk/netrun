@@ -168,7 +168,8 @@
 		const inherited = inheritedVariables[name];
 		if (!inherited) return;
 		const current = { ...variables };
-		current[name] = { ...inherited };
+		// Create an inherit var that references the global; user can set value later
+		current[name] = { inherit: true };
 		onUpdate(current);
 	}
 
@@ -187,16 +188,22 @@
 	{:else}
 		{#each displayVars as { name, variable, source } (name)}
 			{@const inEnvMode = envVarMode[name] || false}
+			{@const isInheritVar = source === 'own' && variable.inherit === true}
+			{@const globalVar = inheritedVariables[name]}
+			{@const effectiveType = isInheritVar && globalVar ? (globalVar.type || 'str') : (variable.type || 'str')}
+			{@const effectiveOptions = isInheritVar && globalVar ? globalVar.options : variable.options}
 			<div class="var-row" class:inherited={source === 'inherited'}>
 				<div class="var-header">
 					<span class="var-name">{name}</span>
-					<span class="var-type-badge">{variable.type || 'str'}</span>
+					<span class="var-type-badge">{effectiveType}</span>
 					{#if source === 'inherited'}
 						<span class="var-badge default">default</span>
+					{:else if isInheritVar}
+						<span class="var-badge inherit">inherit</span>
 					{:else if level === 'node' && name in inheritedVariables}
 						<span class="var-badge override">override</span>
 					{/if}
-					{#if source !== 'inherited'}
+					{#if source !== 'inherited' && !isInheritVar}
 						<button
 							class="envvar-toggle"
 							class:active={inEnvMode}
@@ -216,6 +223,51 @@
 							Override
 						</button>
 					</div>
+				{:else if isInheritVar}
+					{@const globalValue = globalVar ? formatVarValuePreview(globalVar.value) : '(unset)'}
+					{@const error = validateVarValue(variable.value, effectiveType, effectiveOptions)}
+					<div class="var-edit-row">
+						{#if effectiveOptions?.length}
+							<select
+								class="options-select"
+								value={variable.value != null ? (typeof variable.value === 'string' ? variable.value : String(variable.value)) : ''}
+								onchange={(e) => {
+									const current = { ...variables };
+									current[name] = { ...current[name], value: (e.target as HTMLSelectElement).value };
+									onUpdate(current);
+								}}
+							>
+								<option value="">(use global: {globalValue})</option>
+								{#each effectiveOptions as opt}
+									<option value={String(opt)}>{opt}</option>
+								{/each}
+							</select>
+						{:else}
+							<input
+								type="text"
+								value={variable.value != null && typeof variable.value === 'string' ? variable.value : ''}
+								placeholder="(uses global: {globalValue})"
+								class:invalid={error !== null}
+								title={error || ''}
+								oninput={(e) => {
+									const current = { ...variables };
+									const val = (e.target as HTMLInputElement).value;
+									current[name] = { ...current[name], value: val || undefined };
+									onUpdate(current);
+								}}
+							/>
+						{/if}
+						<button
+							class="remove-btn"
+							onclick={() => removeVar(name)}
+							title="Remove variable"
+						>
+							&times;
+						</button>
+					</div>
+					{#if error}
+						<div class="var-error">{error}</div>
+					{/if}
 				{:else if inEnvMode}
 					<div class="envvar-input-group">
 						<div class="envvar-name-row">
@@ -461,6 +513,11 @@
 	.var-badge.override {
 		background: rgba(234, 179, 8, 0.15);
 		color: #eab308;
+	}
+
+	.var-badge.inherit {
+		background: rgba(34, 197, 94, 0.15);
+		color: #22c55e;
 	}
 
 	.var-edit-row {

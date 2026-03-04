@@ -172,20 +172,46 @@ Args:
 # %%
 #|export
 class NodeVariable(EnvVarResolvableModel):
-    """A typed variable accessible to nodes via ctx.vars."""
-    value: str | int | float | bool | VarRef
+    """A typed variable accessible to nodes via ctx.vars.
+
+    When ``inherit=True`` (node-level only), the variable inherits its ``type``
+    and ``options`` from the net-level variable of the same name.  ``value`` may
+    optionally be set to override just the value while keeping the inherited
+    type/options.  If ``value`` is not set, the global value is used.
+    """
+    value: str | int | float | bool | VarRef | None = None
     type: str = "str"  # "str", "int", "float", "bool", "json"
     options: list[str | int | float | bool] | None = None
+    inherit: bool = False
 
     @model_validator(mode='after')
     def check_no_var_ref(self):
-        if isinstance(self.value, VarRef) and self.value.var is not None:
+        if self.value is not None and isinstance(self.value, VarRef) and self.value.var is not None:
             raise ValueError("NodeVariable.value cannot use $var (circular). Use $env instead.")
         return self
 
+    @model_validator(mode='after')
+    def check_inherit_constraints(self):
+        if self.inherit:
+            # Only reject if a non-default value was explicitly provided.
+            # Checking model_fields_set alone isn't enough because
+            # model_validate(dict) marks all keys as set — including defaults
+            # that appear in serialized (model_dump) output.
+            if 'type' in self.model_fields_set and self.type != "str":
+                raise ValueError("inherit=True must not explicitly set 'type' (it is inherited from the global variable)")
+            if 'options' in self.model_fields_set and self.options is not None:
+                raise ValueError("inherit=True must not explicitly set 'options' (they are inherited from the global variable)")
+        return self
+
     def resolve_value(self) -> Any:
-        """Resolve the value to the appropriate Python type."""
+        """Resolve the value to the appropriate Python type.
+
+        Raises:
+            ValueError: If ``value`` is None (placeholder not filled in).
+        """
         v = self.value
+        if v is None:
+            raise ValueError("NodeVariable.value is None (placeholder not filled in)")
         match self.type:
             case "str" | "":
                 resolved = str(v)
