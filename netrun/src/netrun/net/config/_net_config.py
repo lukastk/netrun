@@ -205,6 +205,7 @@ class NetConfig(EnvVarResolvableModel):
         cls,
         path: str | Path,
         *,
+        keep_symlinks: bool = False,
         data_overrides: dict[str, Any] | None = None,
         global_node_vars: "dict[str, NodeVarValue] | None" = None,
         node_vars: "dict[str | tuple[str, ...], dict[str, NodeVarValue]] | None" = None,
@@ -213,6 +214,7 @@ class NetConfig(EnvVarResolvableModel):
 
         Args:
             path: Path to the config file (.json or .toml).
+            keep_symlinks: If True, don't resolve symlinks in the path.
             data_overrides: Shallow-merged into the raw file data before validation.
             global_node_vars: Convenience node_var values merged into net-level ``node_vars``.
             node_vars: Per-node node_var values. Keys are either a node name string
@@ -225,7 +227,7 @@ class NetConfig(EnvVarResolvableModel):
             FileNotFoundError: If the file does not exist.
             ValueError: If the file extension is not .json or .toml.
         """
-        path = Path(path).resolve()
+        path = Path(path).absolute() if keep_symlinks else Path(path).resolve()
         if not path.exists():
             raise FileNotFoundError(f"Config file not found: {path}")
 

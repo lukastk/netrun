@@ -333,6 +333,7 @@ class Net:
         cls,
         path: 'str | Path',
         *,
+        keep_symlinks: bool = False,
         data_overrides: dict | None = None,
         global_node_vars: dict | None = None,
         node_vars: dict | None = None,
@@ -341,6 +342,7 @@ class Net:
 
         Args:
             path: Path to the config file (.json or .toml).
+            keep_symlinks: If True, don't resolve symlinks in the path.
             data_overrides: Shallow-merged into the raw file data before validation.
             global_node_vars: Convenience node_var values merged into net-level ``node_vars``.
             node_vars: Per-node node_var values (see ``NetConfig.from_file``).
@@ -354,6 +356,7 @@ class Net:
         """
         config = NetConfig.from_file(
             path,
+            keep_symlinks=keep_symlinks,
             data_overrides=data_overrides,
             global_node_vars=global_node_vars,
             node_vars=node_vars,
