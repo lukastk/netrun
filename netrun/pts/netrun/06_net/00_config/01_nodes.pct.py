@@ -173,7 +173,7 @@ Args:
 #|export
 class NodeVariable(EnvVarResolvableModel):
     """A typed variable accessible to nodes via ctx.vars."""
-    value: str | VarRef
+    value: str | int | float | bool | VarRef
     type: str = "str"  # "str", "int", "float", "bool", "json"
 
     @model_validator(mode='after')
@@ -183,23 +183,30 @@ class NodeVariable(EnvVarResolvableModel):
         return self
 
     def resolve_value(self) -> Any:
-        """Resolve the string value to the appropriate Python type."""
+        """Resolve the value to the appropriate Python type."""
+        v = self.value
         match self.type:
             case "str" | "":
-                return self.value
+                return str(v)
             case "int":
-                return int(self.value)
+                return int(v)
             case "float":
-                return float(self.value)
+                return float(v)
             case "bool":
-                l = self.value.lower().strip()
+                if isinstance(v, bool):
+                    return v
+                if isinstance(v, (int, float)):
+                    return bool(v)
+                l = v.lower().strip()
                 if l in ("true", "1", "yes"):
                     return True
                 if l in ("false", "0", "no"):
                     return False
-                raise ValueError(f"Cannot parse '{self.value}' as bool")
+                raise ValueError(f"Cannot parse '{v}' as bool")
             case "json":
-                return _json_module.loads(self.value)
+                if isinstance(v, str):
+                    return _json_module.loads(v)
+                return v
             case _:
                 raise ValueError(f"Unsupported NodeVariable type: '{self.type}'")
 
