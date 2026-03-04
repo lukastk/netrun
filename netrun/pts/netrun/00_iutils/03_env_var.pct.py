@@ -21,6 +21,7 @@ from types import UnionType
 from enum import Enum
 import json as _json_module
 import os
+from pathlib import Path
 
 # %%
 #|export
@@ -55,6 +56,22 @@ class VarRef(BaseModel):
 
 # Backwards compat alias
 EnvVar = VarRef
+
+
+class ProjectRootPath:
+    """Metadata marker for path fields that should be resolved relative to the project root.
+
+    Usage: ``Annotated[str | VarRef | None, ProjectRootPath()]``
+    """
+    pass
+
+
+def _has_project_root_path_marker(field_info) -> bool:
+    """Check if a pydantic FieldInfo has a ProjectRootPath marker in its metadata."""
+    for meta in getattr(field_info, 'metadata', []):
+        if isinstance(meta, ProjectRootPath):
+            return True
+    return False
 
 
 def _cast_env_var_value(raw: str, target_type: type, env_name: str = "") -> Any:
@@ -238,6 +255,36 @@ def _resolve_var_refs_in_dict(d: dict, resolved_vars: dict[str, Any]) -> tuple[d
     return new_dict, changed
 
 
+def _resolve_project_root_paths_in_list(lst: list, project_root: Path) -> tuple[list, bool]:
+    """Recursively resolve project root paths in a list of EnvVarResolvableModel items."""
+    changed = False
+    new_list = []
+    for item in lst:
+        if isinstance(item, EnvVarResolvableModel):
+            resolved = item.resolve_project_root_paths(project_root)
+            if resolved is not item:
+                changed = True
+            new_list.append(resolved)
+        else:
+            new_list.append(item)
+    return new_list, changed
+
+
+def _resolve_project_root_paths_in_dict(d: dict, project_root: Path) -> tuple[dict, bool]:
+    """Recursively resolve project root paths in a dict of EnvVarResolvableModel values."""
+    changed = False
+    new_dict = {}
+    for key, value in d.items():
+        if isinstance(value, EnvVarResolvableModel):
+            resolved = value.resolve_project_root_paths(project_root)
+            if resolved is not value:
+                changed = True
+            new_dict[key] = resolved
+        else:
+            new_dict[key] = value
+    return new_dict, changed
+
+
 class EnvVarResolvableModel(BaseModel):
     """Base class for config models that may contain VarRef fields."""
 
@@ -310,6 +357,43 @@ class EnvVarResolvableModel(BaseModel):
                     updates[field_name] = new_list
             elif isinstance(value, dict):
                 new_dict, changed = _resolve_var_refs_in_dict(value, resolved_vars)
+                if changed:
+                    updates[field_name] = new_dict
+        if updates:
+            return self.model_copy(update=updates)
+        return self
+
+    def resolve_project_root_paths(self, project_root: Path) -> "EnvVarResolvableModel":
+        """Return a copy with all ProjectRootPath-annotated str fields resolved against project_root.
+
+        For each field annotated with ``ProjectRootPath()``: if the value is a ``str``
+        that is not an absolute path, resolve it relative to *project_root*.
+
+        Recurses into nested ``EnvVarResolvableModel``, list, and dict values.
+
+        Args:
+            project_root: The project root directory to resolve relative paths against.
+
+        Returns:
+            A copy with relative path strings resolved to absolute paths.
+        """
+        updates = {}
+        for field_name, field_info in type(self).model_fields.items():
+            value = getattr(self, field_name)
+            if _has_project_root_path_marker(field_info) and isinstance(value, str):
+                p = Path(value)
+                if not p.is_absolute():
+                    updates[field_name] = str((project_root / p).resolve())
+            elif isinstance(value, EnvVarResolvableModel):
+                resolved = value.resolve_project_root_paths(project_root)
+                if resolved is not value:
+                    updates[field_name] = resolved
+            elif isinstance(value, list):
+                new_list, changed = _resolve_project_root_paths_in_list(value, project_root)
+                if changed:
+                    updates[field_name] = new_list
+            elif isinstance(value, dict):
+                new_dict, changed = _resolve_project_root_paths_in_dict(value, project_root)
                 if changed:
                     updates[field_name] = new_dict
         if updates:
