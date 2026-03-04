@@ -172,7 +172,8 @@
 		onUpdate(current);
 	}
 
-	function formatVarValuePreview(value: string | number | boolean | { $env: string; default?: unknown }): string {
+	function formatVarValuePreview(value: string | number | boolean | { $env: string; default?: unknown } | undefined): string {
+		if (value === undefined || value === null) return '(unset)';
 		if (isEnvVar(value)) {
 			return `$${getEnvVarName(value) || '...'}`;
 		}
@@ -261,11 +262,11 @@
 						{#if variable.options?.length}
 							<select
 								class="options-select"
-								value={typeof variable.value === 'string' ? variable.value : String(variable.value)}
+								value={variable.value != null ? (typeof variable.value === 'string' ? variable.value : String(variable.value)) : ''}
 								onchange={(e) => updateVarValue(name, (e.target as HTMLSelectElement).value)}
 							>
-								{#if variable.value === '' || (variable.options && !variable.options.map(String).includes(String(variable.value)))}
-									<option value={typeof variable.value === 'string' ? variable.value : String(variable.value)}>{variable.value === '' ? '(select)' : variable.value}</option>
+								{#if variable.value == null || variable.value === '' || (variable.options && !variable.options.map(String).includes(String(variable.value ?? '')))}
+									<option value={variable.value != null ? (typeof variable.value === 'string' ? variable.value : String(variable.value)) : ''}>{variable.value == null || variable.value === '' ? '(select)' : variable.value}</option>
 								{/if}
 								{#each variable.options as opt}
 									<option value={String(opt)}>{opt}</option>
@@ -274,8 +275,8 @@
 						{:else}
 							<input
 								type="text"
-								value={typeof variable.value === 'string' ? variable.value : ''}
-								placeholder="value"
+								value={variable.value != null && typeof variable.value === 'string' ? variable.value : ''}
+								placeholder={variable.value == null ? '(unset)' : 'value'}
 								class:invalid={error !== null}
 								title={error || ''}
 								oninput={(e) => updateVarValue(name, (e.target as HTMLInputElement).value)}

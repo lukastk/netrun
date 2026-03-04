@@ -1446,15 +1446,20 @@
 					</button>
 					{#if sectionsOpen.nodeVariables}
 						<div class="section-content">
-							<NodeVariablesSection
-								variables={$nodeNodeVars}
-								inheritedVariables={$projectNodeVars}
-								level="node"
-								onUpdate={(vars) => {
-									updateNodeNodeVars($selectedNode.id, vars);
-									pushHistory();
-								}}
-							/>
+							<svelte:boundary>
+								<NodeVariablesSection
+									variables={$nodeNodeVars}
+									inheritedVariables={$projectNodeVars}
+									level="node"
+									onUpdate={(vars) => {
+										updateNodeNodeVars($selectedNode.id, vars);
+										pushHistory();
+									}}
+								/>
+								{#snippet failed(error)}
+									<p class="section-error">Failed to render node variables: {(error as Error)?.message ?? 'unknown error'}</p>
+								{/snippet}
+							</svelte:boundary>
 						</div>
 					{/if}
 				</section>
@@ -1672,14 +1677,19 @@
 				</button>
 				{#if sectionsOpen.netNodeVariables}
 					<div class="section-content">
-						<NodeVariablesSection
-							variables={$projectNodeVars}
-							level="net"
-							onUpdate={(vars) => {
-								updateProjectNodeVars(vars);
-								pushHistory();
-							}}
-						/>
+						<svelte:boundary>
+							<NodeVariablesSection
+								variables={$projectNodeVars}
+								level="net"
+								onUpdate={(vars) => {
+									updateProjectNodeVars(vars);
+									pushHistory();
+								}}
+							/>
+							{#snippet failed(error)}
+								<p class="section-error">Failed to render global variables: {(error as Error)?.message ?? 'unknown error'}</p>
+							{/snippet}
+						</svelte:boundary>
 					</div>
 				{/if}
 			</section>
@@ -1695,7 +1705,12 @@
 				</button>
 				{#if sectionsOpen.allNodeVariables}
 					<div class="section-content">
-						<AllNodeVariablesSection allNodesVars={$allNodesVars} />
+						<svelte:boundary>
+							<AllNodeVariablesSection allNodesVars={$allNodesVars} />
+							{#snippet failed(error)}
+								<p class="section-error">Failed to render local variables: {(error as Error)?.message ?? 'unknown error'}</p>
+							{/snippet}
+						</svelte:boundary>
 					</div>
 				{/if}
 			</section>
@@ -2285,6 +2300,13 @@
 	.section-content {
 		padding: 12px;
 		border-top: 1px solid var(--border-color, #404040);
+	}
+
+	.section-error {
+		font-size: 11px;
+		color: var(--error-color, #ef4444);
+		margin: 0;
+		padding: 4px 0;
 	}
 
 	.field {
