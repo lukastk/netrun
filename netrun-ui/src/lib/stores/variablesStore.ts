@@ -15,19 +15,20 @@ import {
 import { updateActiveTab } from './tabsStore';
 
 export interface NodeVariable {
-	value: string | { $env: string; default?: unknown };
+	value: string | number | boolean | { $env: string; default?: unknown };
 	type?: string; // "str" (default), "int", "float", "bool", "json"
+	options?: (string | number | boolean)[];
 }
 
 /**
  * Get the display string from a variable value.
  * Returns '' for EnvVar values (no string validation needed).
  */
-export function getVarValueString(value: string | { $env: string; default?: unknown }): string {
+export function getVarValueString(value: string | number | boolean | { $env: string; default?: unknown }): string {
 	if (typeof value === 'object' && value !== null && '$env' in value) {
 		return '';
 	}
-	return value;
+	return String(value);
 }
 
 /**
@@ -35,29 +36,47 @@ export function getVarValueString(value: string | { $env: string; default?: unkn
  * Returns null if valid, or an error message string if invalid.
  * EnvVar objects always pass validation (returns null).
  */
-export function validateVarValue(value: string | { $env: string; default?: unknown }, type: string | undefined): string | null {
+export function validateVarValue(
+	value: string | number | boolean | { $env: string; default?: unknown },
+	type: string | undefined,
+	options?: (string | number | boolean)[],
+): string | null {
 	if (typeof value === 'object' && value !== null && '$env' in value) return null;
+	const strValue = typeof value === 'string' ? value : String(value);
 	const t = type || 'str';
-	if (value === '') return null; // empty is ok
+	if (strValue === '') return null; // empty is ok
 	switch (t) {
 		case 'str':
-			return null;
+			break;
 		case 'int':
-			if (!/^-?\d+$/.test(value.trim())) return 'Must be an integer';
-			return null;
+			if (!/^-?\d+$/.test(strValue.trim())) return 'Must be an integer';
+			break;
 		case 'float':
-			if (isNaN(Number(value.trim())) || value.trim() === '') return 'Must be a number';
-			return null;
+			if (isNaN(Number(strValue.trim())) || strValue.trim() === '') return 'Must be a number';
+			break;
 		case 'bool':
-			if (!['true', 'false', '1', '0', 'yes', 'no'].includes(value.toLowerCase().trim()))
+			if (!['true', 'false', '1', '0', 'yes', 'no'].includes(strValue.toLowerCase().trim()))
 				return 'Must be true/false, 1/0, or yes/no';
-			return null;
+			break;
 		case 'json':
-			try { JSON.parse(value); return null; }
+			try { JSON.parse(strValue); }
 			catch { return 'Must be valid JSON'; }
+			break;
 		default:
-			return null;
+			break;
 	}
+
+	if (options && options.length > 0) {
+		let coerced: string | number | boolean = strValue;
+		if (t === 'int') coerced = parseInt(strValue);
+		else if (t === 'float') coerced = parseFloat(strValue);
+		else if (t === 'bool') coerced = ['true', '1', 'yes'].includes(strValue.toLowerCase().trim());
+
+		if (!options.includes(coerced)) {
+			return `Must be one of: ${options.join(', ')}`;
+		}
+	}
+	return null;
 }
 
 // Derived: net-level node variables from extraData.node_vars

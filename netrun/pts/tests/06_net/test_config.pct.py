@@ -1925,7 +1925,7 @@ def test_node_variable_serialization_roundtrip():
     """Test NodeVariable Pydantic model_dump / model_validate roundtrip."""
     var = NodeVariable(value="42", type="int")
     dumped = var.model_dump()
-    assert dumped == {"value": "42", "type": "int"}
+    assert dumped == {"value": "42", "type": "int", "options": None}
 
     restored = NodeVariable.model_validate(dumped)
     assert restored.value == "42"
@@ -1939,6 +1939,92 @@ def test_node_variable_serialization_roundtrip():
 
 # %%
 test_node_variable_serialization_roundtrip();
+
+# %%
+#|export
+def test_node_variable_options_valid():
+    """Test NodeVariable with options accepts valid values."""
+    var = NodeVariable(value="production", type="str", options=["production", "staging", "dev"])
+    assert var.resolve_value() == "production"
+
+    var2 = NodeVariable(value=4, type="int", options=[1, 2, 4, 8])
+    assert var2.resolve_value() == 4
+
+    var3 = NodeVariable(value=3.14, type="float", options=[1.0, 2.0, 3.14])
+    assert var3.resolve_value() == 3.14
+
+    var4 = NodeVariable(value="true", type="bool", options=[True, False])
+    assert var4.resolve_value() is True
+
+# %%
+test_node_variable_options_valid();
+
+# %%
+#|export
+def test_node_variable_options_invalid():
+    """Test NodeVariable with options rejects invalid values."""
+    var = NodeVariable(value="test", type="str", options=["production", "staging", "dev"])
+    with pytest.raises(ValueError, match="not in allowed options"):
+        var.resolve_value()
+
+    var2 = NodeVariable(value=3, type="int", options=[1, 2, 4, 8])
+    with pytest.raises(ValueError, match="not in allowed options"):
+        var2.resolve_value()
+
+# %%
+test_node_variable_options_invalid();
+
+# %%
+#|export
+def test_node_variable_options_none_no_constraint():
+    """Test NodeVariable with options=None (default) has no constraint."""
+    var = NodeVariable(value="anything", type="str")
+    assert var.options is None
+    assert var.resolve_value() == "anything"
+
+# %%
+test_node_variable_options_none_no_constraint();
+
+# %%
+#|export
+def test_node_variable_options_coercion():
+    """Test NodeVariable options validation works after type coercion."""
+    # String "42" is coerced to int 42, which is in options
+    var = NodeVariable(value="42", type="int", options=[42, 99])
+    assert var.resolve_value() == 42
+
+    # String "42" coerced to int 42, which is NOT in options
+    var2 = NodeVariable(value="42", type="int", options=[1, 2, 3])
+    with pytest.raises(ValueError, match="not in allowed options"):
+        var2.resolve_value()
+
+# %%
+test_node_variable_options_coercion();
+
+# %%
+#|export
+def test_node_variable_options_serialization_roundtrip():
+    """Test NodeVariable with options round-trips through serialization."""
+    var = NodeVariable(value="production", type="str", options=["production", "staging", "dev"])
+    dumped = var.model_dump()
+    assert dumped == {"value": "production", "type": "str", "options": ["production", "staging", "dev"]}
+
+    restored = NodeVariable.model_validate(dumped)
+    assert restored.options == ["production", "staging", "dev"]
+    assert restored.resolve_value() == "production"
+
+    # JSON roundtrip
+    json_str = var.model_dump_json()
+    restored_json = NodeVariable.model_validate_json(json_str)
+    assert restored_json == var
+
+    # Without options, field is omitted with exclude_none
+    var_no_opts = NodeVariable(value="hello", type="str")
+    dumped2 = var_no_opts.model_dump()
+    assert dumped2 == {"value": "hello", "type": "str", "options": None}
+
+# %%
+test_node_variable_options_serialization_roundtrip();
 
 # %%
 #|export
