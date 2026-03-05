@@ -922,11 +922,12 @@ def create_net_func_preprocessor(
                         if net_node_vars and k in net_node_vars:
                             global_var = net_node_vars[k]
                             if v.value is not None:
-                                # Override just the value, use global type/options
+                                # Override just the value, use global type/options/optional
                                 effective = NodeVariable(
                                     value=v.value,
                                     type=global_var.type,
                                     options=global_var.options,
+                                    optional=global_var.optional,
                                 )
                                 merged[k] = effective.model_dump()
                             # else: global already in merged, keep it

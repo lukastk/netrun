@@ -19,6 +19,7 @@ export interface NodeVariable {
 	type?: string; // "str" (default), "int", "float", "bool", "json"
 	options?: (string | number | boolean)[];
 	inherit?: boolean;
+	optional?: boolean;
 }
 
 /**

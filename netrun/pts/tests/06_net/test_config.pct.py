@@ -1925,7 +1925,7 @@ def test_node_variable_serialization_roundtrip():
     """Test NodeVariable Pydantic model_dump / model_validate roundtrip."""
     var = NodeVariable(value="42", type="int")
     dumped = var.model_dump()
-    assert dumped == {"value": "42", "type": "int", "options": None, "inherit": False}
+    assert dumped == {"value": "42", "type": "int", "options": None, "inherit": False, "optional": False}
 
     restored = NodeVariable.model_validate(dumped)
     assert restored.value == "42"
@@ -2007,7 +2007,7 @@ def test_node_variable_options_serialization_roundtrip():
     """Test NodeVariable with options round-trips through serialization."""
     var = NodeVariable(value="production", type="str", options=["production", "staging", "dev"])
     dumped = var.model_dump()
-    assert dumped == {"value": "production", "type": "str", "options": ["production", "staging", "dev"], "inherit": False}
+    assert dumped == {"value": "production", "type": "str", "options": ["production", "staging", "dev"], "inherit": False, "optional": False}
 
     restored = NodeVariable.model_validate(dumped)
     assert restored.options == ["production", "staging", "dev"]
@@ -2021,7 +2021,7 @@ def test_node_variable_options_serialization_roundtrip():
     # Without options, field is omitted with exclude_none
     var_no_opts = NodeVariable(value="hello", type="str")
     dumped2 = var_no_opts.model_dump()
-    assert dumped2 == {"value": "hello", "type": "str", "options": None, "inherit": False}
+    assert dumped2 == {"value": "hello", "type": "str", "options": None, "inherit": False, "optional": False}
 
 # %%
 test_node_variable_options_serialization_roundtrip();
@@ -4180,3 +4180,101 @@ def test_node_variable_inherit_serialization_roundtrip():
 
 # %%
 test_node_variable_inherit_serialization_roundtrip();
+
+# %% [markdown]
+# ## NodeVariable Optional Tests
+
+# %%
+#|export
+def test_node_variable_optional_none_returns_none():
+    """optional=True with value=None should resolve to None."""
+    var = NodeVariable(optional=True, value=None, type="str")
+    assert var.resolve_value() is None
+
+# %%
+test_node_variable_optional_none_returns_none();
+
+# %%
+#|export
+def test_node_variable_optional_with_value_resolves_normally():
+    """optional=True with a value should resolve the value normally."""
+    var = NodeVariable(optional=True, value="hello", type="str")
+    assert var.resolve_value() == "hello"
+
+    var_int = NodeVariable(optional=True, value="42", type="int")
+    assert var_int.resolve_value() == 42
+
+# %%
+test_node_variable_optional_with_value_resolves_normally();
+
+# %%
+#|export
+def test_node_variable_optional_false_none_still_raises():
+    """optional=False (default) with value=None should still raise ValueError."""
+    var = NodeVariable(value=None, type="str")
+    assert var.optional is False
+    with pytest.raises(ValueError, match="placeholder not filled in"):
+        var.resolve_value()
+
+# %%
+test_node_variable_optional_false_none_still_raises();
+
+# %%
+#|export
+def test_node_variable_optional_serialization_roundtrip():
+    """NodeVariable with optional round-trips through serialization."""
+    var = NodeVariable(optional=True, value="42", type="int")
+    dumped = var.model_dump()
+    assert dumped["optional"] is True
+
+    restored = NodeVariable.model_validate(dumped)
+    assert restored.optional is True
+    assert restored.resolve_value() == 42
+
+    # optional=True with value=None also round-trips
+    var_none = NodeVariable(optional=True, value=None)
+    dumped_none = var_none.model_dump()
+    restored_none = NodeVariable.model_validate(dumped_none)
+    assert restored_none.optional is True
+    assert restored_none.resolve_value() is None
+
+    # Default optional=False also round-trips
+    var2 = NodeVariable(value="x")
+    dumped2 = var2.model_dump()
+    restored2 = NodeVariable.model_validate(dumped2)
+    assert restored2.optional is False
+
+# %%
+test_node_variable_optional_serialization_roundtrip();
+
+# %%
+#|export
+def test_node_variable_optional_with_options_accepts_none():
+    """optional=True with options should return None when value is None (skip options check)."""
+    var = NodeVariable(optional=True, value=None, type="str", options=["a", "b"])
+    assert var.resolve_value() is None
+
+    # But with a value, options are still enforced
+    var_valid = NodeVariable(optional=True, value="a", type="str", options=["a", "b"])
+    assert var_valid.resolve_value() == "a"
+
+    var_invalid = NodeVariable(optional=True, value="c", type="str", options=["a", "b"])
+    with pytest.raises(ValueError, match="not in allowed options"):
+        var_invalid.resolve_value()
+
+# %%
+test_node_variable_optional_with_options_accepts_none();
+
+# %%
+#|export
+def test_node_variable_inherit_rejects_explicit_optional():
+    """inherit=True must not explicitly set optional to a non-default value."""
+    with pytest.raises(ValueError, match="inherit=True must not explicitly set 'optional'"):
+        NodeVariable(inherit=True, optional=True)
+
+    # Default optional=False with inherit=True should be fine
+    var = NodeVariable(inherit=True)
+    assert var.optional is False
+
+# %%
+test_node_variable_inherit_rejects_explicit_optional();

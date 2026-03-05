@@ -20,6 +20,7 @@
 	let newEnvVarMode = $state(false);
 	let newEnvVarName = $state('');
 	let newEnvVarDefault = $state('');
+	let newOptional = $state(false);
 	let newError = $derived(newEnvVarMode ? null : validateVarValue(newValue, newType));
 
 	// Track which existing variables are in env var mode
@@ -82,6 +83,20 @@
 		onUpdate(current);
 	}
 
+	function toggleOptional(name: string) {
+		const current = { ...variables };
+		const existing = current[name];
+		if (!existing) return;
+		const wasOptional = existing.optional || false;
+		if (wasOptional) {
+			const { optional: _, ...rest } = existing;
+			current[name] = rest;
+		} else {
+			current[name] = { ...existing, optional: true };
+		}
+		onUpdate(current);
+	}
+
 	function updateVarValue(name: string, value: string) {
 		const current = { ...variables };
 		const existing = current[name] || { value: '', type: 'str' };
@@ -128,9 +143,14 @@
 			current[trimmedName] = {
 				value: makeEnvVar(newEnvVarName, newEnvVarDefault || undefined),
 				type: newType === 'str' ? undefined : newType,
+				...(newOptional ? { optional: true } : {}),
 			};
 		} else {
-			current[trimmedName] = { value: newValue, type: newType === 'str' ? undefined : newType };
+			current[trimmedName] = {
+				value: newValue,
+				type: newType === 'str' ? undefined : newType,
+				...(newOptional ? { optional: true } : {}),
+			};
 		}
 		onUpdate(current);
 		newName = '';
@@ -139,6 +159,7 @@
 		newEnvVarMode = false;
 		newEnvVarName = '';
 		newEnvVarDefault = '';
+		newOptional = false;
 	}
 
 	function addOption(name: string, optionValue: string) {
@@ -192,6 +213,7 @@
 			{@const globalVar = inheritedVariables[name]}
 			{@const effectiveType = isInheritVar && globalVar ? (globalVar.type || 'str') : (variable.type || 'str')}
 			{@const effectiveOptions = isInheritVar && globalVar ? globalVar.options : variable.options}
+			{@const effectiveOptional = isInheritVar && globalVar ? (globalVar.optional || false) : (variable.optional || false)}
 			<div class="var-row" class:inherited={source === 'inherited'}>
 				<div class="var-header">
 					<span class="var-name">{name}</span>
@@ -203,7 +225,16 @@
 					{:else if level === 'node' && name in inheritedVariables}
 						<span class="var-badge override">override</span>
 					{/if}
+					{#if effectiveOptional}
+						<span class="var-badge optional">optional</span>
+					{/if}
 					{#if source !== 'inherited' && !isInheritVar}
+						<button
+							class="optional-toggle"
+							class:active={variable.optional || false}
+							title={variable.optional ? 'Make required' : 'Make optional (value=None allowed)'}
+							onclick={() => toggleOptional(name)}
+						>?</button>
 						<button
 							class="envvar-toggle"
 							class:active={inEnvMode}
@@ -431,6 +462,12 @@
 				{/each}
 			</select>
 			<button
+				class="optional-toggle"
+				class:active={newOptional}
+				title={newOptional ? 'Make required' : 'Make optional (value=None allowed)'}
+				onclick={() => { newOptional = !newOptional; }}
+			>?</button>
+			<button
 				class="envvar-toggle"
 				class:active={newEnvVarMode}
 				title={newEnvVarMode ? 'Switch to literal value' : 'Switch to environment variable'}
@@ -518,6 +555,45 @@
 	.var-badge.inherit {
 		background: rgba(34, 197, 94, 0.15);
 		color: #22c55e;
+	}
+
+	.var-badge.optional {
+		background: rgba(168, 85, 247, 0.15);
+		color: #a855f7;
+	}
+
+	.optional-toggle {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 16px;
+		height: 16px;
+		padding: 0;
+		border: 1px solid var(--border-color, #404040);
+		border-radius: 3px;
+		background: transparent;
+		color: var(--text-secondary, #666);
+		font-size: 10px;
+		font-weight: 700;
+		cursor: pointer;
+		line-height: 1;
+		flex-shrink: 0;
+	}
+
+	.optional-toggle:hover {
+		border-color: #a855f7;
+		color: #a855f7;
+	}
+
+	.optional-toggle.active {
+		background: #a855f7;
+		border-color: #a855f7;
+		color: #fff;
+	}
+
+	.optional-toggle.active:hover {
+		background: #9333ea;
+		border-color: #9333ea;
 	}
 
 	.var-edit-row {
