@@ -34,6 +34,8 @@ from netrun.net.config import (
     PortConfig,
     EdgeConfig,
     SignalValue,
+    EpochSignalValue,
+    EpochFailedSignalValue,
     signal_port_name,
     is_signal_port,
     signal_type_from_port,
@@ -117,25 +119,40 @@ def test_generate_signal_salvo_conditions():
 # %%
 #|export
 def test_signal_value_dataclass():
-    """Test SignalValue can be created with all fields."""
-    sv = SignalValue(
+    """Test SignalValue hierarchy can be created with all fields."""
+    # Base SignalValue (node lifecycle)
+    sv_base = SignalValue(
+        signal="node_started",
+        node_name="A",
+        timestamp=datetime.now(),
+    )
+    assert sv_base.signal == "node_started"
+    assert sv_base.node_name == "A"
+    assert not isinstance(sv_base, EpochSignalValue)
+
+    # EpochSignalValue (epoch lifecycle)
+    sv_epoch = EpochSignalValue(
         signal="epoch_finished",
         node_name="A",
         epoch_id="epoch_123",
         timestamp=datetime.now(),
     )
-    assert sv.signal == "epoch_finished"
-    assert sv.node_name == "A"
-    assert sv.epoch_id == "epoch_123"
-    assert sv.error is None
+    assert sv_epoch.signal == "epoch_finished"
+    assert sv_epoch.epoch_id == "epoch_123"
+    assert isinstance(sv_epoch, SignalValue)
+    assert not isinstance(sv_epoch, EpochFailedSignalValue)
 
-    sv_err = SignalValue(
+    # EpochFailedSignalValue
+    sv_err = EpochFailedSignalValue(
         signal="epoch_failed",
         node_name="B",
         epoch_id="epoch_456",
         error="something went wrong",
     )
     assert sv_err.error == "something went wrong"
+    assert sv_err.epoch_id == "epoch_456"
+    assert isinstance(sv_err, EpochSignalValue)
+    assert isinstance(sv_err, SignalValue)
 
 # %% [markdown]
 # ## Config Validation Tests
@@ -347,12 +364,13 @@ async def test_epoch_finished_signal_triggers_downstream():
 
     assert len(results) == 1
     assert results[0][0] == "B_triggered"
-    # The trigger value should be a SignalValue
+    # The trigger value should be an EpochSignalValue
     signal_val = results[0][1]
-    assert isinstance(signal_val, SignalValue)
+    assert isinstance(signal_val, EpochSignalValue)
+    assert not isinstance(signal_val, EpochFailedSignalValue)
     assert signal_val.signal == "epoch_finished"
     assert signal_val.node_name == "A"
-    assert signal_val.error is None
+    assert signal_val.epoch_id is not None
 
 # %%
 #|export
@@ -414,9 +432,10 @@ async def test_epoch_failed_signal_triggers_downstream():
 
     assert len(results) == 1
     signal_val = results[0][1]
-    assert isinstance(signal_val, SignalValue)
+    assert isinstance(signal_val, EpochFailedSignalValue)
     assert signal_val.signal == "epoch_failed"
     assert signal_val.node_name == "A"
+    assert signal_val.epoch_id is not None
     assert "intentional failure" in signal_val.error
 
 # %%
@@ -479,9 +498,9 @@ async def test_node_started_signal():
     assert len(results) == 1
     signal_val = results[0]
     assert isinstance(signal_val, SignalValue)
+    assert not isinstance(signal_val, EpochSignalValue)
     assert signal_val.signal == "node_started"
     assert signal_val.node_name == "A"
-    assert signal_val.epoch_id is None
 
 # %%
 #|export
@@ -878,3 +897,233 @@ async def test_per_node_signal_override():
     # B inherited default, so HandlerB should have been triggered
     assert len(results_b) == 1
     assert isinstance(results_b[0], SignalValue)
+
+# %% [markdown]
+# ## New Signal Emission Tests
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_epoch_started_signal_triggers_downstream():
+    """Test that epoch_started signal triggers a downstream node with EpochSignalValue."""
+    results = []
+
+    def node_a_exec(ctx, packets):
+        pass
+
+    def node_b_exec(ctx, packets):
+        for pkt_ids in packets.values():
+            for pid in pkt_ids:
+                results.append(ctx.consume_packet(pid))
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="A",
+                    in_salvo_conditions={
+                        "trigger": SalvoConditionConfig(
+                            max_salvos=MaxSalvosFiniteConfig(max=1),
+                            ports={},
+                            term=SalvoConditionTermTrueConfig(),
+                        ),
+                    },
+                    execution_config=NodeExecutionConfig(
+                        node_name="A",
+                        pools=["main"],
+                        exec_node_func=node_a_exec,
+                        signals=["epoch_started"],
+                        run_on_startup=True,
+                    ),
+                ),
+                NodeConfig(
+                    name="B",
+                    in_ports={"trigger": PortConfig()},
+                    execution_config=NodeExecutionConfig(
+                        node_name="B",
+                        pools=["main"],
+                        exec_node_func=node_b_exec,
+                    ),
+                ),
+            ],
+            edges=[
+                EdgeConfig(source_str="A.__signal_epoch_started__", target_str="B.trigger"),
+            ],
+        ),
+    )
+
+    async with Net(config) as net:
+        await _run_net_to_completion(net)
+
+    assert len(results) == 1
+    signal_val = results[0]
+    assert isinstance(signal_val, EpochSignalValue)
+    assert not isinstance(signal_val, EpochFailedSignalValue)
+    assert signal_val.signal == "epoch_started"
+    assert signal_val.node_name == "A"
+    assert signal_val.epoch_id is not None
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_epoch_cancelled_signal_user_cancel():
+    """Test that epoch_cancelled signal is emitted when ctx.cancel_epoch() is called."""
+    results = []
+
+    def node_a_exec(ctx, packets):
+        ctx.cancel_epoch()
+
+    def node_b_exec(ctx, packets):
+        for pkt_ids in packets.values():
+            for pid in pkt_ids:
+                results.append(ctx.consume_packet(pid))
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="A",
+                    in_salvo_conditions={
+                        "trigger": SalvoConditionConfig(
+                            max_salvos=MaxSalvosFiniteConfig(max=1),
+                            ports={},
+                            term=SalvoConditionTermTrueConfig(),
+                        ),
+                    },
+                    execution_config=NodeExecutionConfig(
+                        node_name="A",
+                        pools=["main"],
+                        exec_node_func=node_a_exec,
+                        signals=["epoch_cancelled"],
+                        run_on_startup=True,
+                    ),
+                ),
+                NodeConfig(
+                    name="B",
+                    in_ports={"trigger": PortConfig()},
+                    execution_config=NodeExecutionConfig(
+                        node_name="B",
+                        pools=["main"],
+                        exec_node_func=node_b_exec,
+                    ),
+                ),
+            ],
+            edges=[
+                EdgeConfig(source_str="A.__signal_epoch_cancelled__", target_str="B.trigger"),
+            ],
+        ),
+    )
+
+    async with Net(config) as net:
+        await _run_net_to_completion(net)
+
+    assert len(results) == 1
+    signal_val = results[0]
+    assert isinstance(signal_val, EpochSignalValue)
+    assert signal_val.signal == "epoch_cancelled"
+    assert signal_val.node_name == "A"
+    assert signal_val.epoch_id is not None
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_epoch_cancelled_signal_max_epochs():
+    """Test that epoch_cancelled signal includes epoch_id when triggered by max_epochs limit."""
+    results = []
+
+    call_count = 0
+    def node_a_exec(ctx, packets):
+        nonlocal call_count
+        call_count += 1
+        # Create an output that feeds back to self to trigger another epoch
+        pkt = ctx.create_packet("data")
+        ctx.load_output_port("out", pkt)
+        ctx.send_output_salvo("send_out")
+
+    def node_b_exec(ctx, packets):
+        for pkt_ids in packets.values():
+            for pid in pkt_ids:
+                results.append(ctx.consume_packet(pid))
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="A",
+                    in_ports={"in": PortConfig()},
+                    in_salvo_conditions={
+                        "trigger": SalvoConditionConfig(
+                            max_salvos=MaxSalvosFiniteConfig(max=1),
+                            ports={},
+                            term=SalvoConditionTermTrueConfig(),
+                        ),
+                        "loop": SalvoConditionConfig(
+                            max_salvos=MaxSalvosFiniteConfig(max=1),
+                            ports={"in": PacketCountAllConfig()},
+                            term=SalvoConditionTermPortConfig(
+                                port_name="in",
+                                state=PortStateNonEmptyConfig(),
+                            ),
+                        ),
+                    },
+                    out_ports={"out": PortConfig()},
+                    out_salvo_conditions={
+                        "send_out": SalvoConditionConfig(
+                            max_salvos=MaxSalvosInfiniteConfig(),
+                            ports={"out": PacketCountAllConfig()},
+                            term=SalvoConditionTermPortConfig(
+                                port_name="out",
+                                state=PortStateNonEmptyConfig(),
+                            ),
+                        ),
+                    },
+                    execution_config=NodeExecutionConfig(
+                        node_name="A",
+                        pools=["main"],
+                        exec_node_func=node_a_exec,
+                        signals=["epoch_cancelled"],
+                        run_on_startup=True,
+                        max_epochs=1,
+                        propagate_exceptions=False,
+                    ),
+                ),
+                NodeConfig(
+                    name="B",
+                    in_ports={"trigger": PortConfig()},
+                    execution_config=NodeExecutionConfig(
+                        node_name="B",
+                        pools=["main"],
+                        exec_node_func=node_b_exec,
+                    ),
+                ),
+            ],
+            edges=[
+                EdgeConfig(source_str="A.out", target_str="A.in"),  # self-loop
+                EdgeConfig(source_str="A.__signal_epoch_cancelled__", target_str="B.trigger"),
+            ],
+        ),
+    )
+
+    async with Net(config, run_startup_nodes=False) as net:
+        await net.execute_node("A")
+        # A's output is on the self-loop edge. Use auto_start_epochs=False
+        # to avoid infinite loop (run_until_blocked with auto_start would
+        # keep cycling through the max_epochs cancel + signal delivery).
+        for _ in range(10):
+            await net.run_until_blocked(auto_start_epochs=False)
+            executed = await net.execute_startable_epochs()
+            if not executed:
+                break
+
+    # A runs once (max_epochs=1), second epoch gets cancelled
+    assert call_count == 1
+    assert len(results) == 1
+    signal_val = results[0]
+    assert isinstance(signal_val, EpochSignalValue)
+    assert signal_val.signal == "epoch_cancelled"
+    assert signal_val.node_name == "A"
+    # This was the bug: epoch_id should be set even for max_epochs cancellation
+    assert signal_val.epoch_id is not None

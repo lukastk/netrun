@@ -40,6 +40,7 @@ from netrun.net.config._base import (
     generate_signal_ports,
     generate_signal_salvo_conditions,
     is_signal_port,
+    resolve_effective_signals,
 )
 from netrun.execution_manager import RunAllocationMethod
 from netrun.storage.config import NodeStorageConfig
@@ -379,19 +380,12 @@ def _get_effective_signals(node_config: "NodeConfig", net_config: "Any | None") 
     Returns:
         List of signal type strings to generate ports for.
     """
-    if node_config.execution_config is not None and node_config.execution_config.signals is not None:
-        signals = node_config.execution_config.signals
-        if isinstance(signals, VarRef):
-            return []  # VarRef not yet resolved, skip
-        return list(signals)
-
+    default_signals = []
     if net_config is not None and hasattr(net_config, 'default_signals'):
         default = net_config.default_signals
-        if isinstance(default, VarRef):
-            return []  # VarRef not yet resolved, skip
-        return list(default)
-
-    return []
+        if not isinstance(default, VarRef):
+            default_signals = list(default)
+    return resolve_effective_signals(node_config.execution_config, default_signals)
 
 # %%
 #|export
