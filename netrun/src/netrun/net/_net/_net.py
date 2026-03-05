@@ -17,7 +17,7 @@ from ...pool.thread import ThreadPool
 from ...pool.multiprocess import MultiprocessPool
 from ...pool.aio import SingleWorkerPool
 from ...pool.remote import RemotePoolClient
-from ...net.config import NetConfig, NodeExecutionConfig, PortConfig, RemotePoolConfig, SignalValue, signal_port_name, is_signal_port
+from ...net.config import NetConfig, NodeExecutionConfig, PortConfig, RemotePoolConfig, SignalValue, EpochSignalValue, EpochFailedSignalValue, signal_port_name, is_signal_port
 from ...execution_manager import ExecutionManager, PoolType, RunAllocationMethod
 from ..._iutils import get_timestamp_utc
 from ...packets import PacketStore
@@ -1676,7 +1676,7 @@ class Net:
         if effective_max_epochs != -1:
             if self._node_epoch_counts[node_name] > effective_max_epochs:
                 # Epoch is still Startable (not yet Running), so use out-of-epoch emission
-                self._emit_out_of_epoch_signal(node_name, "epoch_cancelled")
+                self._emit_out_of_epoch_signal(node_name, "epoch_cancelled", epoch_id=epoch_id)
                 # Cancel the epoch and raise
                 response, _ = self._netsim.do_action(netrun_sim.NetAction.cancel_epoch(epoch_id))
                 record = self._epochs[epoch_id]
@@ -3026,18 +3026,9 @@ class Net:
 
         Resolution: node-level signals (if not None) override net-level default_signals.
         """
+        from ...net.config._base import resolve_effective_signals
         config = self._get_node_execution_config(node_name)
-        if config is not None and config.signals is not None:
-            return list(config.signals)
-        return list(self._config_resolved.default_signals)
-
-    def _find_edge_from_port(self, node_name: str, port_name: str):
-        """Find the edge originating from a node's output port, or None."""
-        for edge in self._config_resolved.graph.edges:
-            source = edge.get_source()
-            if source.node_name == node_name and source.port_name == port_name:
-                return edge
-        return None
+        return resolve_effective_signals(config, list(self._config_resolved.default_signals))
 
     def _emit_epoch_signal(self, epoch_id: str, node_name: str, signal_type: str, error: str | None = None):
         """Emit an epoch signal while the epoch is still Running.
@@ -3062,14 +3053,19 @@ class Net:
         response, _ = self._netsim.do_action(netrun_sim.NetAction.create_packet(epoch_id))
         packet_id = str(response.packet_id)
 
-        # Store signal value
-        self._packet_store.register(packet_id, SignalValue(
-            signal=signal_type,
-            node_name=node_name,
-            epoch_id=epoch_id,
-            timestamp=get_timestamp_utc(),
-            error=error,
-        ))
+        # Store signal value with appropriate subclass
+        ts = get_timestamp_utc()
+        if error is not None:
+            signal_value = EpochFailedSignalValue(
+                signal=signal_type, node_name=node_name,
+                epoch_id=epoch_id, timestamp=ts, error=error,
+            )
+        else:
+            signal_value = EpochSignalValue(
+                signal=signal_type, node_name=node_name,
+                epoch_id=epoch_id, timestamp=ts,
+            )
+        self._packet_store.register(packet_id, signal_value)
 
         # Load into signal output port
         self._netsim.do_action(
@@ -3091,15 +3087,17 @@ class Net:
                     self._packet_store.consume(orphaned_id)
                     self._netsim.do_action(netrun_sim.NetAction.consume_packet(orphaned_id))
 
-    def _emit_out_of_epoch_signal(self, node_name: str, signal_type: str):
-        """Emit a signal outside any epoch (for node lifecycle signals).
+    def _emit_out_of_epoch_signal(self, node_name: str, signal_type: str, epoch_id: str | None = None):
+        """Emit a signal outside any epoch.
 
         Creates a packet outside the net and transports it directly to the edge.
-        Used only for node_started and node_stopped signals.
+        Used for node lifecycle signals (node_started, node_stopped) and epoch
+        signals when the epoch is not Running (e.g., max_epochs cancellation).
 
         Args:
             node_name: The node name.
-            signal_type: Signal type ('node_started' or 'node_stopped').
+            signal_type: Signal type (e.g. 'node_started', 'node_stopped', 'epoch_cancelled').
+            epoch_id: The epoch ID, if this is an epoch-level signal emitted out-of-epoch.
         """
         signals = self._get_effective_signals(node_name)
         if signal_type not in signals:
@@ -3111,23 +3109,25 @@ class Net:
         response, _ = self._netsim.do_action(netrun_sim.NetAction.create_packet(None))
         packet_id = str(response.packet_id)
 
-        # Store signal value
-        self._packet_store.register(packet_id, SignalValue(
-            signal=signal_type,
-            node_name=node_name,
-            epoch_id=None,
-            timestamp=get_timestamp_utc(),
-            error=None,
-        ))
+        # Store signal value with appropriate subclass
+        ts = get_timestamp_utc()
+        if epoch_id is not None:
+            signal_value = EpochSignalValue(
+                signal=signal_type, node_name=node_name,
+                epoch_id=epoch_id, timestamp=ts,
+            )
+        else:
+            signal_value = SignalValue(
+                signal=signal_type, node_name=node_name, timestamp=ts,
+            )
+        self._packet_store.register(packet_id, signal_value)
 
-        # Find the edge from this signal port
-        edge = self._find_edge_from_port(node_name, port_name)
-        if edge is not None:
-            # Transport packet onto the edge
-            netsim_edge = edge.to_netrun_sim()
+        # Find edges from this signal port
+        edges = self.get_edges_from_port(node_name, port_name)
+        if edges:
             self._netsim.do_action(
                 netrun_sim.NetAction.transport_packet_to_location(
-                    packet_id, netrun_sim.PacketLocation.edge(netsim_edge)
+                    packet_id, netrun_sim.PacketLocation.edge(edges[0])
                 )
             )
         else:

@@ -704,7 +704,7 @@ def signal_type_from_port(port_name: str) -> str | None:
 
 @dataclass
 class SignalValue:
-    """Value carried by a signal packet.
+    """Base signal value for node lifecycle signals (node_started, node_stopped).
 
     This is stored in the PacketStore just like any other packet value.
     """
@@ -714,14 +714,24 @@ class SignalValue:
     node_name: str
     """Name of the node that emitted this signal."""
 
-    epoch_id: str | None = None
-    """Epoch that triggered the signal (None for node lifecycle signals)."""
-
     timestamp: datetime | None = None
     """When the signal was emitted."""
 
-    error: str | None = None
-    """Error message (only for 'epoch_failed' signals)."""
+
+@dataclass(kw_only=True)
+class EpochSignalValue(SignalValue):
+    """Signal for epoch lifecycle events (epoch_started, epoch_finished, epoch_cancelled)."""
+
+    epoch_id: str
+    """Epoch that triggered the signal."""
+
+
+@dataclass(kw_only=True)
+class EpochFailedSignalValue(EpochSignalValue):
+    """Signal for epoch_failed events."""
+
+    error: str
+    """Error message describing the failure."""
 
 
 def generate_signal_ports(signal_types: list[str]) -> dict[str, "PortConfig"]:
@@ -750,6 +760,31 @@ def generate_signal_salvo_conditions(signal_types: list[str]) -> dict[str, Salvo
             ),
         )
     return conditions
+
+
+def resolve_effective_signals(
+    execution_config: "NodeExecutionConfig | None",
+    default_signals: list[str],
+) -> list[str]:
+    """Resolve effective signals from node execution config and net defaults.
+
+    Resolution order:
+    1. If execution_config.signals is set (not None), use that (even if empty list = opt-out)
+    2. Otherwise, inherit from default_signals
+
+    Args:
+        execution_config: The node's execution config (may be None).
+        default_signals: The net-level default signals.
+
+    Returns:
+        List of signal type strings.
+    """
+    if execution_config is not None and execution_config.signals is not None:
+        signals = execution_config.signals
+        if isinstance(signals, VarRef):
+            return []  # VarRef not yet resolved, skip
+        return list(signals)
+    return list(default_signals)
 
 
 def validate_signal_types(signal_types: list[str]) -> None:
