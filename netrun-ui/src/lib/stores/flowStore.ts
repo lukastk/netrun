@@ -609,6 +609,102 @@ export function updateNodeColor(
 }
 
 /**
+ * Batch-update shape for multiple nodes. Pushes history once.
+ */
+export function batchUpdateNodeShape(nodeIds: string[], shape: NodeShape): void {
+	pushHistory();
+	for (const id of nodeIds) {
+		const node = findNodeForRead(id);
+		if (!node) continue;
+
+		const config = (node.data._config || (node.data as Record<string, unknown>)._config || {}) as Record<string, unknown>;
+		const extra = (config.extra || {}) as Record<string, unknown>;
+		const ui = (extra.ui || {}) as Record<string, unknown>;
+
+		const newUi = shape === 'rectangle'
+			? (() => { const { shape: _s, ...rest } = ui; return rest; })()
+			: { ...ui, shape };
+
+		updateNodeDataLive(id, {
+			_config: {
+				...config,
+				extra: {
+					...extra,
+					ui: newUi,
+				},
+			},
+		});
+	}
+}
+
+/**
+ * Batch-update a color for multiple nodes. Pushes history once.
+ * When value is null, the key is deleted from extra.ui.
+ */
+export function batchUpdateNodeColor(
+	nodeIds: string[],
+	key: 'headerColor' | 'fontColor',
+	value: string | null,
+): void {
+	pushHistory();
+	for (const id of nodeIds) {
+		const node = findNodeForRead(id);
+		if (!node) continue;
+
+		const config = (node.data._config || (node.data as Record<string, unknown>)._config || {}) as Record<string, unknown>;
+		const extra = (config.extra || {}) as Record<string, unknown>;
+		const ui = (extra.ui || {}) as Record<string, unknown>;
+
+		const newUi = value !== null
+			? { ...ui, [key]: value }
+			: (() => { const { [key]: _removed, ...rest } = ui; return rest; })();
+
+		updateNodeDataLive(id, {
+			_config: {
+				...config,
+				extra: {
+					...extra,
+					ui: newUi,
+				},
+			},
+		});
+	}
+}
+
+/**
+ * Batch-update a visibility flag for multiple nodes. Pushes history once.
+ */
+export function batchUpdateNodeVisibility(
+	nodeIds: string[],
+	key: 'hideLabel' | 'hideDescription' | 'hidePortNames',
+	value: boolean,
+): void {
+	pushHistory();
+	for (const id of nodeIds) {
+		const node = findNodeForRead(id);
+		if (!node) continue;
+
+		const config = (node.data._config || (node.data as Record<string, unknown>)._config || {}) as Record<string, unknown>;
+		const extra = (config.extra || {}) as Record<string, unknown>;
+		const ui = (extra.ui || {}) as Record<string, unknown>;
+
+		const newUi = value
+			? { ...ui, [key]: true }
+			: (() => { const { [key]: _removed, ...rest } = ui; return rest; })();
+
+		updateNodeDataLive(id, {
+			_config: {
+				...config,
+				extra: {
+					...extra,
+					ui: newUi,
+				},
+			},
+		});
+	}
+}
+
+/**
  * Toggle a node's port group collapsed state.
  * Uses updateNodeDataLive (persistent, no history entry).
  */

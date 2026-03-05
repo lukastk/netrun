@@ -31,11 +31,13 @@
 		getParentSubgraphId,
 		getCurrentConfig,
 		applyConfig,
+		selectedNodes,
 		type NetrunNodeData,
 		type PortConfig
 	} from '$lib/stores/flowStore';
 	import { deleteExpandedChildren, renameExpandedChildNode } from '$lib/stores/subgraphExpandStore';
 	import DecorationProperties from './DecorationProperties.svelte';
+	import MultiNodeProperties from './MultiNodeProperties.svelte';
 	import SalvoConditionsSection from './SalvoConditionsSection.svelte';
 	import PoolsSection from './PoolsSection.svelte';
 	import NodeExecutionSection from './NodeExecutionSection.svelte';
@@ -102,6 +104,9 @@
 	function descNode(field: string): string | undefined {
 		return getFieldDescription($configSchema, 'NodeConfig', field);
 	}
+
+	// Multi-selection: non-decoration nodes
+	let multiSelectedNodes = $derived($selectedNodes.filter(n => n.data.nodeType !== 'decoration'));
 
 	// Check if selected node is an expanded child
 	let isChildNode = $derived($selectedNode ? isExpandedChildNode($selectedNode.id) : false);
@@ -1471,6 +1476,8 @@
 				onAddAction={() => { editingAction = null; editingNodeAction = true; showActionEditor = true; }}
 				onEditAction={(action) => { editingAction = action; editingNodeAction = !$projectActions.some(a => a.id === action.id); showActionEditor = true; }}
 			/>
+		{:else if multiSelectedNodes.length > 1}
+			<MultiNodeProperties nodes={multiSelectedNodes} />
 		{:else if $activeTab}
 			<!-- Net-level settings when no node is selected -->
 
