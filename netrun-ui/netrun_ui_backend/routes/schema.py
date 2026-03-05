@@ -5,6 +5,7 @@ from fastapi import APIRouter
 
 from netrun.net.config import NetConfig, NodeConfig, NodeExecutionConfig
 from netrun.net.config._base import VALID_SIGNAL_TYPES, SIGNAL_PORT_PREFIX, SIGNAL_PORT_SUFFIX
+from netrun.net.config._base import VALID_CONTROL_TYPES, CONTROL_PORT_PREFIX, CONTROL_PORT_SUFFIX
 from netrun.net.config._net_config import OutputQueueConfig
 from netrun.storage.config import (
     CacheConfig,
@@ -64,3 +65,17 @@ _SIGNAL_TYPES_INFO = {
 async def get_signal_types() -> dict:
     """Return valid signal types and naming convention."""
     return _SIGNAL_TYPES_INFO
+
+
+# Pre-compute control types info at import time (static data)
+_CONTROL_TYPES_INFO = {
+    "valid_types": sorted(VALID_CONTROL_TYPES),
+    "port_prefix": CONTROL_PORT_PREFIX,
+    "port_suffix": CONTROL_PORT_SUFFIX,
+}
+
+
+@router.get("/control-types")
+async def get_control_types() -> dict:
+    """Return valid control types and naming convention."""
+    return _CONTROL_TYPES_INFO

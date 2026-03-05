@@ -34,6 +34,7 @@ registerField('NetConfig', 'print_exceptions', 'auto');
 registerField('NetConfig', 'max_epochs', 'auto');
 registerField('NetConfig', 'storage', 'custom', 'StorageSection.svelte');
 registerField('NetConfig', 'default_signals', 'custom', 'NetSettingsSection.svelte');
+registerField('NetConfig', 'default_controls', 'custom', 'NetSettingsSection.svelte');
 
 // ==========================================================================
 // NodeConfig
@@ -81,6 +82,7 @@ registerField('NodeExecutionConfig', 'print_exceptions', 'auto');
 registerField('NodeExecutionConfig', 'storage', 'custom', 'NodeStorageSection.svelte');
 registerField('NodeExecutionConfig', 'run_on_startup', 'auto');
 registerField('NodeExecutionConfig', 'signals', 'custom', 'NodeExecutionSection.svelte');
+registerField('NodeExecutionConfig', 'controls', 'custom', 'NodeExecutionSection.svelte');
 
 // ==========================================================================
 // StorageConfig

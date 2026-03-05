@@ -6,6 +6,7 @@
 	import { isEnvVar, isVarRef, makeEnvVar, getEnvVarName, getEnvVarDefault } from '$lib/utils/envvar';
 	import { availableVarNames } from '$lib/stores/variablesStore';
 	import { signalTypeInfo } from '$lib/stores/signalStore';
+	import { controlTypeInfo } from '$lib/stores/controlStore';
 
 	function desc(field: string): string | undefined {
 		return getFieldDescription($configSchema, 'NodeExecutionConfig', field);
@@ -109,7 +110,7 @@
 	let customPoolInput = $state('');
 
 	// Env var mode tracking for custom fields
-	const envVarFields = ['pools', 'exec_node_func', 'start_node_func', 'stop_node_func', 'on_node_failure', 'signals'] as const;
+	const envVarFields = ['pools', 'exec_node_func', 'start_node_func', 'stop_node_func', 'on_node_failure', 'signals', 'controls'] as const;
 	let envVarModes: Record<string, boolean> = $state({});
 
 	$effect(() => {
@@ -396,6 +397,88 @@
 									}}
 								/>
 								<span class="pool-name signal-type-label">{sigType}</span>
+							</label>
+						{/each}
+					</div>
+				{/if}
+			{/if}
+		</div>
+	{/if}
+
+	<!-- Controls Configuration -->
+	{#if $controlTypeInfo}
+		{@const currentControls = getValue('controls')}
+		{@const inheritingControls = currentControls === null || currentControls === undefined}
+		<div class="field-group">
+			<div class="field-group-header">Controls{#if desc('controls')}<span class="has-tooltip-icon" use:tooltip={desc('controls')}>?</span>{/if}
+				<button
+					class="envvar-toggle"
+					class:active={envVarModes['controls']}
+					title={envVarModes['controls'] ? 'Switch to literal value' : 'Switch to environment variable'}
+					onclick={() => toggleFieldEnvVar('controls')}
+				>$</button>
+			</div>
+			{#if envVarModes['controls']}
+				<div class="envvar-input-group">
+					<div class="envvar-name-row">
+						<span class="envvar-prefix">$</span>
+						<input
+							type="text"
+							class="envvar-name-input"
+							value={getEnvVarName(getConfig().controls)}
+							placeholder="ENV_VAR_NAME"
+							oninput={(e) => updateFieldEnvVarName('controls', (e.target as HTMLInputElement).value)}
+							onblur={() => pushHistory()}
+						/>
+					</div>
+					<div class="envvar-default-row">
+						<span class="envvar-default-label">default:</span>
+						<input
+							type="text"
+							class="envvar-default-input"
+							value={(() => { const d = getEnvVarDefault(getConfig().controls); return Array.isArray(d) ? d.join(', ') : d ?? ''; })()}
+							placeholder="pause, cancel"
+							oninput={(e) => {
+								const v = (e.target as HTMLInputElement).value;
+								const arr = v ? v.split(',').map(s => s.trim()).filter(Boolean) : [];
+								updateFieldEnvVarDefault('controls', arr);
+							}}
+							onblur={() => pushHistory()}
+						/>
+					</div>
+				</div>
+			{:else}
+				<label class="checkbox-field">
+					<input
+						type="checkbox"
+						checked={inheritingControls}
+						onchange={() => {
+							if (inheritingControls) {
+								updateFieldWithHistory('controls', []);
+							} else {
+								updateFieldWithHistory('controls', undefined as any);
+							}
+						}}
+					/>
+					Inherit from net defaults
+				</label>
+				{#if !inheritingControls}
+					<div class="controls-selection">
+						{#each $controlTypeInfo.validTypes as ctrlType}
+							{@const selected = Array.isArray(currentControls) && currentControls.includes(ctrlType)}
+							<label class="pool-checkbox">
+								<input
+									type="checkbox"
+									checked={selected}
+									onchange={() => {
+										const current = Array.isArray(currentControls) ? currentControls : [];
+										const newControls = selected
+											? current.filter((s: string) => s !== ctrlType)
+											: [...current, ctrlType];
+										updateFieldWithHistory('controls', newControls);
+									}}
+								/>
+								<span class="pool-name control-type-label">{ctrlType}</span>
 							</label>
 						{/each}
 					</div>
@@ -743,6 +826,17 @@
 	}
 
 	.signal-type-label {
+		font-size: 10px;
+	}
+
+	.controls-selection {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+		margin-top: 6px;
+	}
+
+	.control-type-label {
 		font-size: 10px;
 	}
 </style>
