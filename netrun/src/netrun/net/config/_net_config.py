@@ -22,7 +22,9 @@ from ...net.config._base import (
     _resolve_var_ref_value,
     _resolve_var_refs_in_dict,
     validate_signal_types,
+    validate_control_types,
     is_signal_port,
+    is_control_port,
 )
 from ...net.config._nodes import NodeVariable
 from ...net.config._graph import GraphConfig
@@ -160,11 +162,11 @@ def _generate_default_output_queues(graph: "GraphConfig") -> dict[str, "OutputQu
         source = edge.get_source()
         connected_ports.add((source.node_name, source.port_name))
 
-    # Generate queues for unconnected output ports (excluding signal ports)
+    # Generate queues for unconnected output ports (excluding signal and control ports)
     queues: dict[str, OutputQueueConfig] = {}
     for node in graph.nodes:
         for port_name in node.out_ports:
-            if (node.name, port_name) not in connected_ports and not is_signal_port(port_name):
+            if (node.name, port_name) not in connected_ports and not is_signal_port(port_name) and not is_control_port(port_name):
                 queue_name = f"{node.name}::{port_name}"
                 queues[queue_name] = OutputQueueConfig(ports=[(node.name, port_name)])
 
@@ -295,6 +297,8 @@ class NetConfig(EnvVarResolvableModel):
 
     default_signals: list[str] | VarRef = Field(default_factory=list, description="Default signal types for all nodes. Nodes inherit this unless they set their own signals list. Valid types: 'epoch_started', 'epoch_finished', 'epoch_failed', 'epoch_cancelled', 'node_started', 'node_stopped'.")
 
+    default_controls: list[str] | VarRef = Field(default_factory=list, description="Default control types for all nodes. Nodes inherit this unless they set their own controls list.")
+
     @field_serializer("dead_letter_callback", when_used='json')
     def serialize_dead_letter_callback(self, callback: Callable | str | VarRef | None) -> str | dict | None:
         """Serialize dead_letter_callback to import path for JSON.
@@ -320,6 +324,15 @@ class NetConfig(EnvVarResolvableModel):
         if isinstance(v, VarRef):
             return v
         validate_signal_types(v)
+        return v
+
+    @field_validator("default_controls")
+    @classmethod
+    def validate_default_controls(cls, v):
+        """Validate that default control types are recognized."""
+        if isinstance(v, VarRef):
+            return v
+        validate_control_types(v)
         return v
 
     @model_validator(mode='after')

@@ -17,7 +17,7 @@ from ...pool.thread import ThreadPool
 from ...pool.multiprocess import MultiprocessPool
 from ...pool.aio import SingleWorkerPool
 from ...pool.remote import RemotePoolClient
-from ...net.config import NetConfig, NodeExecutionConfig, PortConfig, RemotePoolConfig, SignalValue, EpochSignalValue, EpochFailedSignalValue, signal_port_name, is_signal_port
+from ...net.config import NetConfig, NodeExecutionConfig, PortConfig, RemotePoolConfig, SignalValue, EpochSignalValue, EpochFailedSignalValue, signal_port_name, is_signal_port, is_control_port, control_type_from_port, is_control_salvo_condition, control_port_name
 from ...execution_manager import ExecutionManager, PoolType, RunAllocationMethod
 from ..._iutils import get_timestamp_utc
 from ...packets import PacketStore
@@ -1467,8 +1467,17 @@ class Net:
             epoch = self._netsim.get_epoch(epoch_id)
             node_name = epoch.node_name
 
-            # Skip disabled nodes
-            if node_name in self._disabled_nodes:
+            # Allow control epochs through for disabled nodes (e.g., 'enable' must work)
+            salvo_cond = epoch.in_salvo.salvo_condition if epoch.in_salvo else None
+            is_control = salvo_cond and is_control_salvo_condition(salvo_cond)
+
+            # Skip disabled nodes (except control epochs)
+            if node_name in self._disabled_nodes and not is_control:
+                continue
+
+            # Control epochs bypass max_parallel_epochs checks
+            if is_control:
+                allowed.append(epoch_id)
                 continue
 
             config = self._get_node_execution_config(node_name)
@@ -1639,6 +1648,12 @@ class Net:
         node_name = epoch.node_name
         self._epochs[epoch_id] = EpochRecord.from_epoch(epoch)
         config = self._get_node_execution_config(node_name)
+
+        # Check if this is a control epoch
+        in_salvo = epoch.in_salvo
+        salvo_condition_name = in_salvo.salvo_condition if in_salvo else None
+        if salvo_condition_name and is_control_salvo_condition(salvo_condition_name):
+            return await self._handle_control_epoch(epoch_id, node_name, salvo_condition_name)
 
         # Check if node has an execution function (either direct or via factory)
         has_exec_func = (
@@ -3019,6 +3034,266 @@ class Net:
         if asyncio.iscoroutine(result):
             await result
 
+    # --- Control epoch handling ---
+
+    async def _handle_control_epoch(self, epoch_id: str, node_name: str, salvo_condition_name: str) -> None:
+        """Handle a control epoch by executing the control action directly.
+
+        Control epochs don't dispatch to workers — they're handled inline by the Net.
+        They don't emit signals, don't count toward max_epochs/rate_limit/max_parallel_epochs,
+        and they execute even on disabled nodes.
+
+        Args:
+            epoch_id: The control epoch ID.
+            node_name: The node this control targets.
+            salvo_condition_name: The salvo condition that triggered (encodes control type).
+        """
+        control_type = control_type_from_port(salvo_condition_name)
+        config = self._get_node_execution_config(node_name)
+
+        # Start epoch in netsim
+        self._netsim.do_action(netrun_sim.NetAction.start_epoch(epoch_id))
+        self._epochs[epoch_id].started_at = get_timestamp_utc()
+        self._epochs[epoch_id].state = netrun_sim.EpochState.Running
+
+        # Get and consume control packets
+        packets, packet_values = self._get_input_packet_values(epoch_id)
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                self._packet_store.consume(pid)
+                self._netsim.do_action(netrun_sim.NetAction.consume_packet(pid))
+
+        # Execute control action (with error handling)
+        try:
+            await self._execute_control_action(control_type, node_name, packet_values)
+        except Exception as error:
+            # Finish epoch, then handle error same as MaxEpochsExceeded
+            self._netsim.do_action(netrun_sim.NetAction.finish_epoch(epoch_id))
+            self._epochs[epoch_id].ended_at = get_timestamp_utc()
+            self._epochs[epoch_id].state = netrun_sim.EpochState.Finished
+
+            propagate, print_exc = self._get_effective_exception_config(config)
+
+            if print_exc:
+                import sys
+                print(f"Control '{control_type}' error on node '{node_name}': {error}", file=sys.stderr)
+
+            epoch_error = EpochError(
+                str(error), node_name=node_name, epoch_id=epoch_id,
+            )
+            epoch_error.__cause__ = error
+
+            if propagate:
+                raise epoch_error from error
+            else:
+                self._exception_queue.append(epoch_error)
+                return None
+
+        # Finish control epoch
+        self._netsim.do_action(netrun_sim.NetAction.finish_epoch(epoch_id))
+        self._epochs[epoch_id].ended_at = get_timestamp_utc()
+        self._epochs[epoch_id].state = netrun_sim.EpochState.Finished
+        return None
+
+    async def _execute_control_action(self, control_type: str, node_name: str, packet_values: dict[str, Any]) -> None:
+        """Dispatch a control action by type.
+
+        Args:
+            control_type: The control type string.
+            node_name: The target node.
+            packet_values: Packet ID -> value mapping from the control salvo.
+
+        Raises:
+            RuntimeError: If the control action fails.
+        """
+        if control_type == "start_epoch":
+            self._control_start_epoch(node_name)
+        elif control_type == "cancel_epoch":
+            value = self._get_single_control_value(packet_values, control_type, node_name)
+            if not isinstance(value, str):
+                raise RuntimeError(
+                    f"Control 'cancel_epoch' on node '{node_name}': "
+                    f"expected str epoch_id, got {type(value).__name__}"
+                )
+            self._control_cancel_epoch(node_name, value)
+        elif control_type == "cancel_all_epochs":
+            self._control_cancel_all_epochs(node_name)
+        elif control_type == "start_node":
+            if node_name in self._started_nodes:
+                raise RuntimeError(f"Control 'start_node': node '{node_name}' already started")
+            await self._start_node(node_name)
+        elif control_type == "stop_node":
+            if node_name not in self._started_nodes:
+                raise RuntimeError(f"Control 'stop_node': node '{node_name}' not started")
+            await self._stop_node(node_name)
+        elif control_type == "enable":
+            self.enable_node(node_name)
+        elif control_type == "disable":
+            self.disable_node(node_name)
+        elif control_type == "set_epoch_count":
+            value = self._get_single_control_value(packet_values, control_type, node_name)
+            if not isinstance(value, int):
+                raise RuntimeError(
+                    f"Control 'set_epoch_count' on node '{node_name}': "
+                    f"expected int, got {type(value).__name__}"
+                )
+            self._node_epoch_counts[node_name] = value
+        elif control_type == "reset_epoch_count":
+            self._node_epoch_counts[node_name] = 0
+        else:
+            raise RuntimeError(f"Unknown control type: '{control_type}'")
+
+    def _get_single_control_value(self, packet_values: dict[str, Any], control_type: str, node_name: str) -> Any:
+        """Extract the single packet value from a control salvo.
+
+        Args:
+            packet_values: Packet ID -> value mapping.
+            control_type: The control type (for error messages).
+            node_name: The node name (for error messages).
+
+        Returns:
+            The single value.
+
+        Raises:
+            RuntimeError: If there are 0 or >1 packets.
+        """
+        values = list(packet_values.values())
+        if len(values) != 1:
+            raise RuntimeError(
+                f"Control '{control_type}' on node '{node_name}': "
+                f"expected exactly 1 packet, got {len(values)}"
+            )
+        return values[0]
+
+    def _control_start_epoch(self, node_name: str) -> None:
+        """Handle 'start_epoch' control: trigger a non-control epoch on the node.
+
+        1. Check for existing non-control startable epoch → do nothing (it will be picked up)
+        2. If node has no regular input ports → create epoch with first non-control in_salvo_condition
+        3. If node has regular input ports but no startable epoch → error
+
+        Args:
+            node_name: The target node.
+
+        Raises:
+            RuntimeError: If the node has input ports but no startable epoch.
+        """
+        # Check for existing non-control startable epoch
+        startable = self.get_startable_epochs()
+        for eid in startable:
+            epoch = self._netsim.get_epoch(eid)
+            if epoch.node_name == node_name:
+                salvo_cond = epoch.in_salvo.salvo_condition if epoch.in_salvo else None
+                if not (salvo_cond and is_control_salvo_condition(salvo_cond)):
+                    return  # Already has a non-control startable epoch
+
+        # Check if node has regular (non-control) input ports
+        node_config = None
+        for nc in self._config_resolved.graph.nodes:
+            if nc.name == node_name:
+                node_config = nc
+                break
+
+        regular_in_ports = {k: v for k, v in (node_config.in_ports if node_config else {}).items()
+                           if not is_control_port(k)}
+
+        if not regular_in_ports:
+            # Source node — create epoch using the first non-control in_salvo_condition,
+            # or a synthetic salvo name if none exist (create_epoch doesn't validate names)
+            in_salvos = node_config.in_salvo_conditions or {} if node_config else {}
+            non_control_salvos = {k: v for k, v in in_salvos.items() if not is_control_salvo_condition(k)}
+            salvo_name = next(iter(non_control_salvos)) if non_control_salvos else "__started_by_control"
+            # Create epoch with empty salvo
+            salvo = netrun_sim.Salvo(salvo_condition=salvo_name, packets=[])
+            self._netsim.do_action(netrun_sim.NetAction.create_epoch(node_name, salvo))
+        else:
+            raise RuntimeError(
+                f"Control 'start_epoch' on node '{node_name}': "
+                f"node has input ports but no startable epoch is available"
+            )
+
+    def _control_cancel_epoch(self, node_name: str, epoch_id: str) -> None:
+        """Handle 'cancel_epoch' control: cancel a specific running epoch.
+
+        Args:
+            node_name: The target node.
+            epoch_id: The epoch to cancel.
+
+        Raises:
+            RuntimeError: If the epoch doesn't exist, doesn't belong to this node, or isn't running.
+        """
+        record = self._epochs.get(epoch_id)
+        if record is None:
+            raise RuntimeError(
+                f"Control 'cancel_epoch' on node '{node_name}': "
+                f"epoch '{epoch_id}' not found"
+            )
+        if record.node_name != node_name:
+            raise RuntimeError(
+                f"Control 'cancel_epoch' on node '{node_name}': "
+                f"epoch '{epoch_id}' belongs to node '{record.node_name}'"
+            )
+        if epoch_id not in self._running_epochs:
+            raise RuntimeError(
+                f"Control 'cancel_epoch' on node '{node_name}': "
+                f"epoch '{epoch_id}' is not running"
+            )
+
+        response, _ = self._netsim.do_action(netrun_sim.NetAction.cancel_epoch(epoch_id))
+        record.was_cancelled = True
+        record.ended_at = get_timestamp_utc()
+        record.destroyed_packets = list(response.destroyed_packets)
+        self._running_epochs.discard(epoch_id)
+
+        # Emit epoch_cancelled signal
+        self._emit_out_of_epoch_signal(node_name, "epoch_cancelled", epoch_id=epoch_id)
+
+    def _control_cancel_all_epochs(self, node_name: str) -> None:
+        """Handle 'cancel_all_epochs' control: cancel all running epochs for a node.
+
+        Args:
+            node_name: The target node.
+        """
+        running_for_node = [
+            eid for eid in list(self._running_epochs)
+            if self._epochs.get(eid) and self._epochs[eid].node_name == node_name
+        ]
+        for eid in running_for_node:
+            self._control_cancel_epoch(node_name, eid)
+
+    def send_control(self, node_name: str, control_type: str, value: Any = None) -> str:
+        """Inject a control packet into a node's control port.
+
+        This is a convenience method for sending control commands to nodes.
+
+        Args:
+            node_name: Target node name.
+            control_type: The control type (e.g., 'enable', 'disable', 'start_epoch').
+            value: Optional value for the control packet (required for cancel_epoch, set_epoch_count).
+
+        Returns:
+            The created packet ID.
+
+        Raises:
+            ValueError: If the node doesn't have the specified control port.
+        """
+        port_name = control_port_name(control_type)
+        # Validate node has this control port
+        node_config = None
+        for nc in self._config_resolved.graph.nodes:
+            if nc.name == node_name:
+                node_config = nc
+                break
+        if node_config is None:
+            raise ValueError(f"Node '{node_name}' not found in graph")
+        if port_name not in node_config.in_ports:
+            raise ValueError(
+                f"Node '{node_name}' does not have control port '{port_name}'. "
+                f"Available controls: {[k for k in node_config.in_ports if is_control_port(k)]}"
+            )
+        packet_ids = self.inject_data(node_name, port_name, [value])
+        return packet_ids[0]
+
     # --- Signal emission ---
 
     def _get_effective_signals(self, node_name: str) -> list[str]:
@@ -3340,9 +3615,15 @@ class Net:
             if not startable:
                 break
 
+            control_epochs = []
             upstream_epochs = []
             for epoch_id in startable:
                 epoch = self._netsim.get_epoch(epoch_id)
+                # Always execute control epochs immediately
+                salvo_cond = epoch.in_salvo.salvo_condition if epoch.in_salvo else None
+                if salvo_cond and is_control_salvo_condition(salvo_cond):
+                    control_epochs.append(epoch_id)
+                    continue
                 classification = _classify_epoch(epoch, target_specs, upstream_nodes)
                 if classification == "target":
                     # Collect salvo values
@@ -3359,7 +3640,19 @@ class Net:
                 elif classification == "upstream":
                     upstream_epochs.append(epoch_id)
 
+            # Always execute control epochs
+            if control_epochs:
+                ctrl_tasks = [asyncio.create_task(self._execute_epoch(eid)) for eid in control_epochs]
+                ctrl_results = await asyncio.gather(*ctrl_tasks, return_exceptions=True)
+                ctrl_exceptions = [r for r in ctrl_results if isinstance(r, Exception)]
+                if ctrl_exceptions:
+                    if len(ctrl_exceptions) == 1:
+                        raise ctrl_exceptions[0]
+                    raise ExceptionGroup("Control epoch failures", ctrl_exceptions)
+
             if not upstream_epochs:
+                if control_epochs:
+                    continue  # Control effects may create new work — re-check
                 break
 
             # Execute upstream epochs (respecting max_parallel_epochs)

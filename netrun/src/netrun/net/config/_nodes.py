@@ -29,6 +29,12 @@ from ...net.config._base import (
     generate_signal_salvo_conditions,
     is_signal_port,
     resolve_effective_signals,
+    VALID_CONTROL_TYPES,
+    validate_control_types,
+    generate_control_ports,
+    generate_control_salvo_conditions,
+    is_control_port,
+    resolve_effective_controls,
 )
 from ...execution_manager import RunAllocationMethod
 from ...storage.config import NodeStorageConfig
@@ -270,6 +276,8 @@ class NodeExecutionConfig(EnvVarResolvableModel):
 
     signals: list[str] | VarRef | None = Field(default=None, description="Signal types to emit on lifecycle events. None = inherit from NetConfig.default_signals. [] = no signals. Valid types: 'epoch_started', 'epoch_finished', 'epoch_failed', 'epoch_cancelled', 'node_started', 'node_stopped'.")
 
+    controls: list[str] | VarRef | None = Field(default=None, description="Control types to accept. None = inherit from NetConfig.default_controls. [] = no controls.")
+
     @field_serializer("exec_node_func", "start_node_func", "stop_node_func", "on_node_failure", when_used='json')
     def serialize_func(self, func: Callable | str | VarRef | None) -> str | dict | None:
         """Serialize functions to their import path for JSON.
@@ -300,6 +308,15 @@ class NodeExecutionConfig(EnvVarResolvableModel):
         if v is None or isinstance(v, VarRef):
             return v
         validate_signal_types(v)
+        return v
+
+    @field_validator("controls")
+    @classmethod
+    def validate_controls(cls, v):
+        """Validate that control types are recognized."""
+        if v is None or isinstance(v, VarRef):
+            return v
+        validate_control_types(v)
         return v
 
     def resolve(self, project_root: 'Path | None' = None) -> "NodeExecutionConfig":
@@ -350,6 +367,29 @@ def _get_effective_signals(node_config: "NodeConfig", net_config: "Any | None") 
         if not isinstance(default, VarRef):
             default_signals = list(default)
     return resolve_effective_signals(node_config.execution_config, default_signals)
+
+
+def _get_effective_controls(node_config: "NodeConfig", net_config: "Any | None") -> list[str]:
+    """Determine the effective control types for a node.
+
+    Resolution order:
+    1. If node has execution_config.controls set (not None), use that (even if empty list = opt-out)
+    2. Otherwise, inherit from net_config.default_controls
+    3. If no net_config, default to empty list (no controls)
+
+    Args:
+        node_config: The resolved NodeConfig.
+        net_config: The NetConfig (may be None).
+
+    Returns:
+        List of control type strings to generate ports for.
+    """
+    default_controls = []
+    if net_config is not None and hasattr(net_config, 'default_controls'):
+        default = net_config.default_controls
+        if not isinstance(default, VarRef):
+            default_controls = list(default)
+    return resolve_effective_controls(node_config.execution_config, default_controls)
 
 # %% pts/netrun/06_net/00_config/01_nodes.pct.py 13
 class NodeConfig(EnvVarResolvableModel):
@@ -624,10 +664,32 @@ class NodeConfig(EnvVarResolvableModel):
             if sig_updates:
                 result = result.model_copy(update=sig_updates)
 
+        # Auto-generate control ports
+        effective_controls = _get_effective_controls(result, net_config)
+        if effective_controls:
+            control_ports = generate_control_ports(effective_controls)
+            new_in_ports = {**result.in_ports}
+            for pname, pconfig in control_ports.items():
+                if pname not in new_in_ports:
+                    new_in_ports[pname] = pconfig
+            if new_in_ports != result.in_ports:
+                result = result.model_copy(update={"in_ports": new_in_ports})
+
         # Generate default salvo conditions if None
         updates = {}
         if result.in_salvo_conditions is None:
-            updates["in_salvo_conditions"] = _generate_default_in_salvo_conditions(result.in_ports)
+            # Exclude control ports from default in_salvo_conditions
+            non_control_in_ports = {k: v for k, v in result.in_ports.items() if not is_control_port(k)}
+            has_control_ports = any(is_control_port(k) for k in result.in_ports)
+            if non_control_in_ports or not has_control_ports:
+                # Generate default salvo for: (a) nodes with regular in_ports, or
+                # (b) pure source nodes (no in_ports at all — generates term=True).
+                # Skip for nodes with ONLY control ports: the term=True default would
+                # fire every run_step, starving the control salvos.
+                updates["in_salvo_conditions"] = _generate_default_in_salvo_conditions(non_control_in_ports)
+            else:
+                # Node has only control ports — no default salvo needed
+                updates["in_salvo_conditions"] = {}
         if result.out_salvo_conditions is None:
             # Generate defaults for non-signal ports only
             non_signal_out_ports = {k: v for k, v in result.out_ports.items() if not is_signal_port(k)}
@@ -645,6 +707,17 @@ class NodeConfig(EnvVarResolvableModel):
                     merged_out_salvos[sname] = sconfig
             if merged_out_salvos != existing_out_salvos:
                 result = result.model_copy(update={"out_salvo_conditions": merged_out_salvos})
+
+        # Add control salvo conditions (after default generation, so they don't interfere)
+        if effective_controls:
+            control_salvos = generate_control_salvo_conditions(effective_controls)
+            existing_in_salvos = result.in_salvo_conditions or {}
+            merged_in_salvos = {**existing_in_salvos}
+            for sname, sconfig in control_salvos.items():
+                if sname not in merged_in_salvos:
+                    merged_in_salvos[sname] = sconfig
+            if merged_in_salvos != existing_in_salvos:
+                result = result.model_copy(update={"in_salvo_conditions": merged_in_salvos})
 
         return result
 
