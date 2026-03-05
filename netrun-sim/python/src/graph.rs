@@ -1,6 +1,6 @@
 use indexmap::IndexMap;
 use pyo3::prelude::*;
-use pyo3::types::PyList;
+use pyo3::types::{PyDict, PyList};
 use std::collections::HashMap;
 
 // Re-export core types that have pyclass directly
@@ -783,9 +783,9 @@ impl Node {
         name: String,
         in_ports: Option<HashMap<String, Port>>,
         out_ports: Option<HashMap<String, Port>>,
-        in_salvo_conditions: Option<HashMap<String, SalvoCondition>>,
-        out_salvo_conditions: Option<HashMap<String, SalvoCondition>>,
-    ) -> Self {
+        in_salvo_conditions: Option<Bound<'_, PyDict>>,
+        out_salvo_conditions: Option<Bound<'_, PyDict>>,
+    ) -> PyResult<Self> {
         let in_ports_core: HashMap<PortName, CorePort> = in_ports
             .unwrap_or_default()
             .into_iter()
@@ -796,18 +796,35 @@ impl Node {
             .into_iter()
             .map(|(k, v)| (k, v.to_core()))
             .collect();
-        let in_salvo_core: IndexMap<String, CoreSalvoCondition> = in_salvo_conditions
-            .unwrap_or_default()
-            .into_iter()
-            .map(|(k, v)| (k, v.to_core()))
-            .collect();
-        let out_salvo_core: IndexMap<String, CoreSalvoCondition> = out_salvo_conditions
-            .unwrap_or_default()
-            .into_iter()
-            .map(|(k, v)| (k, v.to_core()))
-            .collect();
 
-        Node {
+        // Use PyDict iteration to preserve Python dict insertion order.
+        // HashMap would lose ordering, breaking "first satisfied condition wins" semantics.
+        let in_salvo_core: IndexMap<String, CoreSalvoCondition> = match in_salvo_conditions {
+            Some(dict) => {
+                let mut map = IndexMap::new();
+                for (k, v) in dict.iter() {
+                    let key: String = k.extract()?;
+                    let val: SalvoCondition = v.extract()?;
+                    map.insert(key, val.to_core());
+                }
+                map
+            }
+            None => IndexMap::new(),
+        };
+        let out_salvo_core: IndexMap<String, CoreSalvoCondition> = match out_salvo_conditions {
+            Some(dict) => {
+                let mut map = IndexMap::new();
+                for (k, v) in dict.iter() {
+                    let key: String = k.extract()?;
+                    let val: SalvoCondition = v.extract()?;
+                    map.insert(key, val.to_core());
+                }
+                map
+            }
+            None => IndexMap::new(),
+        };
+
+        Ok(Node {
             inner: CoreNode {
                 name,
                 in_ports: in_ports_core,
@@ -815,7 +832,7 @@ impl Node {
                 in_salvo_conditions: in_salvo_core,
                 out_salvo_conditions: out_salvo_core,
             },
-        }
+        })
     }
 
     #[getter]
@@ -842,21 +859,21 @@ impl Node {
     }
 
     #[getter]
-    fn in_salvo_conditions(&self) -> HashMap<String, SalvoCondition> {
-        self.inner
-            .in_salvo_conditions
-            .iter()
-            .map(|(k, v)| (k.clone(), SalvoCondition::from_core(v)))
-            .collect()
+    fn in_salvo_conditions<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let dict = PyDict::new(py);
+        for (k, v) in &self.inner.in_salvo_conditions {
+            dict.set_item(k, SalvoCondition::from_core(v).into_pyobject(py)?)?;
+        }
+        Ok(dict)
     }
 
     #[getter]
-    fn out_salvo_conditions(&self) -> HashMap<String, SalvoCondition> {
-        self.inner
-            .out_salvo_conditions
-            .iter()
-            .map(|(k, v)| (k.clone(), SalvoCondition::from_core(v)))
-            .collect()
+    fn out_salvo_conditions<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyDict>> {
+        let dict = PyDict::new(py);
+        for (k, v) in &self.inner.out_salvo_conditions {
+            dict.set_item(k, SalvoCondition::from_core(v).into_pyobject(py)?)?;
+        }
+        Ok(dict)
     }
 
     fn __repr__(&self) -> String {

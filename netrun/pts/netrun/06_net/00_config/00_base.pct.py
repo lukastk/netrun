@@ -800,6 +800,124 @@ def validate_signal_types(signal_types: list[str]) -> None:
             f"Valid types: {sorted(VALID_SIGNAL_TYPES)}"
         )
 
+# %% [markdown]
+# # Control Configuration
+#
+# Controls are inbound commands to nodes via auto-generated input ports.
+# When a control packet arrives and triggers an input salvo condition,
+# the Net intercepts the epoch and handles the action directly instead
+# of dispatching to a worker.
+
+# %%
+#|export
+CONTROL_PORT_PREFIX = "__control_"
+CONTROL_PORT_SUFFIX = "__"
+
+VALID_CONTROL_TYPES = frozenset({
+    "start_epoch", "cancel_epoch", "cancel_all_epochs",
+    "start_node", "stop_node",
+    "enable", "disable",
+    "set_epoch_count", "reset_epoch_count",
+})
+"""Valid control type names for the controls configuration."""
+
+
+def control_port_name(control_type: str) -> str:
+    """Convert a control type to its input port name.
+
+    Example:
+        >>> control_port_name("enable")
+        '__control_enable__'
+    """
+    return f"{CONTROL_PORT_PREFIX}{control_type}{CONTROL_PORT_SUFFIX}"
+
+
+def is_control_port(port_name: str) -> bool:
+    """Check if a port name is a control port."""
+    return port_name.startswith(CONTROL_PORT_PREFIX) and port_name.endswith(CONTROL_PORT_SUFFIX)
+
+
+def control_type_from_port(port_name: str) -> str | None:
+    """Extract the control type from a control port name. Returns None if not a control port."""
+    if not is_control_port(port_name):
+        return None
+    return port_name[len(CONTROL_PORT_PREFIX):-len(CONTROL_PORT_SUFFIX)]
+
+
+def is_control_salvo_condition(salvo_condition_name: str) -> bool:
+    """Check if a salvo condition name is a control salvo condition.
+
+    Control salvo conditions use the same naming as control ports.
+    """
+    return is_control_port(salvo_condition_name)
+
+
+def generate_control_ports(control_types: list[str]) -> dict[str, "PortConfig"]:
+    """Generate input port configs for the given control types.
+
+    Each control type gets an infinite-capacity input port.
+    """
+    return {control_port_name(c): PortConfig() for c in control_types}
+
+
+def generate_control_salvo_conditions(control_types: list[str]) -> dict[str, SalvoConditionConfig]:
+    """Generate input salvo conditions for control ports.
+
+    Each control type gets its own salvo condition that fires when the port is non-empty.
+    Uses finite(1) max_salvos as required for input salvo conditions.
+    """
+    conditions = {}
+    for c in control_types:
+        port_name = control_port_name(c)
+        conditions[port_name] = SalvoConditionConfig(
+            max_salvos=MaxSalvosFiniteConfig(max=1),
+            ports={port_name: PacketCountAllConfig()},
+            term=SalvoConditionTermPortConfig(
+                port_name=port_name,
+                state=PortStateNonEmptyConfig(),
+            ),
+        )
+    return conditions
+
+
+def resolve_effective_controls(
+    execution_config: "NodeExecutionConfig | None",
+    default_controls: list[str],
+) -> list[str]:
+    """Resolve effective controls from node execution config and net defaults.
+
+    Resolution order:
+    1. If execution_config.controls is set (not None), use that (even if empty list = opt-out)
+    2. Otherwise, inherit from default_controls
+
+    Args:
+        execution_config: The node's execution config (may be None).
+        default_controls: The net-level default controls.
+
+    Returns:
+        List of control type strings.
+    """
+    if execution_config is not None and execution_config.controls is not None:
+        controls = execution_config.controls
+        if isinstance(controls, VarRef):
+            return []  # VarRef not yet resolved, skip
+        return list(controls)
+    return list(default_controls)
+
+
+def validate_control_types(control_types: list[str]) -> None:
+    """Validate that all control types are recognized.
+
+    Raises:
+        ValueError: If any control type is not in VALID_CONTROL_TYPES.
+    """
+    invalid = set(control_types) - VALID_CONTROL_TYPES
+    if invalid:
+        raise ValueError(
+            f"Invalid control type(s): {sorted(invalid)}. "
+            f"Valid types: {sorted(VALID_CONTROL_TYPES)}"
+        )
+
 # %%
 #|export
 from pathlib import Path

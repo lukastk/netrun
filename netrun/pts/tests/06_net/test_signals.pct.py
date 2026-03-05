@@ -1055,11 +1055,10 @@ async def test_epoch_cancelled_signal_max_epochs():
                     name="A",
                     in_ports={"in": PortConfig()},
                     in_salvo_conditions={
-                        "trigger": SalvoConditionConfig(
-                            max_salvos=MaxSalvosFiniteConfig(max=1),
-                            ports={},
-                            term=SalvoConditionTermTrueConfig(),
-                        ),
+                        # "loop" MUST come before "trigger" — netsim checks conditions
+                        # in insertion order and first match wins. If "trigger" (term=True)
+                        # is first, it fires on every run_step even when packets are waiting
+                        # at "in", starving the "loop" condition.
                         "loop": SalvoConditionConfig(
                             max_salvos=MaxSalvosFiniteConfig(max=1),
                             ports={"in": PacketCountAllConfig()},
@@ -1067,6 +1066,11 @@ async def test_epoch_cancelled_signal_max_epochs():
                                 port_name="in",
                                 state=PortStateNonEmptyConfig(),
                             ),
+                        ),
+                        "trigger": SalvoConditionConfig(
+                            max_salvos=MaxSalvosFiniteConfig(max=1),
+                            ports={},
+                            term=SalvoConditionTermTrueConfig(),
                         ),
                     },
                     out_ports={"out": PortConfig()},

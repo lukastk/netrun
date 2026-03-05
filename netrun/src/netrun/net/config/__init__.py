@@ -60,6 +60,18 @@ from ._base import (
     generate_signal_ports,
     generate_signal_salvo_conditions,
     validate_signal_types,
+    # Control utilities
+    CONTROL_PORT_PREFIX,
+    CONTROL_PORT_SUFFIX,
+    VALID_CONTROL_TYPES,
+    control_port_name,
+    is_control_port,
+    control_type_from_port,
+    is_control_salvo_condition,
+    resolve_effective_controls,
+    generate_control_ports,
+    generate_control_salvo_conditions,
+    validate_control_types,
 )
 
 # Re-export from _nodes
