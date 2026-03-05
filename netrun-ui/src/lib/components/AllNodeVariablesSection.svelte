@@ -131,6 +131,7 @@
 					{@const globalVar = $projectNodeVars[name]}
 					{@const effectiveType = isInheritVar && globalVar ? (globalVar.type || 'str') : (variable.type || 'str')}
 					{@const effectiveOptions = isInheritVar && globalVar ? globalVar.options : variable.options}
+					{@const effectiveOptional = isInheritVar && globalVar ? (globalVar.optional || false) : (variable.optional || false)}
 					{@const key = `${entry.nodeId}:${name}`}
 					{@const inEnvMode = envVarMode[key] || false}
 					{@const error = validateVarValue(variable.value, effectiveType, effectiveOptions)}
@@ -142,6 +143,9 @@
 								<span class="var-badge inherit">inherit</span>
 							{:else if isNetDefault}
 								<span class="var-badge override">override</span>
+							{/if}
+							{#if effectiveOptional}
+								<span class="var-badge optional">optional</span>
 							{/if}
 							<button
 								class="envvar-toggle"
@@ -355,6 +359,11 @@
 	.var-badge.inherit {
 		background: rgba(34, 197, 94, 0.15);
 		color: #22c55e;
+	}
+
+	.var-badge.optional {
+		background: rgba(168, 85, 247, 0.15);
+		color: #a855f7;
 	}
 
 	.var-edit-row {

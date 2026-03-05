@@ -209,11 +209,12 @@ class GraphConfig(EnvVarResolvableModel):
                             )
                         global_var = net_var_models[name]
                         if var.value is not None:
-                            # Override just the value, use global type/options
+                            # Override just the value, use global type/options/optional
                             effective = NodeVariable(
                                 value=var.value,
                                 type=global_var.type,
                                 options=global_var.options,
+                                optional=global_var.optional,
                             )
                             node_exec_vars[name] = effective.resolve_value()
                         else:

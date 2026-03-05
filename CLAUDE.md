@@ -262,14 +262,18 @@ NetConfig.from_file(
 )
 ```
 
-Calling `resolve_value()` on a variable with `value=None` raises `ValueError`. The UI frontend must handle `variable.value` being `undefined` (absent from JSON) gracefully.
+Calling `resolve_value()` on a variable with `value=None` raises `ValueError` — unless `optional=True` (see below). The UI frontend must handle `variable.value` being `undefined` (absent from JSON) gracefully.
+
+#### Optional field
+
+`NodeVariable.optional: bool = False` allows a variable to legitimately have no value. When `optional=True` and `value=None`, `resolve_value()` returns `None` (instead of raising). If `value` is set, it resolves normally (including options validation). When `optional=True` and `value=None`, options validation is skipped. For inherited vars, `optional` is inherited from the global variable (cannot be explicitly set with `inherit=True`).
 
 #### Inherit field
 
 `NodeVariable.inherit: bool = False` enables node-level vars to inherit from net-level vars of the same name. When `inherit=True` on a **node-level** var:
 
 - Requires a net-level var of the same name (errors if missing at resolve time)
-- `type` and `options` must not be explicitly set (they are inherited from the global var)
+- `type`, `options`, and `optional` must not be explicitly set (they are inherited from the global var)
 - `value` may optionally be set to override just the value; type/options still come from global
 - If `value` is not set, the global value is used entirely
 

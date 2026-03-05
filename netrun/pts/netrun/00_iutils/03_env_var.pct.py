@@ -210,8 +210,10 @@ def _resolve_var_ref_value(ref: "VarRef", resolved_vars: dict[str, Any], target_
     Raises:
         ValueError: If the variable is not found and no default is provided.
     """
-    value = resolved_vars.get(ref.var)
-    if value is not None:
+    if ref.var in resolved_vars:
+        value = resolved_vars[ref.var]
+        if value is None:
+            return None
         # If already the right type, use directly
         if isinstance(value, str) and target_type is not str and target_type is not Any:
             return _cast_env_var_value(value, target_type, env_name=f"$var:{ref.var}")

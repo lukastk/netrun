@@ -149,6 +149,7 @@ class NodeVariable(EnvVarResolvableModel):
     type: str = "str"  # "str", "int", "float", "bool", "json"
     options: list[str | int | float | bool] | None = None
     inherit: bool = False
+    optional: bool = False
 
     @model_validator(mode='after')
     def check_no_var_ref(self):
@@ -167,16 +168,20 @@ class NodeVariable(EnvVarResolvableModel):
                 raise ValueError("inherit=True must not explicitly set 'type' (it is inherited from the global variable)")
             if 'options' in self.model_fields_set and self.options is not None:
                 raise ValueError("inherit=True must not explicitly set 'options' (they are inherited from the global variable)")
+            if 'optional' in self.model_fields_set and self.optional is not False:
+                raise ValueError("inherit=True must not explicitly set 'optional' (it is inherited from the global variable)")
         return self
 
     def resolve_value(self) -> Any:
         """Resolve the value to the appropriate Python type.
 
         Raises:
-            ValueError: If ``value`` is None (placeholder not filled in).
+            ValueError: If ``value`` is None and ``optional`` is False (placeholder not filled in).
         """
         v = self.value
         if v is None:
+            if self.optional:
+                return None
             raise ValueError("NodeVariable.value is None (placeholder not filled in)")
         match self.type:
             case "str" | "":
