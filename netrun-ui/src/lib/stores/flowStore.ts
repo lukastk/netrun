@@ -31,6 +31,7 @@ import {
 } from '$lib/utils/portGroups';
 import { isPortGroupCollapsed } from './portGroupStore';
 import { isSignalPort, getEffectiveSignals, computeSignalPorts } from './signalStore';
+import { isControlPort, getEffectiveControls, computeControlPorts } from './controlStore';
 
 // Node shape types
 export type NodeShape =
@@ -59,6 +60,7 @@ export interface PortConfig {
 	name: string;
 	type?: string;
 	isSignal?: boolean;
+	isControl?: boolean;
 	[key: string]: unknown; // Allow additional properties
 }
 
@@ -1052,8 +1054,9 @@ export function updateNodeExecutionConfig(
 		isDirty: true,
 	});
 
-	// Recompute signal ports (signals config may have changed)
+	// Recompute signal/control ports (config may have changed)
 	recomputeSignalPortsForNode(id);
+	recomputeControlPortsForNode(id);
 }
 
 // Get execution config from a node's _config
@@ -1140,6 +1143,82 @@ export function recomputeAllSignalPorts(): void {
 				data: {
 					...node.data,
 					outPorts: withSignalPorts(node.data.outPorts, signalPorts),
+				}
+			};
+		}),
+	});
+}
+
+// ── Control port helpers ────────────────────────────────────────
+
+/** Compute control input ports for a single node based on its config and net defaults. */
+function computeNodeControlPorts(node: FlowNode, defaultControls: unknown): PortConfig[] {
+	if (node.data.nodeType === 'subgraph') return [];
+	const execConfig = ((node.data._config || {}) as Record<string, unknown>).execution_config as Record<string, unknown> | undefined;
+	const nodeControls = execConfig?.controls ?? null;
+	const effective = getEffectiveControls(nodeControls, defaultControls);
+	return computeControlPorts(effective);
+}
+
+/** Replace control ports on a node's inPorts, preserving data ports. */
+function withControlPorts(inPorts: PortConfig[], controlPorts: PortConfig[]): PortConfig[] {
+	const dataPorts = inPorts.filter(p => !p.isControl);
+	return [...dataPorts, ...controlPorts];
+}
+
+/** Inject control ports on all nodes after loading a file. */
+export function injectControlPortsOnLoad(nodes: FlowNode[], extraData: Record<string, unknown> | null): FlowNode[] {
+	const defaultControls = extraData?.default_controls ?? null;
+	return nodes.map(node => {
+		if (node.data.nodeType === 'subgraph') return node;
+		const controlPorts = computeNodeControlPorts(node, defaultControls);
+		if (controlPorts.length === 0) return node;
+		return {
+			...node,
+			data: {
+				...node.data,
+				inPorts: withControlPorts(node.data.inPorts, controlPorts),
+			}
+		};
+	});
+}
+
+/** Recompute control ports for a single node (call after changing its controls config). */
+export function recomputeControlPortsForNode(nodeId: string): void {
+	const tab = get(activeTab);
+	if (!tab) return;
+	const defaultControls = (tab.extraData as Record<string, unknown> | null)?.default_controls ?? null;
+
+	updateActiveTab({
+		nodes: tab.nodes.map(node => {
+			if (node.id !== nodeId || node.data.nodeType === 'subgraph') return node;
+			const controlPorts = computeNodeControlPorts(node, defaultControls);
+			return {
+				...node,
+				data: {
+					...node.data,
+					inPorts: withControlPorts(node.data.inPorts, controlPorts),
+				}
+			};
+		}),
+	});
+}
+
+/** Recompute control ports for all nodes (call after changing net-level default_controls). */
+export function recomputeAllControlPorts(): void {
+	const tab = get(activeTab);
+	if (!tab) return;
+	const defaultControls = (tab.extraData as Record<string, unknown> | null)?.default_controls ?? null;
+
+	updateActiveTab({
+		nodes: tab.nodes.map(node => {
+			if (node.data.nodeType === 'subgraph') return node;
+			const controlPorts = computeNodeControlPorts(node, defaultControls);
+			return {
+				...node,
+				data: {
+					...node.data,
+					inPorts: withControlPorts(node.data.inPorts, controlPorts),
 				}
 			};
 		}),
@@ -2152,9 +2231,10 @@ export async function loadFromFile(path: string): Promise<void> {
 
 	// Extract decorations from graphExtra and merge into nodes
 	const { decorationNodes, cleanedExtra } = extractDecorations(response.extra || null);
-	// Inject signal ports based on config (signal ports are auto-generated, not saved)
+	// Inject signal/control ports based on config (auto-generated, not saved)
 	const nodesWithSignals = injectSignalPortsOnLoad(loadedNodes, response.extra_data || null);
-	const allNodes = [...nodesWithSignals, ...decorationNodes];
+	const nodesWithControls = injectControlPortsOnLoad(nodesWithSignals, response.extra_data || null);
+	const allNodes = [...nodesWithControls, ...decorationNodes];
 
 	// Check if current tab is empty and untitled - reuse it
 	const currentTab = get(activeTab);
@@ -2220,9 +2300,10 @@ export async function reloadFile(): Promise<void> {
 		const response = await api.readFile(tab.filePath);
 		const reloadedNodes = convertApiNodes(response.nodes);
 		const nodesWithSignals = injectSignalPortsOnLoad(reloadedNodes, response.extra_data || null);
+		const nodesWithControls = injectControlPortsOnLoad(nodesWithSignals, response.extra_data || null);
 		const { decorationNodes, cleanedExtra } = extractDecorations(response.extra || null);
 		updateActiveTab({
-			nodes: [...nodesWithSignals, ...decorationNodes],
+			nodes: [...nodesWithControls, ...decorationNodes],
 			edges: convertApiEdges(response.edges),
 			extraData: response.extra_data || null,
 			graphExtra: cleanedExtra,
@@ -2409,7 +2490,8 @@ export async function saveToFile(path?: string): Promise<void> {
 		const baseData = {
 			label: data.label,
 			nodeType: data.nodeType as 'regular' | 'factory' | 'subgraph',
-			inPorts: data.inPorts.map(p => ({ name: p.name, type: p.type })),
+			// Strip control ports on save (they are auto-generated at resolve time)
+			inPorts: data.inPorts.filter(p => !p.isControl).map(p => ({ name: p.name, type: p.type })),
 			// Strip signal ports on save (they are auto-generated at resolve time)
 			outPorts: data.outPorts.filter(p => !p.isSignal).map(p => ({ name: p.name, type: p.type })),
 			isValid: data.isValid,
@@ -2842,7 +2924,8 @@ export function getCurrentConfig(): Record<string, unknown> {
 			...(n.height != null ? { height: n.height } : {}),
 			data: {
 				...n.data,
-				// Strip signal ports - they are auto-generated at resolve time
+				// Strip signal/control ports - they are auto-generated at resolve time
+				inPorts: n.data.inPorts.filter(p => !p.isControl),
 				outPorts: n.data.outPorts.filter(p => !p.isSignal),
 			}
 		})),
@@ -2928,8 +3011,9 @@ export function applyConfig(config: Record<string, unknown>): void {
 		});
 	}
 
-	// Recompute signal ports after applying config (signals may have changed)
+	// Recompute signal/control ports after applying config (may have changed)
 	recomputeAllSignalPorts();
+	recomputeAllControlPorts();
 }
 
 // ── Auto-save inline subgraph to parent on tab switch ──────────

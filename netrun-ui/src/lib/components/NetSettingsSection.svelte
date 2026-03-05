@@ -6,7 +6,8 @@
 	import { isEnvVar, isVarRef, makeEnvVar, getEnvVarName, getEnvVarDefault } from '$lib/utils/envvar';
 	import { projectVarNames } from '$lib/stores/variablesStore';
 	import { signalTypeInfo } from '$lib/stores/signalStore';
-	import { recomputeAllSignalPorts } from '$lib/stores/flowStore';
+	import { controlTypeInfo } from '$lib/stores/controlStore';
+	import { recomputeAllSignalPorts, recomputeAllControlPorts } from '$lib/stores/flowStore';
 
 	function desc(field: string): string | undefined {
 		return getFieldDescription($configSchema, 'NetConfig', field);
@@ -210,6 +211,89 @@
 								}}
 							/>
 							<span class="signal-type-name">{sigType}</span>
+						</label>
+					{/each}
+				</div>
+			{/if}
+		</div>
+	{/if}
+
+	<!-- Default Controls -->
+	{#if $controlTypeInfo}
+		{@const currentDefaultControls = getValue<unknown[]>('default_controls', [])}
+		{@const defaultControlsEnv = isEnvVar(currentDefaultControls)}
+		<div class="subsection">
+			<div class="subsection-header">Default Controls{#if desc('default_controls')}<span class="has-tooltip-icon" use:tooltip={desc('default_controls')}>?</span>{/if}
+				<button
+					class="envvar-toggle"
+					class:active={defaultControlsEnv}
+					title={defaultControlsEnv ? 'Switch to literal value' : 'Switch to environment variable'}
+					onclick={() => {
+						if (defaultControlsEnv) {
+							const def = getEnvVarDefault(currentDefaultControls);
+							const val = Array.isArray(def) ? def : [];
+							onUpdate({ ...extraData, default_controls: val });
+						} else {
+							onUpdate({ ...extraData, default_controls: makeEnvVar('', currentDefaultControls) });
+						}
+						pushHistory();
+						recomputeAllControlPorts();
+					}}
+				>$</button>
+			</div>
+			{#if defaultControlsEnv}
+				<div class="envvar-input-group">
+					<div class="envvar-name-row">
+						<span class="envvar-prefix">$</span>
+						<input
+							type="text"
+							class="envvar-name-input"
+							value={getEnvVarName(currentDefaultControls)}
+							placeholder="ENV_VAR_NAME"
+							oninput={(e) => {
+								const name = (e.target as HTMLInputElement).value;
+								const def = isEnvVar(currentDefaultControls) ? getEnvVarDefault(currentDefaultControls) : [];
+								onUpdate({ ...extraData, default_controls: makeEnvVar(name, def) });
+							}}
+							onblur={() => pushHistory()}
+						/>
+					</div>
+					<div class="envvar-default-row">
+						<span class="envvar-default-label">default:</span>
+						<input
+							type="text"
+							class="envvar-default-input"
+							value={(() => { const d = getEnvVarDefault(currentDefaultControls); return Array.isArray(d) ? d.join(', ') : d ?? ''; })()}
+							placeholder="pause, cancel"
+							oninput={(e) => {
+								const v = (e.target as HTMLInputElement).value;
+								const arr = v ? v.split(',').map(s => s.trim()).filter(Boolean) : [];
+								const name = isEnvVar(currentDefaultControls) ? getEnvVarName(currentDefaultControls) : '';
+								onUpdate({ ...extraData, default_controls: makeEnvVar(name, arr) });
+							}}
+							onblur={() => pushHistory()}
+						/>
+					</div>
+				</div>
+			{:else}
+				<div class="controls-selection">
+					{#each $controlTypeInfo.validTypes as ctrlType}
+						{@const selected = Array.isArray(currentDefaultControls) && currentDefaultControls.includes(ctrlType)}
+						<label class="control-checkbox">
+							<input
+								type="checkbox"
+								checked={selected}
+								onchange={() => {
+									const current = Array.isArray(currentDefaultControls) ? currentDefaultControls : [];
+									const newControls = selected
+										? current.filter((s: unknown) => s !== ctrlType)
+										: [...current, ctrlType];
+									onUpdate({ ...extraData, default_controls: newControls });
+									pushHistory();
+									recomputeAllControlPorts();
+								}}
+							/>
+							<span class="control-type-name">{ctrlType}</span>
 						</label>
 					{/each}
 				</div>
@@ -425,6 +509,39 @@
 	}
 
 	.signal-type-name {
+		color: var(--text-primary, #fff);
+		font-size: 10px;
+	}
+
+	.controls-selection {
+		display: flex;
+		flex-wrap: wrap;
+		gap: 6px;
+	}
+
+	.control-checkbox {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		padding: 4px 8px;
+		background: var(--bg-tertiary, #2d2d2d);
+		border: 1px solid var(--border-color, #404040);
+		border-radius: 3px;
+		cursor: pointer;
+		font-size: 11px;
+	}
+
+	.control-checkbox:hover {
+		border-color: var(--accent-color, #3b82f6);
+	}
+
+	.control-checkbox input {
+		width: 12px;
+		height: 12px;
+		cursor: pointer;
+	}
+
+	.control-type-name {
 		color: var(--text-primary, #fff);
 		font-size: 10px;
 	}

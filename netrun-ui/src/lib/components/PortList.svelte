@@ -12,6 +12,7 @@
 	import { toggleNodePortGroup } from '$lib/stores/flowStore';
 	import type { PortConfig } from '$lib/stores/flowStore';
 	import { signalTypeFromPort } from '$lib/stores/signalStore';
+	import { controlTypeFromPort } from '$lib/stores/controlStore';
 
 	interface Props {
 		nodeId: string;
@@ -90,18 +91,21 @@
 		/>
 	{:else}
 		{@const signalType = item.port.isSignal ? signalTypeFromPort(item.port.name) : null}
-		<div class="port-row" class:port-indented={item.depth > 0} class:signal-port={!!signalType} style:padding-left="{item.depth * 12}px">
+		{@const controlType = item.port.isControl ? controlTypeFromPort(item.port.name) : null}
+		<div class="port-row" class:port-indented={item.depth > 0} class:signal-port={!!signalType} class:control-port={!!controlType} style:padding-left="{item.depth * 12}px">
 			{#if side === 'in'}
 				<Handle
 					type={handleType}
 					position={handlePosition}
 					id={item.port.name}
-					class={signalType ? 'signal-handle' : ''}
+					class={signalType ? 'signal-handle' : controlType ? 'control-handle' : ''}
 				/>
 			{/if}
 			{#if !hidePortNames}
 				{#if signalType}
 					<span class="port-label signal-label">{signalType}</span>
+				{:else if controlType}
+					<span class="port-label control-label">{controlType}</span>
 				{:else}
 					{#if side === 'out' && item.port.type && item.port.type !== 'any'}
 						<span class="port-type">{item.port.type}</span>
@@ -117,7 +121,7 @@
 					type={handleType}
 					position={handlePosition}
 					id={item.port.name}
-					class={signalType ? 'signal-handle' : ''}
+					class={signalType ? 'signal-handle' : controlType ? 'control-handle' : ''}
 				/>
 			{/if}
 			{#if exposedPortNames?.includes(item.port.name)}
@@ -441,6 +445,23 @@
 
 	:global(.signal-handle) {
 		background: #d97706 !important;
+		width: 6px !important;
+		height: 6px !important;
+	}
+
+	/* Control port styling */
+	.control-port {
+		opacity: 0.7;
+	}
+
+	.control-label {
+		font-style: italic;
+		color: #7c3aed !important;
+		font-size: calc(var(--node-port-font-size, 11px) - 1px);
+	}
+
+	:global(.control-handle) {
+		background: #7c3aed !important;
 		width: 6px !important;
 		height: 6px !important;
 	}

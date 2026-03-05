@@ -231,6 +231,12 @@ export interface SignalTypesResponse {
 	port_suffix: string;
 }
 
+export interface ControlTypesResponse {
+	valid_types: string[];
+	port_prefix: string;
+	port_suffix: string;
+}
+
 class ApiClient {
 	private baseUrl: string;
 
@@ -553,6 +559,15 @@ class ApiClient {
 	 */
 	async getSignalTypes(): Promise<SignalTypesResponse> {
 		return this.request<SignalTypesResponse>('/config/signal-types', {
+			method: 'GET',
+		});
+	}
+
+	/**
+	 * Get valid control types and naming convention
+	 */
+	async getControlTypes(): Promise<ControlTypesResponse> {
+		return this.request<ControlTypesResponse>('/config/control-types', {
 			method: 'GET',
 		});
 	}
