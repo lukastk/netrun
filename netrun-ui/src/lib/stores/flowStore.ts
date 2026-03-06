@@ -2363,15 +2363,15 @@ export function saveInlineSubgraphToParent(): boolean {
 					}
 				};
 			} else {
-				// Regular node
+				// Regular node — strip control/signal ports (auto-generated at resolve time)
 				return {
 					type: 'node',
 					name: nodeData.label,
 					in_ports: Object.fromEntries(
-						nodeData.inPorts.map(p => [p.name, { port_type: p.type || null }])
+						nodeData.inPorts.filter(p => !p.isControl).map(p => [p.name, { port_type: p.type || null }])
 					),
 					out_ports: Object.fromEntries(
-						nodeData.outPorts.map(p => [p.name, { port_type: p.type || null }])
+						nodeData.outPorts.filter(p => !p.isSignal).map(p => [p.name, { port_type: p.type || null }])
 					),
 					extra: {
 						ui: {
@@ -3052,14 +3052,15 @@ registerBeforeTabSwitchHandler((fromTab: TabState) => {
 						extra: { ui: { position: n.position } },
 					};
 				} else {
+					// Strip control/signal ports (auto-generated at resolve time)
 					return {
 						type: 'node',
 						name: nodeData.label,
 						in_ports: Object.fromEntries(
-							nodeData.inPorts.map(p => [p.name, { port_type: p.type || null }])
+							nodeData.inPorts.filter(p => !p.isControl).map(p => [p.name, { port_type: p.type || null }])
 						),
 						out_ports: Object.fromEntries(
-							nodeData.outPorts.map(p => [p.name, { port_type: p.type || null }])
+							nodeData.outPorts.filter(p => !p.isSignal).map(p => [p.name, { port_type: p.type || null }])
 						),
 						extra: { ui: { position: n.position } },
 					};
