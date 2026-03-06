@@ -456,6 +456,8 @@ class DependencyRequestConfig(EnvVarResolvableModel):
                 sim_triggers.append(netrun_sim.DependencyRequestTrigger.on_startup())
             elif t == "on_no_salvo_triggered":
                 sim_triggers.append(netrun_sim.DependencyRequestTrigger.on_no_salvo_triggered())
+            else:
+                raise ValueError(f"Unknown dependency request trigger: {t!r}")
         return netrun_sim.DependencyRequestConfig(sim_triggers, self.label)
 
 # %%
