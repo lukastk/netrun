@@ -468,21 +468,28 @@
 	}
 
 	// Fetch factory signature when factory path changes
+	let factorySignatureRequestId = 0;
 	async function loadFactorySignature(factoryPath: string) {
 		if (!factoryPath || factoryPath === lastFactoryPath) return;
 
 		factorySignatureLoading = true;
 		lastFactoryPath = factoryPath;
+		const requestId = ++factorySignatureRequestId;
 
 		try {
 			const projectRoot = ($extraData as Record<string, unknown>)?.project_root_override as string | undefined;
 			const response = await api.getFactorySignature(factoryPath, projectRoot);
+			// Ignore stale responses from previous requests
+			if (requestId !== factorySignatureRequestId) return;
 			factoryParams = response.parameters;
 		} catch (e) {
+			if (requestId !== factorySignatureRequestId) return;
 			console.warn('Failed to load factory signature:', e);
 			factoryParams = [];
 		} finally {
-			factorySignatureLoading = false;
+			if (requestId === factorySignatureRequestId) {
+				factorySignatureLoading = false;
+			}
 		}
 	}
 
