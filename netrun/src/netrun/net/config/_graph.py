@@ -170,7 +170,7 @@ class GraphConfig(EnvVarResolvableModel):
                         port_name=internal_port,
                     )
 
-            final_edges.append(EdgeConfig(source=new_source, target=new_target))
+            final_edges.append(EdgeConfig(source=new_source, target=new_target, dependency=edge.dependency))
 
         # Validate no name collisions
         node_names = [n.name for n in resolved_nodes]
@@ -372,8 +372,14 @@ class GraphConfig(EnvVarResolvableModel):
             )
         # At this point, all nodes are NodeConfig
         nodes = [node.to_netrun_sim() for node in self.nodes]  # type: ignore
-        edges = [edge.to_netrun_sim() for edge in self.edges]
-        graph = netrun_sim.Graph(nodes, edges)
+        edges = []
+        dep_edges = []
+        for edge in self.edges:
+            sim_edge = edge.to_netrun_sim()
+            edges.append(sim_edge)
+            if edge.dependency:
+                dep_edges.append(sim_edge)
+        graph = netrun_sim.Graph(nodes, edges, dependency_edges=dep_edges or None)
 
         # Validate graph constraints (e.g. no fan-out from output ports)
         errors = graph.validate()
