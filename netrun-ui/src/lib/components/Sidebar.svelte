@@ -1385,8 +1385,8 @@
 				</section>
 			{/if}
 
-			<!-- Salvo Conditions Section (only for regular nodes, not factory or subgraph) -->
-			{#if $selectedNode.data.nodeType === 'regular'}
+			<!-- Salvo Conditions Section (for regular and factory nodes, not subgraph) -->
+			{#if $selectedNode.data.nodeType !== 'subgraph'}
 				<section class="section">
 					<button
 						class="section-header"
@@ -1406,6 +1406,7 @@
 								{outConditions}
 								inPortNames={$selectedNode.data.inPorts.map(p => p.name)}
 								outPortNames={$selectedNode.data.outPorts.map(p => p.name)}
+								isFactory={$selectedNode.data.nodeType === 'factory'}
 								onUpdateIn={(conditions) => {
 									const json = conditions ? salvoConditionsToJSON(conditions) : null;
 									updateNodeSalvoConditions($selectedNode.id, 'in', json);
