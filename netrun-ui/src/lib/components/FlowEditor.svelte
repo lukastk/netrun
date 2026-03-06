@@ -420,13 +420,15 @@
 	let previousTabId: string | null = null;
 
 	// Fit view when switching tabs or loading new content
-	$: if ($activeTabId && $activeTabId !== previousTabId) {
-		previousTabId = $activeTabId;
-		// Wait for nodes to render, then fit view
-		tick().then(() => {
-			fitView(fitViewOptions);
-		});
-	}
+	$effect(() => {
+		if ($activeTabId && $activeTabId !== previousTabId) {
+			previousTabId = $activeTabId;
+			// Wait for nodes to render, then fit view
+			tick().then(() => {
+				fitView(fitViewOptions);
+			});
+		}
+	});
 </script>
 
 <div class="flow-editor" style:--node-title-font-size="{$nodeTitleFontSize}px" style:--node-desc-font-size="{$nodeDescFontSize}px" style:--node-port-font-size="{$nodePortFontSize}px">
