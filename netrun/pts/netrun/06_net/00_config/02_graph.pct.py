@@ -27,6 +27,7 @@ from netrun.net.config._nodes import (
     EnvVarResolvableModel,
     ConfigValidationError,
     NodeVariable,
+    DependencyRequestConfig,
 )
 from netrun.net.config._base import is_signal_port
 import netrun_sim
@@ -190,6 +191,16 @@ class GraphConfig(EnvVarResolvableModel):
                     )
 
             final_edges.append(EdgeConfig(source=new_source, target=new_target, dependency=edge.dependency))
+
+        # Auto-apply default DependencyRequestConfig for nodes with dependency edges
+        dep_target_nodes = set()
+        for edge in final_edges:
+            if edge.dependency:
+                dep_target_nodes.add(edge.get_target().node_name)
+
+        for node in resolved_nodes:
+            if node.name in dep_target_nodes and node.dependency_request is None:
+                node.dependency_request = DependencyRequestConfig()
 
         # Validate no name collisions
         node_names = [n.name for n in resolved_nodes]

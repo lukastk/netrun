@@ -96,6 +96,10 @@
 		</button>
 	{:else}
 		<p class="empty-message">No dependency request configured.</p>
+		<p class="default-note">
+			Default: nodes with dependency edges automatically get <code>on_startup</code> trigger
+			and label <code>"main"</code> if no config is set.
+		</p>
 		<button class="add-btn" onclick={addConfig}>
 			Add Dependency Request
 		</button>
@@ -154,7 +158,21 @@
 	.empty-message {
 		font-size: 11px;
 		color: var(--text-secondary, #a0a0a0);
+		margin: 0 0 4px;
+	}
+
+	.default-note {
+		font-size: 10px;
+		color: var(--text-secondary, #808080);
 		margin: 0 0 8px;
+		line-height: 1.4;
+	}
+
+	.default-note code {
+		background: var(--bg-secondary, #242424);
+		padding: 1px 4px;
+		border-radius: 3px;
+		font-size: 10px;
 	}
 
 	.add-btn {
