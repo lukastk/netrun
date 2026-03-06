@@ -8,7 +8,6 @@ pts_tests -> lib_tests
 nbs_dev -> pts_dev
 pts_dev -> lib_dev
 
-nbs_examples -> pts_examples
 """
 docs_cl='nbs'
 docs_title="netrun"
@@ -52,11 +51,3 @@ format="percent"
 [cl.lib_dev]
 path="src/dev"
 format="module"
-
-[cl.nbs_examples]
-path="nbs/examples"
-format="ipynb"
-
-[cl.pts_examples]
-path="pts/examples"
-format="percent"

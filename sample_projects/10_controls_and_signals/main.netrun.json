@@ -1,0 +1,64 @@
+{
+  "extra": {
+    "description": "Controls and signals: start_epoch triggers, enable/disable, and epoch_finished monitoring"
+  },
+  "output_queues": {
+    "results": {
+      "ports": [["process", "out"]]
+    },
+    "signals_log": {
+      "ports": [["monitor", "out"]]
+    }
+  },
+  "graph": {
+    "extra": {
+      "ui": {
+        "viewport": {"x": 0, "y": 0, "zoom": 1},
+        "actions": [
+          {
+            "id": "action-run-project",
+            "label": "Run Project",
+            "command": "cd $PROJECT_ROOT && uv run python main.py"
+          }
+        ]
+      }
+    },
+    "nodes": [
+      {
+        "name": "generate",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {"func": "nodes.generate"},
+        "in_salvo_conditions": {},
+        "execution_config": {
+          "pools": ["main"],
+          "controls": ["start_epoch"]
+        },
+        "extra": {"ui": {"position": {"x": 100, "y": 150}}}
+      },
+      {
+        "name": "process",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {"func": "nodes.process"},
+        "execution_config": {
+          "pools": ["main"],
+          "signals": ["epoch_finished"],
+          "controls": ["enable", "disable"]
+        },
+        "extra": {"ui": {"position": {"x": 400, "y": 150}}}
+      },
+      {
+        "name": "monitor",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {"func": "nodes.monitor"},
+        "execution_config": {
+          "pools": ["main"]
+        },
+        "extra": {"ui": {"position": {"x": 700, "y": 300}}}
+      }
+    ],
+    "edges": [
+      {"source_str": "generate.out", "target_str": "process.data"},
+      {"source_str": "process.__signal_epoch_finished__", "target_str": "monitor.trigger"}
+    ]
+  }
+}

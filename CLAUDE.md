@@ -447,7 +447,7 @@ type_checking_enabled = true  # Settings go here, NOT in factory_args
 - Function factory: `pts/netrun/07_node_factories/00_from_function.pct.py`
 - Broadcast factory: `pts/netrun/07_node_factories/01_broadcast.pct.py`
 - Factory resolution in Net: `pts/netrun/06_net/01_net/02_net.pct.py`
-- Example usage: `pts/examples/net/01_function_factory.pct.py`
+- Example usage: `sample_projects/` (see `07_node_factories`, `10_controls_and_signals`)
 
 ---
 
