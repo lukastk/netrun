@@ -67,10 +67,10 @@ async def read_file(request: FileReadRequest) -> FileReadResponse:
     if not path.exists():
         raise HTTPException(status_code=404, detail=f"File not found: {path}")
 
-    if not path.suffix in (".json", ".toml"):
+    if not (path.name.endswith('.netrun.json') or path.name.endswith('.netrun.toml')):
         raise HTTPException(
             status_code=400,
-            detail=f"Unsupported file format: {path.suffix}. Must be .json or .toml"
+            detail=f"Unsupported file format: {path.name}. Must be .netrun.json or .netrun.toml"
         )
 
     try:
