@@ -735,8 +735,41 @@ export function renameExpandedChildNode(oldChildNodeId: string, newName: string)
 	const config = subgraphData._subgraphConfig;
 	if (!config) return false;
 
+	// Helper to update exposed port references when renaming a child node
+	const updateExposedPorts = (ports: Record<string, { internal_node: string; internal_port: string }> | undefined) => {
+		if (!ports) return ports;
+		let changed = false;
+		const updated: Record<string, { internal_node: string; internal_port: string }> = {};
+		for (const [portName, mapping] of Object.entries(ports)) {
+			if (mapping.internal_node === originalId) {
+				updated[portName] = { ...mapping, internal_node: trimmed };
+				changed = true;
+			} else {
+				updated[portName] = mapping;
+			}
+		}
+		return changed ? updated : ports;
+	};
+
 	if (isFileReferencedConfig(config)) {
-		// For file-referenced subgraphs, only the cache was updated (temporary).
+		// For file-referenced subgraphs, update exposed ports in _subgraphConfig
+		// so exposed port edges point to the renamed child node.
+		const updatedExposedIn = updateExposedPorts(
+			config.exposed_in_ports as Record<string, { internal_node: string; internal_port: string }> | undefined
+		);
+		const updatedExposedOut = updateExposedPorts(
+			config.exposed_out_ports as Record<string, { internal_node: string; internal_port: string }> | undefined
+		);
+		if (updatedExposedIn !== (config.exposed_in_ports as unknown) ||
+			updatedExposedOut !== (config.exposed_out_ports as unknown)) {
+			updateNodeDataLive(parentId, {
+				_subgraphConfig: {
+					...config,
+					...(updatedExposedIn ? { exposed_in_ports: updatedExposedIn } : {}),
+					...(updatedExposedOut ? { exposed_out_ports: updatedExposedOut } : {}),
+				},
+			} as Partial<SubgraphNodeData>);
+		}
 		// Touch expandedByTab to trigger expandedView recompute.
 		setTabExpandedSet(tabId, new Set(getTabExpandedSet(tabId)));
 		return true;
@@ -773,22 +806,6 @@ export function renameExpandedChildNode(oldChildNodeId: string, newName: string)
 		}
 		return changed ? newCe : ce;
 	});
-
-	// Update exposed_in_ports / exposed_out_ports
-	const updateExposedPorts = (ports: Record<string, { internal_node: string; internal_port: string }> | undefined) => {
-		if (!ports) return ports;
-		let changed = false;
-		const updated: Record<string, { internal_node: string; internal_port: string }> = {};
-		for (const [portName, mapping] of Object.entries(ports)) {
-			if (mapping.internal_node === originalId) {
-				updated[portName] = { ...mapping, internal_node: trimmed };
-				changed = true;
-			} else {
-				updated[portName] = mapping;
-			}
-		}
-		return changed ? updated : ports;
-	};
 
 	const updatedExposedIn = updateExposedPorts(
 		config.exposed_in_ports as Record<string, { internal_node: string; internal_port: string }> | undefined
