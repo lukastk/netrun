@@ -1729,8 +1729,8 @@ async function runBackendValidation(): Promise<BackendValidationResult> {
 				nodeIdx = parseInt(String(loc[1]), 10);
 			}
 
-			if (nodeIdx !== null && !isNaN(nodeIdx) && nodeIdx >= 0 && nodeIdx < tab.nodes.length) {
-				const nodeId = tab.nodes[nodeIdx].id;
+			if (nodeIdx !== null && !isNaN(nodeIdx) && nodeIdx >= 0 && nodeIdx < functionalNodes.length) {
+				const nodeId = functionalNodes[nodeIdx].id;
 				const fieldPath = loc.slice(loc.indexOf(String(nodeIdx)) + 1).join('.');
 				const msg = fieldPath ? `${fieldPath}: ${err.msg}` : err.msg;
 				addToNodeErrors(nodeId, msg);
