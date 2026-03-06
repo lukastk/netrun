@@ -134,6 +134,13 @@ def _set_node_vars_in_data(nodes_list: list[dict], parts: list[str], vars_dict: 
             else:
                 node.setdefault("execution_config", {})
                 existing = node["execution_config"].get("node_vars", {})
+                unknown = set(vars_dict.keys()) - set(existing.keys())
+                if unknown:
+                    raise KeyError(
+                        f"node_vars for node '{name}' contains variable names not declared "
+                        f"in the node's config: {sorted(unknown)}. "
+                        f"Declared variables: {sorted(existing.keys()) if existing else '(none)'}"
+                    )
                 node["execution_config"]["node_vars"] = {**existing, **vars_dict}
                 return
     raise KeyError(f"Node '{name}' not found")
@@ -249,8 +256,14 @@ class NetConfig(EnvVarResolvableModel):
 
         # 2. Merge global_node_vars
         if global_node_vars:
-            normalized = {k: _normalize_node_var_to_dict(v) for k, v in global_node_vars.items()}
             existing = data.get("node_vars") or {}
+            unknown = set(global_node_vars.keys()) - set(existing.keys())
+            if unknown:
+                raise KeyError(
+                    f"global_node_vars contains variable names not declared in the config file: "
+                    f"{sorted(unknown)}. Declared variables: {sorted(existing.keys()) if existing else '(none)'}"
+                )
+            normalized = {k: _normalize_node_var_to_dict(v) for k, v in global_node_vars.items()}
             data["node_vars"] = {**existing, **normalized}
 
         # 3. Merge per-node vars

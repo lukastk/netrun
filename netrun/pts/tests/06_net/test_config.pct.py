@@ -3912,7 +3912,7 @@ test_from_file_data_overrides(Path(tempfile.mkdtemp()));
 #|export
 def test_from_file_global_node_vars_str(tmp_path):
     """global_node_vars with bare string convenience format."""
-    data = _basic_graph_data()
+    data = {**_basic_graph_data(), "node_vars": {"model": {"type": "str"}}}
     fp = _make_config_file(tmp_path, data)
 
     config = NetConfig.from_file(fp, global_node_vars={"model": "gpt-4"})
@@ -3927,7 +3927,7 @@ test_from_file_global_node_vars_str(Path(tempfile.mkdtemp()));
 #|export
 def test_from_file_global_node_vars_tuple(tmp_path):
     """global_node_vars with (value, type) tuple convenience format."""
-    data = _basic_graph_data()
+    data = {**_basic_graph_data(), "node_vars": {"count": {"type": "int"}}}
     fp = _make_config_file(tmp_path, data)
 
     config = NetConfig.from_file(fp, global_node_vars={"count": ("42", "int")})
@@ -3941,7 +3941,7 @@ test_from_file_global_node_vars_tuple(Path(tempfile.mkdtemp()));
 #|export
 def test_from_file_global_node_vars_model(tmp_path):
     """global_node_vars with NodeVariable model instance."""
-    data = _basic_graph_data()
+    data = {**_basic_graph_data(), "node_vars": {"flag": {"type": "bool"}}}
     fp = _make_config_file(tmp_path, data)
 
     config = NetConfig.from_file(fp, global_node_vars={
@@ -3957,7 +3957,7 @@ test_from_file_global_node_vars_model(Path(tempfile.mkdtemp()));
 #|export
 def test_from_file_global_node_vars_dict(tmp_path):
     """global_node_vars with raw dict passthrough."""
-    data = _basic_graph_data()
+    data = {**_basic_graph_data(), "node_vars": {"x": {"type": "float"}}}
     fp = _make_config_file(tmp_path, data)
 
     config = NetConfig.from_file(fp, global_node_vars={
@@ -3979,10 +3979,9 @@ def test_from_file_global_node_vars_merges_existing(tmp_path):
     }
     fp = _make_config_file(tmp_path, data)
 
-    config = NetConfig.from_file(fp, global_node_vars={"override": "new", "added": "hello"})
+    config = NetConfig.from_file(fp, global_node_vars={"override": "new"})
     assert config.node_vars["existing"].value == "keep"
     assert config.node_vars["override"].value == "new"
-    assert config.node_vars["added"].value == "hello"
 
 # %%
 test_from_file_global_node_vars_merges_existing(Path(tempfile.mkdtemp()));
@@ -3992,7 +3991,8 @@ test_from_file_global_node_vars_merges_existing(Path(tempfile.mkdtemp()));
 def test_from_file_node_vars_string_key(tmp_path):
     """node_vars with string key targets a top-level node."""
     nodes = [
-        {"name": "worker", "out_ports": {"out": {"slots_spec": {"type": "infinite"}}}},
+        {"name": "worker", "out_ports": {"out": {"slots_spec": {"type": "infinite"}}},
+         "execution_config": {"node_vars": {"timeout": {"type": "float"}}}},
     ]
     data = _basic_graph_data(nodes=nodes)
     fp = _make_config_file(tmp_path, data)
@@ -4014,7 +4014,8 @@ def test_from_file_node_vars_tuple_key_inline_subgraph(tmp_path):
             "type": "subgraph",
             "name": "preprocess",
             "nodes": [
-                {"name": "normalize", "out_ports": {"out": {"slots_spec": {"type": "infinite"}}}},
+                {"name": "normalize", "out_ports": {"out": {"slots_spec": {"type": "infinite"}}},
+                 "execution_config": {"node_vars": {"batch_size": {"type": "int"}}}},
             ],
             "edges": [],
             "exposed_in_ports": {},
@@ -4071,6 +4072,55 @@ def test_from_file_node_vars_nonexistent_node_raises(tmp_path):
 
 # %%
 test_from_file_node_vars_nonexistent_node_raises(Path(tempfile.mkdtemp()));
+
+# %%
+#|export
+def test_from_file_global_node_vars_unknown_name_raises(tmp_path):
+    """global_node_vars raises KeyError when var name not declared in file's node_vars."""
+    data = {
+        **_basic_graph_data(),
+        "node_vars": {"model": {"type": "str", "value": "default"}},
+    }
+    fp = _make_config_file(tmp_path, data)
+
+    with pytest.raises(KeyError, match="not declared in the config file"):
+        NetConfig.from_file(fp, global_node_vars={"typo_model": "gpt-4"})
+
+# %%
+test_from_file_global_node_vars_unknown_name_raises(Path(tempfile.mkdtemp()));
+
+# %%
+#|export
+def test_from_file_node_vars_unknown_var_name_raises(tmp_path):
+    """node_vars raises KeyError when var name not declared in node's execution_config."""
+    nodes = [{
+        "name": "A",
+        "out_ports": {"out": {"slots_spec": {"type": "infinite"}}},
+        "execution_config": {
+            "node_vars": {"lr": {"type": "str", "value": "0.01"}},
+        },
+    }]
+    data = _basic_graph_data(nodes=nodes)
+    fp = _make_config_file(tmp_path, data)
+
+    with pytest.raises(KeyError, match="not declared in the node's config"):
+        NetConfig.from_file(fp, node_vars={"A": {"typo_lr": "0.001"}})
+
+# %%
+test_from_file_node_vars_unknown_var_name_raises(Path(tempfile.mkdtemp()));
+
+# %%
+#|export
+def test_from_file_global_node_vars_no_declared_vars_raises(tmp_path):
+    """global_node_vars raises KeyError when file has no node_vars section at all."""
+    data = _basic_graph_data()
+    fp = _make_config_file(tmp_path, data)
+
+    with pytest.raises(KeyError, match="not declared in the config file"):
+        NetConfig.from_file(fp, global_node_vars={"model": "gpt-4"})
+
+# %%
+test_from_file_global_node_vars_no_declared_vars_raises(Path(tempfile.mkdtemp()));
 
 # %%
 #|export
