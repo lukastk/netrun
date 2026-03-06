@@ -28,7 +28,7 @@ from netrun.net.config import (
     GraphConfig as _GraphConfig,
     PortConfig as _PortConfig,
 )
-from netrun.net.config._base import is_signal_port
+from netrun.net.config._base import is_signal_port, is_control_port
 
 logger = logging.getLogger(__name__)
 
@@ -496,6 +496,9 @@ def _ui_to_graph_config_model(
             # Regular node — include port info and restore extra config fields
             in_ports = {}
             for port in data.get("inPorts", []):
+                # Skip control ports (auto-generated at resolve time)
+                if port.get("isControl") or is_control_port(port["name"]):
+                    continue
                 if port.get("type"):
                     in_ports[port["name"]] = _PortConfig(port_type=port["type"])
                 else:
