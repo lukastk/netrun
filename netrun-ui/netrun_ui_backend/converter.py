@@ -484,8 +484,10 @@ def _ui_to_graph_config_model(
                 }
                 if filtered_args:
                     kwargs["factory_args"] = filtered_args
-            if "execution_config" in extra_config:
-                kwargs["execution_config"] = extra_config["execution_config"]
+            # Restore known fields from _config (execution_config, salvo conditions, node_vars, etc.)
+            for key, value in extra_config.items():
+                if key not in ("extra",) and key not in kwargs:
+                    kwargs[key] = value
             if data.get("description"):
                 kwargs["description"] = data["description"]
             config_node = _NodeConfig(**kwargs)
