@@ -1679,8 +1679,8 @@ async function runBackendValidation(): Promise<BackendValidationResult> {
 			data: {
 				label: n.data.label,
 				nodeType: n.data.nodeType as 'regular' | 'factory' | 'subgraph',
-				inPorts: n.data.inPorts,
-				outPorts: n.data.outPorts,
+				inPorts: n.data.inPorts.filter(p => !p.isControl),
+				outPorts: n.data.outPorts.filter(p => !p.isSignal),
 				factory: (n.data as NetrunNodeData).factory,
 				factoryArgs: (n.data as NetrunNodeData).factoryArgs,
 				_config: (n.data as NetrunNodeData)._config,
@@ -2704,13 +2704,13 @@ export async function createSubgraphFromSelection(subgraphName: string): Promise
 	// Get selected nodes (exclude decorations) and all edges
 	const selectedNodes = tab.nodes.filter(n => selectedIds.has(n.id) && n.data.nodeType !== 'decoration');
 
-	// Convert nodes to API format
+	// Convert nodes to API format (strip control/signal ports)
 	const apiNodes: UINode[] = selectedNodes.map(node => {
 		const baseData = {
 			label: node.data.label,
 			nodeType: node.data.nodeType as 'regular' | 'factory' | 'subgraph',
-			inPorts: node.data.inPorts,
-			outPorts: node.data.outPorts,
+			inPorts: node.data.inPorts.filter(p => !p.isControl),
+			outPorts: node.data.outPorts.filter(p => !p.isSignal),
 			isValid: node.data.isValid,
 			validationErrors: node.data.validationErrors,
 		};
@@ -2751,8 +2751,8 @@ export async function createSubgraphFromSelection(subgraphName: string): Promise
 		const baseData = {
 			label: node.data.label,
 			nodeType: node.data.nodeType as 'regular' | 'factory' | 'subgraph',
-			inPorts: node.data.inPorts,
-			outPorts: node.data.outPorts,
+			inPorts: node.data.inPorts.filter(p => !p.isControl),
+			outPorts: node.data.outPorts.filter(p => !p.isSignal),
 			isValid: node.data.isValid,
 			validationErrors: node.data.validationErrors,
 		};
