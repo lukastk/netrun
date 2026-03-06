@@ -601,6 +601,7 @@ class NodeConfig(EnvVarResolvableModel):
             in_salvo_conditions=base_config.in_salvo_conditions,
             out_salvo_conditions=base_config.out_salvo_conditions,
             execution_config=execution_config,
+            dependency_request=base_config.dependency_request,
             extra=base_config.extra,
         )
 

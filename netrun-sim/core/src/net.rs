@@ -16,6 +16,9 @@ use indexmap::IndexSet;
 use std::collections::{HashMap, HashSet};
 use ulid::Ulid;
 
+/// Salvo condition name for request-created epochs.
+pub const REQUEST_SALVO_CONDITION: &str = "__request__";
+
 /// Unique identifier for a packet (ULID).
 pub type PacketID = Ulid;
 
@@ -913,7 +916,7 @@ impl NetSim {
             for (source_node_name, label) in &source_label_pairs {
                 let epoch_id = Ulid::new();
                 let in_salvo = Salvo {
-                    salvo_condition: "__request__".to_string(),
+                    salvo_condition: REQUEST_SALVO_CONDITION.to_string(),
                     packets: vec![],
                 };
 
@@ -1093,6 +1096,21 @@ impl NetSim {
         }
     }
 
+    /// Replenish the request token for a node if it has an `OnNoSalvoTriggered` trigger.
+    /// Called when an epoch finishes or is cancelled so the node can fire again.
+    fn replenish_request_token(&mut self, node_name: &NodeName) {
+        if let Some(node) = self.graph.nodes().get(node_name) {
+            if let Some(config) = &node.dependency_request_config {
+                if config
+                    .triggers
+                    .contains(&DependencyRequestTrigger::OnNoSalvoTriggered)
+                {
+                    self._request_tokens.insert(node_name.clone(), true);
+                }
+            }
+        }
+    }
+
     fn finish_epoch(&mut self, epoch_id: &EpochID) -> NetActionResponse {
         // Check if epoch exists
         let epoch = if let Some(epoch) = self._epochs.get(epoch_id) {
@@ -1141,28 +1159,22 @@ impl NetSim {
         }
 
         // All checks passed - finish the epoch
+        // Collect port names before we release the borrow on graph
+        let out_port_names: Vec<String> = node.out_ports.keys().cloned().collect();
+
         // Clone epoch state before modifying for the event (captures Running state)
         let epoch_before_finish = self._epochs[epoch_id].clone();
 
         // Replenish request token if node has OnNoSalvoTriggered trigger
         let epoch_node_name = self._epochs[epoch_id].node_name.clone();
-        if let Some(node) = self.graph.nodes().get(&epoch_node_name) {
-            if let Some(config) = &node.dependency_request_config {
-                if config
-                    .triggers
-                    .contains(&DependencyRequestTrigger::OnNoSalvoTriggered)
-                {
-                    self._request_tokens.insert(epoch_node_name.clone(), true);
-                }
-            }
-        }
+        self.replenish_request_token(&epoch_node_name);
 
         let mut epoch = self._epochs.remove(epoch_id).unwrap();
         epoch.state = EpochState::Finished;
 
         // Clean up location entries
         self._packets_by_location.remove(&epoch_loc);
-        for port_name in node.out_ports.keys() {
+        for port_name in &out_port_names {
             let output_port_loc = PacketLocation::OutputPort(*epoch_id, port_name.clone());
             self._packets_by_location.remove(&output_port_loc);
         }
@@ -1189,17 +1201,7 @@ impl NetSim {
         };
 
         // Replenish request token if node has OnNoSalvoTriggered trigger
-        if let Some(node) = self.graph.nodes().get(&epoch_for_event.node_name) {
-            if let Some(config) = &node.dependency_request_config {
-                if config
-                    .triggers
-                    .contains(&DependencyRequestTrigger::OnNoSalvoTriggered)
-                {
-                    self._request_tokens
-                        .insert(epoch_for_event.node_name.clone(), true);
-                }
-            }
-        }
+        self.replenish_request_token(&epoch_for_event.node_name);
 
         let mut events: Vec<NetEvent> = Vec::new();
         let mut destroyed_packets: Vec<PacketID> = Vec::new();

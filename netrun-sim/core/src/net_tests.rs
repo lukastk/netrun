@@ -2299,7 +2299,7 @@ fn test_on_startup_creates_epoch_at_source() {
     assert_eq!(startable.len(), 1);
     let epoch = net.get_epoch(&startable[0]).unwrap();
     assert_eq!(epoch.node_name, "Source");
-    assert_eq!(epoch.in_salvo.salvo_condition, "__request__");
+    assert_eq!(epoch.in_salvo.salvo_condition, REQUEST_SALVO_CONDITION);
     assert!(epoch.in_salvo.packets.is_empty());
 }
 
@@ -2502,7 +2502,7 @@ fn test_token_replenishment_on_finish_epoch() {
 
     // Create an epoch on Sink manually and finish it
     let sink_salvo = Salvo {
-        salvo_condition: "__request__".to_string(),
+        salvo_condition: REQUEST_SALVO_CONDITION.to_string(),
         packets: vec![],
     };
     let sink_epoch_id = match net.do_action(&NetAction::CreateEpoch("Sink".to_string(), sink_salvo)) {
@@ -2567,7 +2567,7 @@ fn test_token_replenishment_on_cancel_epoch() {
 
     // Cancel a Sink epoch to replenish token
     let sink_salvo = Salvo {
-        salvo_condition: "__request__".to_string(),
+        salvo_condition: REQUEST_SALVO_CONDITION.to_string(),
         packets: vec![],
     };
     let sink_epoch_id = match net.do_action(&NetAction::CreateEpoch("Sink".to_string(), sink_salvo)) {
