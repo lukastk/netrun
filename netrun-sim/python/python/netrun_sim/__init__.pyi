@@ -699,7 +699,25 @@ class NetEvent:
 
     @property
     def node_name(self) -> Optional[str]:
-        """Get the node name for PacketOrphaned events."""
+        """Get the node name (for PacketOrphaned, RequestCreated, RequestEpochCreated events)."""
+        ...
+
+    @property
+    def label(self) -> Optional[str]:
+        """Get the label (for RequestCreated, RequestCascadeResolved, RequestEpochCreated events)."""
+        ...
+
+    @property
+    def source_nodes(self) -> Optional[List[str]]:
+        """Get the source nodes (for RequestCascadeResolved events)."""
+        ...
+
+    @property
+    def request_source(self) -> Optional[str]:
+        """Get the request source (for RequestCreated events).
+
+        Returns "External", "OnStartup", or "OnNoSalvoTriggered".
+        """
         ...
 
     @property

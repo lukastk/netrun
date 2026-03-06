@@ -137,6 +137,17 @@ impl Epoch {
 /// Timestamp in milliseconds (UTC).
 pub type EventUTC = i128;
 
+/// How a request was created — used for undo to know which state to reverse.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RequestCreatedSource {
+    /// From a `CreateRequest` action — pushed to `_pending_requests`.
+    External,
+    /// From RunStep Phase 2b on_startup — set `_startup_requests_sent = true`.
+    OnStartup,
+    /// From RunStep Phase 2b on_no_salvo_triggered — spent `_request_tokens[node]`.
+    OnNoSalvoTriggered,
+}
+
 /// A pending packet request waiting to be resolved during RunStep.
 #[derive(Debug, Clone)]
 pub struct PendingRequest {
@@ -385,8 +396,8 @@ pub enum NetEvent {
         SalvoConditionName,
     ),
     /// A packet request was created (registered as pending).
-    /// (timestamp, node_name, label)
-    RequestCreated(EventUTC, NodeName, String),
+    /// (timestamp, node_name, label, source)
+    RequestCreated(EventUTC, NodeName, String, RequestCreatedSource),
     /// A request cascade was resolved, identifying source nodes.
     /// (timestamp, source_nodes, label)
     RequestCascadeResolved(EventUTC, Vec<NodeName>, String),
@@ -794,7 +805,6 @@ impl NetSim {
 
         // on_startup: first RunStep only
         if !self._startup_requests_sent {
-            self._startup_requests_sent = true;
             let startup_nodes: Vec<(NodeName, String)> = self
                 .graph
                 .nodes()
@@ -813,13 +823,17 @@ impl NetSim {
                 })
                 .collect();
 
-            for (node_name, label) in startup_nodes {
-                all_events.push(NetEvent::RequestCreated(
-                    get_utc_now(),
-                    node_name.clone(),
-                    label.clone(),
-                ));
-                self._pending_requests.push(PendingRequest { node_name, label });
+            if !startup_nodes.is_empty() {
+                self._startup_requests_sent = true;
+                for (node_name, label) in startup_nodes {
+                    all_events.push(NetEvent::RequestCreated(
+                        get_utc_now(),
+                        node_name.clone(),
+                        label.clone(),
+                        RequestCreatedSource::OnStartup,
+                    ));
+                    self._pending_requests.push(PendingRequest { node_name, label });
+                }
             }
         }
 
@@ -850,6 +864,7 @@ impl NetSim {
                     get_utc_now(),
                     node_name.clone(),
                     label.clone(),
+                    RequestCreatedSource::OnNoSalvoTriggered,
                 ));
                 self._pending_requests.push(PendingRequest { node_name, label });
             }
@@ -1654,6 +1669,7 @@ impl NetSim {
                 get_utc_now(),
                 node_name.clone(),
                 label.to_string(),
+                RequestCreatedSource::External,
             )],
         )
     }
@@ -2099,8 +2115,31 @@ impl NetSim {
                 // Move packet back from OutsideNet to output port
                 self.undo_packet_orphaned(packet_id, epoch_id, port_name)
             }
-            NetEvent::RequestCreated(_, _, _)
-            | NetEvent::RequestCascadeResolved(_, _, _)
+            NetEvent::RequestCreated(_, node_name, _label, source) => {
+                match source {
+                    RequestCreatedSource::External => {
+                        // Pop the last matching pending request (LIFO)
+                        if let Some(pos) = self
+                            ._pending_requests
+                            .iter()
+                            .rposition(|r| r.node_name == *node_name)
+                        {
+                            self._pending_requests.remove(pos);
+                        }
+                        Ok(())
+                    }
+                    RequestCreatedSource::OnStartup => {
+                        self._startup_requests_sent = false;
+                        Ok(())
+                    }
+                    RequestCreatedSource::OnNoSalvoTriggered => {
+                        // Un-spend the token
+                        self._request_tokens.insert(node_name.clone(), true);
+                        Ok(())
+                    }
+                }
+            }
+            NetEvent::RequestCascadeResolved(_, _, _)
             | NetEvent::RequestEpochCreated(_, _, _, _) => {
                 // Informational only - no state to undo
                 // (Request-created epochs are undone via EpochCreated events)
@@ -2283,6 +2322,18 @@ impl NetSim {
             .or_default()
             .push(epoch_id);
 
+        // Reverse token replenishment
+        if let Some(node) = self.graph.nodes().get(&epoch.node_name) {
+            if let Some(config) = &node.dependency_request_config {
+                if config
+                    .triggers
+                    .contains(&DependencyRequestTrigger::OnNoSalvoTriggered)
+                {
+                    self._request_tokens.insert(epoch.node_name.clone(), false);
+                }
+            }
+        }
+
         Ok(())
     }
 
@@ -2325,6 +2376,18 @@ impl NetSim {
         // If epoch was startable, add to _startable_epochs
         if epoch.state == EpochState::Startable {
             self._startable_epochs.insert(epoch_id);
+        }
+
+        // Reverse token replenishment
+        if let Some(node) = self.graph.nodes().get(&epoch.node_name) {
+            if let Some(config) = &node.dependency_request_config {
+                if config
+                    .triggers
+                    .contains(&DependencyRequestTrigger::OnNoSalvoTriggered)
+                {
+                    self._request_tokens.insert(epoch.node_name.clone(), false);
+                }
+            }
         }
 
         Ok(())
