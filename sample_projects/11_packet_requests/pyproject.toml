@@ -1,0 +1,14 @@
+[project]
+name = "packet-requests"
+version = "0.1.0"
+description = "Demonstrates packet requests and dependency edges in netrun"
+requires-python = ">=3.11"
+dependencies = [
+    "jupyterlab>=4.5.3",
+    "netrun",
+    "netrun-ui",
+]
+
+[tool.uv.sources]
+netrun = { path = "../../netrun", editable = true }
+netrun-ui = { path = "../../netrun-ui", editable = true }
