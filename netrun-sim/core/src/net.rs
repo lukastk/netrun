@@ -803,37 +803,32 @@ impl NetSim {
 
         // Phase 2b: Auto-request generation
 
-        // on_startup: first RunStep only
+        // on_startup: first RunStep only (flag set only when startup nodes exist,
+        // so graphs without them skip this cheaply; undo reverses via OnStartup events)
         if !self._startup_requests_sent {
-            let startup_nodes: Vec<(NodeName, String)> = self
-                .graph
-                .nodes()
-                .iter()
-                .filter_map(|(node_name, node)| {
-                    node.dependency_request_config.as_ref().and_then(|config| {
-                        if config
-                            .triggers
-                            .contains(&DependencyRequestTrigger::OnStartup)
-                        {
-                            Some((node_name.clone(), config.label.clone()))
-                        } else {
-                            None
-                        }
-                    })
-                })
-                .collect();
-
-            if !startup_nodes.is_empty() {
-                self._startup_requests_sent = true;
-                for (node_name, label) in startup_nodes {
-                    all_events.push(NetEvent::RequestCreated(
-                        get_utc_now(),
-                        node_name.clone(),
-                        label.clone(),
-                        RequestCreatedSource::OnStartup,
-                    ));
-                    self._pending_requests.push(PendingRequest { node_name, label });
+            let mut found_startup = false;
+            for (node_name, node) in self.graph.nodes() {
+                if let Some(config) = &node.dependency_request_config {
+                    if config
+                        .triggers
+                        .contains(&DependencyRequestTrigger::OnStartup)
+                    {
+                        found_startup = true;
+                        all_events.push(NetEvent::RequestCreated(
+                            get_utc_now(),
+                            node_name.clone(),
+                            config.label.clone(),
+                            RequestCreatedSource::OnStartup,
+                        ));
+                        self._pending_requests.push(PendingRequest {
+                            node_name: node_name.clone(),
+                            label: config.label.clone(),
+                        });
+                    }
                 }
+            }
+            if found_startup {
+                self._startup_requests_sent = true;
             }
         }
 
@@ -1111,16 +1106,16 @@ impl NetSim {
         }
     }
 
-    /// Replenish the request token for a node if it has an `OnNoSalvoTriggered` trigger.
-    /// Called when an epoch finishes or is cancelled so the node can fire again.
-    fn replenish_request_token(&mut self, node_name: &NodeName) {
+    /// Set the request token for a node if it has an `OnNoSalvoTriggered` trigger.
+    /// Called with `true` to replenish (on epoch finish/cancel) or `false` to reverse (on undo).
+    fn set_request_token(&mut self, node_name: &NodeName, value: bool) {
         if let Some(node) = self.graph.nodes().get(node_name) {
             if let Some(config) = &node.dependency_request_config {
                 if config
                     .triggers
                     .contains(&DependencyRequestTrigger::OnNoSalvoTriggered)
                 {
-                    self._request_tokens.insert(node_name.clone(), true);
+                    self._request_tokens.insert(node_name.clone(), value);
                 }
             }
         }
@@ -1182,7 +1177,7 @@ impl NetSim {
 
         // Replenish request token if node has OnNoSalvoTriggered trigger
         let epoch_node_name = self._epochs[epoch_id].node_name.clone();
-        self.replenish_request_token(&epoch_node_name);
+        self.set_request_token(&epoch_node_name, true);
 
         let mut epoch = self._epochs.remove(epoch_id).unwrap();
         epoch.state = EpochState::Finished;
@@ -1216,7 +1211,7 @@ impl NetSim {
         };
 
         // Replenish request token if node has OnNoSalvoTriggered trigger
-        self.replenish_request_token(&epoch_for_event.node_name);
+        self.set_request_token(&epoch_for_event.node_name, true);
 
         let mut events: Vec<NetEvent> = Vec::new();
         let mut destroyed_packets: Vec<PacketID> = Vec::new();
@@ -2115,15 +2110,13 @@ impl NetSim {
                 // Move packet back from OutsideNet to output port
                 self.undo_packet_orphaned(packet_id, epoch_id, port_name)
             }
-            NetEvent::RequestCreated(_, node_name, _label, source) => {
+            NetEvent::RequestCreated(_, node_name, label, source) => {
                 match source {
                     RequestCreatedSource::External => {
                         // Pop the last matching pending request (LIFO)
-                        if let Some(pos) = self
-                            ._pending_requests
-                            .iter()
-                            .rposition(|r| r.node_name == *node_name)
-                        {
+                        if let Some(pos) = self._pending_requests.iter().rposition(|r| {
+                            r.node_name == *node_name && r.label == *label
+                        }) {
                             self._pending_requests.remove(pos);
                         }
                         Ok(())
@@ -2323,16 +2316,7 @@ impl NetSim {
             .push(epoch_id);
 
         // Reverse token replenishment
-        if let Some(node) = self.graph.nodes().get(&epoch.node_name) {
-            if let Some(config) = &node.dependency_request_config {
-                if config
-                    .triggers
-                    .contains(&DependencyRequestTrigger::OnNoSalvoTriggered)
-                {
-                    self._request_tokens.insert(epoch.node_name.clone(), false);
-                }
-            }
-        }
+        self.set_request_token(&epoch.node_name, false);
 
         Ok(())
     }
@@ -2379,16 +2363,7 @@ impl NetSim {
         }
 
         // Reverse token replenishment
-        if let Some(node) = self.graph.nodes().get(&epoch.node_name) {
-            if let Some(config) = &node.dependency_request_config {
-                if config
-                    .triggers
-                    .contains(&DependencyRequestTrigger::OnNoSalvoTriggered)
-                {
-                    self._request_tokens.insert(epoch.node_name.clone(), false);
-                }
-            }
-        }
+        self.set_request_token(&epoch.node_name, false);
 
         Ok(())
     }

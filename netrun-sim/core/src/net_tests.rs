@@ -2892,27 +2892,27 @@ fn test_undo_run_step_with_no_salvo_triggered_exact_state() {
         PacketLocation::Edge(e),
     ));
 
-    // First run_step moves packet to input port but doesn't trigger undo test yet
-    // We need the packet at the input port before capturing state
+    // Snapshot before RunStep (packet is on edge, token is true)
+    let before = NetSimSnapshot::capture(&net);
+    assert_eq!(net._request_tokens.get("Sink"), Some(&true));
+
+    // RunStep moves packet to input port, token spent, epochs created at Source
     let action1 = NetAction::RunStep;
     let events1 = match net.do_action(&action1) {
         NetActionResponse::Success(_, events) => events,
         other => panic!("Expected success, got {:?}", other),
     };
-
-    // After first RunStep: packet is at Sink.in, token spent, epochs created at Source
-    // Verify token was spent
     assert_eq!(net._request_tokens.get("Sink"), Some(&false));
 
-    // Undo the RunStep
+    // Undo and verify exact state restored
     net.undo_action(&action1, &events1)
         .expect("Undo should succeed");
-
-    // Token should be restored to true
-    assert_eq!(
-        net._request_tokens.get("Sink"),
-        Some(&true),
-        "Token should be restored after undo"
+    let after = NetSimSnapshot::capture(&net);
+    let diffs = before.diff(&after);
+    assert!(
+        diffs.is_empty(),
+        "State not exactly restored after undo:\n{}",
+        diffs.join("\n")
     );
 }
 
