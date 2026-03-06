@@ -117,7 +117,7 @@ async def save_file(request: FileSaveRequest) -> FileSaveResponse:
     If extra_data is provided (e.g., pools from a NetConfig file), it will be
     preserved in the output. Otherwise, produces a graph-only format.
     """
-    path = Path(request.path)
+    path = Path(request.path).resolve()
 
     # Ensure directory exists
     path.parent.mkdir(parents=True, exist_ok=True)
