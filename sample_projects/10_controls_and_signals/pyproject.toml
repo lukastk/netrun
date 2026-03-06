@@ -1,0 +1,14 @@
+[project]
+name = "controls-and-signals"
+version = "0.1.0"
+description = "Demonstrates netrun controls and signals"
+requires-python = ">=3.11"
+dependencies = [
+    "jupyterlab>=4.5.3",
+    "netrun",
+    "netrun-ui",
+]
+
+[tool.uv.sources]
+netrun = { path = "../../netrun", editable = true }
+netrun-ui = { path = "../../netrun-ui", editable = true }
