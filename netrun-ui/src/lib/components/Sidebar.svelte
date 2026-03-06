@@ -1,4 +1,5 @@
 <script lang="ts">
+	import { untrack } from 'svelte';
 	import {
 		selectedNode,
 		selectedNodeIds,
@@ -290,6 +291,15 @@
 		document.body.style.userSelect = '';
 	}
 
+	// Clean up resize listeners if component unmounts during an active resize
+	$effect(() => {
+		return () => {
+			if (isResizing) {
+				stopResize();
+			}
+		};
+	});
+
 	function toggleSection(section: keyof typeof sectionsOpen) {
 		sectionsOpen[section] = !sectionsOpen[section];
 	}
@@ -383,14 +393,14 @@
 	function addPort(portType: 'inPorts' | 'outPorts') {
 		if (!$selectedNode) return;
 		const ports = [...$selectedNode.data[portType]];
-		const dataPorts = ports.filter(p => !p.isSignal);
+		const dataPorts = ports.filter(p => !p.isSignal && !p.isControl);
 		const newPort: PortConfig = {
 			name: `port_${dataPorts.length}`,
 			type: 'any'
 		};
-		// Insert new port before signal ports (which are always at the end)
-		const signalPorts = ports.filter(p => p.isSignal);
-		updateNodeData($selectedNode.id, { [portType]: [...dataPorts, newPort, ...signalPorts] });
+		// Insert new port before signal/control ports (which are always at the end)
+		const specialPorts = ports.filter(p => p.isSignal || p.isControl);
+		updateNodeData($selectedNode.id, { [portType]: [...dataPorts, newPort, ...specialPorts] });
 	}
 
 	function removePort(portType: 'inPorts' | 'outPorts', index: number) {
@@ -605,38 +615,41 @@
 		return errors;
 	}
 
-	// Run validation when factory params or args change
+	// Run validation when factory params or args change.
+	// Use untrack for reads of isValid/validationErrors to avoid re-triggering
+	// when we write those same fields back.
 	$effect(() => {
 		if (!$selectedNode || $selectedNode.data.nodeType !== 'factory') return;
 		if (factorySignatureLoading) return; // Wait for params to load
 
+		// Track factoryArgs so changes trigger re-validation
+		const currentArgs = $selectedNode.data.factoryArgs;
+
 		// If we have factory params, validate against current args
 		if (factoryParams.length > 0) {
-			const errors = validateFactoryArgs(factoryParams, $selectedNode.data.factoryArgs);
+			const errors = validateFactoryArgs(factoryParams, currentArgs);
+
+			// Read current validation state without tracking to avoid feedback loop
+			const currentIsValid = untrack(() => $selectedNode?.data.isValid);
+			const currentErrors = untrack(() => $selectedNode?.data.validationErrors || []);
 
 			// Update node validation state if there are missing required args
 			if (errors.length > 0) {
-				// Only update if the validation state actually needs to change
-				const currentErrors = $selectedNode.data.validationErrors || [];
-				const newErrorSet = new Set(errors);
 				const currentErrorSet = new Set(currentErrors);
-
-				// Check if errors have changed
 				const errorsChanged = errors.length !== currentErrors.length ||
 					errors.some(e => !currentErrorSet.has(e));
 
-				if (errorsChanged || $selectedNode.data.isValid !== false) {
+				if (errorsChanged || currentIsValid !== false) {
 					updateNodeDataLive($selectedNode.id, {
 						isValid: false,
 						validationErrors: errors,
 					});
 				}
-			} else if ($selectedNode.data.isValid === false &&
-				$selectedNode.data.validationErrors?.some(e => e.startsWith("Required argument '"))) {
+			} else if (currentIsValid === false &&
+				currentErrors.some((e: string) => e.startsWith("Required argument '"))) {
 				// Clear validation errors if all required args are now filled
-				// (but only clear our own "Required argument" errors, not other validation errors)
-				const remainingErrors = ($selectedNode.data.validationErrors || [])
-					.filter(e => !e.startsWith("Required argument '"));
+				const remainingErrors = currentErrors
+					.filter((e: string) => !e.startsWith("Required argument '"));
 
 				updateNodeDataLive($selectedNode.id, {
 					isValid: remainingErrors.length === 0,
