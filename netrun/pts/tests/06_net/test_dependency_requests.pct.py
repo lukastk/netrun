@@ -1,0 +1,450 @@
+# ---
+# jupyter:
+#   kernelspec:
+#     display_name: .venv
+#     language: python
+#     name: python3
+# ---
+
+# %% [markdown]
+# # Tests for Dependency Edges and Packet Requests
+
+# %%
+#|default_exp net.test_dependency_requests
+
+# %%
+#|export
+import pytest
+import json
+
+from netrun.net.config import (
+    NetConfig,
+    GraphConfig,
+    NodeConfig,
+    NodeExecutionConfig,
+    PoolConfig,
+    MainPoolConfig,
+    PortConfig,
+    EdgeConfig,
+    SalvoConditionConfig,
+    SalvoConditionTermTrueConfig,
+    SalvoConditionTermPortConfig,
+    MaxSalvosFiniteConfig,
+    PacketCountAllConfig,
+    PortStateNonEmptyConfig,
+    DependencyRequestConfig,
+)
+from netrun.net._net import Net
+import netrun_sim
+
+# %% [markdown]
+# ## Config tests
+
+# %%
+#|export
+def test_dependency_request_config_defaults():
+    """DependencyRequestConfig has sensible defaults."""
+    config = DependencyRequestConfig()
+    assert config.triggers == ["on_startup"]
+    assert config.label == "main"
+
+# %%
+#|export
+def test_dependency_request_config_custom():
+    """DependencyRequestConfig accepts custom values."""
+    config = DependencyRequestConfig(
+        triggers=["on_startup", "on_no_salvo_triggered"],
+        label="my_label",
+    )
+    assert config.triggers == ["on_startup", "on_no_salvo_triggered"]
+    assert config.label == "my_label"
+
+# %%
+#|export
+def test_dependency_request_config_json_roundtrip():
+    """DependencyRequestConfig serializes and deserializes via JSON."""
+    config = DependencyRequestConfig(
+        triggers=["on_startup", "on_no_salvo_triggered"],
+        label="test",
+    )
+    data = json.loads(config.model_dump_json())
+    restored = DependencyRequestConfig.model_validate(data)
+    assert restored.triggers == config.triggers
+    assert restored.label == config.label
+
+# %%
+#|export
+def test_dependency_request_config_to_netrun_sim():
+    """DependencyRequestConfig converts to netrun_sim correctly."""
+    config = DependencyRequestConfig(
+        triggers=["on_startup", "on_no_salvo_triggered"],
+        label="test",
+    )
+    sim = config.to_netrun_sim()
+    assert isinstance(sim, netrun_sim.DependencyRequestConfig)
+    assert len(sim.triggers) == 2
+    assert sim.label == "test"
+
+# %%
+#|export
+def test_edge_config_dependency_flag_default():
+    """EdgeConfig.dependency defaults to False."""
+    edge = EdgeConfig(source_str="A.out", target_str="B.in")
+    assert edge.dependency is False
+
+# %%
+#|export
+def test_edge_config_dependency_flag_true():
+    """EdgeConfig.dependency can be set to True."""
+    edge = EdgeConfig(source_str="A.out", target_str="B.in", dependency=True)
+    assert edge.dependency is True
+
+# %%
+#|export
+def test_edge_config_dependency_json_roundtrip():
+    """EdgeConfig with dependency=True round-trips through JSON."""
+    edge = EdgeConfig(source_str="A.out", target_str="B.in", dependency=True)
+    data = json.loads(edge.model_dump_json())
+    assert data["dependency"] is True
+    restored = EdgeConfig.model_validate(data)
+    assert restored.dependency is True
+
+# %%
+#|export
+def test_node_config_dependency_request_field():
+    """NodeConfig accepts dependency_request field."""
+    node = NodeConfig(
+        name="Sink",
+        in_ports={"in": PortConfig()},
+        dependency_request=DependencyRequestConfig(triggers=["on_startup"], label="main"),
+    )
+    assert node.dependency_request is not None
+    assert node.dependency_request.triggers == ["on_startup"]
+
+# %%
+#|export
+def test_node_config_dependency_request_none_by_default():
+    """NodeConfig.dependency_request defaults to None."""
+    node = NodeConfig(name="Node")
+    assert node.dependency_request is None
+
+# %%
+#|export
+def test_node_config_to_netrun_sim_with_dependency_request():
+    """NodeConfig.to_netrun_sim() passes dependency_request_config."""
+    node = NodeConfig(
+        name="Sink",
+        in_ports={"in": PortConfig()},
+        in_salvo_conditions={
+            "default": SalvoConditionConfig(
+                max_salvos=MaxSalvosFiniteConfig(max=1),
+                ports={"in": PacketCountAllConfig()},
+                term=SalvoConditionTermPortConfig(
+                    port_name="in",
+                    state=PortStateNonEmptyConfig(),
+                ),
+            ),
+        },
+        dependency_request=DependencyRequestConfig(triggers=["on_startup"]),
+    )
+    sim_node = node.to_netrun_sim()
+    assert sim_node.dependency_request_config is not None
+    assert sim_node.dependency_request_config.label == "main"
+
+# %%
+#|export
+def test_node_config_to_netrun_sim_without_dependency_request():
+    """NodeConfig.to_netrun_sim() passes None when no dependency_request."""
+    node = NodeConfig(
+        name="Regular",
+        in_ports={"in": PortConfig()},
+        in_salvo_conditions={
+            "default": SalvoConditionConfig(
+                max_salvos=MaxSalvosFiniteConfig(max=1),
+                ports={"in": PacketCountAllConfig()},
+                term=SalvoConditionTermPortConfig(
+                    port_name="in",
+                    state=PortStateNonEmptyConfig(),
+                ),
+            ),
+        },
+    )
+    sim_node = node.to_netrun_sim()
+    assert sim_node.dependency_request_config is None
+
+# %% [markdown]
+# ## Graph tests
+
+# %%
+#|export
+def test_graph_config_passes_dependency_edges():
+    """GraphConfig.get_graph() passes dependency edges to netrun_sim.Graph."""
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Source",
+                out_ports={"out": PortConfig()},
+                in_salvo_conditions={
+                    "trigger": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={},
+                        term=SalvoConditionTermTrueConfig(),
+                    ),
+                },
+                out_salvo_conditions={
+                    "send": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"out": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="out",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+            ),
+            NodeConfig(
+                name="Sink",
+                in_ports={"in": PortConfig()},
+                in_salvo_conditions={
+                    "default": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"in": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                dependency_request=DependencyRequestConfig(),
+            ),
+        ],
+        edges=[
+            EdgeConfig(source_str="Source.out", target_str="Sink.in", dependency=True),
+        ],
+    )
+    graph = graph_config.get_graph()
+    # Verify the edge is marked as a dependency edge
+    edges = list(graph.edges())
+    assert len(edges) == 1
+    assert graph.is_dependency_edge(edges[0])
+
+# %%
+#|export
+def test_graph_config_non_dependency_edge():
+    """Non-dependency edges are not marked as dependency edges."""
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="A",
+                out_ports={"out": PortConfig()},
+                out_salvo_conditions={
+                    "send": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"out": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="out",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+            ),
+            NodeConfig(
+                name="B",
+                in_ports={"in": PortConfig()},
+                in_salvo_conditions={
+                    "default": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"in": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+            ),
+        ],
+        edges=[
+            EdgeConfig(source_str="A.out", target_str="B.in"),
+        ],
+    )
+    graph = graph_config.get_graph()
+    edges = list(graph.edges())
+    assert len(edges) == 1
+    assert not graph.is_dependency_edge(edges[0])
+
+# %%
+#|export
+def test_subgraph_resolve_preserves_dependency_flag():
+    """Dependency flag is preserved through subgraph edge rewriting."""
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(name="A", out_ports={"out": PortConfig()}),
+            NodeConfig(name="B", in_ports={"in": PortConfig()}),
+        ],
+        edges=[
+            EdgeConfig(source_str="A.out", target_str="B.in", dependency=True),
+        ],
+    )
+    # resolve() rewrites edges through subgraph mappings; with no subgraphs,
+    # edges should pass through unchanged with the dependency flag preserved
+    resolved = graph_config.resolve()
+    assert len(resolved.edges) == 1
+    assert resolved.edges[0].dependency is True
+
+# %% [markdown]
+# ## Net.request() tests
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_net_request_creates_pending_request():
+    """net.request() creates a pending request via CreateRequest action."""
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Source",
+                out_ports={"out": PortConfig()},
+                in_salvo_conditions={
+                    "trigger": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={},
+                        term=SalvoConditionTermTrueConfig(),
+                    ),
+                },
+                out_salvo_conditions={
+                    "send": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"out": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="out",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="Source",
+                    pools=["main"],
+                    exec_node_func=lambda ctx, packets: None,
+                ),
+            ),
+            NodeConfig(
+                name="Sink",
+                in_ports={"in": PortConfig()},
+                in_salvo_conditions={
+                    "default": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"in": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                dependency_request=DependencyRequestConfig(),
+            ),
+        ],
+        edges=[
+            EdgeConfig(source_str="Source.out", target_str="Sink.in", dependency=True),
+        ],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        events = net.request("Sink", "main")
+        assert isinstance(events, list)
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_end_to_end_on_startup_dependency_request():
+    """End-to-end: on_startup trigger creates source epoch via dependency edges."""
+    execution_log = []
+
+    def source_node(ctx, packets):
+        execution_log.append("source_executed")
+        out_id = ctx.create_packet("from_source")
+        ctx.load_output_port("out", out_id)
+        ctx.send_output_salvo("send")
+
+    def sink_node(ctx, packets):
+        for port_name, packet_ids in packets.items():
+            for pid in packet_ids:
+                value = ctx.consume_packet(pid)
+                execution_log.append(f"sink_received:{value}")
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Source",
+                out_ports={"out": PortConfig()},
+                in_salvo_conditions={
+                    "trigger": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={},
+                        term=SalvoConditionTermTrueConfig(),
+                    ),
+                },
+                out_salvo_conditions={
+                    "send": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"out": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="out",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="Source",
+                    pools=["main"],
+                    exec_node_func=source_node,
+                ),
+            ),
+            NodeConfig(
+                name="Sink",
+                in_ports={"in": PortConfig()},
+                in_salvo_conditions={
+                    "default": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"in": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                dependency_request=DependencyRequestConfig(
+                    triggers=["on_startup"],
+                    label="main",
+                ),
+                execution_config=NodeExecutionConfig(
+                    node_name="Sink",
+                    pools=["main"],
+                    exec_node_func=sink_node,
+                ),
+            ),
+        ],
+        edges=[
+            EdgeConfig(source_str="Source.out", target_str="Sink.in", dependency=True),
+        ],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        # on_startup trigger fires during the first run_step,
+        # creating a __request__ epoch at Source
+        await net.run_until_blocked()
+
+        # Source should have been executed (auto_start_epochs=True in run_until_blocked)
+        assert "source_executed" in execution_log
+
+        # Sink should have received the packet from Source
+        assert any("sink_received:from_source" in entry for entry in execution_log)

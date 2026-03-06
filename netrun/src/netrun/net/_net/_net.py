@@ -952,6 +952,24 @@ class Net:
             self.inject_packet(packet_id, node_name, port_name)
         return packet_ids
 
+    def request(self, node_name: str, label: str = "main") -> list:
+        """Submit a packet request that cascades backward to find and activate source nodes.
+
+        The request is queued as pending and resolved during the next run_step(),
+        where it cascades backward through dependency edges to find source nodes
+        and creates epochs at them.
+
+        Args:
+            node_name: The node to request output from.
+            label: Request label for deduplication. Same label at the same
+                source node produces one epoch, not multiple.
+
+        Returns:
+            List of NetEvents from the CreateRequest action.
+        """
+        _, events = self._netsim.do_action(netrun_sim.NetAction.create_request(node_name, label))
+        return list(events)
+
     def _get_node_execution_config(self, node_name: str) -> NodeExecutionConfig | None:
         """Get the execution config for a node."""
         return self._node_execution_configs.get(node_name)

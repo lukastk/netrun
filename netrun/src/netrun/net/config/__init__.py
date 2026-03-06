@@ -86,6 +86,7 @@ from ._nodes import (
     OnNodeFailureFunc,
     NodeVariable,
     NodeExecutionConfig,
+    DependencyRequestConfig,
     NodeConfig,
     ExposedPortConfig,
     SubgraphConfig,
