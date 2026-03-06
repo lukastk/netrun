@@ -141,8 +141,8 @@ class TestFactoryFieldExpansion:
         assert "result" in resolved.out_ports  # from factory
         assert "extra_out" in resolved.out_ports  # from override
 
-    def test_factory_field_merge_salvo_conditions(self):
-        """Test that salvo conditions from factory and overrides are merged."""
+    def test_factory_field_override_salvo_conditions(self):
+        """Test that explicit salvo conditions override (not merge with) factory's."""
         extra_condition = SalvoConditionConfig(
             max_salvos=MaxSalvosFiniteConfig(max=1),
             ports={"task": PacketCountAllConfig()},
@@ -158,9 +158,22 @@ class TestFactoryFieldExpansion:
         # Call resolve() to expand
         resolved = config.resolve()
 
-        # Both factory and override conditions present
-        assert "trigger" in resolved.in_salvo_conditions  # from factory
+        # Explicit salvo conditions replace factory's entirely
+        assert "trigger" not in resolved.in_salvo_conditions  # factory's is overridden
         assert "extra_trigger" in resolved.in_salvo_conditions  # from override
+
+    def test_factory_field_empty_salvo_conditions_suppresses_factory(self):
+        """Test that empty dict suppresses factory-generated salvo conditions."""
+        config = NodeConfig(
+            factory=FACTORY_MODULE_PATH,
+            factory_args={"name": "SuppressNode"},
+            in_salvo_conditions={},
+        )
+
+        resolved = config.resolve()
+
+        # Empty dict suppresses factory's salvo conditions
+        assert "trigger" not in resolved.in_salvo_conditions
 
 # %%
 #|export
