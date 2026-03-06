@@ -141,21 +141,18 @@
 			return allEdges.map(edge => {
 				const isDep = (edge.data as NetrunEdgeData | undefined)?.dependency === true;
 				const isCascadeEdge = $cascade?.visitedEdges.has(edge.id) ?? false;
-				const parts = ['stroke-width: 2px;'];
-				if (isDep) {
-					parts.push('stroke: #a78bfa; stroke-dasharray: 6 3;');
-				}
-				if (isCascadeEdge && !isDep) {
-					parts.push('stroke: #a78bfa; opacity: 0.5;');
-				}
+				const classes: string[] = [];
+				if (isDep) classes.push('dependency-edge');
+				if (isCascadeEdge && !isDep) classes.push('cascade-edge');
 				return {
 					...edge,
 					type: $edgeStyle,
 					markerStart: markers.markerStart,
 					markerEnd: markers.markerEnd,
 					selected: $selectedEdgeIds.has(edge.id),
-					style: parts.join(' '),
-					class: isDep ? 'dependency-edge' : undefined,
+					class: classes.join(' ') || undefined,
+					// Wider click target for dependency edges (dashed lines are visually thinner)
+					...(isDep ? { interactionWidth: 30 } : {}),
 				};
 			});
 		}
@@ -339,8 +336,11 @@
 	function onSelectionChange(params: { nodes: Node[]; edges: Edge[] }) {
 		selectedNodeIds.set(new Set(params.nodes.map(n => n.id)));
 		selectedEdgeIds.set(new Set(params.edges.map(e => e.id)));
-		// Clear cascade highlight when selection changes
-		cascadeHighlight.set(null);
+		// Clear cascade when clicking pane (nothing selected)
+		// Node/edge click handlers manage cascade themselves
+		if (params.nodes.length === 0 && params.edges.length === 0) {
+			cascadeHighlight.set(null);
+		}
 	}
 
 	// Handle node drag end - sync positions to store and push history
@@ -378,9 +378,14 @@
 		event.event.preventDefault();
 	}
 
-	// Handle click on edge (for dependency cascade highlighting)
+	// Handle click on edge (selection + dependency cascade highlighting)
 	function onEdgeClick(event: { edge: Edge; event: MouseEvent }) {
 		const edge = event.edge;
+
+		// Ensure edge is selected in our store (SvelteFlow may not fire onselectionchange for edge clicks)
+		selectedEdgeIds.set(new Set([edge.id]));
+		selectedNodeIds.set(new Set());
+
 		if ((edge.data as NetrunEdgeData | undefined)?.dependency) {
 			const result = analyzeDependencyCascade(
 				edge,
@@ -531,7 +536,6 @@
 			type: $edgeStyle,
 			animated: false,
 			...getMarkers($edgeMarkers),
-			style: 'stroke-width: 2px;'
 		}}
 		connectionLineType={getConnectionLineType($edgeStyle)}
 		deleteKey={['Delete', 'Backspace']}
@@ -608,19 +612,28 @@
 		stroke: var(--accent-color, #3b82f6);
 	}
 
-	/* Dependency edge: animated dash + wider interaction target */
+	/* Dependency edge styling */
 	:global(.svelte-flow__edge.dependency-edge .svelte-flow__edge-path) {
-		animation: dep-dash 0.5s linear infinite;
+		stroke: #a78bfa;
+		stroke-width: 2;
 	}
 
-	:global(.svelte-flow__edge.dependency-edge .svelte-flow__edge-interaction) {
-		stroke-width: 20px;
+	:global(.svelte-flow__edge.dependency-edge.selected .svelte-flow__edge-path) {
+		stroke: #c4b5fd;
 	}
 
-	@keyframes dep-dash {
-		to {
-			stroke-dashoffset: -9;
-		}
+	:global(.svelte-flow__edge.dependency-edge marker path) {
+		fill: #a78bfa;
+	}
+
+	:global(.svelte-flow__edge.dependency-edge.selected marker path) {
+		fill: #c4b5fd;
+	}
+
+	/* Cascade-visited (non-dependency) edge styling */
+	:global(.svelte-flow__edge.cascade-edge .svelte-flow__edge-path) {
+		stroke: #a78bfa;
+		opacity: 0.5;
 	}
 
 	/* Arrow marker styling */
