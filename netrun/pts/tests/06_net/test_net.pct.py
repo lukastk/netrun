@@ -6414,3 +6414,374 @@ async def test_run_on_startup_disabled():
 
 # %%
 asyncio.get_event_loop().run_until_complete(test_run_on_startup_disabled())
+
+# %% [markdown]
+# ## Epoch Lifecycle Callback Tests
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_on_epoch_start_callback():
+    """Net-level on_epoch_start callback fires with correct args."""
+    calls = []
+
+    def on_start(node_name, epoch_id):
+        calls.append({"node_name": node_name, "epoch_id": epoch_id})
+
+    def simple_node(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="Node",
+                    in_ports={"in": PortConfig()},
+                    execution_config=NodeExecutionConfig(
+                        node_name="Node",
+                        pools=["main"],
+                        exec_node_func=simple_node,
+                    ),
+                ),
+            ],
+            edges=[],
+        ),
+    )
+
+    async with Net(config) as net:
+        net.on_epoch_start(on_start)
+        net.inject_data("Node", "in", [1])
+        await net.run_until_blocked()
+
+        assert len(calls) == 1
+        assert calls[0]["node_name"] == "Node"
+        assert calls[0]["epoch_id"] is not None
+
+# %%
+asyncio.get_event_loop().run_until_complete(test_on_epoch_start_callback())
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_on_epoch_end_callback():
+    """Net-level on_epoch_end callback fires with EpochRecord."""
+    calls = []
+
+    def on_end(node_name, epoch_id, record):
+        calls.append({
+            "node_name": node_name,
+            "epoch_id": epoch_id,
+            "record": record,
+        })
+
+    def simple_node(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="Node",
+                    in_ports={"in": PortConfig()},
+                    execution_config=NodeExecutionConfig(
+                        node_name="Node",
+                        pools=["main"],
+                        exec_node_func=simple_node,
+                    ),
+                ),
+            ],
+            edges=[],
+        ),
+    )
+
+    async with Net(config) as net:
+        net.on_epoch_end(on_end)
+        net.inject_data("Node", "in", [1])
+        await net.run_until_blocked()
+
+        assert len(calls) == 1
+        assert calls[0]["node_name"] == "Node"
+        assert calls[0]["epoch_id"] is not None
+        record = calls[0]["record"]
+        assert record.ended_at is not None
+        assert record.started_at is not None
+        assert record.was_cancelled is False
+
+# %%
+asyncio.get_event_loop().run_until_complete(test_on_epoch_end_callback())
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_node_info_epoch_callbacks():
+    """NodeInfo callback only fires for that specific node."""
+    calls = []
+
+    def on_start(node_name, epoch_id):
+        calls.append(node_name)
+
+    def node_a_func(ctx, packets):
+        for pkt_ids in packets.values():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+        out_id = ctx.create_packet("from_a")
+        ctx.load_output_port("out", out_id)
+        ctx.send_output_salvo("default")
+
+    def node_b_func(ctx, packets):
+        for pkt_ids in packets.values():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="A",
+                    in_ports={"in": PortConfig()},
+                    out_ports={"out": PortConfig()},
+                    out_salvo_conditions={
+                        "default": SalvoConditionConfig(
+                            max_salvos=MaxSalvosInfiniteConfig(),
+                            ports={"out": PacketCountAllConfig()},
+                            term=SalvoConditionTermPortConfig(
+                                port_name="out",
+                                state=PortStateNonEmptyConfig(),
+                            ),
+                        ),
+                    },
+                    execution_config=NodeExecutionConfig(
+                        node_name="A",
+                        pools=["main"],
+                        exec_node_func=node_a_func,
+                    ),
+                ),
+                NodeConfig(
+                    name="B",
+                    in_ports={"in": PortConfig()},
+                    execution_config=NodeExecutionConfig(
+                        node_name="B",
+                        pools=["main"],
+                        exec_node_func=node_b_func,
+                    ),
+                ),
+            ],
+            edges=[
+                EdgeConfig(source_str="A.out", target_str="B.in"),
+            ],
+        ),
+    )
+
+    async with Net(config) as net:
+        # Register callback only for node B
+        net.nodes["B"].on_epoch_start(on_start)
+        net.inject_data("A", "in", [1])
+        await net.run_until_blocked()
+
+        # Only B should have triggered the callback
+        assert calls == ["B"]
+
+# %%
+asyncio.get_event_loop().run_until_complete(test_node_info_epoch_callbacks())
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_epoch_callback_deregistration():
+    """remove() stops future callbacks from firing."""
+    calls = []
+
+    def on_start(node_name, epoch_id):
+        calls.append(node_name)
+
+    def simple_node(ctx, packets):
+        for pkt_ids in packets.values():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="Node",
+                    in_ports={"in": PortConfig()},
+                    execution_config=NodeExecutionConfig(
+                        node_name="Node",
+                        pools=["main"],
+                        exec_node_func=simple_node,
+                    ),
+                ),
+            ],
+            edges=[],
+        ),
+    )
+
+    async with Net(config) as net:
+        remove = net.on_epoch_start(on_start)
+        net.inject_data("Node", "in", [1])
+        await net.run_until_blocked()
+        assert len(calls) == 1
+
+        # Deregister and inject again
+        remove()
+        net.inject_data("Node", "in", [2])
+        await net.run_until_blocked()
+        # Should still be 1 — callback was removed
+        assert len(calls) == 1
+
+# %%
+asyncio.get_event_loop().run_until_complete(test_epoch_callback_deregistration())
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_async_epoch_callback():
+    """Async callbacks are awaited correctly."""
+    calls = []
+
+    async def on_start(node_name, epoch_id):
+        calls.append({"node_name": node_name, "epoch_id": epoch_id})
+
+    async def on_end(node_name, epoch_id, record):
+        calls.append({"node_name": node_name, "ended": True})
+
+    def simple_node(ctx, packets):
+        for pkt_ids in packets.values():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="Node",
+                    in_ports={"in": PortConfig()},
+                    execution_config=NodeExecutionConfig(
+                        node_name="Node",
+                        pools=["main"],
+                        exec_node_func=simple_node,
+                    ),
+                ),
+            ],
+            edges=[],
+        ),
+    )
+
+    async with Net(config) as net:
+        net.on_epoch_start(on_start)
+        net.on_epoch_end(on_end)
+        net.inject_data("Node", "in", [1])
+        await net.run_until_blocked()
+
+        assert len(calls) == 2
+        assert calls[0]["node_name"] == "Node"
+        assert calls[1]["ended"] is True
+
+# %%
+asyncio.get_event_loop().run_until_complete(test_async_epoch_callback())
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_epoch_end_on_cancelled():
+    """End callback fires with was_cancelled=True when epoch is cancelled."""
+    end_calls = []
+
+    def on_end(node_name, epoch_id, record):
+        end_calls.append({
+            "node_name": node_name,
+            "was_cancelled": record.was_cancelled,
+        })
+
+    def cancelling_node(ctx, packets):
+        ctx.cancel_epoch()
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="Canceller",
+                    in_ports={"in": PortConfig()},
+                    execution_config=NodeExecutionConfig(
+                        node_name="Canceller",
+                        pools=["main"],
+                        exec_node_func=cancelling_node,
+                    ),
+                ),
+            ],
+            edges=[],
+        ),
+    )
+
+    async with Net(config) as net:
+        net.on_epoch_end(on_end)
+        net.inject_data("Canceller", "in", [1])
+        await net.run_until_blocked()
+
+        assert len(end_calls) == 1
+        assert end_calls[0]["node_name"] == "Canceller"
+        assert end_calls[0]["was_cancelled"] is True
+
+# %%
+asyncio.get_event_loop().run_until_complete(test_epoch_end_on_cancelled())
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_multiple_epoch_callbacks():
+    """Multiple callbacks all fire in registration order."""
+    order = []
+
+    def cb1(node_name, epoch_id):
+        order.append("cb1")
+
+    def cb2(node_name, epoch_id):
+        order.append("cb2")
+
+    def cb3(node_name, epoch_id):
+        order.append("cb3")
+
+    def simple_node(ctx, packets):
+        for pkt_ids in packets.values():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="Node",
+                    in_ports={"in": PortConfig()},
+                    execution_config=NodeExecutionConfig(
+                        node_name="Node",
+                        pools=["main"],
+                        exec_node_func=simple_node,
+                    ),
+                ),
+            ],
+            edges=[],
+        ),
+    )
+
+    async with Net(config) as net:
+        net.on_epoch_start(cb1)
+        net.on_epoch_start(cb2)
+        net.on_epoch_start(cb3)
+        net.inject_data("Node", "in", [1])
+        await net.run_until_blocked()
+
+        assert order == ["cb1", "cb2", "cb3"]
+
+# %%
+asyncio.get_event_loop().run_until_complete(test_multiple_epoch_callbacks())

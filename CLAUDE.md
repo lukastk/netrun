@@ -293,7 +293,21 @@ async with Net(config) as net:
     results = net.flush_output_queue("results")
 ```
 
-**Features**: signals, controls, pause/resume, rate limiting, retries, type checking, print capture, output queues, caching, file storage.
+**Epoch Lifecycle Callbacks**: Register callbacks to observe epoch starts/ends in real time:
+```python
+# Net-level: fires for ALL nodes
+remove = net.on_epoch_start(lambda node_name, epoch_id: print(f"{node_name} started"))
+remove = net.on_epoch_end(lambda node_name, epoch_id, record: print(f"{node_name} ended"))
+remove()  # deregister
+
+# NodeInfo-level: fires only for THAT node
+remove = net.nodes["fetch"].on_epoch_start(callback)
+remove = net.nodes["fetch"].on_epoch_end(callback)
+```
+
+Both sync and async callbacks are supported. `on_epoch_end` receives the `EpochRecord` (with `was_cancelled`, `ended_at`, `started_at`, `logs`, etc.).
+
+**Features**: signals, controls, pause/resume, rate limiting, retries, type checking, print capture, output queues, caching, file storage, epoch lifecycle callbacks.
 
 ### CLI (`netrun.cli`)
 
