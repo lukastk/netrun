@@ -5286,7 +5286,7 @@ async def test_run_on_startup_outputs_flow_downstream():
 # %% pts/tests/06_net/test_net.pct.py 349
 @pytest.mark.asyncio
 async def test_run_on_startup_skip_via_start_param():
-    """Test that start(run_startup_nodes=False) skips startup nodes."""
+    """Test that start(run_source_nodes=False) skips startup nodes."""
     execution_log = []
 
     def source_node(ctx, packets):
@@ -5334,7 +5334,7 @@ async def test_run_on_startup_skip_via_start_param():
     )
 
     net = Net(config)
-    await net.start(run_startup_nodes=False)
+    await net.start(run_source_nodes=False)
     try:
         # Startup node should NOT have been executed
         assert execution_log == []
@@ -5347,7 +5347,7 @@ async def test_run_on_startup_skip_via_start_param():
 # %% pts/tests/06_net/test_net.pct.py 350
 @pytest.mark.asyncio
 async def test_run_on_startup_skip_via_constructor():
-    """Test that Net(config, run_startup_nodes=False) skips startup nodes via context manager."""
+    """Test that Net(config, run_source_nodes=False) skips startup nodes via context manager."""
     execution_log = []
 
     def source_node(ctx, packets):
@@ -5394,14 +5394,14 @@ async def test_run_on_startup_skip_via_constructor():
         graph=graph_config,
     )
 
-    async with Net(config, run_startup_nodes=False) as net:
+    async with Net(config, run_source_nodes=False) as net:
         # Startup node should NOT have been executed
         assert execution_log == []
 
 # %% pts/tests/06_net/test_net.pct.py 351
 @pytest.mark.asyncio
 async def test_run_on_startup_start_param_overrides_constructor():
-    """Test that start(run_startup_nodes=True) overrides constructor's False."""
+    """Test that start(run_source_nodes=True) overrides constructor's False."""
     execution_log = []
 
     def source_node(ctx, packets):
@@ -5448,8 +5448,8 @@ async def test_run_on_startup_start_param_overrides_constructor():
         graph=graph_config,
     )
 
-    net = Net(config, run_startup_nodes=False)
-    await net.start(run_startup_nodes=True)
+    net = Net(config, run_source_nodes=False)
+    await net.start(run_source_nodes=True)
     try:
         # start() param overrides constructor — startup node SHOULD have executed
         assert execution_log == ["executed"]

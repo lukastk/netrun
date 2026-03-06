@@ -169,14 +169,14 @@ class Net:
     function execution via ExecutionManager.
     """
 
-    def __init__(self, config: NetConfig, run_startup_nodes: bool = True):
+    def __init__(self, config: NetConfig, run_source_nodes: bool = True):
         """Initialize the Net with the given configuration.
 
         Args:
             config: The NetConfig defining pools, graph, and execution settings.
-            run_startup_nodes: If False, skip executing run_on_startup nodes during start().
+            run_source_nodes: If False, skip executing run_on_startup nodes during start().
         """
-        self._run_startup_nodes = run_startup_nodes
+        self._run_source_nodes = run_source_nodes
         self._config: NetConfig = config
         self._config_resolved: NetConfig = config.resolve()
 
@@ -192,6 +192,7 @@ class Net:
         self._graph: netrun_sim.Graph = self._config_resolved.graph.get_graph()
         self._netsim = netrun_sim.NetSim(self._graph)
         self._started: bool = False
+        self._source_nodes_executed: bool = False
         self._paused: bool = False
         self._stopping: bool = False
 
@@ -1160,14 +1161,14 @@ class Net:
                     print(self._epoch_header(record))
                     record.print_logs(include_timestamps=include_timestamps)
 
-    async def start(self, run_startup_nodes: bool | None = None) -> None:
+    async def start(self, run_source_nodes: bool | None = None) -> None:
         """Start the Net.
 
         This starts the ExecutionManager, all pools, registers node functions,
         and calls start_node_func for nodes that don't have defer_startup.
 
         Args:
-            run_startup_nodes: If False, skip executing run_on_startup nodes.
+            run_source_nodes: If False, skip executing run_on_startup nodes.
                 If None (default), falls back to the constructor parameter.
         """
         if self._started:
@@ -1184,25 +1185,26 @@ class Net:
         self._started = True
 
         # Execute run_on_startup nodes (skip disabled)
-        _run_startup = run_startup_nodes if run_startup_nodes is not None else self._run_startup_nodes
-        if _run_startup:
+        _run_source = run_source_nodes if run_source_nodes is not None else self._run_source_nodes
+        if _run_source:
             for node_config in self._config_resolved.graph.nodes:
                 if node_config.name in self._disabled_nodes:
                     continue
                 config = self._get_node_execution_config(node_config.name)
                 if config is not None and config.run_on_startup:
                     await self.execute_node(node_config.name)
+            self._source_nodes_executed = True
 
-    def start_sync(self, run_startup_nodes: bool | None = None) -> None:
+    def start_sync(self, run_source_nodes: bool | None = None) -> None:
         """Start the Net synchronously.
 
         Blocking wrapper for start().
 
         Args:
-            run_startup_nodes: If False, skip executing run_on_startup nodes.
+            run_source_nodes: If False, skip executing run_on_startup nodes.
                 If None (default), falls back to the constructor parameter.
         """
-        asyncio.run(self.start(run_startup_nodes=run_startup_nodes))
+        asyncio.run(self.start(run_source_nodes=run_source_nodes))
 
     async def stop(self) -> None:
         """Stop the Net gracefully.
@@ -3583,6 +3585,15 @@ class Net:
         those targets without executing them. Useful for testing downstream
         nodes by inspecting exactly what inputs they would receive.
 
+        If the Net has not been started yet, it will be auto-started (without
+        executing source nodes). Source nodes (``run_on_startup=True``) are then
+        executed before the main loop if they haven't been run yet. This allows
+        calling ``run_to_targets`` without an ``async with`` block::
+
+            net = Net(config)
+            salvos = await net.run_to_targets("Sink")
+            await net.stop()
+
         Args:
             targets: Target node specification. Can be:
                 - A single node name: ``"C"``
@@ -3598,6 +3609,7 @@ class Net:
 
         Raises:
             ValueError: If a target node name is not found in the graph.
+            RuntimeError: If a source node is disabled or has no execution function.
 
         Example:
             async with Net(config) as net:
@@ -3606,6 +3618,34 @@ class Net:
                 for salvo in salvos:
                     print(f"{salvo.node_name}.{salvo.salvo_condition}: {salvo.packets}")
         """
+        # Auto-start if not yet started (source nodes handled below)
+        if not self._started:
+            await self.start(run_source_nodes=False)
+
+        # Execute source nodes if not yet done
+        if not self._source_nodes_executed:
+            errors = []
+            for node_config in self._config_resolved.graph.nodes:
+                exec_config = self._get_node_execution_config(node_config.name)
+                if exec_config is None or not exec_config.run_on_startup:
+                    continue
+                if node_config.name in self._disabled_nodes:
+                    errors.append(f"Source node '{node_config.name}' is disabled")
+                    continue
+                has_exec = (
+                    exec_config.exec_node_func is not None
+                    or node_config.name in self._node_factories
+                )
+                if not has_exec:
+                    errors.append(f"Source node '{node_config.name}' has no execution function")
+                    continue
+                await self.execute_node(node_config.name)
+            if errors:
+                raise RuntimeError(
+                    f"Cannot execute source node(s):\n" + "\n".join(f"  - {e}" for e in errors)
+                )
+            self._source_nodes_executed = True
+
         # 1. Normalize targets to set of (node_name, salvo_condition | None)
         if isinstance(targets, str):
             targets = [targets]

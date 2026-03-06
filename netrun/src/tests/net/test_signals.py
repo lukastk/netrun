@@ -1052,7 +1052,7 @@ async def test_epoch_cancelled_signal_max_epochs():
         ),
     )
 
-    async with Net(config, run_startup_nodes=False) as net:
+    async with Net(config, run_source_nodes=False) as net:
         await net.execute_node("A")
         # A's output is on the self-loop edge. Use auto_start_epochs=False
         # to avoid infinite loop (run_until_blocked with auto_start would
