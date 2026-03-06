@@ -293,6 +293,79 @@ def test_subgraph_resolve_preserves_dependency_flag():
     assert resolved.edges[0].dependency is True
 
 # %% [markdown]
+# ## Auto-default DependencyRequestConfig tests
+
+# %%
+#|export
+def test_auto_default_dependency_request_config():
+    """A node targeted by a dependency edge gets DependencyRequestConfig() if none is set."""
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(name="Source", out_ports={"out": PortConfig()}),
+            NodeConfig(
+                name="Sink",
+                in_ports={"in": PortConfig()},
+                # No dependency_request set
+            ),
+        ],
+        edges=[
+            EdgeConfig(source_str="Source.out", target_str="Sink.in", dependency=True),
+        ],
+    )
+
+    resolved = graph_config.resolve()
+    sink = [n for n in resolved.nodes if n.name == "Sink"][0]
+    assert sink.dependency_request is not None
+    assert sink.dependency_request.triggers == ["on_startup"]
+    assert sink.dependency_request.label == "main"
+
+# %%
+#|export
+def test_explicit_dependency_request_not_overridden():
+    """A node with an explicit DependencyRequestConfig keeps it after resolve."""
+    custom_config = DependencyRequestConfig(
+        triggers=["on_startup", "on_no_salvo_triggered"],
+        label="custom",
+    )
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(name="Source", out_ports={"out": PortConfig()}),
+            NodeConfig(
+                name="Sink",
+                in_ports={"in": PortConfig()},
+                dependency_request=custom_config,
+            ),
+        ],
+        edges=[
+            EdgeConfig(source_str="Source.out", target_str="Sink.in", dependency=True),
+        ],
+    )
+
+    resolved = graph_config.resolve()
+    sink = [n for n in resolved.nodes if n.name == "Sink"][0]
+    assert sink.dependency_request is not None
+    assert sink.dependency_request.triggers == ["on_startup", "on_no_salvo_triggered"]
+    assert sink.dependency_request.label == "custom"
+
+# %%
+#|export
+def test_no_dependency_request_without_dependency_edges():
+    """A node without dependency edges keeps dependency_request=None."""
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(name="A", out_ports={"out": PortConfig()}),
+            NodeConfig(name="B", in_ports={"in": PortConfig()}),
+        ],
+        edges=[
+            EdgeConfig(source_str="A.out", target_str="B.in"),
+        ],
+    )
+
+    resolved = graph_config.resolve()
+    b = [n for n in resolved.nodes if n.name == "B"][0]
+    assert b.dependency_request is None
+
+# %% [markdown]
 # ## Net.request() tests
 
 # %%
@@ -513,6 +586,7 @@ async def test_manual_request_triggers_cascade_and_forward_flow():
                         ),
                     ),
                 },
+                dependency_request=DependencyRequestConfig(triggers=[]),
                 execution_config=NodeExecutionConfig(
                     node_name="Sink",
                     pools=["main"],
@@ -930,6 +1004,7 @@ async def test_label_deduplication_same_label():
                         ),
                     ),
                 },
+                dependency_request=DependencyRequestConfig(triggers=[]),
                 execution_config=NodeExecutionConfig(
                     node_name="Sink",
                     pools=["main"],
@@ -1015,6 +1090,7 @@ async def test_label_deduplication_different_labels():
                         ),
                     ),
                 },
+                dependency_request=DependencyRequestConfig(triggers=[]),
                 execution_config=NodeExecutionConfig(
                     node_name="Sink",
                     pools=["main"],
