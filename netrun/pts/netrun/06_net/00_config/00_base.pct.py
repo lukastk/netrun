@@ -557,6 +557,25 @@ SalvoConditionTermAndConfig.model_rebuild()
 SalvoConditionTermOrConfig.model_rebuild()
 SalvoConditionTermNotConfig.model_rebuild()
 
+
+def collect_ports_from_term(term: SalvoConditionTermConfig) -> set[str]:
+    """Extract all port names referenced in a SalvoConditionTerm tree.
+
+    Skips VarRef port names (unresolved until runtime).
+    """
+    if isinstance(term, SalvoConditionTermPortConfig):
+        if isinstance(term.port_name, str):
+            return {term.port_name}
+        return set()  # VarRef — skip
+    elif isinstance(term, (SalvoConditionTermAndConfig, SalvoConditionTermOrConfig)):
+        ports: set[str] = set()
+        for sub in term.terms:
+            ports.update(collect_ports_from_term(sub))
+        return ports
+    elif isinstance(term, SalvoConditionTermNotConfig):
+        return collect_ports_from_term(term.term)
+    return set()  # True/False
+
 # %% [markdown]
 # ## Salvo condition
 #

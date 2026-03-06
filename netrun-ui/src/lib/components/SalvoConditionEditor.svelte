@@ -116,8 +116,9 @@
 
 	function handleNameBlur() {
 		isEditingName = false;
-		if (editedName.trim() && editedName !== name) {
-			onRename(editedName.trim());
+		const trimmed = editedName.trim();
+		if (trimmed && trimmed !== name && !trimmed.startsWith('__control_') && !trimmed.startsWith('__signal_')) {
+			onRename(trimmed);
 		} else {
 			editedName = name;
 		}

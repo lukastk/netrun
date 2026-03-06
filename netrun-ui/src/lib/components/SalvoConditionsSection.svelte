@@ -115,6 +115,7 @@
 		if (oldName === newName) return;
 		const current = inConditions || {};
 		if (newName in current) return; // Name already exists
+		if (newName.startsWith('__control_') || newName.startsWith('__signal_')) return; // Reserved prefix
 
 		const updated: Record<string, SalvoConditionConfig> = {};
 		for (const [name, config] of Object.entries(current)) {
@@ -131,6 +132,7 @@
 		if (oldName === newName) return;
 		const current = outConditions || {};
 		if (newName in current) return; // Name already exists
+		if (newName.startsWith('__control_') || newName.startsWith('__signal_')) return; // Reserved prefix
 
 		const updated: Record<string, SalvoConditionConfig> = {};
 		for (const [name, config] of Object.entries(current)) {

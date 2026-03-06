@@ -33,6 +33,7 @@ from netrun.net.config._base import (
     EnvVarResolvableModel,
     PortConfig,
     SalvoConditionConfig,
+    MaxSalvosFiniteConfig,
     _generate_default_in_salvo_conditions,
     _generate_default_out_salvo_conditions,
     VALID_SIGNAL_TYPES,
@@ -47,6 +48,7 @@ from netrun.net.config._base import (
     generate_control_salvo_conditions,
     is_control_port,
     resolve_effective_controls,
+    collect_ports_from_term,
 )
 from netrun.execution_manager import RunAllocationMethod
 from netrun.storage.config import NodeStorageConfig
@@ -833,6 +835,78 @@ class NodeConfig(EnvVarResolvableModel):
                             msg=f"Out-salvo condition '{sc_name}' references non-existent out_port '{port_name}'",
                             type="invalid_salvo_port",
                         ))
+
+        # Check for empty salvo condition names
+        for sc_dict_name, sc_dict in [("in_salvo_conditions", self.in_salvo_conditions),
+                                       ("out_salvo_conditions", self.out_salvo_conditions)]:
+            if sc_dict:
+                for sc_name in sc_dict:
+                    if not sc_name or not sc_name.strip():
+                        errors.append(ConfigValidationError(
+                            loc=[sc_dict_name, sc_name],
+                            msg="Salvo condition name cannot be empty",
+                            type="empty_salvo_condition_name",
+                        ))
+
+        # Check for reserved name patterns (control/signal prefixes)
+        if self.in_salvo_conditions:
+            for sc_name in self.in_salvo_conditions:
+                if is_control_port(sc_name):
+                    errors.append(ConfigValidationError(
+                        loc=["in_salvo_conditions", sc_name],
+                        msg=f"In-salvo condition name '{sc_name}' uses reserved control prefix '__control_...__'",
+                        type="reserved_salvo_condition_name",
+                    ))
+                if is_signal_port(sc_name):
+                    errors.append(ConfigValidationError(
+                        loc=["in_salvo_conditions", sc_name],
+                        msg=f"In-salvo condition name '{sc_name}' uses reserved signal prefix '__signal_...__'",
+                        type="reserved_salvo_condition_name",
+                    ))
+        if self.out_salvo_conditions:
+            for sc_name in self.out_salvo_conditions:
+                if is_signal_port(sc_name):
+                    errors.append(ConfigValidationError(
+                        loc=["out_salvo_conditions", sc_name],
+                        msg=f"Out-salvo condition name '{sc_name}' uses reserved signal prefix '__signal_...__'",
+                        type="reserved_salvo_condition_name",
+                    ))
+                if is_control_port(sc_name):
+                    errors.append(ConfigValidationError(
+                        loc=["out_salvo_conditions", sc_name],
+                        msg=f"Out-salvo condition name '{sc_name}' uses reserved control prefix '__control_...__'",
+                        type="reserved_salvo_condition_name",
+                    ))
+
+        # Check term port references exist on the correct port set
+        if self.in_salvo_conditions:
+            for sc_name, sc in self.in_salvo_conditions.items():
+                for port_name in collect_ports_from_term(sc.term):
+                    if port_name not in self.in_ports:
+                        errors.append(ConfigValidationError(
+                            loc=["in_salvo_conditions", sc_name, "term"],
+                            msg=f"In-salvo condition '{sc_name}' term references non-existent in_port '{port_name}'",
+                            type="invalid_salvo_term_port",
+                        ))
+        if self.out_salvo_conditions:
+            for sc_name, sc in self.out_salvo_conditions.items():
+                for port_name in collect_ports_from_term(sc.term):
+                    if port_name not in self.out_ports:
+                        errors.append(ConfigValidationError(
+                            loc=["out_salvo_conditions", sc_name, "term"],
+                            msg=f"Out-salvo condition '{sc_name}' term references non-existent out_port '{port_name}'",
+                            type="invalid_salvo_term_port",
+                        ))
+
+        # Check input salvo conditions have max_salvos == Finite(1)
+        if self.in_salvo_conditions:
+            for sc_name, sc in self.in_salvo_conditions.items():
+                if not isinstance(sc.max_salvos, MaxSalvosFiniteConfig) or sc.max_salvos.max != 1:
+                    errors.append(ConfigValidationError(
+                        loc=["in_salvo_conditions", sc_name, "max_salvos"],
+                        msg=f"In-salvo condition '{sc_name}' must have max_salvos=finite(1)",
+                        type="invalid_input_salvo_max_salvos",
+                    ))
 
         return errors
 

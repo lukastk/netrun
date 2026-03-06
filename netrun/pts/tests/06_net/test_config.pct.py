@@ -3534,6 +3534,289 @@ def test_validate_graph_collects_node_errors():
 # %%
 test_validate_graph_collects_node_errors()
 
+# %%
+#|export
+def test_validate_empty_salvo_condition_name():
+    """Empty salvo condition name should be rejected."""
+    node = NodeConfig(
+        name="A",
+        in_ports={"in": PortConfig()},
+        in_salvo_conditions={
+            "": SalvoConditionConfig(
+                max_salvos=MaxSalvosFiniteConfig(max=1),
+                ports={"in": PacketCountAllConfig()},
+                term=SalvoConditionTermTrueConfig(),
+            ),
+        },
+    )
+    errors = node.validate()
+    empty_errors = [e for e in errors if e.type == "empty_salvo_condition_name"]
+    assert len(empty_errors) == 1
+    assert empty_errors[0].loc == ["in_salvo_conditions", ""]
+
+# %%
+test_validate_empty_salvo_condition_name()
+
+# %%
+#|export
+def test_validate_reserved_control_salvo_name():
+    """Salvo condition with __control_*__ prefix should be rejected."""
+    node = NodeConfig(
+        name="A",
+        in_ports={"in": PortConfig()},
+        in_salvo_conditions={
+            "__control_enable__": SalvoConditionConfig(
+                max_salvos=MaxSalvosFiniteConfig(max=1),
+                ports={"in": PacketCountAllConfig()},
+                term=SalvoConditionTermTrueConfig(),
+            ),
+        },
+    )
+    errors = node.validate()
+    reserved_errors = [e for e in errors if e.type == "reserved_salvo_condition_name"]
+    assert len(reserved_errors) == 1
+    assert "__control_" in reserved_errors[0].msg
+
+# %%
+test_validate_reserved_control_salvo_name()
+
+# %%
+#|export
+def test_validate_reserved_signal_salvo_name():
+    """Salvo condition with __signal_*__ prefix should be rejected."""
+    node = NodeConfig(
+        name="A",
+        in_ports={"in": PortConfig()},
+        out_ports={"out": PortConfig()},
+        out_salvo_conditions={
+            "__signal_epoch_finished__": SalvoConditionConfig(
+                max_salvos=MaxSalvosInfiniteConfig(),
+                ports={"out": PacketCountAllConfig()},
+                term=SalvoConditionTermTrueConfig(),
+            ),
+        },
+    )
+    errors = node.validate()
+    reserved_errors = [e for e in errors if e.type == "reserved_salvo_condition_name"]
+    assert len(reserved_errors) == 1
+    assert "__signal_" in reserved_errors[0].msg
+
+# %%
+test_validate_reserved_signal_salvo_name()
+
+# %%
+#|export
+def test_validate_term_port_references():
+    """Salvo condition term referencing non-existent port should be rejected."""
+    # Simple port term
+    node = NodeConfig(
+        name="A",
+        in_ports={"in": PortConfig()},
+        in_salvo_conditions={
+            "trigger": SalvoConditionConfig(
+                max_salvos=MaxSalvosFiniteConfig(max=1),
+                ports={"in": PacketCountAllConfig()},
+                term=SalvoConditionTermPortConfig(port_name="nonexistent", state=PortStateNonEmptyConfig()),
+            ),
+        },
+    )
+    errors = node.validate()
+    term_errors = [e for e in errors if e.type == "invalid_salvo_term_port"]
+    assert len(term_errors) == 1
+    assert "nonexistent" in term_errors[0].msg
+
+    # Nested And/Or/Not terms
+    node2 = NodeConfig(
+        name="B",
+        in_ports={"in": PortConfig()},
+        in_salvo_conditions={
+            "complex": SalvoConditionConfig(
+                max_salvos=MaxSalvosFiniteConfig(max=1),
+                ports={"in": PacketCountAllConfig()},
+                term=SalvoConditionTermAndConfig(terms=[
+                    SalvoConditionTermPortConfig(port_name="in", state=PortStateNonEmptyConfig()),
+                    SalvoConditionTermOrConfig(terms=[
+                        SalvoConditionTermPortConfig(port_name="ghost", state=PortStateEmptyConfig()),
+                        SalvoConditionTermNotConfig(
+                            term=SalvoConditionTermPortConfig(port_name="phantom", state=PortStateFullConfig()),
+                        ),
+                    ]),
+                ]),
+            ),
+        },
+    )
+    errors2 = node2.validate()
+    term_errors2 = [e for e in errors2 if e.type == "invalid_salvo_term_port"]
+    assert len(term_errors2) == 2
+    bad_ports = {e.msg.split("'")[-2] for e in term_errors2}
+    assert bad_ports == {"ghost", "phantom"}
+
+    # Out-salvo term referencing non-existent out_port
+    node3 = NodeConfig(
+        name="C",
+        out_ports={"out": PortConfig()},
+        out_salvo_conditions={
+            "send": SalvoConditionConfig(
+                max_salvos=MaxSalvosInfiniteConfig(),
+                ports={"out": PacketCountAllConfig()},
+                term=SalvoConditionTermPortConfig(port_name="bad_out", state=PortStateNonEmptyConfig()),
+            ),
+        },
+    )
+    errors3 = node3.validate()
+    term_errors3 = [e for e in errors3 if e.type == "invalid_salvo_term_port"]
+    assert len(term_errors3) == 1
+    assert "bad_out" in term_errors3[0].msg
+
+# %%
+test_validate_term_port_references()
+
+# %%
+#|export
+def test_validate_input_salvo_max_salvos():
+    """Input salvo with max_salvos != finite(1) should be rejected."""
+    node = NodeConfig(
+        name="A",
+        in_ports={"in": PortConfig()},
+        in_salvo_conditions={
+            "trigger": SalvoConditionConfig(
+                max_salvos=MaxSalvosInfiniteConfig(),
+                ports={"in": PacketCountAllConfig()},
+                term=SalvoConditionTermTrueConfig(),
+            ),
+        },
+    )
+    errors = node.validate()
+    ms_errors = [e for e in errors if e.type == "invalid_input_salvo_max_salvos"]
+    assert len(ms_errors) == 1
+    assert ms_errors[0].loc == ["in_salvo_conditions", "trigger", "max_salvos"]
+
+    # finite(2) should also be rejected
+    node2 = NodeConfig(
+        name="B",
+        in_ports={"in": PortConfig()},
+        in_salvo_conditions={
+            "trigger": SalvoConditionConfig(
+                max_salvos=MaxSalvosFiniteConfig(max=2),
+                ports={"in": PacketCountAllConfig()},
+                term=SalvoConditionTermTrueConfig(),
+            ),
+        },
+    )
+    errors2 = node2.validate()
+    ms_errors2 = [e for e in errors2 if e.type == "invalid_input_salvo_max_salvos"]
+    assert len(ms_errors2) == 1
+
+    # finite(1) should pass
+    node3 = NodeConfig(
+        name="C",
+        in_ports={"in": PortConfig()},
+        in_salvo_conditions={
+            "trigger": SalvoConditionConfig(
+                max_salvos=MaxSalvosFiniteConfig(max=1),
+                ports={"in": PacketCountAllConfig()},
+                term=SalvoConditionTermTrueConfig(),
+            ),
+        },
+    )
+    errors3 = node3.validate()
+    ms_errors3 = [e for e in errors3 if e.type == "invalid_input_salvo_max_salvos"]
+    assert len(ms_errors3) == 0
+
+# %%
+test_validate_input_salvo_max_salvos()
+
+# %%
+#|export
+def test_validate_salvo_valid_names_pass():
+    """Salvo conditions with valid names should produce no name-related errors."""
+    node = NodeConfig(
+        name="A",
+        in_ports={"in": PortConfig()},
+        out_ports={"out": PortConfig()},
+        in_salvo_conditions={
+            "default": SalvoConditionConfig(
+                max_salvos=MaxSalvosFiniteConfig(max=1),
+                ports={"in": PacketCountAllConfig()},
+                term=SalvoConditionTermPortConfig(port_name="in", state=PortStateNonEmptyConfig()),
+            ),
+            "trigger": SalvoConditionConfig(
+                max_salvos=MaxSalvosFiniteConfig(max=1),
+                ports={"in": PacketCountAllConfig()},
+                term=SalvoConditionTermTrueConfig(),
+            ),
+        },
+        out_salvo_conditions={
+            "batch": SalvoConditionConfig(
+                max_salvos=MaxSalvosInfiniteConfig(),
+                ports={"out": PacketCountAllConfig()},
+                term=SalvoConditionTermTrueConfig(),
+            ),
+        },
+    )
+    errors = node.validate()
+    name_errors = [e for e in errors if e.type in ("empty_salvo_condition_name", "reserved_salvo_condition_name")]
+    assert len(name_errors) == 0
+
+# %%
+test_validate_salvo_valid_names_pass()
+
+# %%
+#|export
+from netrun.net.config._base import collect_ports_from_term
+
+def test_collect_ports_from_term_nested():
+    """collect_ports_from_term should extract all port names from nested terms."""
+    # Simple port
+    term1 = SalvoConditionTermPortConfig(port_name="a", state=PortStateNonEmptyConfig())
+    assert collect_ports_from_term(term1) == {"a"}
+
+    # True/False return empty
+    assert collect_ports_from_term(SalvoConditionTermTrueConfig()) == set()
+    assert collect_ports_from_term(SalvoConditionTermFalseConfig()) == set()
+
+    # And
+    term_and = SalvoConditionTermAndConfig(terms=[
+        SalvoConditionTermPortConfig(port_name="x", state=PortStateEmptyConfig()),
+        SalvoConditionTermPortConfig(port_name="y", state=PortStateFullConfig()),
+    ])
+    assert collect_ports_from_term(term_and) == {"x", "y"}
+
+    # Or
+    term_or = SalvoConditionTermOrConfig(terms=[
+        SalvoConditionTermPortConfig(port_name="m", state=PortStateNonEmptyConfig()),
+        SalvoConditionTermTrueConfig(),
+    ])
+    assert collect_ports_from_term(term_or) == {"m"}
+
+    # Not
+    term_not = SalvoConditionTermNotConfig(
+        term=SalvoConditionTermPortConfig(port_name="z", state=PortStateEmptyConfig()),
+    )
+    assert collect_ports_from_term(term_not) == {"z"}
+
+    # Deeply nested
+    deep = SalvoConditionTermAndConfig(terms=[
+        SalvoConditionTermOrConfig(terms=[
+            SalvoConditionTermPortConfig(port_name="a", state=PortStateNonEmptyConfig()),
+            SalvoConditionTermNotConfig(
+                term=SalvoConditionTermPortConfig(port_name="b", state=PortStateEmptyConfig()),
+            ),
+        ]),
+        SalvoConditionTermPortConfig(port_name="c", state=PortStateFullConfig()),
+        SalvoConditionTermTrueConfig(),
+        SalvoConditionTermFalseConfig(),
+    ])
+    assert collect_ports_from_term(deep) == {"a", "b", "c"}
+
+    # VarRef port names are skipped
+    from netrun.net.config._base import VarRef
+    term_varref = SalvoConditionTermPortConfig(port_name=VarRef(var="my_port"), state=PortStateNonEmptyConfig())
+    assert collect_ports_from_term(term_varref) == set()
+
+# %%
+test_collect_ports_from_term_nested()
+
 # %% [markdown]
 # ## VarRef Tests
 
