@@ -4,8 +4,7 @@
 
 use crate::graph::{
     DependencyRequestConfig, DependencyRequestTrigger, Edge, Graph, MaxSalvos, Node, PacketCount,
-    Port, PortName, PortRef, PortSlotSpec, PortState, PortType, SalvoCondition,
-    SalvoConditionTerm,
+    Port, PortName, PortRef, PortSlotSpec, PortState, PortType, SalvoCondition, SalvoConditionTerm,
 };
 use indexmap::IndexMap;
 use std::collections::HashMap;
