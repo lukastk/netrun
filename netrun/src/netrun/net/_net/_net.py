@@ -168,7 +168,7 @@ class Net:
         self._graph: netrun_sim.Graph = self._config_resolved.graph.get_graph()
         self._netsim = netrun_sim.NetSim(self._graph)
         self._started: bool = False
-        self._source_nodes_executed: bool = False
+        self._source_nodes_executed: set[str] = set()  # tracks which run_on_startup nodes have been executed
         self._paused: bool = False
         self._stopping: bool = False
 
@@ -1174,7 +1174,7 @@ class Net:
                 config = self._get_node_execution_config(node_config.name)
                 if config is not None and config.run_on_startup:
                     await self.execute_node(node_config.name)
-            self._source_nodes_executed = True
+                    self._source_nodes_executed.add(node_config.name)
 
     def start_sync(self, run_source_nodes: bool | None = None) -> None:
         """Start the Net synchronously.
@@ -3692,30 +3692,6 @@ class Net:
         if not self._started:
             await self.start(run_source_nodes=False)
 
-        # Execute source nodes if not yet done
-        if not self._source_nodes_executed:
-            errors = []
-            for node_config in self._config_resolved.graph.nodes:
-                exec_config = self._get_node_execution_config(node_config.name)
-                if exec_config is None or not exec_config.run_on_startup:
-                    continue
-                if node_config.name in self._disabled_nodes:
-                    errors.append(f"Source node '{node_config.name}' is disabled")
-                    continue
-                has_exec = (
-                    exec_config.exec_node_func is not None
-                    or node_config.name in self._node_factories
-                )
-                if not has_exec:
-                    errors.append(f"Source node '{node_config.name}' has no execution function")
-                    continue
-                await self.execute_node(node_config.name)
-            if errors:
-                raise RuntimeError(
-                    f"Cannot execute source node(s):\n" + "\n".join(f"  - {e}" for e in errors)
-                )
-            self._source_nodes_executed = True
-
         # 1. Normalize targets to set of (node_name, salvo_condition | None)
         if isinstance(targets, str):
             targets = [targets]
@@ -3740,6 +3716,34 @@ class Net:
         blanket_targets = {n for n, c in target_specs if c is None}
         specific_targets = {n for n, c in target_specs if c is not None} - blanket_targets
         upstream_nodes |= specific_targets
+
+        # 4. Execute upstream source nodes that haven't been run yet
+        relevant_nodes = upstream_nodes | target_node_names
+        errors = []
+        for node_config in self._config_resolved.graph.nodes:
+            exec_config = self._get_node_execution_config(node_config.name)
+            if exec_config is None or not exec_config.run_on_startup:
+                continue
+            if node_config.name in self._source_nodes_executed:
+                continue
+            if node_config.name not in relevant_nodes:
+                continue
+            if node_config.name in self._disabled_nodes:
+                errors.append(f"Source node '{node_config.name}' is disabled")
+                continue
+            has_exec = (
+                exec_config.exec_node_func is not None
+                or node_config.name in self._node_factories
+            )
+            if not has_exec:
+                errors.append(f"Source node '{node_config.name}' has no execution function")
+                continue
+            await self.execute_node(node_config.name)
+            self._source_nodes_executed.add(node_config.name)
+        if errors:
+            raise RuntimeError(
+                f"Cannot execute source node(s):\n" + "\n".join(f"  - {e}" for e in errors)
+            )
 
         # 4. Execution loop
         collected_salvos: list[TargetInputSalvo] = []

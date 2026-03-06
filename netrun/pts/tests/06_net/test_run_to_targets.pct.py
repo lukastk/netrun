@@ -1062,3 +1062,80 @@ async def test_no_double_source_execution():
         assert salvos[0].packets["in"] == ["val"]
     finally:
         await net.stop()
+
+# %% [markdown]
+# ## Test: irrelevant source nodes not executed
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_irrelevant_source_nodes_not_executed():
+    """Source nodes not upstream of the target should not be executed."""
+    executed_sources = []
+
+    def make_source_func(name):
+        def source_func(ctx, packets):
+            executed_sources.append(name)
+            out_id = ctx.create_packet(f"from_{name}")
+            ctx.load_output_port("out", out_id)
+            ctx.send_output_salvo("send")
+        return source_func
+
+    def _make_source_node(name):
+        return NodeConfig(
+            name=name,
+            out_ports={"out": PortConfig()},
+            in_salvo_conditions={
+                "trigger": SalvoConditionConfig(
+                    max_salvos=MaxSalvosFiniteConfig(max=1),
+                    ports={},
+                    term=SalvoConditionTermTrueConfig(),
+                ),
+            },
+            out_salvo_conditions={
+                "send": SalvoConditionConfig(
+                    max_salvos=MaxSalvosFiniteConfig(max=1),
+                    ports={"out": PacketCountAllConfig()},
+                    term=SalvoConditionTermPortConfig(
+                        port_name="out",
+                        state=PortStateNonEmptyConfig(),
+                    ),
+                ),
+            },
+            execution_config=NodeExecutionConfig(
+                pools=["main"],
+                exec_node_func=make_source_func(name),
+                run_on_startup=True,
+            ),
+        )
+
+    # Two independent pipelines: SourceA -> Sink1, SourceB -> Sink2
+    config = _make_net_config(
+        nodes=[
+            _make_source_node("SourceA"),
+            _make_sink_node("Sink1"),
+            _make_source_node("SourceB"),
+            _make_sink_node("Sink2"),
+        ],
+        edges=[
+            EdgeConfig(source_str="SourceA.out", target_str="Sink1.in"),
+            EdgeConfig(source_str="SourceB.out", target_str="Sink2.in"),
+        ],
+    )
+
+    net = Net(config)
+    try:
+        salvos = await net.run_to_targets("Sink1")
+
+        # Only SourceA should have been executed
+        assert "SourceA" in executed_sources
+        assert "SourceB" not in executed_sources
+
+        assert len(salvos) == 1
+        assert salvos[0].node_name == "Sink1"
+        assert salvos[0].packets["in"] == ["from_SourceA"]
+    finally:
+        await net.stop()
+
+# %%
+asyncio.get_event_loop().run_until_complete(test_irrelevant_source_nodes_not_executed())
