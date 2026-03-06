@@ -43,6 +43,7 @@ export interface UIEdge {
 	sourceHandle?: string;
 	targetHandle?: string;
 	type?: string;
+	data?: Record<string, unknown>;
 }
 
 export interface FileReadResponse {
