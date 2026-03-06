@@ -33,10 +33,11 @@ This separation of concerns allows the actual execution and data storage to be i
 
 ### netrun-ui (Visual Editor)
 
-`netrun-ui` is a SvelteKit-based visual editor for creating and editing netrun flow configurations.
+`netrun-ui` is a visual editor for creating and editing netrun flow configurations. The frontend is built with SvelteKit (Svelte 5) and SvelteFlow. The backend is a FastAPI Python app (`netrun_ui_backend/`) that handles file I/O, factory resolution, config validation, and action execution.
 
 **Reference Documentation** (read these for context when working on netrun-ui):
-- `netrun-ui/BACKEND_README.md` - Backend integration documentation
+- `netrun-ui/README.md` - Project overview, architecture, and development setup
+- `netrun-ui/BACKEND_README.md` - Backend CLI usage and installation
 
 ## Development Notes (_dev_notes)
 
@@ -97,9 +98,9 @@ repo/
 │   └── src/                # Auto-generated code (DO NOT EDIT)
 │       ├── netrun/         # Generated Python package
 │       └── tests/          # Generated test files
-└── netrun-ui/              # Visual editor (SvelteKit)
-    ├── BACKEND_README.md   # Backend integration docs
-    └── src/                # SvelteKit source code
+└── netrun-ui/              # Visual editor (SvelteKit + FastAPI)
+    ├── src/                # Frontend source (Svelte 5, SvelteFlow)
+    └── netrun_ui_backend/  # Python backend (FastAPI)
 ```
 
 ---
