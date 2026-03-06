@@ -144,8 +144,8 @@ export async function computeLayout(
 		}
 	}
 
-	// Build a set of valid node IDs for edge filtering
-	const nodeIds = new Set(nodes.map((n) => n.id));
+	// Build a set of valid node IDs for edge filtering (use layoutNodes, not unfiltered nodes)
+	const nodeIds = new Set(layoutNodes.map((n) => n.id));
 
 	const elkEdges: ElkExtendedEdge[] = edges
 		.filter((e) => nodeIds.has(e.source) && nodeIds.has(e.target))
