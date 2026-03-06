@@ -33,10 +33,14 @@
 		return $projectActions.some(a => a.id === actionId);
 	}
 
-	// Clear execution state when selected node changes
+	// Clear execution state when a different node is selected (not on every data change)
+	let lastSelectedNodeId: string | null = null;
 	$effect(() => {
-		$selectedNode; // track dependency
-		actionExecutions.set(new Map());
+		const nodeId = $selectedNode?.id ?? null;
+		if (nodeId !== lastSelectedNodeId) {
+			lastSelectedNodeId = nodeId;
+			actionExecutions.set(new Map());
+		}
 	});
 </script>
 
