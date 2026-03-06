@@ -35,6 +35,9 @@
 	let isEditingName = $state(false);
 	let editedName = $state('');
 
+	// Flag to skip effect re-sync when we emitted the change ourselves
+	let selfEmitted = false;
+
 	// Port selection state
 	interface PortUIState {
 		enabled: boolean;
@@ -79,25 +82,35 @@
 		return result;
 	}
 
-	// Initialize and sync state from props
+	// Initialize and sync state from props (skip when change originated from this component)
 	$effect(() => {
-		// Update UI state whenever config/name/portNames change
-		uiState = configToUIState(name, config, portNames);
+		// Read dependencies to track them
+		const _config = config;
+		const _name = name;
+		const _portNames = portNames;
+
+		if (selfEmitted) {
+			selfEmitted = false;
+			return;
+		}
+
+		// Update UI state whenever config/name/portNames change externally
+		uiState = configToUIState(_name, _config, _portNames);
 
 		// Sync local editing state
-		const preset = determinePresetFromConfig(config, portNames);
+		const preset = determinePresetFromConfig(_config, _portNames);
 		currentPreset = preset;
-		customTermText = preset === 'custom' ? termToExpression(config.term) : '';
+		customTermText = preset === 'custom' ? termToExpression(_config.term) : '';
 
-		maxSalvosType = config.max_salvos.type === 'infinite'
+		maxSalvosType = _config.max_salvos.type === 'infinite'
 			? 'infinite'
-			: config.max_salvos.max === 1
+			: _config.max_salvos.max === 1
 				? 'one'
 				: 'custom';
-		maxSalvosCustomValue = config.max_salvos.type === 'finite' ? config.max_salvos.max : 1;
+		maxSalvosCustomValue = _config.max_salvos.type === 'finite' ? _config.max_salvos.max : 1;
 
-		editedName = name;
-		portsState = buildPortsState(config, portNames);
+		editedName = _name;
+		portsState = buildPortsState(_config, _portNames);
 		parseError = undefined;
 	});
 
@@ -213,6 +226,7 @@
 			}
 		}
 
+		selfEmitted = true;
 		onChange({ max_salvos: maxSalvos, ports, term });
 	}
 </script>
