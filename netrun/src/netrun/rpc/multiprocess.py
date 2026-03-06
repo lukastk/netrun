@@ -230,7 +230,7 @@ def create_queue_pair(
     Example:
         ```python
         import multiprocessing as mp
-        from netrun.rpc.multiprocess import create_queue_pair, SyncProcessChannel
+        from ..rpc.multiprocess import create_queue_pair, SyncProcessChannel
 
         def worker(send_q, recv_q):
             channel = SyncProcessChannel(send_q, recv_q)
