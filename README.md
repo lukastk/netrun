@@ -1,95 +1,91 @@
 # netrun
 
-A flow-based development (FBD) runtime system.
+A flow-based development (FBD) runtime system. Define networks of interconnected nodes, and netrun handles packet routing, execution orchestration, caching, and lifecycle management.
 
-## Overview
+## Components
 
-This repository contains two main components:
+### [netrun-sim](netrun-sim/) — Simulation Engine
 
-- **netrun-sim**: A Rust library (with Python bindings) that simulates packet flow through a network. It handles flow mechanics, packet locations, and epoch lifecycles—but not actual execution or data storage.
+A Rust library (with Python bindings) that simulates packet flow through a network. Handles packet locations, flow conditions, and epoch lifecycles — but not actual execution or data storage. This separation allows execution and storage to be implemented independently of the flow logic.
 
-- **netrun**: A pure Python runtime (coming soon) built on `netrun-sim` that handles actual node execution and packet data management.
+### [netrun](netrun/) — Runtime
 
-This separation allows the execution and storage layers to be implemented independently of the flow logic.
+A pure Python package built on netrun-sim. Provides flow-based network execution (`Net`), RPC channels, worker pools (thread/process/remote), node factories, caching, file storage, a CLI, and more.
+
+### [netrun-ui](netrun-ui/) — Visual Editor
+
+A SvelteKit + FastAPI visual editor for creating and editing netrun flow configurations. Supports graph editing, subgraphs, node variables, salvo conditions, factory nodes, multi-tab editing, and a command palette.
 
 ## Repository Structure
 
 ```
 repo/
-├── CLAUDE.md               # Detailed documentation
-├── README.md               # This file
-├── netrun-sim/            # Simulation engine
-│   ├── Cargo.toml          # Rust workspace root
-│   ├── core/               # Rust library
-│   │   ├── src/
-│   │   ├── tests/
-│   │   └── examples/
-│   └── python/             # Python bindings (PyO3)
-│       ├── pyproject.toml
-│       ├── python/netrun_sim/
-│       └── examples/
-└── netrun/                 # Runtime (coming soon)
+├── netrun-sim/             # Simulation engine (Rust + Python bindings)
+│   ├── core/               # Rust library (netrun-sim crate)
+│   └── python/             # Python bindings (PyO3 + Maturin)
+├── netrun/                 # Runtime (pure Python, nblite project)
+│   ├── pts/                # Source code (.pct.py files)
+│   └── src/                # Auto-generated Python modules
+└── netrun-ui/              # Visual editor
+    ├── src/                # Frontend (Svelte 5, SvelteFlow)
+    └── netrun_ui_backend/  # Backend (FastAPI)
 ```
 
-## Requirements
+## Quick Start
 
-- Rust 1.85+ (edition 2024)
-- Python 3.8+ (for Python bindings)
-- [uv](https://github.com/astral-sh/uv) (recommended for Python)
-
-## Building
-
-### Rust Library
+### netrun-sim (Rust)
 
 ```bash
 cd netrun-sim
 cargo build -p netrun-sim
-cargo build -p netrun-sim --release
+cargo test -p netrun-sim
+cargo run -p netrun-sim --example linear_flow
 ```
 
-### Python Bindings
+### netrun-sim (Python bindings)
 
 ```bash
 cd netrun-sim/python
 uv venv .venv && uv sync
 uv run maturin develop
-```
-
-## Running Tests
-
-```bash
-# Rust tests
-cd netrun-sim
-cargo test -p netrun-sim
-
-# Python examples
-cd netrun-sim/python
 uv run python examples/linear_flow.py
-uv run python examples/diamond_flow.py
 ```
 
-## Running Examples
-
-### Rust
+### netrun
 
 ```bash
-cd netrun-sim
-cargo run -p netrun-sim --example linear_flow
-cargo run -p netrun-sim --example diamond_flow
+cd netrun
+uv sync
+uv run pytest src/tests/ -v
 ```
 
-### Python
+### netrun-ui
 
 ```bash
-cd netrun-sim/python
-uv run python examples/linear_flow.py
-uv run python examples/diamond_flow.py
+# As a Python package
+pip install netrun-ui
+netrun-ui
+
+# From source (development)
+cd netrun-ui
+npm install
+pip install -e .
+netrun-ui --dev
 ```
+
+## Requirements
+
+- **netrun-sim**: Rust 1.85+ (edition 2024), Python 3.8+ (for bindings)
+- **netrun**: Python 3.11+, [uv](https://github.com/astral-sh/uv)
+- **netrun-ui**: Node.js 18+, Python 3.11+
 
 ## Documentation
 
-- [CLAUDE.md](CLAUDE.md) - Detailed architecture and API documentation
-- [netrun-sim/python/README.md](netrun-sim/python/README.md) - Python bindings documentation
+- [CLAUDE.md](CLAUDE.md) — Full architecture and API documentation
+- [netrun-sim/README.md](netrun-sim/README.md) — Simulation engine docs
+- [netrun/README.md](netrun/README.md) — Runtime docs
+- [netrun-ui/README.md](netrun-ui/README.md) — Visual editor docs
+- [netrun/PROJECT_SPEC.md](netrun/PROJECT_SPEC.md) — Runtime specification
 
 ## License
 
