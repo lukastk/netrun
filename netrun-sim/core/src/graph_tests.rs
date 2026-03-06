@@ -42,6 +42,7 @@ fn simple_node(name: &str, in_ports: Vec<&str>, out_ports: Vec<&str>) -> Node {
         out_ports: out_ports_map,
         in_salvo_conditions,
         out_salvo_conditions: IndexMap::new(),
+        dependency_request_config: None,
     }
 }
 
@@ -356,6 +357,7 @@ fn test_node_without_ports_is_valid() {
         out_ports: HashMap::new(),
         in_salvo_conditions: IndexMap::new(),
         out_salvo_conditions: IndexMap::new(),
+        dependency_request_config: None,
     };
     let graph = Graph::new(vec![node], vec![]);
     let errors = graph.validate();
@@ -475,4 +477,170 @@ fn test_duplicate_node_names_panics() {
         simple_node("A", vec!["in"], vec![]),
     ];
     Graph::new(nodes, vec![]);
+}
+
+// ========== Dependency Edges & Cascade Backward Tests ==========
+
+fn make_edge(src_node: &str, src_port: &str, tgt_node: &str, tgt_port: &str) -> Edge {
+    Edge {
+        source: PortRef {
+            node_name: src_node.to_string(),
+            port_type: PortType::Output,
+            port_name: src_port.to_string(),
+        },
+        target: PortRef {
+            node_name: tgt_node.to_string(),
+            port_type: PortType::Input,
+            port_name: tgt_port.to_string(),
+        },
+    }
+}
+
+#[test]
+fn test_dependency_edges_validation_valid() {
+    let nodes = vec![
+        simple_node("A", vec![], vec!["out"]),
+        simple_node("B", vec!["in"], vec![]),
+    ];
+    let e = make_edge("A", "out", "B", "in");
+    let graph = Graph::new(nodes, vec![e.clone()]).with_dependency_edges(vec![e]);
+    assert!(graph.validate().is_empty());
+}
+
+#[test]
+fn test_dependency_edge_not_in_graph_is_invalid() {
+    let nodes = vec![
+        simple_node("A", vec![], vec!["out"]),
+        simple_node("B", vec!["in"], vec![]),
+    ];
+    let e = make_edge("A", "out", "B", "in");
+    // Create graph without the edge but mark it as dependency edge
+    let graph = Graph::new(nodes, vec![]).with_dependency_edges(vec![e]);
+    let errors = graph.validate();
+    assert!(errors.iter().any(|e| matches!(
+        e,
+        GraphValidationError::DependencyEdgeNotInGraph { .. }
+    )));
+}
+
+#[test]
+fn test_dependency_request_config_without_dependency_edges_is_invalid() {
+    let mut node_b = simple_node("B", vec!["in"], vec![]);
+    node_b.dependency_request_config = Some(DependencyRequestConfig {
+        triggers: vec![DependencyRequestTrigger::OnStartup],
+        label: "test".to_string(),
+    });
+    let nodes = vec![simple_node("A", vec![], vec!["out"]), node_b];
+    let e = make_edge("A", "out", "B", "in");
+    // Edge exists but is NOT a dependency edge
+    let graph = Graph::new(nodes, vec![e]);
+    let errors = graph.validate();
+    assert!(errors.iter().any(|e| matches!(
+        e,
+        GraphValidationError::DependencyRequestConfigWithoutDependencyEdges { .. }
+    )));
+}
+
+#[test]
+fn test_cascade_backward_linear() {
+    // Source -> Mid -> Sink, dependency edge Mid->Sink
+    let nodes = vec![
+        simple_node("Source", vec![], vec!["out"]),
+        simple_node("Mid", vec!["in"], vec!["out"]),
+        simple_node("Sink", vec!["in"], vec![]),
+    ];
+    let e1 = make_edge("Source", "out", "Mid", "in");
+    let e2 = make_edge("Mid", "out", "Sink", "in");
+    let graph = Graph::new(nodes, vec![e1, e2.clone()]).with_dependency_edges(vec![e2.clone()]);
+    assert!(graph.validate().is_empty());
+
+    let result = graph
+        .cascade_backward(&[e2.target.clone()])
+        .expect("cascade should succeed");
+    assert_eq!(result.source_nodes, vec!["Source".to_string()]);
+    assert!(result.visited_nodes.contains(&"Mid".to_string()));
+}
+
+#[test]
+fn test_cascade_backward_diamond() {
+    // Source -> B -> Sink, Source -> C -> Sink
+    let nodes = vec![
+        simple_node("Source", vec![], vec!["out1", "out2"]),
+        simple_node("B", vec!["in"], vec!["out"]),
+        simple_node("C", vec!["in"], vec!["out"]),
+        simple_node("Sink", vec!["in1", "in2"], vec![]),
+    ];
+    let edges = vec![
+        make_edge("Source", "out1", "B", "in"),
+        make_edge("Source", "out2", "C", "in"),
+        make_edge("B", "out", "Sink", "in1"),
+        make_edge("C", "out", "Sink", "in2"),
+    ];
+    let dep_edges = vec![edges[2].clone(), edges[3].clone()];
+    let graph = Graph::new(nodes, edges).with_dependency_edges(dep_edges.clone());
+    assert!(graph.validate().is_empty());
+
+    let start_ports: Vec<PortRef> = dep_edges.iter().map(|e| e.target.clone()).collect();
+    let result = graph
+        .cascade_backward(&start_ports)
+        .expect("cascade should succeed");
+    // Source is the only node with no input ports
+    assert_eq!(result.source_nodes, vec!["Source".to_string()]);
+}
+
+#[test]
+fn test_cascade_backward_fan_in() {
+    // A -> C, B -> C (both dep edges)
+    let nodes = vec![
+        simple_node("A", vec![], vec!["out"]),
+        simple_node("B", vec![], vec!["out"]),
+        simple_node("C", vec!["in1", "in2"], vec![]),
+    ];
+    let edges = vec![
+        make_edge("A", "out", "C", "in1"),
+        make_edge("B", "out", "C", "in2"),
+    ];
+    let graph = Graph::new(nodes, edges.clone()).with_dependency_edges(edges.clone());
+
+    let start_ports: Vec<PortRef> = edges.iter().map(|e| e.target.clone()).collect();
+    let result = graph
+        .cascade_backward(&start_ports)
+        .expect("cascade should succeed");
+    // Both A and B are source nodes
+    assert_eq!(result.source_nodes.len(), 2);
+    assert!(result.source_nodes.contains(&"A".to_string()));
+    assert!(result.source_nodes.contains(&"B".to_string()));
+}
+
+#[test]
+fn test_cascade_backward_unconnected_port_error() {
+    // B has an input port "in" with no incoming edge
+    let nodes = vec![simple_node("B", vec!["in"], vec![])];
+    let graph = Graph::new(nodes, vec![]);
+
+    let port = PortRef {
+        node_name: "B".to_string(),
+        port_type: PortType::Input,
+        port_name: "in".to_string(),
+    };
+    let result = graph.cascade_backward(&[port]);
+    assert!(matches!(
+        result,
+        Err(CascadeError::UnconnectedInputPort { .. })
+    ));
+}
+
+#[test]
+fn test_is_dependency_edge() {
+    let nodes = vec![
+        simple_node("A", vec![], vec!["out"]),
+        simple_node("B", vec!["in"], vec!["out"]),
+        simple_node("C", vec!["in"], vec![]),
+    ];
+    let e1 = make_edge("A", "out", "B", "in");
+    let e2 = make_edge("B", "out", "C", "in");
+    let graph = Graph::new(nodes, vec![e1.clone(), e2.clone()]).with_dependency_edges(vec![e2.clone()]);
+
+    assert!(!graph.is_dependency_edge(&e1));
+    assert!(graph.is_dependency_edge(&e2));
 }

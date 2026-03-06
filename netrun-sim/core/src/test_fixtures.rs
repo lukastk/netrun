@@ -3,8 +3,9 @@
 //! This module provides utilities for testing the netrun-sim library.
 
 use crate::graph::{
-    Edge, Graph, MaxSalvos, Node, PacketCount, Port, PortName, PortRef, PortSlotSpec, PortState,
-    PortType, SalvoCondition, SalvoConditionTerm,
+    DependencyRequestConfig, DependencyRequestTrigger, Edge, Graph, MaxSalvos, Node, PacketCount,
+    Port, PortName, PortRef, PortSlotSpec, PortState, PortType, SalvoCondition,
+    SalvoConditionTerm,
 };
 use indexmap::IndexMap;
 use std::collections::HashMap;
@@ -107,7 +108,24 @@ pub fn simple_node(name: &str, in_ports: Vec<&str>, out_ports: Vec<&str>) -> Nod
         out_ports: out_ports_map,
         in_salvo_conditions,
         out_salvo_conditions,
+        dependency_request_config: None,
     }
+}
+
+/// Creates a node with a DependencyRequestConfig.
+pub fn dependency_node(
+    name: &str,
+    in_ports: Vec<&str>,
+    out_ports: Vec<&str>,
+    triggers: Vec<DependencyRequestTrigger>,
+    label: &str,
+) -> Node {
+    let mut node = simple_node(name, in_ports, out_ports);
+    node.dependency_request_config = Some(DependencyRequestConfig {
+        triggers,
+        label: label.to_string(),
+    });
+    node
 }
 
 /// Creates an edge between two ports.
@@ -220,6 +238,7 @@ pub fn node_with_conditions(
         out_ports,
         in_salvo_conditions,
         out_salvo_conditions,
+        dependency_request_config: None,
     }
 }
 

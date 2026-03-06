@@ -8,9 +8,11 @@ pub use netrun_sim::graph::{Edge, PortRef, PortType};
 
 // Import core types with aliases for internal use
 use netrun_sim::graph::{
-    Graph as CoreGraph, GraphValidationError as CoreGraphValidationError,
-    MaxSalvos as CoreMaxSalvos, Node as CoreNode, PacketCount as CorePacketCount, Port as CorePort,
-    PortName, PortSlotSpec as CorePortSlotSpec, PortState as CorePortState,
+    DependencyRequestConfig as CoreDependencyRequestConfig,
+    DependencyRequestTrigger as CoreDependencyRequestTrigger, Graph as CoreGraph,
+    GraphValidationError as CoreGraphValidationError, MaxSalvos as CoreMaxSalvos,
+    Node as CoreNode, PacketCount as CorePacketCount, Port as CorePort, PortName,
+    PortSlotSpec as CorePortSlotSpec, PortState as CorePortState,
     SalvoCondition as CoreSalvoCondition, SalvoConditionTerm as CoreSalvoConditionTerm,
 };
 
@@ -524,6 +526,105 @@ fn core_port_state_to_py(py: Python<'_>, state: &CorePortState) -> PyResult<PyOb
     }
 }
 
+/// When a node should automatically emit packet requests through its dependency edges.
+#[pyclass(eq, eq_int)]
+#[derive(Clone, PartialEq)]
+pub enum DependencyRequestTrigger {
+    OnStartup,
+    OnNoSalvoTriggered,
+}
+
+#[pymethods]
+impl DependencyRequestTrigger {
+    #[staticmethod]
+    fn on_startup() -> Self {
+        DependencyRequestTrigger::OnStartup
+    }
+
+    #[staticmethod]
+    fn on_no_salvo_triggered() -> Self {
+        DependencyRequestTrigger::OnNoSalvoTriggered
+    }
+
+    fn __repr__(&self) -> String {
+        match self {
+            DependencyRequestTrigger::OnStartup => {
+                "DependencyRequestTrigger.OnStartup".to_string()
+            }
+            DependencyRequestTrigger::OnNoSalvoTriggered => {
+                "DependencyRequestTrigger.OnNoSalvoTriggered".to_string()
+            }
+        }
+    }
+}
+
+impl DependencyRequestTrigger {
+    pub fn to_core(&self) -> CoreDependencyRequestTrigger {
+        match self {
+            DependencyRequestTrigger::OnStartup => CoreDependencyRequestTrigger::OnStartup,
+            DependencyRequestTrigger::OnNoSalvoTriggered => {
+                CoreDependencyRequestTrigger::OnNoSalvoTriggered
+            }
+        }
+    }
+
+    pub fn from_core(trigger: &CoreDependencyRequestTrigger) -> Self {
+        match trigger {
+            CoreDependencyRequestTrigger::OnStartup => DependencyRequestTrigger::OnStartup,
+            CoreDependencyRequestTrigger::OnNoSalvoTriggered => {
+                DependencyRequestTrigger::OnNoSalvoTriggered
+            }
+        }
+    }
+}
+
+/// Configuration for automatic dependency-edge request generation on a node.
+#[pyclass]
+#[derive(Clone)]
+pub struct DependencyRequestConfig {
+    #[pyo3(get)]
+    pub triggers: Vec<DependencyRequestTrigger>,
+    #[pyo3(get)]
+    pub label: String,
+}
+
+#[pymethods]
+impl DependencyRequestConfig {
+    #[new]
+    fn new(triggers: Vec<DependencyRequestTrigger>, label: String) -> Self {
+        DependencyRequestConfig { triggers, label }
+    }
+
+    fn __repr__(&self) -> String {
+        let triggers_repr: Vec<String> = self.triggers.iter().map(|t| t.__repr__()).collect();
+        format!(
+            "DependencyRequestConfig(triggers=[{}], label={:?})",
+            triggers_repr.join(", "),
+            self.label
+        )
+    }
+}
+
+impl DependencyRequestConfig {
+    pub fn to_core(&self) -> CoreDependencyRequestConfig {
+        CoreDependencyRequestConfig {
+            triggers: self.triggers.iter().map(|t| t.to_core()).collect(),
+            label: self.label.clone(),
+        }
+    }
+
+    pub fn from_core(config: &CoreDependencyRequestConfig) -> Self {
+        DependencyRequestConfig {
+            triggers: config
+                .triggers
+                .iter()
+                .map(DependencyRequestTrigger::from_core)
+                .collect(),
+            label: config.label.clone(),
+        }
+    }
+}
+
 /// A port on a node.
 #[pyclass]
 #[derive(Clone)]
@@ -778,13 +879,14 @@ pub struct Node {
 #[pymethods]
 impl Node {
     #[new]
-    #[pyo3(signature = (name, in_ports=None, out_ports=None, in_salvo_conditions=None, out_salvo_conditions=None))]
+    #[pyo3(signature = (name, in_ports=None, out_ports=None, in_salvo_conditions=None, out_salvo_conditions=None, dependency_request_config=None))]
     fn new(
         name: String,
         in_ports: Option<HashMap<String, Port>>,
         out_ports: Option<HashMap<String, Port>>,
         in_salvo_conditions: Option<Bound<'_, PyDict>>,
         out_salvo_conditions: Option<Bound<'_, PyDict>>,
+        dependency_request_config: Option<DependencyRequestConfig>,
     ) -> PyResult<Self> {
         let in_ports_core: HashMap<PortName, CorePort> = in_ports
             .unwrap_or_default()
@@ -831,6 +933,7 @@ impl Node {
                 out_ports: out_ports_core,
                 in_salvo_conditions: in_salvo_core,
                 out_salvo_conditions: out_salvo_core,
+                dependency_request_config: dependency_request_config.map(|c| c.to_core()),
             },
         })
     }
@@ -874,6 +977,14 @@ impl Node {
             dict.set_item(k, SalvoCondition::from_core(v).into_pyobject(py)?)?;
         }
         Ok(dict)
+    }
+
+    #[getter]
+    fn dependency_request_config(&self) -> Option<DependencyRequestConfig> {
+        self.inner
+            .dependency_request_config
+            .as_ref()
+            .map(DependencyRequestConfig::from_core)
     }
 
     fn __repr__(&self) -> String {
@@ -922,6 +1033,10 @@ impl PyGraphValidationErrorInfo {
                 "SalvoConditionTermReferencesNonexistentPort"
             }
             InputSalvoConditionInvalidMaxSalvos { .. } => "InputSalvoConditionInvalidMaxSalvos",
+            DependencyEdgeNotInGraph { .. } => "DependencyEdgeNotInGraph",
+            DependencyRequestConfigWithoutDependencyEdges { .. } => {
+                "DependencyRequestConfigWithoutDependencyEdges"
+            }
         }
     }
 
@@ -1016,6 +1131,12 @@ impl PyGraphValidationErrorInfo {
                 };
                 dict.set_item("max_salvos", py_max_salvos)?;
             }
+            DependencyEdgeNotInGraph { edge } => {
+                dict.set_item("edge", edge.clone())?;
+            }
+            DependencyRequestConfigWithoutDependencyEdges { node_name } => {
+                dict.set_item("node_name", node_name.as_str())?;
+            }
         }
         Ok(dict.into())
     }
@@ -1042,12 +1163,14 @@ pub struct Graph {
 #[pymethods]
 impl Graph {
     #[new]
-    fn new(nodes: Vec<Node>, edges: Vec<Edge>) -> Self {
+    #[pyo3(signature = (nodes, edges, dependency_edges=None))]
+    fn new(nodes: Vec<Node>, edges: Vec<Edge>, dependency_edges: Option<Vec<Edge>>) -> Self {
         let core_nodes: Vec<CoreNode> = nodes.into_iter().map(|n| n.to_core()).collect();
-        // Edge is now directly the core type (re-exported from core)
-        Graph {
-            inner: CoreGraph::new(core_nodes, edges),
+        let mut graph = CoreGraph::new(core_nodes, edges);
+        if let Some(dep_edges) = dependency_edges {
+            graph = graph.with_dependency_edges(dep_edges);
         }
+        Graph { inner: graph }
     }
 
     /// Returns a dict of all nodes, keyed by name.
@@ -1085,6 +1208,20 @@ impl Graph {
         self.inner.get_edges_by_head(&input_port_ref).to_vec()
     }
 
+    /// Check if an edge is a dependency edge.
+    fn is_dependency_edge(&self, edge: &Edge) -> bool {
+        self.inner.is_dependency_edge(edge)
+    }
+
+    /// Returns the set of dependency edges as a list.
+    fn dependency_edges(&self, py: Python<'_>) -> PyResult<Py<PyList>> {
+        let list = PyList::empty(py);
+        for edge in self.inner.dependency_edges().iter() {
+            list.append(edge.clone())?;
+        }
+        Ok(list.unbind())
+    }
+
     fn __repr__(&self) -> String {
         format!(
             "Graph(nodes={}, edges={})",
@@ -1110,6 +1247,8 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PortState>()?;
     m.add_class::<PyPortStateNumeric>()?;
     m.add_class::<SalvoConditionTerm>()?;
+    m.add_class::<DependencyRequestTrigger>()?;
+    m.add_class::<DependencyRequestConfig>()?;
     m.add_class::<Port>()?;
     m.add_class::<PortType>()?;
     m.add_class::<PortRef>()?;
