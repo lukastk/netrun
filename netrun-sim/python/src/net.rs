@@ -561,10 +561,7 @@ impl NetAction {
                 )
             }
             NetActionKind::CreateRequest(node_name, label) => {
-                format!(
-                    "NetAction.create_request({:?}, {:?})",
-                    node_name, label
-                )
+                format!("NetAction.create_request({:?}, {:?})", node_name, label)
             }
         }
     }
@@ -623,12 +620,10 @@ impl NetAction {
                     loc.to_core(),
                 ))
             }
-            NetActionKind::CreateRequest(node_name, label) => {
-                Ok(CoreNetSimAction::CreateRequest(
-                    node_name.clone(),
-                    label.clone(),
-                ))
-            }
+            NetActionKind::CreateRequest(node_name, label) => Ok(CoreNetSimAction::CreateRequest(
+                node_name.clone(),
+                label.clone(),
+            )),
         }
     }
 }
@@ -654,8 +649,8 @@ enum NetEventKind {
     OutputSalvoTriggered(i128, String, String),
     PacketOrphaned(i128, String, String, String, String, String), // (ts, packet_id, epoch_id, node_name, port_name, salvo_condition)
     RequestCreated(i128, String, String, String),                 // (ts, node_name, label, source)
-    RequestCascadeResolved(i128, Vec<String>, String),           // (ts, source_nodes, label)
-    RequestEpochCreated(i128, String, String, String),           // (ts, epoch_id, source_node_name, label)
+    RequestCascadeResolved(i128, Vec<String>, String),            // (ts, source_nodes, label)
+    RequestEpochCreated(i128, String, String, String), // (ts, epoch_id, source_node_name, label)
 }
 
 #[pymethods]
@@ -675,12 +670,8 @@ impl NetEvent {
             NetEventKind::OutputSalvoTriggered(_, _, _) => "OutputSalvoTriggered".to_string(),
             NetEventKind::PacketOrphaned(_, _, _, _, _, _) => "PacketOrphaned".to_string(),
             NetEventKind::RequestCreated(_, _, _, _) => "RequestCreated".to_string(),
-            NetEventKind::RequestCascadeResolved(_, _, _) => {
-                "RequestCascadeResolved".to_string()
-            }
-            NetEventKind::RequestEpochCreated(_, _, _, _) => {
-                "RequestEpochCreated".to_string()
-            }
+            NetEventKind::RequestCascadeResolved(_, _, _) => "RequestCascadeResolved".to_string(),
+            NetEventKind::RequestEpochCreated(_, _, _, _) => "RequestEpochCreated".to_string(),
         }
     }
 
@@ -817,9 +808,7 @@ impl NetEvent {
     #[getter]
     fn source_nodes(&self) -> Option<Vec<String>> {
         match &self.inner {
-            NetEventKind::RequestCascadeResolved(_, source_nodes, _) => {
-                Some(source_nodes.clone())
-            }
+            NetEventKind::RequestCascadeResolved(_, source_nodes, _) => Some(source_nodes.clone()),
             _ => None,
         }
     }
@@ -1006,11 +995,7 @@ impl NetEvent {
                 )
             }
             CoreNetSimEvent::RequestCascadeResolved(ts, source_nodes, label) => {
-                NetEventKind::RequestCascadeResolved(
-                    *ts,
-                    source_nodes.clone(),
-                    label.clone(),
-                )
+                NetEventKind::RequestCascadeResolved(*ts, source_nodes.clone(), label.clone())
             }
             CoreNetSimEvent::RequestEpochCreated(ts, epoch_id, source_node, label) => {
                 NetEventKind::RequestEpochCreated(
@@ -1110,13 +1095,9 @@ impl NetEvent {
                     core_source,
                 ))
             }
-            NetEventKind::RequestCascadeResolved(ts, source_nodes, label) => {
-                Ok(CoreNetSimEvent::RequestCascadeResolved(
-                    *ts,
-                    source_nodes.clone(),
-                    label.clone(),
-                ))
-            }
+            NetEventKind::RequestCascadeResolved(ts, source_nodes, label) => Ok(
+                CoreNetSimEvent::RequestCascadeResolved(*ts, source_nodes.clone(), label.clone()),
+            ),
             NetEventKind::RequestEpochCreated(ts, epoch_id, source_node, label) => {
                 let ulid = str_to_ulid(epoch_id)?;
                 Ok(CoreNetSimEvent::RequestEpochCreated(

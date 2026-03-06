@@ -258,12 +258,9 @@ pub fn net_action_error_to_py_err(err: netrun_sim::net::NetActionError) -> PyErr
         NetActionError::EdgeNotFound { edge } => {
             EdgeNotFoundError::new_err(format!("Edge not found: {}", edge))
         }
-        NetActionError::RequestCycleDetected { node_name } => {
-            RequestCycleDetectedError::new_err(format!(
-                "Request cascade cycle detected at node '{}'",
-                node_name
-            ))
-        }
+        NetActionError::RequestCycleDetected { node_name } => RequestCycleDetectedError::new_err(
+            format!("Request cascade cycle detected at node '{}'", node_name),
+        ),
         NetActionError::RequestUnconnectedPort {
             node_name,
             port_name,
@@ -271,12 +268,9 @@ pub fn net_action_error_to_py_err(err: netrun_sim::net::NetActionError) -> PyErr
             "Request cascade reached unconnected input port '{}' on node '{}'",
             port_name, node_name
         )),
-        NetActionError::RequestNodeNotFound { node_name } => {
-            RequestNodeNotFoundError::new_err(format!(
-                "Request targets non-existent node '{}'",
-                node_name
-            ))
-        }
+        NetActionError::RequestNodeNotFound { node_name } => RequestNodeNotFoundError::new_err(
+            format!("Request targets non-existent node '{}'", node_name),
+        ),
     }
 }
 

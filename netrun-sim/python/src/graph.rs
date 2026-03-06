@@ -10,10 +10,10 @@ pub use netrun_sim::graph::{Edge, PortRef, PortType};
 use netrun_sim::graph::{
     DependencyRequestConfig as CoreDependencyRequestConfig,
     DependencyRequestTrigger as CoreDependencyRequestTrigger, Graph as CoreGraph,
-    GraphValidationError as CoreGraphValidationError, MaxSalvos as CoreMaxSalvos,
-    Node as CoreNode, PacketCount as CorePacketCount, Port as CorePort, PortName,
-    PortSlotSpec as CorePortSlotSpec, PortState as CorePortState,
-    SalvoCondition as CoreSalvoCondition, SalvoConditionTerm as CoreSalvoConditionTerm,
+    GraphValidationError as CoreGraphValidationError, MaxSalvos as CoreMaxSalvos, Node as CoreNode,
+    PacketCount as CorePacketCount, Port as CorePort, PortName, PortSlotSpec as CorePortSlotSpec,
+    PortState as CorePortState, SalvoCondition as CoreSalvoCondition,
+    SalvoConditionTerm as CoreSalvoConditionTerm,
 };
 
 /// Specifies how many packets to take from a port in a salvo.
@@ -548,9 +548,7 @@ impl DependencyRequestTrigger {
 
     fn __repr__(&self) -> String {
         match self {
-            DependencyRequestTrigger::OnStartup => {
-                "DependencyRequestTrigger.OnStartup".to_string()
-            }
+            DependencyRequestTrigger::OnStartup => "DependencyRequestTrigger.OnStartup".to_string(),
             DependencyRequestTrigger::OnNoSalvoTriggered => {
                 "DependencyRequestTrigger.OnNoSalvoTriggered".to_string()
             }
