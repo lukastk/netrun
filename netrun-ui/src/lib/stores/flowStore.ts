@@ -365,7 +365,6 @@ export interface CascadeHighlightState {
 	sourceNodes: Set<string>;
 	visitedNodes: Set<string>;
 	visitedEdges: Set<string>;
-	unstartableNodes: Set<string>;
 }
 export const cascadeHighlight = writable<CascadeHighlightState | null>(null);
 
