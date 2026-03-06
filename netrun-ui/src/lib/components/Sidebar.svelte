@@ -3,6 +3,9 @@
 	import {
 		selectedNode,
 		selectedNodeIds,
+		selectedEdge,
+		selectedEdgeIds,
+		dependencyEdges,
 		updateNodeData,
 		updateNodeDataLive,
 		renameNode,
@@ -33,7 +36,9 @@
 		getCurrentConfig,
 		applyConfig,
 		selectedNodes,
+		edges,
 		type NetrunNodeData,
+		type NetrunEdgeData,
 		type PortConfig
 	} from '$lib/stores/flowStore';
 	import { deleteExpandedChildren, renameExpandedChildNode } from '$lib/stores/subgraphExpandStore';
@@ -86,6 +91,9 @@
 	import { tooltip } from '$lib/utils/tooltip';
 	import { isEnvVar, makeEnvVar, getEnvVarName, getEnvVarDefault } from '$lib/utils/envvar';
 	import { isSignalPort, signalTypeFromPort } from '$lib/stores/signalStore';
+	import EdgeProperties from './EdgeProperties.svelte';
+	import DependencyRequestSection from './DependencyRequestSection.svelte';
+	import DependencyLabelsSection from './DependencyLabelsSection.svelte';
 
 	function resolvePath(base: string, rel: string): string {
 		const parts = (base + '/' + rel).split('/');
@@ -108,6 +116,18 @@
 
 	// Multi-selection: non-decoration nodes
 	let multiSelectedNodes = $derived($selectedNodes.filter(n => n.data.nodeType !== 'decoration'));
+
+	// Check if selected node has incoming dependency edges
+	let nodeHasDepEdges = $derived(
+		$selectedNode
+			? $edges.some(e => e.target === $selectedNode!.id && (e.data as NetrunEdgeData | undefined)?.dependency)
+			: false
+	);
+	let nodeHasDepConfig = $derived(
+		$selectedNode
+			? !!(($selectedNode.data._config || {}) as Record<string, unknown>).dependency_request
+			: false
+	);
 
 	// Check if selected node is an expanded child
 	let isChildNode = $derived($selectedNode ? isExpandedChildNode($selectedNode.id) : false);
@@ -228,8 +248,10 @@
 		execution: false,
 		nodeStorage: false,
 		nodeVariables: false,
+		dependencyRequest: false,
 		// Net-level sections
 		graphSettings: true,
+		dependencyLabels: false,
 		pools: true,
 		netSettings: false,
 		storage: false,
@@ -684,7 +706,9 @@
 	{/if}
 
 	<div class="sidebar-content">
-		{#if $selectedNode && $selectedNode.data.nodeType === 'decoration'}
+		{#if $selectedEdge}
+			<EdgeProperties edge={$selectedEdge} />
+		{:else if $selectedNode && $selectedNode.data.nodeType === 'decoration'}
 			<DecorationProperties node={$selectedNode} />
 		{:else if $selectedNode}
 			<!-- General Section -->
@@ -1490,6 +1514,24 @@
 				</section>
 			{/if}
 
+			<!-- Dependency Request Section (shown when node has dep edges or dep config) -->
+			{#if $selectedNode.data.nodeType !== 'subgraph' && (nodeHasDepEdges || nodeHasDepConfig)}
+				<section class="section">
+					<button
+						class="section-header"
+						onclick={() => toggleSection('dependencyRequest')}
+					>
+						<span class="section-title">Dependency Request</span>
+						<span class="section-toggle">{sectionsOpen.dependencyRequest ? '−' : '+'}</span>
+					</button>
+					{#if sectionsOpen.dependencyRequest}
+						<div class="section-content">
+							<DependencyRequestSection node={$selectedNode} />
+						</div>
+					{/if}
+				</section>
+			{/if}
+
 			<!-- Actions Panel (for all node types) -->
 			<ActionsPanel
 				onOpenSettings={() => showProjectSettings = true}
@@ -1612,6 +1654,24 @@
 					</div>
 				{/if}
 			</section>
+
+			<!-- Dependency Labels Section -->
+			{#if $dependencyEdges.length > 0}
+				<section class="section">
+					<button
+						class="section-header"
+						onclick={() => toggleSection('dependencyLabels')}
+					>
+						<span class="section-title">Dependency Labels</span>
+						<span class="section-toggle">{sectionsOpen.dependencyLabels ? '−' : '+'}</span>
+					</button>
+					{#if sectionsOpen.dependencyLabels}
+						<div class="section-content">
+							<DependencyLabelsSection />
+						</div>
+					{/if}
+				</section>
+			{/if}
 
 			<!-- Pools Section -->
 			<section class="section">

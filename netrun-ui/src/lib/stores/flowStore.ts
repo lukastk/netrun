@@ -147,7 +147,12 @@ export type FlowNode = Node<AnyNodeData>;
 export type NetrunNode = Node<NetrunNodeData, 'netrunNode'>;
 export type SubgraphNode = Node<SubgraphNodeData, 'subgraphNode'>;
 export type DecorationNode = Node<DecorationNodeData, 'decorationNode'>;
-export type NetrunEdge = Edge;
+// Data attached to edges (e.g. dependency flag)
+export interface NetrunEdgeData extends Record<string, unknown> {
+	dependency?: boolean;
+}
+
+export type NetrunEdge = Edge<NetrunEdgeData>;
 
 // Expanded subgraph child node ID helpers
 const CHILD_SEPARATOR = '::';
@@ -325,6 +330,73 @@ export const selectedNode = derived(
 	selectedNodes,
 	($selectedNodes) => $selectedNodes.length === 1 ? $selectedNodes[0] : null
 );
+
+// Derived: selected edge (single edge selection for sidebar)
+export const selectedEdge = derived(
+	[allVisibleEdges, selectedEdgeIds],
+	([$allVisibleEdges, $selectedEdgeIds]) => {
+		if ($selectedEdgeIds.size !== 1) return null;
+		const edgeId = [...$selectedEdgeIds][0];
+		return $allVisibleEdges.find(e => e.id === edgeId) ?? null;
+	}
+);
+
+// Derived: all dependency edges in the current graph
+export const dependencyEdges = derived(edges, ($edges) =>
+	$edges.filter(e => (e.data as NetrunEdgeData | undefined)?.dependency)
+);
+
+// Derived: all unique dependency labels (from node dependency_request configs)
+export const dependencyLabels = derived(nodes, ($nodes) => {
+	const labels = new Map<string, string[]>();
+	for (const node of $nodes) {
+		const config = (node.data._config || {}) as Record<string, unknown>;
+		const depReq = config.dependency_request as Record<string, unknown> | undefined;
+		if (!depReq) continue;
+		const label = (depReq.label as string) || '';
+		if (!labels.has(label)) labels.set(label, []);
+		labels.get(label)!.push(node.data.label);
+	}
+	return labels;
+});
+
+// Cascade highlight state (set when user clicks a dependency edge)
+export interface CascadeHighlightState {
+	sourceNodes: Set<string>;
+	visitedNodes: Set<string>;
+	visitedEdges: Set<string>;
+	unstartableNodes: Set<string>;
+}
+export const cascadeHighlight = writable<CascadeHighlightState | null>(null);
+
+/**
+ * Update the data bag on a single edge. Pushes history.
+ */
+export function updateEdgeData(edgeId: string, data: Partial<NetrunEdgeData>) {
+	const tab = get(activeTab);
+	if (!tab) return;
+
+	pushHistory();
+	updateActiveTab({
+		edges: tab.edges.map(edge =>
+			edge.id === edgeId
+				? { ...edge, data: { ...(edge.data || {}), ...data } as NetrunEdgeData }
+				: edge
+		),
+	});
+}
+
+/**
+ * Toggle the dependency flag on an edge.
+ */
+export function toggleEdgeDependency(edgeId: string) {
+	const tab = get(activeTab);
+	if (!tab) return;
+	const edge = tab.edges.find(e => e.id === edgeId);
+	if (!edge) return;
+	const current = (edge.data as NetrunEdgeData | undefined)?.dependency ?? false;
+	updateEdgeData(edgeId, { dependency: !current });
+}
 
 /**
  * Select a node by its label/name
@@ -2178,6 +2250,7 @@ function convertApiEdges(apiEdges: UIEdge[]): NetrunEdge[] {
 		sourceHandle: edge.sourceHandle,
 		targetHandle: edge.targetHandle,
 		type: edge.type || 'smoothstep',
+		...(edge.data ? { data: edge.data as NetrunEdgeData } : {}),
 	}));
 }
 
