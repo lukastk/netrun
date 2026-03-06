@@ -4,6 +4,7 @@ __all__ = ['EdgeInfo', 'NodeInfo']
 
 # %% pts/netrun/06_net/01_net/01_info.pct.py 3
 from typing import Any, TYPE_CHECKING
+from collections.abc import Callable
 
 import netrun_sim
 
@@ -318,6 +319,30 @@ class NodeInfo:
     def is_cache_enabled(self) -> bool:
         """Whether caching is enabled for this node."""
         return self._net._cache_store.is_cache_enabled(self._name)
+
+    # --- Epoch lifecycle callbacks ---
+
+    def on_epoch_start(self, callback: Callable) -> Callable[[], None]:
+        """Register a callback that fires when an epoch starts for this node.
+
+        The callback receives (node_name: str, epoch_id: str).
+        Both sync and async callbacks are supported.
+
+        Returns:
+            A callable that removes the callback when called.
+        """
+        return self._net._register_epoch_callback("start", callback, node_name=self._name)
+
+    def on_epoch_end(self, callback: Callable) -> Callable[[], None]:
+        """Register a callback that fires when an epoch ends for this node.
+
+        The callback receives (node_name: str, epoch_id: str, record: EpochRecord).
+        Both sync and async callbacks are supported.
+
+        Returns:
+            A callable that removes the callback when called.
+        """
+        return self._net._register_epoch_callback("end", callback, node_name=self._name)
 
     def __repr__(self) -> str:
         return f"NodeInfo(name={self._name!r})"

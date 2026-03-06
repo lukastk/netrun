@@ -311,6 +311,11 @@ class Net:
             for node_name, port_name in queue_config.ports:
                 self._port_to_queue[(node_name, port_name)] = queue_name
 
+        # Epoch lifecycle callbacks: list of (node_name_filter, callback)
+        # node_name_filter=None means fire for all nodes
+        self._on_epoch_start_callbacks: list[tuple[str | None, Callable]] = []
+        self._on_epoch_end_callbacks: list[tuple[str | None, Callable]] = []
+
         # Cache store
         storage_config = self._config_resolved.storage
         cache_config = storage_config.cache if storage_config else None
@@ -1691,11 +1696,13 @@ class Net:
             self._netsim.do_action(netrun_sim.NetAction.start_epoch(epoch_id))
             self._epochs[epoch_id].started_at = get_timestamp_utc()
             self._emit_epoch_signal(epoch_id, node_name, "epoch_started")
+            await self._fire_epoch_start(node_name, epoch_id)
             # Emit epoch_finished signal even for no-exec-func nodes
             self._emit_epoch_signal(epoch_id, node_name, "epoch_finished")
             self._netsim.do_action(netrun_sim.NetAction.finish_epoch(epoch_id))
             self._epochs[epoch_id].ended_at = get_timestamp_utc()
             self._epochs[epoch_id].state = netrun_sim.EpochState.Finished
+            await self._fire_epoch_end(node_name, epoch_id)
             return None
 
         # Deferred startup: call start_node_func on first epoch if not yet started
@@ -1724,6 +1731,7 @@ class Net:
                 record.was_cancelled = True
                 record.ended_at = get_timestamp_utc()
                 record.destroyed_packets = list(response.destroyed_packets)
+                await self._fire_epoch_end(node_name, epoch_id)
 
                 error = MaxEpochsExceeded(node_name, effective_max_epochs)
                 propagate, print_exc = self._get_effective_exception_config(config)
@@ -1791,6 +1799,7 @@ class Net:
         self._epochs[epoch_id].state = netrun_sim.EpochState.Running
         self._running_epochs.add(epoch_id)
         self._emit_epoch_signal(epoch_id, node_name, "epoch_started")
+        await self._fire_epoch_start(node_name, epoch_id)
 
         try:
             return await self._execute_epoch_with_retry(
@@ -1919,6 +1928,7 @@ class Net:
             record.was_cancelled = True
             record.ended_at = get_timestamp_utc()
             record.destroyed_packets = list(response.destroyed_packets)
+            await self._fire_epoch_end(node_name, epoch_id)
             return execution_result
 
         # Success - commit deferred actions
@@ -1948,6 +1958,7 @@ class Net:
         self._netsim.do_action(netrun_sim.NetAction.finish_epoch(epoch_id))
         self._epochs[epoch_id].ended_at = get_timestamp_utc()
         self._epochs[epoch_id].state = netrun_sim.EpochState.Finished
+        await self._fire_epoch_end(node_name, epoch_id)
 
         return execution_result
 
@@ -1974,6 +1985,7 @@ class Net:
         self._epochs[epoch_id].started_at = get_timestamp_utc()
         self._epochs[epoch_id].state = netrun_sim.EpochState.Running
         self._emit_epoch_signal(epoch_id, node_name, "epoch_started")
+        await self._fire_epoch_start(node_name, epoch_id)
 
         # Consume input packets
         for port_name in cached.consumed_input_ports:
@@ -2020,6 +2032,7 @@ class Net:
         self._netsim.do_action(netrun_sim.NetAction.finish_epoch(epoch_id))
         self._epochs[epoch_id].ended_at = get_timestamp_utc()
         self._epochs[epoch_id].state = netrun_sim.EpochState.Finished
+        await self._fire_epoch_end(node_name, epoch_id)
 
         # Return a synthetic result
         from netrun.net._net._context import DeferredActionQueue
@@ -2171,6 +2184,7 @@ class Net:
         self._epochs[epoch_id].started_at = get_timestamp_utc()
         self._epochs[epoch_id].state = netrun_sim.EpochState.Running
         self._emit_epoch_signal(epoch_id, node_name, "epoch_started")
+        await self._fire_epoch_start(node_name, epoch_id)
 
         # Consume input packets
         for port_name in manifest.consumed_input_ports:
@@ -2291,6 +2305,7 @@ class Net:
         self._netsim.do_action(netrun_sim.NetAction.finish_epoch(epoch_id))
         self._epochs[epoch_id].ended_at = get_timestamp_utc()
         self._epochs[epoch_id].state = netrun_sim.EpochState.Finished
+        await self._fire_epoch_end(node_name, epoch_id)
 
         # Return a synthetic result
         from netrun.net._net._context import DeferredActionQueue
@@ -2561,6 +2576,7 @@ class Net:
             record.was_cancelled = True
             record.ended_at = get_timestamp_utc()
             record.destroyed_packets = list(response.destroyed_packets)
+            await self._fire_epoch_end(node_name, epoch_id)
 
             # Store in dead letter queue
             self._dead_letter_queue.append({
@@ -3571,6 +3587,84 @@ class Net:
                     print(f"  {edge.packet_count} packets in transit")
         """
         return [EdgeInfo(self, edge) for edge in self._graph.edges()]
+
+    # --- Epoch lifecycle callbacks ---
+
+    def on_epoch_start(self, callback: Callable) -> Callable[[], None]:
+        """Register a callback that fires when any epoch starts.
+
+        The callback receives (node_name: str, epoch_id: str).
+        Both sync and async callbacks are supported.
+
+        Returns:
+            A callable that removes the callback when called.
+        """
+        return self._register_epoch_callback("start", callback)
+
+    def on_epoch_end(self, callback: Callable) -> Callable[[], None]:
+        """Register a callback that fires when any epoch ends.
+
+        The callback receives (node_name: str, epoch_id: str, record: EpochRecord).
+        Both sync and async callbacks are supported.
+
+        Returns:
+            A callable that removes the callback when called.
+        """
+        return self._register_epoch_callback("end", callback)
+
+    def _register_epoch_callback(
+        self, event: str, callback: Callable, node_name: str | None = None,
+    ) -> Callable[[], None]:
+        """Register an epoch lifecycle callback.
+
+        Args:
+            event: "start" or "end".
+            callback: The callback function.
+            node_name: If set, only fire for this node. None means all nodes.
+
+        Returns:
+            A callable that removes the callback when called.
+        """
+        entry = (node_name, callback)
+        if event == "start":
+            self._on_epoch_start_callbacks.append(entry)
+        else:
+            self._on_epoch_end_callbacks.append(entry)
+
+        def remove():
+            if event == "start":
+                try:
+                    self._on_epoch_start_callbacks.remove(entry)
+                except ValueError:
+                    pass
+            else:
+                try:
+                    self._on_epoch_end_callbacks.remove(entry)
+                except ValueError:
+                    pass
+
+        return remove
+
+    async def _fire_epoch_start(self, node_name: str, epoch_id: str) -> None:
+        """Fire all registered on_epoch_start callbacks."""
+        for filter_name, cb in self._on_epoch_start_callbacks:
+            if filter_name is not None and filter_name != node_name:
+                continue
+            if asyncio.iscoroutinefunction(cb):
+                await cb(node_name, epoch_id)
+            else:
+                cb(node_name, epoch_id)
+
+    async def _fire_epoch_end(self, node_name: str, epoch_id: str) -> None:
+        """Fire all registered on_epoch_end callbacks."""
+        record = self._epochs[epoch_id]
+        for filter_name, cb in self._on_epoch_end_callbacks:
+            if filter_name is not None and filter_name != node_name:
+                continue
+            if asyncio.iscoroutinefunction(cb):
+                await cb(node_name, epoch_id, record)
+            else:
+                cb(node_name, epoch_id, record)
 
     async def run_to_targets(
         self,
