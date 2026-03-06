@@ -356,7 +356,10 @@ async def load_subgraph(request: SubgraphLoadRequest) -> SubgraphLoadResponse:
                 )
 
             content = path.read_text()
-            data = json.loads(content)
+            if path.name.endswith('.netrun.toml'):
+                data = tomli.loads(content)
+            else:
+                data = json.loads(content)
 
             # Extract graph data (could be GraphConfig or NetConfig format)
             graph_data, _ = extract_graph_and_extras(data)
