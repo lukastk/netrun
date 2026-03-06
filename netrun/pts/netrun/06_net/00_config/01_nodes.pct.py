@@ -708,6 +708,7 @@ class NodeConfig(EnvVarResolvableModel):
                 in_salvo_conditions=merged_in_salvo,
                 out_salvo_conditions=merged_out_salvo,
                 execution_config=merged_exec_config,
+                dependency_request=self.dependency_request,
                 extra=merged_extra,
                 factory=factory_path,
                 factory_args=self.factory_args,
@@ -1125,6 +1126,7 @@ class SubgraphConfig(EnvVarResolvableModel):
                     port_type=target.port_type,
                     port_name=target.port_name,
                 ),
+                dependency=edge.dependency,
             )
             prefixed_edges.append(prefixed_edge)
 
