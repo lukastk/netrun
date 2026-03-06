@@ -838,7 +838,7 @@ async def serve_image(
     image_path = (root / path).resolve()
 
     # Security: ensure the resolved path is within the project root
-    if not str(image_path).startswith(str(root)):
+    if not image_path.is_relative_to(root):
         raise HTTPException(status_code=403, detail="Path traversal not allowed")
 
     if not image_path.exists():
