@@ -73,7 +73,8 @@ repo/
 │   │   │   ├── graph.rs    # Graph topology types
 │   │   │   ├── graph_tests.rs  # Graph tests (separate file)
 │   │   │   ├── net.rs      # Network runtime state
-│   │   │   └── net_tests.rs    # Net tests (separate file)
+│   │   │   ├── net_tests.rs    # Net tests (separate file)
+│   │   │   └── test_fixtures.rs # Test helpers (feature-gated)
 │   │   ├── tests/          # Integration tests
 │   │   └── examples/       # Rust examples
 │   └── python/             # Python bindings (PyO3)
@@ -600,10 +601,13 @@ External code controls the network through actions:
 
 Actions produce events that track what happened:
 
-- `PacketCreated`, `PacketConsumed`
+- `PacketCreated`, `PacketConsumed`, `PacketDestroyed`, `PacketMoved`, `PacketOrphaned`
 - `EpochCreated`, `EpochStarted`, `EpochFinished`, `EpochCancelled`
-- `PacketMoved`
 - `InputSalvoTriggered`, `OutputSalvoTriggered`
+
+### Undo Support
+
+Actions can be reversed via `net.undo_action(action, events)`, enabling undo/redo workflows. Requires both the original action and the events it produced.
 
 ## Typical Usage Pattern
 
