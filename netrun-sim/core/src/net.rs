@@ -859,7 +859,8 @@ impl NetSim {
                     label.clone(),
                     RequestCreatedSource::OnNoSalvoTriggered,
                 ));
-                self._pending_requests.push(PendingRequest { node_name, label });
+                self._pending_requests
+                    .push(PendingRequest { node_name, label });
             }
         }
 
@@ -902,20 +903,18 @@ impl NetSim {
                         }
                     }
                     Err(crate::graph::CascadeError::CycleDetected { node_name }) => {
-                        return NetActionResponse::Error(
-                            NetActionError::RequestCycleDetected { node_name },
-                        );
+                        return NetActionResponse::Error(NetActionError::RequestCycleDetected {
+                            node_name,
+                        });
                     }
                     Err(crate::graph::CascadeError::UnconnectedInputPort {
                         node_name,
                         port_name,
                     }) => {
-                        return NetActionResponse::Error(
-                            NetActionError::RequestUnconnectedPort {
-                                node_name,
-                                port_name,
-                            },
-                        );
+                        return NetActionResponse::Error(NetActionError::RequestUnconnectedPort {
+                            node_name,
+                            port_name,
+                        });
                     }
                 }
             }
@@ -2110,9 +2109,11 @@ impl NetSim {
                 match source {
                     RequestCreatedSource::External => {
                         // Pop the last matching pending request (LIFO)
-                        if let Some(pos) = self._pending_requests.iter().rposition(|r| {
-                            r.node_name == *node_name && r.label == *label
-                        }) {
+                        if let Some(pos) = self
+                            ._pending_requests
+                            .iter()
+                            .rposition(|r| r.node_name == *node_name && r.label == *label)
+                        {
                             self._pending_requests.remove(pos);
                         }
                         Ok(())

@@ -517,10 +517,11 @@ fn test_dependency_edge_not_in_graph_is_invalid() {
     // Create graph without the edge but mark it as dependency edge
     let graph = Graph::new(nodes, vec![]).with_dependency_edges(vec![e]);
     let errors = graph.validate();
-    assert!(errors.iter().any(|e| matches!(
-        e,
-        GraphValidationError::DependencyEdgeNotInGraph { .. }
-    )));
+    assert!(
+        errors
+            .iter()
+            .any(|e| matches!(e, GraphValidationError::DependencyEdgeNotInGraph { .. }))
+    );
 }
 
 #[test]
@@ -639,7 +640,8 @@ fn test_is_dependency_edge() {
     ];
     let e1 = make_edge("A", "out", "B", "in");
     let e2 = make_edge("B", "out", "C", "in");
-    let graph = Graph::new(nodes, vec![e1.clone(), e2.clone()]).with_dependency_edges(vec![e2.clone()]);
+    let graph =
+        Graph::new(nodes, vec![e1.clone(), e2.clone()]).with_dependency_edges(vec![e2.clone()]);
 
     assert!(!graph.is_dependency_edge(&e1));
     assert!(graph.is_dependency_edge(&e2));

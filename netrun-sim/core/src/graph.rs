@@ -261,7 +261,9 @@ pub enum GraphValidationError {
     #[error("dependency edge {edge} is not in the graph's edge set")]
     DependencyEdgeNotInGraph { edge: Edge },
     /// Node has DependencyRequestConfig but no dependency edges on its input ports
-    #[error("node '{node_name}' has dependency_request_config but no dependency edges on its input ports")]
+    #[error(
+        "node '{node_name}' has dependency_request_config but no dependency edges on its input ports"
+    )]
     DependencyRequestConfigWithoutDependencyEdges { node_name: NodeName },
 }
 
