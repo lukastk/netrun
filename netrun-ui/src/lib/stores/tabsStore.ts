@@ -144,9 +144,7 @@ export function switchTab(tabId: string): void {
 export function switchToTabIndex(index: number): void {
 	const tabList = get(tabs);
 	if (index >= 0 && index < tabList.length) {
-		const targetTab = tabList[index];
-		activeTabId.set(targetTab.id);
-		updateUrlWithFile(targetTab.filePath);
+		switchTab(tabList[index].id);
 	}
 }
 
@@ -154,33 +152,23 @@ export function switchToTabIndex(index: number): void {
 export function switchToNextTab(): void {
 	const tabList = get(tabs);
 	const currentIndex = get(activeTabIndex);
-	let targetTab: TabState;
 	if (currentIndex < tabList.length - 1) {
-		targetTab = tabList[currentIndex + 1];
+		switchTab(tabList[currentIndex + 1].id);
 	} else if (tabList.length > 0) {
 		// Wrap around to first tab
-		targetTab = tabList[0];
-	} else {
-		return;
+		switchTab(tabList[0].id);
 	}
-	activeTabId.set(targetTab.id);
-	updateUrlWithFile(targetTab.filePath);
 }
 
 export function switchToPreviousTab(): void {
 	const tabList = get(tabs);
 	const currentIndex = get(activeTabIndex);
-	let targetTab: TabState;
 	if (currentIndex > 0) {
-		targetTab = tabList[currentIndex - 1];
+		switchTab(tabList[currentIndex - 1].id);
 	} else if (tabList.length > 0) {
 		// Wrap around to last tab
-		targetTab = tabList[tabList.length - 1];
-	} else {
-		return;
+		switchTab(tabList[tabList.length - 1].id);
 	}
-	activeTabId.set(targetTab.id);
-	updateUrlWithFile(targetTab.filePath);
 }
 
 // Close a tab by ID
