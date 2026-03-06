@@ -577,7 +577,11 @@ export function deleteExpandedChildren(
 
 		const subgraphData = parentNode.data as SubgraphNodeData;
 		const config = subgraphData._subgraphConfig;
-		if (!config || isFileReferencedConfig(config)) continue;
+		if (!config || isFileReferencedConfig(config)) {
+			// Touch expandedByTab to trigger expandedView recompute for file-referenced subgraphs
+			setTabExpandedSet(tabId, new Set(getTabExpandedSet(tabId)));
+			continue;
+		}
 
 		const configNodes = (config.nodes as Array<Record<string, unknown>> | undefined) || [];
 		const configEdges = (config.edges as Array<Record<string, unknown>> | undefined) || [];
@@ -655,7 +659,11 @@ export function addExpandedChildEdge(connection: {
 
 	const subgraphData = parentNode.data as SubgraphNodeData;
 	const config = subgraphData._subgraphConfig;
-	if (!config || isFileReferencedConfig(config)) return;
+	if (!config || isFileReferencedConfig(config)) {
+		// Touch expandedByTab to trigger expandedView recompute for file-referenced subgraphs
+		setTabExpandedSet(tabId, new Set(getTabExpandedSet(tabId)));
+		return;
+	}
 
 	const configEdges = (config.edges as Array<Record<string, unknown>> | undefined) || [];
 
