@@ -398,6 +398,10 @@ def graph_config_to_ui(
             "type": "smoothstep",
         }
 
+        # Preserve dependency flag
+        if edge.get("dependency", False):
+            ui_edge["data"] = {"dependency": True}
+
         ui_edges.append(ui_edge)
 
     return ui_nodes, ui_edges
@@ -536,9 +540,11 @@ def _ui_to_graph_config_model(
         target_name = edge["target"]
         source_handle = edge.get("sourceHandle", "out")
         target_handle = edge.get("targetHandle", "in")
+        dependency = edge.get("data", {}).get("dependency", False)
         config_edges.append(_EdgeConfig(
             source_str=f"{source_name}.{source_handle}",
             target_str=f"{target_name}.{target_handle}",
+            dependency=dependency,
         ))
 
     return _GraphConfig(

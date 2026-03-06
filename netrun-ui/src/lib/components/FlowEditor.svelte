@@ -38,9 +38,13 @@
 		isExpandedChildNode,
 		isExposedPortEdge,
 		getParentSubgraphId,
+		cascadeHighlight,
+		toggleEdgeDependency,
 		type NetrunNodeData,
+		type NetrunEdgeData,
 		type NetrunEdge
 	} from '$lib/stores/flowStore';
+	import { analyzeDependencyCascade, analyzeDependencyCascadeFromNode } from '$lib/utils/dependencyAnalysis';
 	import {
 		expandedView,
 		updateExpandedChildPosition,
@@ -131,16 +135,26 @@
 	);
 
 	const edgesWithSelection = derived(
-		[expandedView, selectedEdgeIds, edgeStyle, edgeMarkers],
-		([{ allEdges }, $selectedEdgeIds, $edgeStyle, $edgeMarkers]) => {
+		[expandedView, selectedEdgeIds, edgeStyle, edgeMarkers, cascadeHighlight],
+		([{ allEdges }, $selectedEdgeIds, $edgeStyle, $edgeMarkers, $cascade]) => {
 			const markers = getMarkers($edgeMarkers);
-			return allEdges.map(edge => ({
-				...edge,
-				type: $edgeStyle,
-				markerStart: markers.markerStart,
-				markerEnd: markers.markerEnd,
-				selected: $selectedEdgeIds.has(edge.id)
-			}));
+			return allEdges.map(edge => {
+				const isDep = (edge.data as NetrunEdgeData | undefined)?.dependency === true;
+				const isCascadeEdge = $cascade?.visitedEdges.has(edge.id) ?? false;
+				const classes: string[] = [];
+				if (isDep) classes.push('dependency-edge');
+				if (isCascadeEdge && !isDep) classes.push('cascade-edge');
+				return {
+					...edge,
+					type: $edgeStyle,
+					markerStart: markers.markerStart,
+					markerEnd: markers.markerEnd,
+					selected: $selectedEdgeIds.has(edge.id),
+					class: classes.join(' ') || undefined,
+					// Wider click target for dependency edges (dashed lines are visually thinner)
+					...(isDep ? { interactionWidth: 30 } : {}),
+				};
+			});
 		}
 	);
 
@@ -322,6 +336,11 @@
 	function onSelectionChange(params: { nodes: Node[]; edges: Edge[] }) {
 		selectedNodeIds.set(new Set(params.nodes.map(n => n.id)));
 		selectedEdgeIds.set(new Set(params.edges.map(e => e.id)));
+		// Clear cascade when clicking pane (nothing selected)
+		// Node/edge click handlers manage cascade themselves
+		if (params.nodes.length === 0 && params.edges.length === 0) {
+			cascadeHighlight.set(null);
+		}
 	}
 
 	// Handle node drag end - sync positions to store and push history
@@ -350,6 +369,8 @@
 	// Handle context menu on pane
 	function onPaneContextMenu(event: { event: MouseEvent }) {
 		event.event.preventDefault();
+		cascadeHighlight.set(null);
+		closeEdgeContextMenu();
 	}
 
 	// Handle context menu on node
@@ -357,12 +378,56 @@
 		event.event.preventDefault();
 	}
 
+	// Handle click on edge (selection + dependency cascade highlighting)
+	function onEdgeClick(event: { edge: Edge; event: MouseEvent }) {
+		const edge = event.edge;
+
+		// Ensure edge is selected in our store (SvelteFlow may not fire onselectionchange for edge clicks)
+		selectedEdgeIds.set(new Set([edge.id]));
+		selectedNodeIds.set(new Set());
+
+		if ((edge.data as NetrunEdgeData | undefined)?.dependency) {
+			const result = analyzeDependencyCascade(edge, get(edges));
+			cascadeHighlight.set(result);
+		} else {
+			cascadeHighlight.set(null);
+		}
+	}
+
+	// Edge context menu state
+	let edgeContextMenu = $state<{ x: number; y: number; edge: Edge } | null>(null);
+
+	function onEdgeContextMenu(event: { edge: Edge; event: MouseEvent }) {
+		event.event.preventDefault();
+		edgeContextMenu = {
+			x: event.event.clientX,
+			y: event.event.clientY,
+			edge: event.edge,
+		};
+	}
+
+	function closeEdgeContextMenu() {
+		edgeContextMenu = null;
+	}
+
+	function handleEdgeContextAction(action: string) {
+		if (!edgeContextMenu) return;
+		const edge = edgeContextMenu.edge;
+		closeEdgeContextMenu();
+
+		if (action === 'toggle-dependency') {
+			toggleEdgeDependency(edge.id);
+		} else if (action === 'delete') {
+			deleteEdges([edge.id]);
+		}
+	}
+
 	// Double-click detection for nodes
 	let lastClickTime = 0;
 	let lastClickedNodeId: string | null = null;
 	const DOUBLE_CLICK_THRESHOLD = 300; // ms
 
-	// Handle click on node (with double-click detection)
+	// Handle click on node (with double-click detection + dependency cascade)
 	async function onNodeClick(event: { node: Node; event: MouseEvent | TouchEvent }) {
 		const now = Date.now();
 		const nodeId = event.node.id;
@@ -385,6 +450,14 @@
 			// Single click - record for potential double-click
 			lastClickedNodeId = nodeId;
 			lastClickTime = now;
+		}
+
+		// Highlight upstream dependency sources when clicking a node
+		const result = analyzeDependencyCascadeFromNode(nodeId, get(edges));
+		if (result) {
+			cascadeHighlight.set(result);
+		} else {
+			cascadeHighlight.set(null);
 		}
 	}
 
@@ -444,6 +517,8 @@
 		onpanecontextmenu={onPaneContextMenu}
 		onnodecontextmenu={onNodeContextMenu}
 		onnodeclick={onNodeClick}
+		onedgeclick={onEdgeClick}
+		onedgecontextmenu={onEdgeContextMenu}
 		{isValidConnection}
 		fitView
 		{fitViewOptions}
@@ -452,7 +527,6 @@
 			type: $edgeStyle,
 			animated: false,
 			...getMarkers($edgeMarkers),
-			style: 'stroke-width: 2px;'
 		}}
 		connectionLineType={getConnectionLineType($edgeStyle)}
 		deleteKey={['Delete', 'Backspace']}
@@ -467,6 +541,11 @@
 		<Controls />
 		<MiniMap
 			nodeColor={(node) => {
+				const cascade = get(cascadeHighlight);
+				if (cascade) {
+					if (cascade.sourceNodes.has(node.id)) return '#a78bfa';
+					if (cascade.visitedNodes.has(node.id)) return '#7c3aed';
+				}
 				if (node.data?.nodeType === 'decoration') return '#6b7280';
 				if (node.data?.nodeType === 'subgraph') return '#22c55e';
 				if (node.data?.nodeType === 'factory') return '#7c3aed';
@@ -477,6 +556,26 @@
 			zoomable
 		/>
 	</SvelteFlow>
+
+	{#if edgeContextMenu}
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="context-overlay" onclick={closeEdgeContextMenu} oncontextmenu={(e) => { e.preventDefault(); closeEdgeContextMenu(); }}>
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div
+				class="context-menu"
+				style="left: {edgeContextMenu.x}px; top: {edgeContextMenu.y}px;"
+				onclick={(e) => e.stopPropagation()}
+			>
+				<button class="context-item" onclick={() => handleEdgeContextAction('toggle-dependency')}>
+					{(edgeContextMenu.edge.data as NetrunEdgeData | undefined)?.dependency ? 'Remove Dependency' : 'Make Dependency'}
+				</button>
+				<div class="context-separator"></div>
+				<button class="context-item danger" onclick={() => handleEdgeContextAction('delete')}>
+					Delete Edge
+				</button>
+			</div>
+		</div>
+	{/if}
 </div>
 
 <style>
@@ -501,6 +600,30 @@
 
 	:global(.svelte-flow__edge.selected .svelte-flow__edge-path) {
 		stroke: var(--accent-color, #3b82f6);
+	}
+
+	/* Dependency edge styling */
+	:global(.svelte-flow__edge.dependency-edge .svelte-flow__edge-path) {
+		stroke: #a78bfa;
+		stroke-width: 2;
+	}
+
+	:global(.svelte-flow__edge.dependency-edge.selected .svelte-flow__edge-path) {
+		stroke: #c4b5fd;
+	}
+
+	:global(.svelte-flow__edge.dependency-edge marker path) {
+		fill: #a78bfa;
+	}
+
+	:global(.svelte-flow__edge.dependency-edge.selected marker path) {
+		fill: #c4b5fd;
+	}
+
+	/* Cascade-visited (non-dependency) edge styling */
+	:global(.svelte-flow__edge.cascade-edge .svelte-flow__edge-path) {
+		stroke: #a78bfa;
+		opacity: 0.5;
 	}
 
 	/* Arrow marker styling */
@@ -532,6 +655,50 @@
 		background: var(--bg-secondary, #242424);
 		border: 1px solid var(--border-color, #404040);
 		border-radius: 4px;
+	}
+
+	/* Context menu */
+	.context-overlay {
+		position: fixed;
+		inset: 0;
+		z-index: 1000;
+	}
+
+	.context-menu {
+		position: fixed;
+		background: var(--bg-secondary, #242424);
+		border: 1px solid var(--border-color, #404040);
+		border-radius: 6px;
+		padding: 4px 0;
+		min-width: 160px;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+		z-index: 1001;
+	}
+
+	.context-item {
+		display: block;
+		width: 100%;
+		padding: 6px 12px;
+		background: none;
+		border: none;
+		color: var(--text-primary, #fff);
+		font-size: 12px;
+		text-align: left;
+		cursor: pointer;
+	}
+
+	.context-item:hover {
+		background: var(--bg-tertiary, #2d2d2d);
+	}
+
+	.context-item.danger {
+		color: var(--error-color, #ef4444);
+	}
+
+	.context-separator {
+		height: 1px;
+		background: var(--border-color, #404040);
+		margin: 4px 0;
 	}
 
 </style>

@@ -141,6 +141,7 @@ fn create_diamond_graph() -> Graph {
         .into(),
         in_salvo_conditions: IndexMap::new(),
         out_salvo_conditions: IndexMap::new(),
+        dependency_request_config: None,
     };
 
     // Node B: one input, one output
@@ -192,6 +193,7 @@ fn create_diamond_graph() -> Graph {
             },
         )]),
         out_salvo_conditions: IndexMap::new(),
+        dependency_request_config: None,
     };
 
     let edges = vec![
@@ -247,6 +249,7 @@ fn create_simple_node(name: &str) -> Node {
                 },
             },
         )]),
+        dependency_request_config: None,
     }
 }
 

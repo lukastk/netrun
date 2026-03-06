@@ -8,12 +8,16 @@
 
 use crate::_utils::get_utc_now;
 use crate::graph::{
-    Edge, Graph, MaxSalvos, NodeName, PacketCount, Port, PortName, PortRef, PortSlotSpec, PortType,
-    SalvoConditionName, SalvoConditionTerm, evaluate_salvo_condition,
+    DependencyRequestTrigger, Edge, Graph, MaxSalvos, NodeName, PacketCount, Port, PortName,
+    PortRef, PortSlotSpec, PortType, SalvoConditionName, SalvoConditionTerm,
+    evaluate_salvo_condition,
 };
 use indexmap::IndexSet;
 use std::collections::{HashMap, HashSet};
 use ulid::Ulid;
+
+/// Salvo condition name for request-created epochs.
+pub const REQUEST_SALVO_CONDITION: &str = "__request__";
 
 /// Unique identifier for a packet (ULID).
 pub type PacketID = Ulid;
@@ -133,6 +137,26 @@ impl Epoch {
 /// Timestamp in milliseconds (UTC).
 pub type EventUTC = i128;
 
+/// How a request was created — used for undo to know which state to reverse.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RequestCreatedSource {
+    /// From a `CreateRequest` action — pushed to `_pending_requests`.
+    External,
+    /// From RunStep Phase 2b on_startup — set `_startup_requests_sent = true`.
+    OnStartup,
+    /// From RunStep Phase 2b on_no_salvo_triggered — spent `_request_tokens[node]`.
+    OnNoSalvoTriggered,
+}
+
+/// A pending packet request waiting to be resolved during RunStep.
+#[derive(Debug, Clone)]
+pub struct PendingRequest {
+    /// The node whose dependency edges initiated the request.
+    pub node_name: NodeName,
+    /// Label for deduplication (same label + same source = one epoch).
+    pub label: String,
+}
+
 /// An action that can be performed on the network.
 ///
 /// All mutations to [`NetSim`] state must go through these actions via [`NetSim::do_action`].
@@ -174,6 +198,9 @@ pub enum NetAction {
     /// - Cannot move packets into or out of Running epochs (only Startable allowed)
     /// - Input ports are checked for capacity
     TransportPacketToLocation(PacketID, PacketLocation),
+    /// Register a pending packet request on a node with a given label.
+    /// The request will be resolved during the next RunStep's Phase 3.
+    CreateRequest(NodeName, String),
 }
 
 /// Errors that can occur when undoing a NetAction
@@ -308,6 +335,21 @@ pub enum NetActionError {
     /// Edge does not exist in the graph
     #[error("edge not found: {edge}")]
     EdgeNotFound { edge: Edge },
+
+    /// Cycle detected during request cascade
+    #[error("request cascade cycle detected at node '{node_name}'")]
+    RequestCycleDetected { node_name: NodeName },
+
+    /// Unconnected input port encountered during request cascade
+    #[error("request cascade reached unconnected input port '{port_name}' on node '{node_name}'")]
+    RequestUnconnectedPort {
+        node_name: NodeName,
+        port_name: PortName,
+    },
+
+    /// Request targets a non-existent node
+    #[error("request targets non-existent node '{node_name}'")]
+    RequestNodeNotFound { node_name: NodeName },
 }
 
 /// An event that occurred during a network action.
@@ -353,6 +395,15 @@ pub enum NetEvent {
         PortName,
         SalvoConditionName,
     ),
+    /// A packet request was created (registered as pending).
+    /// (timestamp, node_name, label, source)
+    RequestCreated(EventUTC, NodeName, String, RequestCreatedSource),
+    /// A request cascade was resolved, identifying source nodes.
+    /// (timestamp, source_nodes, label)
+    RequestCascadeResolved(EventUTC, Vec<NodeName>, String),
+    /// An epoch was created at a source node as a result of a request cascade.
+    /// (timestamp, epoch_id, source_node_name, label)
+    RequestEpochCreated(EventUTC, EpochID, NodeName, String),
 }
 
 /// Data returned by a successful network action.
@@ -404,6 +455,9 @@ pub struct NetSim {
     _epochs: HashMap<EpochID, Epoch>,
     _startable_epochs: HashSet<EpochID>,
     _node_to_epochs: HashMap<NodeName, Vec<EpochID>>,
+    _pending_requests: Vec<PendingRequest>,
+    _request_tokens: HashMap<NodeName, bool>,
+    _startup_requests_sent: bool,
 }
 
 impl NetSim {
@@ -443,6 +497,18 @@ impl NetSim {
         // Note: Output port locations are created per-epoch when epochs are created
         // Note: Node locations (inside epochs) are created when epochs are created
 
+        // Initialize request tokens for nodes with OnNoSalvoTriggered trigger
+        let mut request_tokens: HashMap<NodeName, bool> = HashMap::new();
+        for (node_name, node) in graph.nodes() {
+            if let Some(config) = &node.dependency_request_config
+                && config
+                    .triggers
+                    .contains(&DependencyRequestTrigger::OnNoSalvoTriggered)
+            {
+                request_tokens.insert(node_name.clone(), true);
+            }
+        }
+
         NetSim {
             graph,
             _packets: HashMap::new(),
@@ -450,6 +516,9 @@ impl NetSim {
             _epochs: HashMap::new(),
             _startable_epochs: HashSet::new(),
             _node_to_epochs: HashMap::new(),
+            _pending_requests: Vec::new(),
+            _request_tokens: request_tokens,
+            _startup_requests_sent: false,
         }
     }
 
@@ -721,10 +790,183 @@ impl NetSim {
             }
         }
 
-        for node_name in nodes_with_input_packets {
-            let (triggered, events) = self.try_trigger_input_salvo(&node_name);
+        let mut nodes_that_triggered_salvo: HashSet<NodeName> = HashSet::new();
+        for node_name in &nodes_with_input_packets {
+            let (triggered, events) = self.try_trigger_input_salvo(node_name);
             all_events.extend(events);
             if triggered {
+                made_progress = true;
+                nodes_that_triggered_salvo.insert(node_name.clone());
+            }
+        }
+
+        // Phase 2b: Auto-request generation
+
+        // on_startup: first RunStep only (flag set only when startup nodes exist,
+        // so graphs without them skip this cheaply; undo reverses via OnStartup events)
+        if !self._startup_requests_sent {
+            let mut found_startup = false;
+            for (node_name, node) in self.graph.nodes() {
+                if let Some(config) = &node.dependency_request_config
+                    && config
+                        .triggers
+                        .contains(&DependencyRequestTrigger::OnStartup)
+                {
+                    found_startup = true;
+                    all_events.push(NetEvent::RequestCreated(
+                        get_utc_now(),
+                        node_name.clone(),
+                        config.label.clone(),
+                        RequestCreatedSource::OnStartup,
+                    ));
+                    self._pending_requests.push(PendingRequest {
+                        node_name: node_name.clone(),
+                        label: config.label.clone(),
+                    });
+                }
+            }
+            if found_startup {
+                self._startup_requests_sent = true;
+            }
+        }
+
+        // on_no_salvo_triggered: for nodes that had packets but no salvo triggered
+        {
+            let no_salvo_nodes: Vec<(NodeName, String)> = nodes_with_input_packets
+                .iter()
+                .filter(|node_name| !nodes_that_triggered_salvo.contains(*node_name))
+                .filter_map(|node_name| {
+                    let node = self.graph.nodes().get(node_name)?;
+                    let config = node.dependency_request_config.as_ref()?;
+                    if config
+                        .triggers
+                        .contains(&DependencyRequestTrigger::OnNoSalvoTriggered)
+                        && self._request_tokens.get(node_name) == Some(&true)
+                    {
+                        Some((node_name.clone(), config.label.clone()))
+                    } else {
+                        None
+                    }
+                })
+                .collect();
+
+            for (node_name, label) in no_salvo_nodes {
+                // Spend token
+                self._request_tokens.insert(node_name.clone(), false);
+                all_events.push(NetEvent::RequestCreated(
+                    get_utc_now(),
+                    node_name.clone(),
+                    label.clone(),
+                    RequestCreatedSource::OnNoSalvoTriggered,
+                ));
+                self._pending_requests
+                    .push(PendingRequest { node_name, label });
+            }
+        }
+
+        // Phase 3: Resolve pending packet requests
+        if !self._pending_requests.is_empty() {
+            let pending_requests: Vec<PendingRequest> = self._pending_requests.drain(..).collect();
+
+            // For each request, find dependency-edge input ports and cascade backward
+            // Group results by (source_node, label) for deduplication
+            let mut source_label_pairs: Vec<(NodeName, String)> = Vec::new();
+
+            for request in &pending_requests {
+                // Find input ports on this node connected via dependency edges
+                let start_ports: Vec<PortRef> = self
+                    .graph
+                    .dependency_edges()
+                    .iter()
+                    .filter(|dep_edge| dep_edge.target.node_name == request.node_name)
+                    .map(|dep_edge| dep_edge.target.clone())
+                    .collect();
+
+                if start_ports.is_empty() {
+                    continue;
+                }
+
+                // Run backward cascade
+                match self.graph.cascade_backward(&start_ports) {
+                    Ok(result) => {
+                        all_events.push(NetEvent::RequestCascadeResolved(
+                            get_utc_now(),
+                            result.source_nodes.clone(),
+                            request.label.clone(),
+                        ));
+
+                        for source_node in &result.source_nodes {
+                            let pair = (source_node.clone(), request.label.clone());
+                            if !source_label_pairs.contains(&pair) {
+                                source_label_pairs.push(pair);
+                            }
+                        }
+                    }
+                    Err(crate::graph::CascadeError::CycleDetected { node_name }) => {
+                        return NetActionResponse::Error(NetActionError::RequestCycleDetected {
+                            node_name,
+                        });
+                    }
+                    Err(crate::graph::CascadeError::UnconnectedInputPort {
+                        node_name,
+                        port_name,
+                    }) => {
+                        return NetActionResponse::Error(NetActionError::RequestUnconnectedPort {
+                            node_name,
+                            port_name,
+                        });
+                    }
+                }
+            }
+
+            // Create epochs at source nodes (one per unique (source_node, label) pair)
+            for (source_node_name, label) in &source_label_pairs {
+                let epoch_id = Ulid::new();
+                let in_salvo = Salvo {
+                    salvo_condition: REQUEST_SALVO_CONDITION.to_string(),
+                    packets: vec![],
+                };
+
+                let node = self
+                    .graph
+                    .nodes()
+                    .get(source_node_name)
+                    .expect("Source node from cascade should exist");
+
+                let epoch = Epoch {
+                    id: epoch_id,
+                    node_name: source_node_name.clone(),
+                    in_salvo,
+                    out_salvos: Vec::new(),
+                    state: EpochState::Startable,
+                    orphaned_packets: Vec::new(),
+                };
+
+                self._epochs.insert(epoch_id, epoch);
+                self._startable_epochs.insert(epoch_id);
+                self._node_to_epochs
+                    .entry(source_node_name.clone())
+                    .or_default()
+                    .push(epoch_id);
+
+                // Create location entries
+                let epoch_location = PacketLocation::Node(epoch_id);
+                self._packets_by_location
+                    .insert(epoch_location, IndexSet::new());
+                for out_port_name in node.out_ports.keys() {
+                    let output_port_location =
+                        PacketLocation::OutputPort(epoch_id, out_port_name.clone());
+                    self._packets_by_location
+                        .insert(output_port_location, IndexSet::new());
+                }
+
+                all_events.push(NetEvent::EpochCreated(get_utc_now(), epoch_id));
+                all_events.push(NetEvent::RequestEpochCreated(
+                    get_utc_now(),
+                    epoch_id,
+                    source_node_name.clone(),
+                    label.clone(),
+                ));
                 made_progress = true;
             }
         }
@@ -861,6 +1103,19 @@ impl NetSim {
         }
     }
 
+    /// Set the request token for a node if it has an `OnNoSalvoTriggered` trigger.
+    /// Called with `true` to replenish (on epoch finish/cancel) or `false` to reverse (on undo).
+    fn set_request_token(&mut self, node_name: &NodeName, value: bool) {
+        if let Some(node) = self.graph.nodes().get(node_name)
+            && let Some(config) = &node.dependency_request_config
+            && config
+                .triggers
+                .contains(&DependencyRequestTrigger::OnNoSalvoTriggered)
+        {
+            self._request_tokens.insert(node_name.clone(), value);
+        }
+    }
+
     fn finish_epoch(&mut self, epoch_id: &EpochID) -> NetActionResponse {
         // Check if epoch exists
         let epoch = if let Some(epoch) = self._epochs.get(epoch_id) {
@@ -909,15 +1164,22 @@ impl NetSim {
         }
 
         // All checks passed - finish the epoch
+        // Collect port names before we release the borrow on graph
+        let out_port_names: Vec<String> = node.out_ports.keys().cloned().collect();
+
         // Clone epoch state before modifying for the event (captures Running state)
         let epoch_before_finish = self._epochs[epoch_id].clone();
+
+        // Replenish request token if node has OnNoSalvoTriggered trigger
+        let epoch_node_name = self._epochs[epoch_id].node_name.clone();
+        self.set_request_token(&epoch_node_name, true);
 
         let mut epoch = self._epochs.remove(epoch_id).unwrap();
         epoch.state = EpochState::Finished;
 
         // Clean up location entries
         self._packets_by_location.remove(&epoch_loc);
-        for port_name in node.out_ports.keys() {
+        for port_name in &out_port_names {
             let output_port_loc = PacketLocation::OutputPort(*epoch_id, port_name.clone());
             self._packets_by_location.remove(&output_port_loc);
         }
@@ -942,6 +1204,9 @@ impl NetSim {
                 epoch_id: *epoch_id,
             });
         };
+
+        // Replenish request token if node has OnNoSalvoTriggered trigger
+        self.set_request_token(&epoch_for_event.node_name, true);
 
         let mut events: Vec<NetEvent> = Vec::new();
         let mut destroyed_packets: Vec<PacketID> = Vec::new();
@@ -1375,6 +1640,30 @@ impl NetSim {
         NetActionResponse::Success(NetActionResponseData::None, net_events)
     }
 
+    fn create_request(&mut self, node_name: &NodeName, label: &str) -> NetActionResponse {
+        // Validate node exists
+        if !self.graph.nodes().contains_key(node_name) {
+            return NetActionResponse::Error(NetActionError::RequestNodeNotFound {
+                node_name: node_name.clone(),
+            });
+        }
+
+        self._pending_requests.push(PendingRequest {
+            node_name: node_name.clone(),
+            label: label.to_string(),
+        });
+
+        NetActionResponse::Success(
+            NetActionResponseData::None,
+            vec![NetEvent::RequestCreated(
+                get_utc_now(),
+                node_name.clone(),
+                label.to_string(),
+                RequestCreatedSource::External,
+            )],
+        )
+    }
+
     fn transport_packet_to_location(
         &mut self,
         packet_id: &PacketID,
@@ -1554,6 +1843,7 @@ impl NetSim {
     ///     out_ports: HashMap::new(),
     ///     in_salvo_conditions: IndexMap::new(),
     ///     out_salvo_conditions: IndexMap::new(),
+    ///     dependency_request_config: None,
     /// };
     /// let graph = Graph::new(vec![node], vec![]);
     /// let mut net = NetSim::new(graph);
@@ -1586,6 +1876,7 @@ impl NetSim {
             NetAction::TransportPacketToLocation(packet_id, location) => {
                 self.transport_packet_to_location(packet_id, location)
             }
+            NetAction::CreateRequest(node_name, label) => self.create_request(node_name, label),
         }
     }
 
@@ -1699,6 +1990,22 @@ impl NetSim {
             }
         }
 
+        // Check Phase 2b/3: Are there pending requests or unsent startup triggers?
+        if !self._pending_requests.is_empty() {
+            return false;
+        }
+        if !self._startup_requests_sent {
+            // Check if any node has OnStartup trigger
+            let has_startup = self.graph.nodes().values().any(|node| {
+                node.dependency_request_config
+                    .as_ref()
+                    .is_some_and(|c| c.triggers.contains(&DependencyRequestTrigger::OnStartup))
+            });
+            if has_startup {
+                return false;
+            }
+        }
+
         true // Blocked - no progress possible
     }
 
@@ -1797,6 +2104,36 @@ impl NetSim {
             NetEvent::PacketOrphaned(_, packet_id, epoch_id, _, port_name, _) => {
                 // Move packet back from OutsideNet to output port
                 self.undo_packet_orphaned(packet_id, epoch_id, port_name)
+            }
+            NetEvent::RequestCreated(_, node_name, label, source) => {
+                match source {
+                    RequestCreatedSource::External => {
+                        // Pop the last matching pending request (LIFO)
+                        if let Some(pos) = self
+                            ._pending_requests
+                            .iter()
+                            .rposition(|r| r.node_name == *node_name && r.label == *label)
+                        {
+                            self._pending_requests.remove(pos);
+                        }
+                        Ok(())
+                    }
+                    RequestCreatedSource::OnStartup => {
+                        self._startup_requests_sent = false;
+                        Ok(())
+                    }
+                    RequestCreatedSource::OnNoSalvoTriggered => {
+                        // Un-spend the token
+                        self._request_tokens.insert(node_name.clone(), true);
+                        Ok(())
+                    }
+                }
+            }
+            NetEvent::RequestCascadeResolved(_, _, _)
+            | NetEvent::RequestEpochCreated(_, _, _, _) => {
+                // Informational only - no state to undo
+                // (Request-created epochs are undone via EpochCreated events)
+                Ok(())
             }
         }
     }
@@ -1975,6 +2312,9 @@ impl NetSim {
             .or_default()
             .push(epoch_id);
 
+        // Reverse token replenishment
+        self.set_request_token(&epoch.node_name, false);
+
         Ok(())
     }
 
@@ -2018,6 +2358,9 @@ impl NetSim {
         if epoch.state == EpochState::Startable {
             self._startable_epochs.insert(epoch_id);
         }
+
+        // Reverse token replenishment
+        self.set_request_token(&epoch.node_name, false);
 
         Ok(())
     }

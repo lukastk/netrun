@@ -51,6 +51,7 @@ registerField('NodeConfig', 'execution_config', 'custom', 'NodeExecutionSection.
 registerField('NodeConfig', 'extra', 'ignore');
 registerField('NodeConfig', 'factory', 'custom', 'Sidebar.svelte');
 registerField('NodeConfig', 'factory_args', 'custom', 'Sidebar.svelte');
+registerField('NodeConfig', 'dependency_request', 'custom', 'DependencyRequestSection.svelte');
 
 // ==========================================================================
 // NodeExecutionConfig

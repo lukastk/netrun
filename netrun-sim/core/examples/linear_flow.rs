@@ -205,6 +205,7 @@ fn create_node(name: &str, in_ports: Vec<&str>, out_ports: Vec<&str>) -> Node {
         out_ports: out_ports_map,
         in_salvo_conditions,
         out_salvo_conditions,
+        dependency_request_config: None,
     }
 }
 
