@@ -109,18 +109,25 @@
 		color: 'var(--border-color, #404040)',
 	};
 
+	const dependencyArrowMarker = {
+		type: MarkerType.ArrowClosed,
+		width: 20,
+		height: 20,
+		color: '#a78bfa',
+	};
+
 	// Get marker config based on setting
-	function getMarkers(setting: string): { markerStart?: typeof arrowMarker; markerEnd?: typeof arrowMarker } {
+	function getMarkers(setting: string, marker = arrowMarker): { markerStart?: typeof arrowMarker; markerEnd?: typeof arrowMarker } {
 		switch (setting) {
 			case 'arrow-start':
-				return { markerStart: arrowMarker };
+				return { markerStart: marker };
 			case 'arrow-both':
-				return { markerStart: arrowMarker, markerEnd: arrowMarker };
+				return { markerStart: marker, markerEnd: marker };
 			case 'none':
 				return {};
 			case 'arrow-end':
 			default:
-				return { markerEnd: arrowMarker };
+				return { markerEnd: marker };
 		}
 	}
 
@@ -138,17 +145,19 @@
 		[expandedView, selectedEdgeIds, edgeStyle, edgeMarkers, cascadeHighlight],
 		([{ allEdges }, $selectedEdgeIds, $edgeStyle, $edgeMarkers, $cascade]) => {
 			const markers = getMarkers($edgeMarkers);
+			const depMarkers = getMarkers($edgeMarkers, dependencyArrowMarker);
 			return allEdges.map(edge => {
 				const isDep = (edge.data as NetrunEdgeData | undefined)?.dependency === true;
 				const isCascadeEdge = $cascade?.visitedEdges.has(edge.id) ?? false;
 				const classes: string[] = [];
 				if (isDep) classes.push('dependency-edge');
 				if (isCascadeEdge && !isDep) classes.push('cascade-edge');
+				const m = isDep ? depMarkers : markers;
 				return {
 					...edge,
 					type: $edgeStyle,
-					markerStart: markers.markerStart,
-					markerEnd: markers.markerEnd,
+					markerStart: m.markerStart,
+					markerEnd: m.markerEnd,
 					selected: $selectedEdgeIds.has(edge.id),
 					class: classes.join(' ') || undefined,
 					// Wider click target for dependency edges (dashed lines are visually thinner)
