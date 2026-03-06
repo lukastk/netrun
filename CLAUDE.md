@@ -14,11 +14,15 @@ This separation of concerns allows the actual execution and data storage to be i
 
 ### netrun (Runtime)
 
-`netrun` is a pure Python package that will be built on top of `netrun-sim`. It provides:
+`netrun` is a pure Python package built on top of `netrun-sim`. It provides:
+- Flow-based network execution via the `Net` class (integrates with netrun-sim)
+- Configuration system (`NetConfig`, `NodeConfig`, etc.) with JSON/TOML support
 - RPC (Remote Procedure Call) communication primitives
 - Worker pool management (threads, processes, remote)
-- High-level execution orchestration via ExecutionManager
-- (Planned) Integration with netrun-sim for flow-based execution
+- High-level execution orchestration via `ExecutionManager`
+- Node factories for creating nodes from functions or broadcast patterns
+- CLI for validation, inspection, and config conversion
+- Tools for template resolution, action execution, and recipe management
 
 **See `netrun/PROJECT_SPEC.md` for the full specification.**
 
@@ -32,8 +36,7 @@ This separation of concerns allows the actual execution and data storage to be i
 `netrun-ui` is a SvelteKit-based visual editor for creating and editing netrun flow configurations.
 
 **Reference Documentation** (read these for context when working on netrun-ui):
-- `netrun-ui/PROJECT_SPEC.md` - Full project specification, features, MVP phases, and implementation status
-- `netrun-ui/SVELTEFLOW_DOCS.md` - SvelteFlow API reference and patterns used in this project
+- `netrun-ui/BACKEND_README.md` - Backend integration documentation
 
 ## Development Notes (_dev_notes)
 
@@ -80,19 +83,22 @@ repo/
 │       ├── python/         # Python package
 │       │   └── netrun_sim/
 │       └── examples/       # Python examples
-└── netrun/                 # Runtime (pure Python, nblite project)
-    ├── PROJECT_SPEC.md     # Full specification
-    ├── NBLITE_INSTRUCTIONS.md  # How to write code (READ THIS FIRST)
-    ├── nblite.toml         # nblite configuration
-    ├── nbs/                # Jupyter notebooks (.ipynb)
-    │   ├── netrun/         # Source notebooks
-    │   └── tests/          # Test notebooks
-    ├── pts/                # Percent notebooks (.pct.py) - EDIT THESE
-    │   ├── netrun/         # Source percent notebooks
-    │   └── tests/          # Test percent notebooks
-    └── src/                # Auto-generated code (DO NOT EDIT)
-        ├── netrun/         # Generated Python package
-        └── tests/          # Generated test files
+├── netrun/                 # Runtime (pure Python, nblite project)
+│   ├── PROJECT_SPEC.md     # Full specification
+│   ├── NBLITE_INSTRUCTIONS.md  # How to write code (READ THIS FIRST)
+│   ├── nblite.toml         # nblite configuration
+│   ├── nbs/                # Jupyter notebooks (.ipynb)
+│   │   ├── netrun/         # Source notebooks
+│   │   └── tests/          # Test notebooks
+│   ├── pts/                # Percent notebooks (.pct.py) - EDIT THESE
+│   │   ├── netrun/         # Source percent notebooks
+│   │   └── tests/          # Test percent notebooks
+│   └── src/                # Auto-generated code (DO NOT EDIT)
+│       ├── netrun/         # Generated Python package
+│       └── tests/          # Generated test files
+└── netrun-ui/              # Visual editor (SvelteKit)
+    ├── BACKEND_README.md   # Backend integration docs
+    └── src/                # SvelteKit source code
 ```
 
 ---
@@ -101,16 +107,18 @@ repo/
 
 ## Current Implementation Status
 
-### Fully Implemented
+All major modules are fully implemented:
 
-1. **RPC Layer** (`netrun.rpc`) - Bidirectional message-passing channels
-2. **Pool Layer** (`netrun.pool`) - Worker pool management
-3. **ExecutionManager** (`netrun.execution_manager`) - High-level execution orchestration
-4. **Storage** (`netrun.storage`) - Packet value storage
-
-### Not Yet Implemented
-
-1. **Net Module** (`netrun.net`) - Integration with netrun-sim (stub only)
+1. **Net Module** (`netrun.net`) - Flow-based execution with netrun-sim integration
+2. **Packets** (`netrun.packets`) - Packet value storage (`PacketStore`, `LazyPacketValueSpec`)
+3. **Storage** (`netrun.storage`) - Serialization, compression, backends, caching, file storage
+4. **RPC Layer** (`netrun.rpc`) - Bidirectional message-passing channels
+5. **Pool Layer** (`netrun.pool`) - Worker pool management
+6. **ExecutionManager** (`netrun.execution_manager`) - High-level execution orchestration
+7. **Node Factories** (`netrun.node_factories`) - Function and broadcast factories
+8. **CLI** (`netrun.cli`) - Validation, inspection, conversion commands
+9. **Tools** (`netrun.tools`) - Template resolution, action execution, recipes
+10. **Core** (`netrun.core`) - Convenience re-exports of Net, NetConfig, etc.
 
 ---
 
@@ -120,12 +128,25 @@ repo/
 
 - `_base` - Timestamp generation, patching decorators
 - `hashing` - Hash computation utilities
+- `pickling` - Pickling method handling
+- `env_var` - `EnvVar` and `EnvVarResolvableModel` for environment variable resolution
+
+### Packets (`netrun.packets`)
+
+- `PacketStore` - Thread-safe storage for packet values
+- `LazyPacketValueSpec` - Lazy value specification for deferred evaluation (func_import_path, args, kwargs)
 
 ### Storage (`netrun.storage`)
 
-- `PacketStore` - Thread-safe storage for packet values
-- `LazyPacketValueSpec` - Lazy value specification for deferred evaluation
-- `PacketStoreConfig` - Configuration for hashing and evaluation
+Storage layer for packet data persistence, caching, and file storage:
+
+- `config` - `StorageConfig`, `NodeStorageConfig`, `CacheConfig`, `NodeCacheConfig`, `NodeFileStorageConfig`, backend configs (`LocalBackendConfig`, `S3BackendConfig`, `SSHBackendConfig`, `RcloneBackendConfig`, `GCSBackendConfig`)
+- `_serialization` - Serialization methods
+- `_compression` - Compression methods
+- `_backends` - Storage backend implementations
+- `_retrieval` - Packet retrieval utilities
+- `_cache` - Epoch caching logic
+- `_file_storage` - File-based storage
 
 ### RPC Layer (`netrun.rpc`)
 
@@ -243,6 +264,61 @@ async with manager:
 - `UP_RUN_RESPONSE` - Return result
 - `UP_PRINT_BUFFER` - Captured print statements
 
+### Net Module (`netrun.net`)
+
+The Net module provides flow-based network execution by integrating with netrun-sim.
+
+**Key Classes**:
+- `Net` - Main orchestrator: manages pools, executes epochs, routes packets
+- `NetConfig` - Top-level configuration (pools, graph, output queues, storage)
+- `NodeConfig` - Node definition (ports, salvo conditions, factory, execution config)
+- `NodeExecutionConfig` - Execution settings (pools, retries, rate limiting, type checking)
+- `GraphConfig` - Graph topology (nodes, edges, output queues)
+- `PortConfig` - Port definition with optional type annotation
+- `EdgeConfig` - Connection between ports (supports shorthand `"Node.port"` strings)
+- `SalvoConditionConfig` - Rules for triggering epochs or sending output
+- `OutputQueueConfig` - Collects packets from unconnected output ports
+- `NodeExecutionContext` - Context passed to node functions (consume/create packets, print, etc.)
+- `TargetInputSalvo` - Target-based execution support
+
+**Net Lifecycle**:
+```python
+async with Net(config) as net:
+    net.inject_data("Source", "in", [value1, value2])
+    await net.run_until_blocked()
+    startable = net.get_startable_epochs()
+    await net.execute_epoch(startable[0])
+    results = net.flush_output_queue("results")
+```
+
+**Features**: signals, controls, pause/resume, rate limiting, retries, type checking, print capture, output queues, caching, file storage.
+
+### CLI (`netrun.cli`)
+
+Command-line interface (Typer-based) for working with netrun configs:
+
+- `validate` - Validate a config file
+- `structure` - Output graph topology as JSON
+- `convert` - Convert between config formats (JSON/TOML)
+- `factory-info` - Show factory parameters and ports
+- `info` - Show net information
+- `nodes` - List all nodes
+- `node` - Show specific node details
+
+### Tools (`netrun.tools`)
+
+Utilities for action execution and recipe management:
+
+- `ActionConfig`, `ActionContext`, `ActionResult` - Action models
+- `RecipeConfig` - Recipe configuration
+- `execute_action()`, `execute_command()` - Execute shell commands with environment
+- Template variable resolution
+
+### Core (`netrun.core`)
+
+Convenience re-exports of the most commonly used classes:
+`Net`, `NetConfig`, `NodeConfig`, `NodeExecutionConfig`, `PoolConfig`, `PortConfig`, `EdgeConfig`, `GraphConfig`, `SalvoConditionConfig`, `OutputQueueConfig`, `TargetInputSalvo`, `EnvVar`.
+
 ### Node Variables (`NodeVariable`)
 
 Node variables are typed key-value pairs accessible to nodes via `ctx.vars`. They support a two-level inheritance model:
@@ -358,11 +434,17 @@ type_checking_enabled = true  # Settings go here, NOT in factory_args
   - Parses function signature for input/output ports
   - Handles special parameters (`ctx`, `print`)
 
+- `netrun.node_factories.broadcast` - Fan-out replication node
+  - `factory_args`: configurable input/output ports
+  - `CopyMode` enum: `none`, `shallow`, `deep`
+  - Replicates input packets to multiple output ports
+
 #### Key Files
 
-- Factory protocol implementation: `pts/netrun/05_net/00_config/01_nodes.pct.py`
-- Function factory: `pts/netrun/06_node_factories/00_from_function.pct.py`
-- Factory resolution in Net: `pts/netrun/05_net/01_net/02_net.pct.py`
+- Factory protocol implementation: `pts/netrun/06_net/00_config/01_nodes.pct.py`
+- Function factory: `pts/netrun/07_node_factories/00_from_function.pct.py`
+- Broadcast factory: `pts/netrun/07_node_factories/01_broadcast.pct.py`
+- Factory resolution in Net: `pts/netrun/06_net/01_net/02_net.pct.py`
 - Example usage: `pts/examples/net/01_function_factory.pct.py`
 
 ---
