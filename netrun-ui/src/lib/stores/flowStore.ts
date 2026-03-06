@@ -845,6 +845,8 @@ export function renameNode(oldName: string, newName: string): boolean {
 		return false;
 	}
 
+	pushHistory();
+
 	// Update nodes: change id and label for the renamed node
 	const updatedNodes = tab.nodes.map(node => {
 		if (node.id === oldName) {
