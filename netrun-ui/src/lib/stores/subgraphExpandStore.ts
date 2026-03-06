@@ -30,6 +30,7 @@ import {
 	type AnyNodeData,
 } from './flowStore';
 import { tabs, updateActiveTab } from './tabsStore';
+import { showConfirm } from './modalStore';
 
 // ── Types ──────────────────────────────────────────────────────
 
@@ -240,7 +241,7 @@ export async function expandSubgraph(nodeId: string): Promise<void> {
 	}
 }
 
-export function collapseSubgraph(nodeId: string): void {
+export async function collapseSubgraph(nodeId: string): Promise<void> {
 	const tab = get(activeTab);
 	if (!tab) return;
 
@@ -252,6 +253,17 @@ export function collapseSubgraph(nodeId: string): void {
 
 	const key = cacheKey(tabId, nodeId);
 	const cached = contentCache.get(key);
+
+	// Warn if collapsing a file-referenced subgraph with unsaved edits
+	if (cached?.dirty && cached?.resolvedFilePath) {
+		const confirmed = await showConfirm({
+			title: 'Unsaved Changes',
+			message: 'This subgraph has unsaved changes that will be lost on collapse. Continue?',
+			confirmText: 'Discard & Collapse',
+			cancelText: 'Cancel',
+		});
+		if (!confirmed) return;
+	}
 
 	// Restore original dimensions
 	if (cached) {
@@ -293,7 +305,7 @@ export async function toggleSubgraphExpansion(nodeId: string): Promise<void> {
 
 	const ids = getTabExpandedSet(tabId);
 	if (ids.has(nodeId)) {
-		collapseSubgraph(nodeId);
+		await collapseSubgraph(nodeId);
 	} else {
 		await expandSubgraph(nodeId);
 	}
