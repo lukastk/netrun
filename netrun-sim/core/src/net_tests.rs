@@ -19,6 +19,12 @@ struct NetSimSnapshot {
     startable_epochs: Vec<EpochID>,
     /// Node to epochs mapping
     node_to_epochs: HashMap<String, Vec<EpochID>>,
+    /// Pending requests (node_name, label)
+    pending_requests: Vec<(String, String)>,
+    /// Request tokens per node
+    request_tokens: HashMap<String, bool>,
+    /// Whether startup requests have been sent
+    startup_requests_sent: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -78,12 +84,28 @@ impl NetSimSnapshot {
             .map(|(node, ids)| (node.clone(), ids.clone()))
             .collect();
 
+        // Capture pending requests
+        let pending_requests: Vec<(String, String)> = net
+            ._pending_requests
+            .iter()
+            .map(|r| (r.node_name.clone(), r.label.clone()))
+            .collect();
+
+        // Capture request tokens
+        let request_tokens: HashMap<String, bool> = net._request_tokens.clone();
+
+        // Capture startup_requests_sent
+        let startup_requests_sent = net._startup_requests_sent;
+
         NetSimSnapshot {
             packets,
             packets_by_location,
             epochs,
             startable_epochs,
             node_to_epochs,
+            pending_requests,
+            request_tokens,
+            startup_requests_sent,
         }
     }
 
@@ -143,6 +165,30 @@ impl NetSimSnapshot {
             diffs.push(format!(
                 "Node to epochs differ:\n  before: {:?}\n  after:  {:?}",
                 self.node_to_epochs, other.node_to_epochs
+            ));
+        }
+
+        // Compare pending_requests
+        if self.pending_requests != other.pending_requests {
+            diffs.push(format!(
+                "Pending requests differ:\n  before: {:?}\n  after:  {:?}",
+                self.pending_requests, other.pending_requests
+            ));
+        }
+
+        // Compare request_tokens
+        if self.request_tokens != other.request_tokens {
+            diffs.push(format!(
+                "Request tokens differ:\n  before: {:?}\n  after:  {:?}",
+                self.request_tokens, other.request_tokens
+            ));
+        }
+
+        // Compare startup_requests_sent
+        if self.startup_requests_sent != other.startup_requests_sent {
+            diffs.push(format!(
+                "startup_requests_sent differs:\n  before: {:?}\n  after:  {:?}",
+                self.startup_requests_sent, other.startup_requests_sent
             ));
         }
 
@@ -2228,6 +2274,7 @@ fn count_events(events: &[NetEvent], kind: &str) -> usize {
             NetEvent::RequestCascadeResolved(..) => kind == "RequestCascadeResolved",
             NetEvent::RequestEpochCreated(..) => kind == "RequestEpochCreated",
             NetEvent::EpochCreated(..) => kind == "EpochCreated",
+            NetEvent::EpochFinished(..) => kind == "EpochFinished",
             _ => false,
         })
         .count()
@@ -2255,7 +2302,7 @@ fn test_create_request_valid_node() {
     match net.do_action(&NetAction::CreateRequest("Sink".to_string(), "fetch".to_string())) {
         NetActionResponse::Success(NetActionResponseData::None, events) => {
             assert_eq!(events.len(), 1);
-            assert!(matches!(&events[0], NetEvent::RequestCreated(_, node, label) if node == "Sink" && label == "fetch"));
+            assert!(matches!(&events[0], NetEvent::RequestCreated(_, node, label, RequestCreatedSource::External) if node == "Sink" && label == "fetch"));
         }
         other => panic!("Expected success, got {:?}", other),
     }
@@ -2743,4 +2790,304 @@ fn test_end_to_end_request_to_forward_flow() {
     let sink_epoch = net.get_epoch(&startable2[0]).unwrap();
     assert_eq!(sink_epoch.node_name, "Sink");
     assert_eq!(sink_epoch.in_salvo.packets.len(), 1);
+}
+
+// ========== Undo Tests for Dependency Edge State ==========
+
+#[test]
+fn test_undo_create_request_exact_state() {
+    let graph = startup_dep_graph();
+    let mut net = NetSim::new(graph);
+
+    let before = NetSimSnapshot::capture(&net);
+
+    // CreateRequest pushes to _pending_requests
+    let action = NetAction::CreateRequest("Sink".to_string(), "fetch".to_string());
+    let events = match net.do_action(&action) {
+        NetActionResponse::Success(_, events) => events,
+        other => panic!("Expected success, got {:?}", other),
+    };
+
+    // Verify pending_requests changed
+    assert_eq!(net._pending_requests.len(), 1);
+
+    // Undo and verify exact state restored
+    net.undo_action(&action, &events).expect("Undo should succeed");
+    let after = NetSimSnapshot::capture(&net);
+    let diffs = before.diff(&after);
+    assert!(
+        diffs.is_empty(),
+        "State not exactly restored after undo:\n{}",
+        diffs.join("\n")
+    );
+}
+
+#[test]
+fn test_undo_run_step_with_startup_requests_exact_state() {
+    let graph = startup_dep_graph();
+    let mut net = NetSim::new(graph);
+
+    let before = NetSimSnapshot::capture(&net);
+    assert!(!net._startup_requests_sent);
+
+    // RunStep triggers on_startup -> sets flag, creates epochs
+    let action = NetAction::RunStep;
+    let events = match net.do_action(&action) {
+        NetActionResponse::Success(_, events) => events,
+        other => panic!("Expected success, got {:?}", other),
+    };
+
+    // Verify flag was set
+    assert!(net._startup_requests_sent);
+
+    // Undo and verify exact state restored
+    net.undo_action(&action, &events).expect("Undo should succeed");
+    let after = NetSimSnapshot::capture(&net);
+    let diffs = before.diff(&after);
+    assert!(
+        diffs.is_empty(),
+        "State not exactly restored after undo:\n{}",
+        diffs.join("\n")
+    );
+    assert!(!net._startup_requests_sent, "_startup_requests_sent should be reset");
+}
+
+#[test]
+fn test_undo_run_step_with_no_salvo_triggered_exact_state() {
+    // Setup: Source -> Sink (dep edge), Sink has OnNoSalvoTriggered with impossible salvo
+    let source = simple_node("Source", vec![], vec!["out"]);
+    let mut sink = dependency_node(
+        "Sink",
+        vec!["in"],
+        vec![],
+        vec![DependencyRequestTrigger::OnNoSalvoTriggered],
+        "demand",
+    );
+    sink.in_salvo_conditions = IndexMap::from([(
+        "default".to_string(),
+        SalvoCondition {
+            max_salvos: MaxSalvos::Finite(1),
+            ports: [("in".to_string(), PacketCount::All)]
+                .into_iter()
+                .collect(),
+            term: SalvoConditionTerm::Port {
+                port_name: "in".to_string(),
+                state: PortState::Full,
+            },
+        },
+    )]);
+
+    let e = edge("Source", "out", "Sink", "in");
+    let graph =
+        Graph::new(vec![source, sink], vec![e.clone()]).with_dependency_edges(vec![e.clone()]);
+    let mut net = NetSim::new(graph);
+
+    // Place a packet at Sink's input port so OnNoSalvoTriggered can fire
+    let p = match net.do_action(&NetAction::CreatePacket(None)) {
+        NetActionResponse::Success(NetActionResponseData::Packet(id), _) => id,
+        _ => panic!("create"),
+    };
+    net.do_action(&NetAction::TransportPacketToLocation(
+        p,
+        PacketLocation::Edge(e),
+    ));
+
+    // First run_step moves packet to input port but doesn't trigger undo test yet
+    // We need the packet at the input port before capturing state
+    let action1 = NetAction::RunStep;
+    let events1 = match net.do_action(&action1) {
+        NetActionResponse::Success(_, events) => events,
+        other => panic!("Expected success, got {:?}", other),
+    };
+
+    // After first RunStep: packet is at Sink.in, token spent, epochs created at Source
+    // Verify token was spent
+    assert_eq!(net._request_tokens.get("Sink"), Some(&false));
+
+    // Undo the RunStep
+    net.undo_action(&action1, &events1)
+        .expect("Undo should succeed");
+
+    // Token should be restored to true
+    assert_eq!(
+        net._request_tokens.get("Sink"),
+        Some(&true),
+        "Token should be restored after undo"
+    );
+}
+
+#[test]
+fn test_undo_finish_epoch_with_token_replenishment_exact_state() {
+    // Setup: Sink has OnNoSalvoTriggered, create and finish an epoch on Sink
+    let source = simple_node("Source", vec![], vec!["out"]);
+    let mut sink = dependency_node(
+        "Sink",
+        vec!["in"],
+        vec![],
+        vec![DependencyRequestTrigger::OnNoSalvoTriggered],
+        "demand",
+    );
+    sink.in_salvo_conditions = IndexMap::from([(
+        "default".to_string(),
+        SalvoCondition {
+            max_salvos: MaxSalvos::Finite(1),
+            ports: [("in".to_string(), PacketCount::All)]
+                .into_iter()
+                .collect(),
+            term: SalvoConditionTerm::Port {
+                port_name: "in".to_string(),
+                state: PortState::Full,
+            },
+        },
+    )]);
+
+    let e = edge("Source", "out", "Sink", "in");
+    let graph =
+        Graph::new(vec![source, sink], vec![e.clone()]).with_dependency_edges(vec![e.clone()]);
+    let mut net = NetSim::new(graph);
+
+    // Spend Sink's token by triggering a request
+    let p = match net.do_action(&NetAction::CreatePacket(None)) {
+        NetActionResponse::Success(NetActionResponseData::Packet(id), _) => id,
+        _ => panic!("create"),
+    };
+    net.do_action(&NetAction::TransportPacketToLocation(
+        p,
+        PacketLocation::Edge(e),
+    ));
+    net.run_until_blocked();
+    assert_eq!(net._request_tokens.get("Sink"), Some(&false));
+
+    // Create an epoch on Sink manually, start it, then prepare to finish
+    let sink_salvo = Salvo {
+        salvo_condition: REQUEST_SALVO_CONDITION.to_string(),
+        packets: vec![],
+    };
+    let sink_epoch_id =
+        match net.do_action(&NetAction::CreateEpoch("Sink".to_string(), sink_salvo)) {
+            NetActionResponse::Success(NetActionResponseData::CreatedEpoch(epoch), _) => epoch.id,
+            _ => panic!("create epoch"),
+        };
+    net.do_action(&NetAction::StartEpoch(sink_epoch_id));
+
+    // Snapshot before finish
+    let before = NetSimSnapshot::capture(&net);
+    assert_eq!(
+        net._request_tokens.get("Sink"),
+        Some(&false),
+        "Token should be spent before finish"
+    );
+
+    // Finish epoch -> replenishes token
+    let action = NetAction::FinishEpoch(sink_epoch_id);
+    let events = match net.do_action(&action) {
+        NetActionResponse::Success(_, events) => events,
+        other => panic!("Expected success, got {:?}", other),
+    };
+    assert_eq!(
+        net._request_tokens.get("Sink"),
+        Some(&true),
+        "Token should be replenished after finish"
+    );
+
+    // Undo finish -> token should be spent again
+    net.undo_action(&action, &events).expect("Undo should succeed");
+    let after = NetSimSnapshot::capture(&net);
+    let diffs = before.diff(&after);
+    assert!(
+        diffs.is_empty(),
+        "State not exactly restored after undo:\n{}",
+        diffs.join("\n")
+    );
+    assert_eq!(
+        net._request_tokens.get("Sink"),
+        Some(&false),
+        "Token should be spent again after undo of finish"
+    );
+}
+
+#[test]
+fn test_undo_cancel_epoch_with_token_replenishment_exact_state() {
+    // Same setup as finish test but using cancel
+    let source = simple_node("Source", vec![], vec!["out"]);
+    let mut sink = dependency_node(
+        "Sink",
+        vec!["in"],
+        vec![],
+        vec![DependencyRequestTrigger::OnNoSalvoTriggered],
+        "demand",
+    );
+    sink.in_salvo_conditions = IndexMap::from([(
+        "default".to_string(),
+        SalvoCondition {
+            max_salvos: MaxSalvos::Finite(1),
+            ports: [("in".to_string(), PacketCount::All)]
+                .into_iter()
+                .collect(),
+            term: SalvoConditionTerm::Port {
+                port_name: "in".to_string(),
+                state: PortState::Full,
+            },
+        },
+    )]);
+
+    let e = edge("Source", "out", "Sink", "in");
+    let graph =
+        Graph::new(vec![source, sink], vec![e.clone()]).with_dependency_edges(vec![e.clone()]);
+    let mut net = NetSim::new(graph);
+
+    // Spend Sink's token
+    let p = match net.do_action(&NetAction::CreatePacket(None)) {
+        NetActionResponse::Success(NetActionResponseData::Packet(id), _) => id,
+        _ => panic!("create"),
+    };
+    net.do_action(&NetAction::TransportPacketToLocation(
+        p,
+        PacketLocation::Edge(e),
+    ));
+    net.run_until_blocked();
+    assert_eq!(net._request_tokens.get("Sink"), Some(&false));
+
+    // Create and start an epoch on Sink
+    let sink_salvo = Salvo {
+        salvo_condition: REQUEST_SALVO_CONDITION.to_string(),
+        packets: vec![],
+    };
+    let sink_epoch_id =
+        match net.do_action(&NetAction::CreateEpoch("Sink".to_string(), sink_salvo)) {
+            NetActionResponse::Success(NetActionResponseData::CreatedEpoch(epoch), _) => epoch.id,
+            _ => panic!("create epoch"),
+        };
+    net.do_action(&NetAction::StartEpoch(sink_epoch_id));
+
+    // Snapshot before cancel
+    let before = NetSimSnapshot::capture(&net);
+    assert_eq!(net._request_tokens.get("Sink"), Some(&false));
+
+    // Cancel epoch -> replenishes token
+    let action = NetAction::CancelEpoch(sink_epoch_id);
+    let events = match net.do_action(&action) {
+        NetActionResponse::Success(_, events) => events,
+        other => panic!("Expected success, got {:?}", other),
+    };
+    assert_eq!(
+        net._request_tokens.get("Sink"),
+        Some(&true),
+        "Token should be replenished after cancel"
+    );
+
+    // Undo cancel -> token should be spent again
+    net.undo_action(&action, &events).expect("Undo should succeed");
+    let after = NetSimSnapshot::capture(&net);
+    let diffs = before.diff(&after);
+    assert!(
+        diffs.is_empty(),
+        "State not exactly restored after undo:\n{}",
+        diffs.join("\n")
+    );
+    assert_eq!(
+        net._request_tokens.get("Sink"),
+        Some(&false),
+        "Token should be spent again after undo of cancel"
+    );
 }

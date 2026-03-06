@@ -13,7 +13,8 @@ use netrun_sim::net::{
     NetActionResponse as CoreNetSimActionResponse,
     NetActionResponseData as CoreNetSimActionResponseData, NetEvent as CoreNetSimEvent,
     NetSim as CoreNetSim, OrphanedPacketInfo as CoreOrphanedPacketInfo, Packet as CorePacket,
-    PacketLocation as CorePacketLocation, Salvo as CoreSalvo,
+    PacketLocation as CorePacketLocation, RequestCreatedSource as CoreRequestCreatedSource,
+    Salvo as CoreSalvo,
 };
 
 /// Convert Rust ULID to Python ulid.ULID
@@ -652,7 +653,7 @@ enum NetEventKind {
     InputSalvoTriggered(i128, String, String),
     OutputSalvoTriggered(i128, String, String),
     PacketOrphaned(i128, String, String, String, String, String), // (ts, packet_id, epoch_id, node_name, port_name, salvo_condition)
-    RequestCreated(i128, String, String),                        // (ts, node_name, label)
+    RequestCreated(i128, String, String, String),                 // (ts, node_name, label, source)
     RequestCascadeResolved(i128, Vec<String>, String),           // (ts, source_nodes, label)
     RequestEpochCreated(i128, String, String, String),           // (ts, epoch_id, source_node_name, label)
 }
@@ -673,7 +674,7 @@ impl NetEvent {
             NetEventKind::InputSalvoTriggered(_, _, _) => "InputSalvoTriggered".to_string(),
             NetEventKind::OutputSalvoTriggered(_, _, _) => "OutputSalvoTriggered".to_string(),
             NetEventKind::PacketOrphaned(_, _, _, _, _, _) => "PacketOrphaned".to_string(),
-            NetEventKind::RequestCreated(_, _, _) => "RequestCreated".to_string(),
+            NetEventKind::RequestCreated(_, _, _, _) => "RequestCreated".to_string(),
             NetEventKind::RequestCascadeResolved(_, _, _) => {
                 "RequestCascadeResolved".to_string()
             }
@@ -697,7 +698,7 @@ impl NetEvent {
             | NetEventKind::InputSalvoTriggered(ts, _, _)
             | NetEventKind::OutputSalvoTriggered(ts, _, _)
             | NetEventKind::PacketOrphaned(ts, _, _, _, _, _)
-            | NetEventKind::RequestCreated(ts, _, _)
+            | NetEventKind::RequestCreated(ts, _, _, _)
             | NetEventKind::RequestCascadeResolved(ts, _, _)
             | NetEventKind::RequestEpochCreated(ts, _, _, _) => *ts,
         }
@@ -795,7 +796,7 @@ impl NetEvent {
     fn node_name(&self) -> Option<String> {
         match &self.inner {
             NetEventKind::PacketOrphaned(_, _, _, node_name, _, _) => Some(node_name.clone()),
-            NetEventKind::RequestCreated(_, node_name, _) => Some(node_name.clone()),
+            NetEventKind::RequestCreated(_, node_name, _, _) => Some(node_name.clone()),
             NetEventKind::RequestEpochCreated(_, _, node_name, _) => Some(node_name.clone()),
             _ => None,
         }
@@ -805,7 +806,7 @@ impl NetEvent {
     #[getter]
     fn label(&self) -> Option<String> {
         match &self.inner {
-            NetEventKind::RequestCreated(_, _, label) => Some(label.clone()),
+            NetEventKind::RequestCreated(_, _, label, _) => Some(label.clone()),
             NetEventKind::RequestCascadeResolved(_, _, label) => Some(label.clone()),
             NetEventKind::RequestEpochCreated(_, _, _, label) => Some(label.clone()),
             _ => None,
@@ -819,6 +820,16 @@ impl NetEvent {
             NetEventKind::RequestCascadeResolved(_, source_nodes, _) => {
                 Some(source_nodes.clone())
             }
+            _ => None,
+        }
+    }
+
+    /// Get the request source (for RequestCreated events).
+    /// Returns "External", "OnStartup", or "OnNoSalvoTriggered".
+    #[getter]
+    fn request_source(&self) -> Option<String> {
+        match &self.inner {
+            NetEventKind::RequestCreated(_, _, _, source) => Some(source.clone()),
             _ => None,
         }
     }
@@ -901,10 +912,10 @@ impl NetEvent {
                     ts, packet_id, epoch_id, node_name, port_name, cond
                 )
             }
-            NetEventKind::RequestCreated(ts, node_name, label) => {
+            NetEventKind::RequestCreated(ts, node_name, label, source) => {
                 format!(
-                    "NetEvent.RequestCreated(ts={}, node={:?}, label={:?})",
-                    ts, node_name, label
+                    "NetEvent.RequestCreated(ts={}, node={:?}, label={:?}, source={:?})",
+                    ts, node_name, label, source
                 )
             }
             NetEventKind::RequestCascadeResolved(ts, source_nodes, label) => {
@@ -981,8 +992,18 @@ impl NetEvent {
                 port_name.clone(),
                 cond.clone(),
             ),
-            CoreNetSimEvent::RequestCreated(ts, node_name, label) => {
-                NetEventKind::RequestCreated(*ts, node_name.clone(), label.clone())
+            CoreNetSimEvent::RequestCreated(ts, node_name, label, source) => {
+                let source_str = match source {
+                    CoreRequestCreatedSource::External => "External",
+                    CoreRequestCreatedSource::OnStartup => "OnStartup",
+                    CoreRequestCreatedSource::OnNoSalvoTriggered => "OnNoSalvoTriggered",
+                };
+                NetEventKind::RequestCreated(
+                    *ts,
+                    node_name.clone(),
+                    label.clone(),
+                    source_str.to_string(),
+                )
             }
             CoreNetSimEvent::RequestCascadeResolved(ts, source_nodes, label) => {
                 NetEventKind::RequestCascadeResolved(
@@ -1070,11 +1091,23 @@ impl NetEvent {
                     cond.clone(),
                 ))
             }
-            NetEventKind::RequestCreated(ts, node_name, label) => {
+            NetEventKind::RequestCreated(ts, node_name, label, source) => {
+                let core_source = match source.as_str() {
+                    "External" => CoreRequestCreatedSource::External,
+                    "OnStartup" => CoreRequestCreatedSource::OnStartup,
+                    "OnNoSalvoTriggered" => CoreRequestCreatedSource::OnNoSalvoTriggered,
+                    other => {
+                        return Err(PyErr::new::<pyo3::exceptions::PyValueError, _>(format!(
+                            "Invalid RequestCreatedSource: {}",
+                            other
+                        )));
+                    }
+                };
                 Ok(CoreNetSimEvent::RequestCreated(
                     *ts,
                     node_name.clone(),
                     label.clone(),
+                    core_source,
                 ))
             }
             NetEventKind::RequestCascadeResolved(ts, source_nodes, label) => {
