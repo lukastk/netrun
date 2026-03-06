@@ -16,12 +16,13 @@
 		config: SalvoConditionConfig;
 		portNames: string[];
 		isOutput: boolean;
-		onChange: (config: SalvoConditionConfig) => void;
-		onRemove: () => void;
-		onRename: (newName: string) => void;
+		onChange?: (config: SalvoConditionConfig) => void;
+		onRemove?: () => void;
+		onRename?: (newName: string) => void;
+		readOnly?: boolean;
 	}
 
-	let { name, config, portNames, isOutput, onChange, onRemove, onRename }: Props = $props();
+	let { name, config, portNames, isOutput, onChange, onRemove, onRename, readOnly = false }: Props = $props();
 
 	// Convert config to UI state
 	let uiState = $state<SalvoConditionUIState | null>(null);
@@ -118,7 +119,7 @@
 		isEditingName = false;
 		const trimmed = editedName.trim();
 		if (trimmed && trimmed !== name && !trimmed.startsWith('__control_') && !trimmed.startsWith('__signal_')) {
-			onRename(trimmed);
+			onRename?.(trimmed);
 		} else {
 			editedName = name;
 		}
@@ -228,13 +229,15 @@
 		}
 
 		selfEmitted = true;
-		onChange({ max_salvos: maxSalvos, ports, term });
+		onChange?.({ max_salvos: maxSalvos, ports, term });
 	}
 </script>
 
-<div class="salvo-condition-editor">
+<div class="salvo-condition-editor" class:read-only={readOnly}>
 	<div class="condition-header">
-		{#if isEditingName}
+		{#if readOnly}
+			<span class="name-display-readonly">{name}</span>
+		{:else if isEditingName}
 			<input
 				type="text"
 				class="name-input"
@@ -253,7 +256,9 @@
 				{name}
 			</button>
 		{/if}
-		<button class="remove-btn" onclick={onRemove} title="Remove condition">×</button>
+		{#if !readOnly}
+			<button class="remove-btn" onclick={() => onRemove?.()} title="Remove condition">×</button>
+		{/if}
 	</div>
 
 	<div class="condition-body">
@@ -378,6 +383,11 @@
 </div>
 
 <style>
+	.salvo-condition-editor.read-only {
+		opacity: 0.6;
+		pointer-events: none;
+	}
+
 	.salvo-condition-editor {
 		background: var(--bg-primary, #1a1a1a);
 		border: 1px solid var(--border-color, #404040);
@@ -407,6 +417,12 @@
 
 	.name-display:hover {
 		color: var(--accent-color, #3b82f6);
+	}
+
+	.name-display-readonly {
+		font-weight: 500;
+		font-size: 12px;
+		color: var(--text-primary, #fff);
 	}
 
 	.name-input {

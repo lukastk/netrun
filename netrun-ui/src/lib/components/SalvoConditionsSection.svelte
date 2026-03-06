@@ -41,6 +41,14 @@
 		outConditions ? Object.entries(outConditions) : []
 	);
 
+	// Default conditions to show read-only when "Use defaults" is checked
+	let defaultInCondition = $derived(
+		inUseDefaults ? createDefaultSalvoCondition('default', inPortNames, 'all_ports_ready') : null
+	);
+	let defaultOutCondition = $derived(
+		outUseDefaults ? createDefaultSalvoCondition('default', outPortNames, 'always') : null
+	);
+
 	function toggleInputDefaults() {
 		if (inUseDefaults) {
 			// Switch to explicit: create a default condition
@@ -173,7 +181,17 @@
 					<span>{defaultsLabel}</span>
 				</label>
 
-				{#if !inUseDefaults}
+				{#if inUseDefaults}
+					{#if defaultInCondition}
+						<SalvoConditionEditor
+							name="default"
+							config={defaultInCondition}
+							portNames={inPortNames}
+							isOutput={false}
+							readOnly={true}
+						/>
+					{/if}
+				{:else}
 					{#each inConditionEntries as [name, config]}
 						<SalvoConditionEditor
 							{name}
@@ -204,7 +222,17 @@
 					<span>{defaultsLabel}</span>
 				</label>
 
-				{#if !outUseDefaults}
+				{#if outUseDefaults}
+					{#if defaultOutCondition}
+						<SalvoConditionEditor
+							name="default"
+							config={defaultOutCondition}
+							portNames={outPortNames}
+							isOutput={true}
+							readOnly={true}
+						/>
+					{/if}
+				{:else}
 					{#each outConditionEntries as [name, config]}
 						<SalvoConditionEditor
 							{name}
