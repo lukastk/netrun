@@ -387,17 +387,8 @@
 		selectedNodeIds.set(new Set());
 
 		if ((edge.data as NetrunEdgeData | undefined)?.dependency) {
-			const result = analyzeDependencyCascade(
-				edge,
-				get(nodes),
-				get(edges),
-			);
-			cascadeHighlight.set({
-				sourceNodes: result.sourceNodes,
-				visitedNodes: result.visitedNodes,
-				visitedEdges: result.visitedEdges,
-				unstartableNodes: result.unstartableNodes,
-			});
+			const result = analyzeDependencyCascade(edge, get(edges));
+			cascadeHighlight.set(result);
 		} else {
 			cascadeHighlight.set(null);
 		}
@@ -462,7 +453,7 @@
 		}
 
 		// Highlight upstream dependency sources when clicking a node
-		const result = analyzeDependencyCascadeFromNode(nodeId, get(nodes), get(edges));
+		const result = analyzeDependencyCascadeFromNode(nodeId, get(edges));
 		if (result) {
 			cascadeHighlight.set(result);
 		} else {
@@ -552,7 +543,6 @@
 			nodeColor={(node) => {
 				const cascade = get(cascadeHighlight);
 				if (cascade) {
-					if (cascade.unstartableNodes.has(node.id)) return '#fbbf24';
 					if (cascade.sourceNodes.has(node.id)) return '#a78bfa';
 					if (cascade.visitedNodes.has(node.id)) return '#7c3aed';
 				}

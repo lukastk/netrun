@@ -13,7 +13,6 @@
 	let { id, data, selected = false }: Props = $props();
 
 	let isCascadeSource = $derived($cascadeHighlight?.sourceNodes.has(id) ?? false);
-	let isCascadeWarning = $derived($cascadeHighlight?.unstartableNodes.has(id) ?? false);
 	let isCascadeVisited = $derived(
 		($cascadeHighlight?.visitedNodes.has(id) ?? false) && !isCascadeSource
 	);
@@ -90,7 +89,6 @@
 	class:invalid={data.isValid === false}
 	class:single-tip-port={singleTipPort}
 	class:cascade-source={isCascadeSource}
-	class:cascade-warning={isCascadeWarning}
 	class:cascade-visited={isCascadeVisited}
 	style:background={headerColor ? headerColor + '22' : undefined}
 >
@@ -139,10 +137,6 @@
 		</div>
 	{/if}
 
-	<!-- Cascade warning badge for unstartable source nodes -->
-	{#if isCascadeWarning}
-		<div class="cascade-badge">No salvo satisfiable without input</div>
-	{/if}
 </div>
 
 <style>
@@ -180,23 +174,9 @@
 		box-shadow: 0 0 0 2px rgba(167, 139, 250, 0.4);
 	}
 
-	.netrun-node.cascade-warning {
-		border-color: #fbbf24;
-		box-shadow: 0 0 0 2px rgba(251, 191, 36, 0.4);
-	}
-
 	.netrun-node.cascade-visited {
 		border-color: #a78bfa;
 		opacity: 0.7;
-	}
-
-	.cascade-badge {
-		padding: 4px 8px;
-		background: rgba(251, 191, 36, 0.15);
-		border-top: 1px solid rgba(251, 191, 36, 0.3);
-		color: #fbbf24;
-		font-size: 10px;
-		text-align: center;
 	}
 
 	/* ── Shape: rounded ─────────────────────────────── */
