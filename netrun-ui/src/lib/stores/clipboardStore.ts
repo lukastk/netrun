@@ -22,11 +22,7 @@ export const clipboard = writable<ClipboardState>({
  */
 export function copyToClipboard(nodes: FlowNode[], sourceTabId: string | null): void {
 	// Deep clone nodes to avoid reference issues
-	const clonedNodes = nodes.map(node => ({
-		...node,
-		data: { ...node.data },
-		position: { ...node.position },
-	}));
+	const clonedNodes = structuredClone(nodes);
 
 	clipboard.set({
 		nodes: clonedNodes,
