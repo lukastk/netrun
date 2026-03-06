@@ -902,6 +902,7 @@ export function updateNodeEnv(id: string, env: Record<string, string> | undefine
 	const tab = get(activeTab);
 	if (!tab) return;
 
+	pushHistory();
 	updateActiveTab({
 		nodes: tab.nodes.map(node => {
 			if (node.id !== id) return node;
@@ -939,6 +940,7 @@ export function updateNodeActions(id: string, actions: unknown[] | undefined) {
 	const tab = get(activeTab);
 	if (!tab) return;
 
+	pushHistory();
 	updateActiveTab({
 		nodes: tab.nodes.map(node => {
 			if (node.id !== id) return node;
@@ -1034,6 +1036,7 @@ export function updateNodeExecutionConfig(
 	const tab = get(activeTab);
 	if (!tab) return;
 
+	pushHistory();
 	updateActiveTab({
 		nodes: tab.nodes.map(node => {
 			if (node.id !== id) return node;
@@ -1277,6 +1280,7 @@ export function renamePoolInAllNodes(oldName: string, newName: string): void {
 	});
 
 	if (hasChanges) {
+		pushHistory();
 		updateActiveTab({
 			nodes: updatedNodes,
 			isDirty: true,
