@@ -2647,15 +2647,24 @@ export async function updateFactoryNodePreview(nodeId: string): Promise<void> {
 		// Update node with preview data
 		// Note: We deliberately don't update the label - the user controls the node name,
 		// not the factory. Factories only provide ports and other structural data.
+		const newInPorts: PortConfig[] = preview.in_ports.map(p => ({
+			name: p.name,
+			type: p.port_type || undefined,
+		}));
+		const newOutPorts: PortConfig[] = preview.out_ports.map(p => ({
+			name: p.name,
+			type: p.port_type || undefined,
+		}));
+
+		// Re-inject control and signal ports (factory preview doesn't include them)
+		const defaultControls = (tab.extraData as Record<string, unknown> | null)?.default_controls ?? null;
+		const defaultSignals = (tab.extraData as Record<string, unknown> | null)?.default_signals ?? null;
+		const controlPorts = computeNodeControlPorts(node, defaultControls);
+		const signalPorts = computeNodeSignalPorts(node, defaultSignals);
+
 		const previewUpdates: Partial<NetrunNodeData> = {
-			inPorts: preview.in_ports.map(p => ({
-				name: p.name,
-				type: p.port_type || undefined,
-			})),
-			outPorts: preview.out_ports.map(p => ({
-				name: p.name,
-				type: p.port_type || undefined,
-			})),
+			inPorts: withControlPorts(newInPorts, controlPorts),
+			outPorts: withSignalPorts(newOutPorts, signalPorts),
 			isValid: true,
 			validationErrors: [],
 		};
