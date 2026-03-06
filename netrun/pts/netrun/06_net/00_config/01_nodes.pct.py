@@ -629,14 +629,14 @@ class NodeConfig(EnvVarResolvableModel):
             merged_in_ports = {**base_config.in_ports, **self.in_ports}
             merged_out_ports = {**base_config.out_ports, **self.out_ports}
 
-            # Merge salvo conditions (None means "use factory's", {} means "override with empty")
+            # Override salvo conditions (None means "use factory's", explicit dict replaces factory's)
             if self.in_salvo_conditions is not None:
-                merged_in_salvo = {**(base_config.in_salvo_conditions or {}), **self.in_salvo_conditions}
+                merged_in_salvo = self.in_salvo_conditions
             else:
                 merged_in_salvo = base_config.in_salvo_conditions  # Keep None or factory value
 
             if self.out_salvo_conditions is not None:
-                merged_out_salvo = {**(base_config.out_salvo_conditions or {}), **self.out_salvo_conditions}
+                merged_out_salvo = self.out_salvo_conditions
             else:
                 merged_out_salvo = base_config.out_salvo_conditions  # Keep None or factory value
 
