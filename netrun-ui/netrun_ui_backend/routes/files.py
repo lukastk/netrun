@@ -164,6 +164,8 @@ async def save_file(request: FileSaveRequest) -> FileSaveResponse:
 
         return FileSaveResponse(success=True, path=str(path))
 
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error saving file: {e}")
 
