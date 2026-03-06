@@ -1,4 +1,5 @@
 use super::*;
+use crate::graph::{PortState, SalvoCondition};
 use crate::test_fixtures::*;
 use indexmap::IndexMap;
 use std::collections::HashMap;
@@ -469,6 +470,7 @@ fn test_run_until_blocked_respects_port_capacity() {
         out_ports: HashMap::new(),
         in_salvo_conditions: IndexMap::new(), // No salvo conditions = packets wait at input port
         out_salvo_conditions: IndexMap::new(),
+        dependency_request_config: None,
     };
 
     let nodes = vec![simple_node("A", vec![], vec!["out"]), node_b];
@@ -2213,4 +2215,532 @@ fn test_send_output_salvo_from_index_is_fresh() {
     // Verify packets are back in the output port in correct order
     let restored_packets = net.get_packets_at_location(&output_port_loc);
     assert_eq!(restored_packets, vec![p1, p2, p3]);
+}
+
+// ========== Dependency Edges & Packet Request Tests ==========
+
+/// Helper to count events of a given kind
+fn count_events(events: &[NetEvent], kind: &str) -> usize {
+    events
+        .iter()
+        .filter(|e| match e {
+            NetEvent::RequestCreated(..) => kind == "RequestCreated",
+            NetEvent::RequestCascadeResolved(..) => kind == "RequestCascadeResolved",
+            NetEvent::RequestEpochCreated(..) => kind == "RequestEpochCreated",
+            NetEvent::EpochCreated(..) => kind == "EpochCreated",
+            _ => false,
+        })
+        .count()
+}
+
+/// Creates a simple dependency graph: Source -> Sink (dep edge)
+/// Sink has OnStartup trigger.
+fn startup_dep_graph() -> Graph {
+    let source = simple_node("Source", vec![], vec!["out"]);
+    let sink = dependency_node(
+        "Sink",
+        vec!["in"],
+        vec![],
+        vec![DependencyRequestTrigger::OnStartup],
+        "fetch",
+    );
+    let e = edge("Source", "out", "Sink", "in");
+    Graph::new(vec![source, sink], vec![e.clone()]).with_dependency_edges(vec![e])
+}
+
+#[test]
+fn test_create_request_valid_node() {
+    let graph = startup_dep_graph();
+    let mut net = NetSim::new(graph);
+    match net.do_action(&NetAction::CreateRequest("Sink".to_string(), "fetch".to_string())) {
+        NetActionResponse::Success(NetActionResponseData::None, events) => {
+            assert_eq!(events.len(), 1);
+            assert!(matches!(&events[0], NetEvent::RequestCreated(_, node, label) if node == "Sink" && label == "fetch"));
+        }
+        other => panic!("Expected success, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_create_request_invalid_node() {
+    let graph = startup_dep_graph();
+    let mut net = NetSim::new(graph);
+    match net.do_action(&NetAction::CreateRequest("Nonexistent".to_string(), "x".to_string())) {
+        NetActionResponse::Error(NetActionError::RequestNodeNotFound { node_name }) => {
+            assert_eq!(node_name, "Nonexistent");
+        }
+        other => panic!("Expected RequestNodeNotFound error, got {:?}", other),
+    }
+}
+
+#[test]
+fn test_on_startup_creates_epoch_at_source() {
+    let graph = startup_dep_graph();
+    let mut net = NetSim::new(graph);
+
+    // First run_step should trigger on_startup -> cascade -> epoch at Source
+    let events = net.run_until_blocked();
+
+    assert!(
+        count_events(&events, "RequestCreated") >= 1,
+        "Should have RequestCreated events"
+    );
+    assert!(
+        count_events(&events, "RequestCascadeResolved") >= 1,
+        "Should have RequestCascadeResolved events"
+    );
+    assert!(
+        count_events(&events, "RequestEpochCreated") >= 1,
+        "Should have RequestEpochCreated events"
+    );
+
+    // Source should have a startable epoch
+    let startable = net.get_startable_epochs();
+    assert_eq!(startable.len(), 1);
+    let epoch = net.get_epoch(&startable[0]).unwrap();
+    assert_eq!(epoch.node_name, "Source");
+    assert_eq!(epoch.in_salvo.salvo_condition, "__request__");
+    assert!(epoch.in_salvo.packets.is_empty());
+}
+
+#[test]
+fn test_on_startup_fires_only_once() {
+    let graph = startup_dep_graph();
+    let mut net = NetSim::new(graph);
+
+    // First run creates epochs
+    let events1 = net.run_until_blocked();
+    let request_count_1 = count_events(&events1, "RequestCreated");
+    assert!(request_count_1 >= 1);
+
+    // Second run should NOT create more startup requests
+    let events2 = net.run_until_blocked();
+    let request_count_2 = count_events(&events2, "RequestCreated");
+    assert_eq!(request_count_2, 0, "Startup requests should fire only once");
+}
+
+#[test]
+fn test_on_no_salvo_triggered_sends_request() {
+    // Setup: Source -> Sink (dep edge Source->Sink)
+    // Sink has OnNoSalvoTriggered trigger with an impossible salvo condition (Full on Infinite port)
+    let source = simple_node("Source", vec![], vec!["out"]);
+    let mut sink = dependency_node(
+        "Sink",
+        vec!["in"],
+        vec![],
+        vec![DependencyRequestTrigger::OnNoSalvoTriggered],
+        "demand",
+    );
+    // Override Sink's salvo condition to be impossible: requires Full on Infinite port
+    sink.in_salvo_conditions = IndexMap::from([(
+        "default".to_string(),
+        SalvoCondition {
+            max_salvos: MaxSalvos::Finite(1),
+            ports: [("in".to_string(), PacketCount::All)]
+                .into_iter()
+                .collect(),
+            term: SalvoConditionTerm::Port {
+                port_name: "in".to_string(),
+                state: PortState::Full,
+            },
+        },
+    )]);
+
+    let e = edge("Source", "out", "Sink", "in");
+    let graph = Graph::new(vec![source, sink], vec![e.clone()]).with_dependency_edges(vec![e.clone()]);
+    assert!(graph.validate().is_empty());
+
+    let mut net = NetSim::new(graph);
+
+    // Create and place a packet on edge Source->Sink
+    let p = match net.do_action(&NetAction::CreatePacket(None)) {
+        NetActionResponse::Success(NetActionResponseData::Packet(id), _) => id,
+        _ => panic!("Failed to create packet"),
+    };
+    net.do_action(&NetAction::TransportPacketToLocation(
+        p,
+        PacketLocation::Edge(e),
+    ));
+
+    // run_until_blocked: packet moves to Sink's input port, salvo condition NOT met (Full on Infinite),
+    // so OnNoSalvoTriggered fires -> cascade backward -> epoch at Source
+    let events = net.run_until_blocked();
+
+    assert!(
+        count_events(&events, "RequestCreated") >= 1,
+        "OnNoSalvoTriggered should fire"
+    );
+    assert!(
+        count_events(&events, "RequestEpochCreated") >= 1,
+        "Should cascade to create epoch at Source"
+    );
+
+    // Source should have a startable epoch
+    let startable = net.get_startable_epochs();
+    assert!(
+        startable.iter().any(|id| {
+            let e = net.get_epoch(id).unwrap();
+            e.node_name == "Source"
+        }),
+        "Source should have a startable epoch"
+    );
+}
+
+#[test]
+fn test_on_no_salvo_triggered_token_is_spent() {
+    // Same graph as above
+    let source = simple_node("Source", vec![], vec!["out"]);
+    let mut sink = dependency_node(
+        "Sink",
+        vec!["in"],
+        vec![],
+        vec![DependencyRequestTrigger::OnNoSalvoTriggered],
+        "demand",
+    );
+    sink.in_salvo_conditions = IndexMap::from([(
+        "default".to_string(),
+        SalvoCondition {
+            max_salvos: MaxSalvos::Finite(1),
+            ports: [("in".to_string(), PacketCount::All)]
+                .into_iter()
+                .collect(),
+            term: SalvoConditionTerm::Port {
+                port_name: "in".to_string(),
+                state: PortState::Full,
+            },
+        },
+    )]);
+
+    let e = edge("Source", "out", "Sink", "in");
+    let graph = Graph::new(vec![source, sink], vec![e.clone()]).with_dependency_edges(vec![e.clone()]);
+    let mut net = NetSim::new(graph);
+
+    // First packet: triggers request (spends token)
+    let p1 = match net.do_action(&NetAction::CreatePacket(None)) {
+        NetActionResponse::Success(NetActionResponseData::Packet(id), _) => id,
+        _ => panic!("create"),
+    };
+    net.do_action(&NetAction::TransportPacketToLocation(
+        p1,
+        PacketLocation::Edge(e.clone()),
+    ));
+    let events1 = net.run_until_blocked();
+    let req1 = count_events(&events1, "RequestCreated");
+    assert!(req1 >= 1, "First run should create request");
+
+    // Second packet: token spent, should NOT trigger request
+    let p2 = match net.do_action(&NetAction::CreatePacket(None)) {
+        NetActionResponse::Success(NetActionResponseData::Packet(id), _) => id,
+        _ => panic!("create"),
+    };
+    net.do_action(&NetAction::TransportPacketToLocation(
+        p2,
+        PacketLocation::Edge(e.clone()),
+    ));
+    let events2 = net.run_until_blocked();
+    let req2 = count_events(&events2, "RequestCreated");
+    assert_eq!(req2, 0, "Token should be spent, no second request");
+}
+
+#[test]
+fn test_token_replenishment_on_finish_epoch() {
+    let source = simple_node("Source", vec![], vec!["out"]);
+    let mut sink = dependency_node(
+        "Sink",
+        vec!["in"],
+        vec![],
+        vec![DependencyRequestTrigger::OnNoSalvoTriggered],
+        "demand",
+    );
+    sink.in_salvo_conditions = IndexMap::from([(
+        "default".to_string(),
+        SalvoCondition {
+            max_salvos: MaxSalvos::Finite(1),
+            ports: [("in".to_string(), PacketCount::All)]
+                .into_iter()
+                .collect(),
+            term: SalvoConditionTerm::Port {
+                port_name: "in".to_string(),
+                state: PortState::Full,
+            },
+        },
+    )]);
+
+    let e = edge("Source", "out", "Sink", "in");
+    let graph = Graph::new(vec![source, sink], vec![e.clone()]).with_dependency_edges(vec![e.clone()]);
+    let mut net = NetSim::new(graph);
+
+    // Trigger first request
+    let p1 = match net.do_action(&NetAction::CreatePacket(None)) {
+        NetActionResponse::Success(NetActionResponseData::Packet(id), _) => id,
+        _ => panic!("create"),
+    };
+    net.do_action(&NetAction::TransportPacketToLocation(
+        p1,
+        PacketLocation::Edge(e.clone()),
+    ));
+    net.run_until_blocked();
+
+    // Start and finish the request epoch at Source to replenish Sink's token
+    let startable = net.get_startable_epochs();
+    let source_epoch_id = startable
+        .iter()
+        .find(|id| net.get_epoch(id).unwrap().node_name == "Source")
+        .cloned()
+        .expect("Source should have epoch");
+
+    net.do_action(&NetAction::StartEpoch(source_epoch_id));
+    net.do_action(&NetAction::FinishEpoch(source_epoch_id));
+
+    // Now Sink's token should be replenished... wait, token is for Sink node
+    // and FinishEpoch is on Source node. Let me re-read the logic.
+    // Token replenishment happens when the EPOCH'S node has OnNoSalvoTriggered.
+    // Source doesn't have that. Sink does. So finishing Source's epoch doesn't replenish Sink's token.
+    // The token is replenished when an epoch on SINK finishes.
+    // But Sink can't have an epoch since its salvo condition never triggers.
+    // Let me test with CancelEpoch instead, or create an epoch on Sink manually.
+
+    // Create an epoch on Sink manually and finish it
+    let sink_salvo = Salvo {
+        salvo_condition: "__request__".to_string(),
+        packets: vec![],
+    };
+    let sink_epoch_id = match net.do_action(&NetAction::CreateEpoch("Sink".to_string(), sink_salvo)) {
+        NetActionResponse::Success(NetActionResponseData::CreatedEpoch(epoch), _) => epoch.id,
+        _ => panic!("create epoch"),
+    };
+    net.do_action(&NetAction::StartEpoch(sink_epoch_id));
+    net.do_action(&NetAction::FinishEpoch(sink_epoch_id));
+
+    // Now token should be replenished. Add another packet to test.
+    let p2 = match net.do_action(&NetAction::CreatePacket(None)) {
+        NetActionResponse::Success(NetActionResponseData::Packet(id), _) => id,
+        _ => panic!("create"),
+    };
+    net.do_action(&NetAction::TransportPacketToLocation(
+        p2,
+        PacketLocation::Edge(e.clone()),
+    ));
+    let events = net.run_until_blocked();
+    let req = count_events(&events, "RequestCreated");
+    assert!(req >= 1, "Token should be replenished after finishing Sink epoch");
+}
+
+#[test]
+fn test_token_replenishment_on_cancel_epoch() {
+    let source = simple_node("Source", vec![], vec!["out"]);
+    let mut sink = dependency_node(
+        "Sink",
+        vec!["in"],
+        vec![],
+        vec![DependencyRequestTrigger::OnNoSalvoTriggered],
+        "demand",
+    );
+    sink.in_salvo_conditions = IndexMap::from([(
+        "default".to_string(),
+        SalvoCondition {
+            max_salvos: MaxSalvos::Finite(1),
+            ports: [("in".to_string(), PacketCount::All)]
+                .into_iter()
+                .collect(),
+            term: SalvoConditionTerm::Port {
+                port_name: "in".to_string(),
+                state: PortState::Full,
+            },
+        },
+    )]);
+
+    let e = edge("Source", "out", "Sink", "in");
+    let graph = Graph::new(vec![source, sink], vec![e.clone()]).with_dependency_edges(vec![e.clone()]);
+    let mut net = NetSim::new(graph);
+
+    // Trigger first request (spends token)
+    let p1 = match net.do_action(&NetAction::CreatePacket(None)) {
+        NetActionResponse::Success(NetActionResponseData::Packet(id), _) => id,
+        _ => panic!("create"),
+    };
+    net.do_action(&NetAction::TransportPacketToLocation(
+        p1,
+        PacketLocation::Edge(e.clone()),
+    ));
+    net.run_until_blocked();
+
+    // Cancel a Sink epoch to replenish token
+    let sink_salvo = Salvo {
+        salvo_condition: "__request__".to_string(),
+        packets: vec![],
+    };
+    let sink_epoch_id = match net.do_action(&NetAction::CreateEpoch("Sink".to_string(), sink_salvo)) {
+        NetActionResponse::Success(NetActionResponseData::CreatedEpoch(epoch), _) => epoch.id,
+        _ => panic!("create epoch"),
+    };
+    net.do_action(&NetAction::StartEpoch(sink_epoch_id));
+    net.do_action(&NetAction::CancelEpoch(sink_epoch_id));
+
+    // Now add another packet - should trigger a request again
+    let p2 = match net.do_action(&NetAction::CreatePacket(None)) {
+        NetActionResponse::Success(NetActionResponseData::Packet(id), _) => id,
+        _ => panic!("create"),
+    };
+    net.do_action(&NetAction::TransportPacketToLocation(
+        p2,
+        PacketLocation::Edge(e.clone()),
+    ));
+    let events = net.run_until_blocked();
+    let req = count_events(&events, "RequestCreated");
+    assert!(req >= 1, "Token should be replenished after cancel");
+}
+
+#[test]
+fn test_label_merging_deduplicates_same_source_and_label() {
+    // Two nodes both requesting with same label, both cascade to same Source
+    // Source -> B -> Sink1 (dep)
+    // Source -> C -> Sink2 (dep)
+    let source = simple_node("Source", vec![], vec!["out1", "out2"]);
+    let b = simple_node("B", vec!["in"], vec!["out"]);
+    let c = simple_node("C", vec!["in"], vec!["out"]);
+    let sink1 = dependency_node(
+        "Sink1",
+        vec!["in"],
+        vec![],
+        vec![DependencyRequestTrigger::OnStartup],
+        "shared_label",
+    );
+    let sink2 = dependency_node(
+        "Sink2",
+        vec!["in"],
+        vec![],
+        vec![DependencyRequestTrigger::OnStartup],
+        "shared_label",
+    );
+
+    let edges = vec![
+        edge("Source", "out1", "B", "in"),
+        edge("Source", "out2", "C", "in"),
+        edge("B", "out", "Sink1", "in"),
+        edge("C", "out", "Sink2", "in"),
+    ];
+    let dep_edges = vec![edges[2].clone(), edges[3].clone()];
+    let graph = Graph::new(vec![source, b, c, sink1, sink2], edges)
+        .with_dependency_edges(dep_edges);
+    assert!(graph.validate().is_empty());
+
+    let mut net = NetSim::new(graph);
+    net.run_until_blocked();
+
+    // Should have exactly ONE epoch at Source (deduplication by source_node + label)
+    let startable = net.get_startable_epochs();
+    let source_epochs: Vec<_> = startable
+        .iter()
+        .filter(|id| net.get_epoch(id).unwrap().node_name == "Source")
+        .collect();
+    assert_eq!(
+        source_epochs.len(),
+        1,
+        "Same (Source, shared_label) should yield only one epoch"
+    );
+}
+
+#[test]
+fn test_different_labels_create_separate_epochs() {
+    // Source -> B -> Sink1 (dep, label="alpha")
+    // Source -> C -> Sink2 (dep, label="beta")
+    let source = simple_node("Source", vec![], vec!["out1", "out2"]);
+    let b = simple_node("B", vec!["in"], vec!["out"]);
+    let c = simple_node("C", vec!["in"], vec!["out"]);
+    let sink1 = dependency_node(
+        "Sink1",
+        vec!["in"],
+        vec![],
+        vec![DependencyRequestTrigger::OnStartup],
+        "alpha",
+    );
+    let sink2 = dependency_node(
+        "Sink2",
+        vec!["in"],
+        vec![],
+        vec![DependencyRequestTrigger::OnStartup],
+        "beta",
+    );
+
+    let edges = vec![
+        edge("Source", "out1", "B", "in"),
+        edge("Source", "out2", "C", "in"),
+        edge("B", "out", "Sink1", "in"),
+        edge("C", "out", "Sink2", "in"),
+    ];
+    let dep_edges = vec![edges[2].clone(), edges[3].clone()];
+    let graph = Graph::new(vec![source, b, c, sink1, sink2], edges)
+        .with_dependency_edges(dep_edges);
+    assert!(graph.validate().is_empty());
+
+    let mut net = NetSim::new(graph);
+    net.run_until_blocked();
+
+    // Should have TWO epochs at Source (different labels)
+    let startable = net.get_startable_epochs();
+    let source_epochs: Vec<_> = startable
+        .iter()
+        .filter(|id| net.get_epoch(id).unwrap().node_name == "Source")
+        .collect();
+    assert_eq!(
+        source_epochs.len(),
+        2,
+        "Different labels should create separate epochs at Source"
+    );
+}
+
+#[test]
+fn test_end_to_end_request_to_forward_flow() {
+    // Source -> Sink (dep edge), Sink has OnStartup
+    // Full flow: startup -> cascade -> epoch at Source -> start -> create output -> send -> run -> Sink gets packet
+    let source = simple_node("Source", vec![], vec!["out"]);
+    let sink = dependency_node(
+        "Sink",
+        vec!["in"],
+        vec![],
+        vec![DependencyRequestTrigger::OnStartup],
+        "fetch",
+    );
+    let e = edge("Source", "out", "Sink", "in");
+    let graph = Graph::new(vec![source, sink], vec![e.clone()]).with_dependency_edges(vec![e]);
+    let mut net = NetSim::new(graph);
+
+    // Phase 1: startup triggers request -> cascade -> epoch at Source
+    net.run_until_blocked();
+    let startable = net.get_startable_epochs();
+    assert_eq!(startable.len(), 1);
+    let source_epoch = net.get_epoch(&startable[0]).unwrap();
+    assert_eq!(source_epoch.node_name, "Source");
+
+    // Phase 2: Start Source epoch, create output packet, send it forward
+    let started = match net.do_action(&NetAction::StartEpoch(startable[0])) {
+        NetActionResponse::Success(NetActionResponseData::StartedEpoch(e), _) => e,
+        other => panic!("Expected started epoch, got {:?}", other),
+    };
+
+    let output_packet = match net.do_action(&NetAction::CreatePacket(Some(started.id))) {
+        NetActionResponse::Success(NetActionResponseData::Packet(id), _) => id,
+        _ => panic!("Failed to create packet"),
+    };
+
+    net.do_action(&NetAction::LoadPacketIntoOutputPort(
+        output_packet,
+        "out".to_string(),
+    ));
+    net.do_action(&NetAction::SendOutputSalvo(
+        started.id,
+        "default".to_string(),
+    ));
+    net.do_action(&NetAction::FinishEpoch(started.id));
+
+    // Phase 3: Run network - packet moves from edge to Sink's input port
+    net.run_until_blocked();
+
+    // Sink should now have a startable epoch (normal salvo triggered by incoming packet)
+    let startable2 = net.get_startable_epochs();
+    assert_eq!(startable2.len(), 1);
+    let sink_epoch = net.get_epoch(&startable2[0]).unwrap();
+    assert_eq!(sink_epoch.node_name, "Sink");
+    assert_eq!(sink_epoch.in_salvo.packets.len(), 1);
 }

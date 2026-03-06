@@ -35,6 +35,11 @@ create_exception!(
 create_exception!(netrun_sim, EdgeNotFoundError, NetrunError);
 create_exception!(netrun_sim, GraphValidationError, NetrunError);
 
+// Request-related exceptions
+create_exception!(netrun_sim, RequestCycleDetectedError, NetrunError);
+create_exception!(netrun_sim, RequestUnconnectedPortError, NetrunError);
+create_exception!(netrun_sim, RequestNodeNotFoundError, NetrunError);
+
 // Undo-related exceptions
 create_exception!(netrun_sim, UndoError, NetrunError);
 create_exception!(netrun_sim, UndoStateMismatchError, UndoError);
@@ -117,6 +122,18 @@ pub fn register(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add(
         "GraphValidationError",
         m.py().get_type::<GraphValidationError>(),
+    )?;
+    m.add(
+        "RequestCycleDetectedError",
+        m.py().get_type::<RequestCycleDetectedError>(),
+    )?;
+    m.add(
+        "RequestUnconnectedPortError",
+        m.py().get_type::<RequestUnconnectedPortError>(),
+    )?;
+    m.add(
+        "RequestNodeNotFoundError",
+        m.py().get_type::<RequestNodeNotFoundError>(),
     )?;
     m.add("UndoError", m.py().get_type::<UndoError>())?;
     m.add(
@@ -240,6 +257,25 @@ pub fn net_action_error_to_py_err(err: netrun_sim::net::NetActionError) -> PyErr
         )),
         NetActionError::EdgeNotFound { edge } => {
             EdgeNotFoundError::new_err(format!("Edge not found: {}", edge))
+        }
+        NetActionError::RequestCycleDetected { node_name } => {
+            RequestCycleDetectedError::new_err(format!(
+                "Request cascade cycle detected at node '{}'",
+                node_name
+            ))
+        }
+        NetActionError::RequestUnconnectedPort {
+            node_name,
+            port_name,
+        } => RequestUnconnectedPortError::new_err(format!(
+            "Request cascade reached unconnected input port '{}' on node '{}'",
+            port_name, node_name
+        )),
+        NetActionError::RequestNodeNotFound { node_name } => {
+            RequestNodeNotFoundError::new_err(format!(
+                "Request targets non-existent node '{}'",
+                node_name
+            ))
         }
     }
 }
