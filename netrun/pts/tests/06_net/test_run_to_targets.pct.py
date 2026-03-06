@@ -820,3 +820,245 @@ async def test_multiple_targets():
         assert names == ["B", "C"]
         for s in salvos:
             assert s.packets["in"] == [5]
+
+# %% [markdown]
+# ## Test: auto-start (run_to_targets on unstarted Net)
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_auto_start():
+    """run_to_targets on an unstarted Net auto-starts it."""
+    config = _make_net_config(
+        nodes=[
+            _make_passthrough_node("A"),
+            _make_sink_node("B"),
+        ],
+        edges=[
+            EdgeConfig(source_str="A.out", target_str="B.in"),
+        ],
+    )
+
+    net = Net(config)
+    net.inject_data("A", "in", [42])
+    try:
+        salvos = await net.run_to_targets("B")
+
+        assert len(salvos) == 1
+        assert salvos[0].node_name == "B"
+        assert salvos[0].packets["in"] == [42]
+        assert net._started
+    finally:
+        await net.stop()
+
+# %% [markdown]
+# ## Test: source nodes executed by run_to_targets
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_source_nodes_executed():
+    """Source node (run_on_startup=True) output flows to target via run_to_targets."""
+    def source_func(ctx, packets):
+        out_id = ctx.create_packet("from_source")
+        ctx.load_output_port("out", out_id)
+        ctx.send_output_salvo("send")
+
+    config = _make_net_config(
+        nodes=[
+            NodeConfig(
+                name="Source",
+                out_ports={"out": PortConfig()},
+                in_salvo_conditions={
+                    "trigger": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={},
+                        term=SalvoConditionTermTrueConfig(),
+                    ),
+                },
+                out_salvo_conditions={
+                    "send": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"out": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="out",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    pools=["main"],
+                    exec_node_func=source_func,
+                    run_on_startup=True,
+                ),
+            ),
+            _make_passthrough_node("Middle"),
+            _make_sink_node("Sink"),
+        ],
+        edges=[
+            EdgeConfig(source_str="Source.out", target_str="Middle.in"),
+            EdgeConfig(source_str="Middle.out", target_str="Sink.in"),
+        ],
+    )
+
+    net = Net(config)
+    try:
+        salvos = await net.run_to_targets("Sink")
+
+        assert len(salvos) == 1
+        assert salvos[0].node_name == "Sink"
+        assert salvos[0].packets["in"] == ["from_source"]
+    finally:
+        await net.stop()
+
+# %% [markdown]
+# ## Test: raises on disabled source node
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_raises_on_disabled_source_node():
+    """run_to_targets raises RuntimeError if a source node is disabled."""
+    def source_func(ctx, packets):
+        out_id = ctx.create_packet("val")
+        ctx.load_output_port("out", out_id)
+        ctx.send_output_salvo("send")
+
+    config = _make_net_config(
+        nodes=[
+            NodeConfig(
+                name="Source",
+                out_ports={"out": PortConfig()},
+                in_salvo_conditions={
+                    "trigger": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={},
+                        term=SalvoConditionTermTrueConfig(),
+                    ),
+                },
+                out_salvo_conditions={
+                    "send": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"out": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="out",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    pools=["main"],
+                    exec_node_func=source_func,
+                    run_on_startup=True,
+                    enabled=False,
+                ),
+            ),
+            _make_sink_node("Sink"),
+        ],
+        edges=[
+            EdgeConfig(source_str="Source.out", target_str="Sink.in"),
+        ],
+    )
+
+    net = Net(config)
+    try:
+        with pytest.raises(RuntimeError, match="Cannot execute source node"):
+            await net.run_to_targets("Sink")
+    finally:
+        await net.stop()
+
+# %% [markdown]
+# ## Test: inject_data before start, then run_to_targets
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_pre_start_inject():
+    """inject_data before start, then run_to_targets works correctly."""
+    config = _make_net_config(
+        nodes=[
+            _make_passthrough_node("A"),
+            _make_passthrough_node("B"),
+            _make_sink_node("C"),
+        ],
+        edges=[
+            EdgeConfig(source_str="A.out", target_str="B.in"),
+            EdgeConfig(source_str="B.out", target_str="C.in"),
+        ],
+    )
+
+    net = Net(config)
+    net.inject_data("A", "in", [99])
+    try:
+        salvos = await net.run_to_targets("C")
+
+        assert len(salvos) == 1
+        assert salvos[0].packets["in"] == [99]
+    finally:
+        await net.stop()
+
+# %% [markdown]
+# ## Test: no double source node execution
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_no_double_source_execution():
+    """Source nodes don't run twice if start(run_source_nodes=True) already ran them."""
+    execution_count = []
+
+    def source_func(ctx, packets):
+        execution_count.append(1)
+        out_id = ctx.create_packet("val")
+        ctx.load_output_port("out", out_id)
+        ctx.send_output_salvo("send")
+
+    config = _make_net_config(
+        nodes=[
+            NodeConfig(
+                name="Source",
+                out_ports={"out": PortConfig()},
+                in_salvo_conditions={
+                    "trigger": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={},
+                        term=SalvoConditionTermTrueConfig(),
+                    ),
+                },
+                out_salvo_conditions={
+                    "send": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"out": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="out",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    pools=["main"],
+                    exec_node_func=source_func,
+                    run_on_startup=True,
+                ),
+            ),
+            _make_sink_node("Sink"),
+        ],
+        edges=[
+            EdgeConfig(source_str="Source.out", target_str="Sink.in"),
+        ],
+    )
+
+    net = Net(config)
+    await net.start()  # This runs source nodes (run_source_nodes=True by default)
+    try:
+        assert len(execution_count) == 1
+
+        salvos = await net.run_to_targets("Sink")
+
+        # Source should NOT have been executed again
+        assert len(execution_count) == 1
+        # But the salvo from the initial execution should still be collected
+        assert len(salvos) == 1
+        assert salvos[0].packets["in"] == ["val"]
+    finally:
+        await net.stop()
