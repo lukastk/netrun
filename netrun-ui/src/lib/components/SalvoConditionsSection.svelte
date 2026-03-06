@@ -10,6 +10,7 @@
 		outPortNames: string[];
 		onUpdateIn: (conditions: Record<string, SalvoConditionConfig> | null) => void;
 		onUpdateOut: (conditions: Record<string, SalvoConditionConfig> | null) => void;
+		isFactory?: boolean;
 	}
 
 	let {
@@ -19,7 +20,10 @@
 		outPortNames,
 		onUpdateIn,
 		onUpdateOut,
+		isFactory = false,
 	}: Props = $props();
+
+	let defaultsLabel = $derived(isFactory ? 'Use defaults (from factory)' : 'Use defaults (auto-generate)');
 
 	// Sub-section collapse state
 	let inputOpen = $state(true);
@@ -166,7 +170,7 @@
 			<div class="subsection-content">
 				<label class="defaults-toggle">
 					<input type="checkbox" checked={inUseDefaults} onchange={toggleInputDefaults} />
-					<span>Use defaults (auto-generate)</span>
+					<span>{defaultsLabel}</span>
 				</label>
 
 				{#if !inUseDefaults}
@@ -197,7 +201,7 @@
 			<div class="subsection-content">
 				<label class="defaults-toggle">
 					<input type="checkbox" checked={outUseDefaults} onchange={toggleOutputDefaults} />
-					<span>Use defaults (auto-generate)</span>
+					<span>{defaultsLabel}</span>
 				</label>
 
 				{#if !outUseDefaults}
