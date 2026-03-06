@@ -784,25 +784,12 @@ impl Graph {
             for edge in incoming_edges {
                 let upstream_node_name = &edge.source.node_name;
 
-                // Cycle detection
-                if processed_nodes.contains(upstream_node_name) {
-                    // Already processed this node — skip (not a cycle, just diamond convergence)
-                    continue;
-                }
-
-                // Check if this node is in our current traversal path (visited but not yet fully processed)
-                // Since BFS processes level by level, if we see a node in visited_nodes
-                // that hasn't been processed yet, it means we found it from a different path
-                // in the same BFS level — that's fine (diamond). True cycles would require
-                // re-visiting a processed node's descendants, which can't happen in a DAG.
-
-                if visited_nodes.contains(upstream_node_name) && !processed_nodes.contains(upstream_node_name) {
-                    // Diamond pattern — already queued but not yet processed
+                // Skip already-visited nodes (handles diamond convergence)
+                if !processed_nodes.insert(upstream_node_name.clone()) {
                     continue;
                 }
 
                 visited_nodes.push(upstream_node_name.clone());
-                processed_nodes.insert(upstream_node_name.clone());
 
                 // Get the upstream node
                 let upstream_node = self

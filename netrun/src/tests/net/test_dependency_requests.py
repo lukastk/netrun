@@ -22,6 +22,7 @@ from netrun.net.config import (
     PacketCountAllConfig,
     PortStateNonEmptyConfig,
     DependencyRequestConfig,
+    SalvoConditionTermAndConfig,
 )
 from netrun.net._net import Net
 import netrun_sim
@@ -654,7 +655,6 @@ async def test_diamond_graph_deduplication():
             for pid in packet_ids:
                 ctx.consume_packet(pid)
 
-    from netrun.net.config import SalvoConditionTermAndConfig
 
     def _node(name, exec_func, in_ports=None, out_ports=None, dep_req=None):
         in_p = in_ports or {}
@@ -744,8 +744,6 @@ async def test_hybrid_push_pull():
             for pid in packet_ids:
                 values.append(ctx.consume_packet(pid))
         execution_log.append(f"sink:{sorted(values)}")
-
-    from netrun.net.config import SalvoConditionTermAndConfig
 
     graph_config = GraphConfig(
         nodes=[
