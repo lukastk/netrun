@@ -246,16 +246,35 @@ class ApiClient {
 
 	private async request<T>(
 		endpoint: string,
-		options: RequestInit = {}
+		options: RequestInit = {},
+		timeoutMs?: number
 	): Promise<T> {
 		const url = `${this.baseUrl}${endpoint}`;
-		const response = await fetch(url, {
+		const fetchOptions: RequestInit = {
 			...options,
 			headers: {
 				'Content-Type': 'application/json',
 				...options.headers,
 			},
-		});
+		};
+
+		if (timeoutMs) {
+			const controller = new AbortController();
+			fetchOptions.signal = options.signal
+				? AbortSignal.any([options.signal, controller.signal])
+				: controller.signal;
+			setTimeout(() => controller.abort(), timeoutMs);
+		}
+
+		let response: Response;
+		try {
+			response = await fetch(url, fetchOptions);
+		} catch (err: unknown) {
+			if (err instanceof DOMException && err.name === 'AbortError') {
+				throw new Error(`Request to ${endpoint} timed out after ${timeoutMs}ms`);
+			}
+			throw err;
+		}
 
 		if (!response.ok) {
 			const error: ApiError = await response.json().catch(() => ({
@@ -462,7 +481,7 @@ class ApiClient {
 		return this.request<ExecuteActionResponse>('/actions/execute', {
 			method: 'POST',
 			body: JSON.stringify(request),
-		});
+		}, 300_000); // 5 minute timeout for action execution
 	}
 
 	/**
@@ -509,13 +528,7 @@ class ApiClient {
 	 * Get server configuration including working directory
 	 */
 	async getServerConfig(): Promise<ServerConfigResponse> {
-		// Note: /api/config is served directly, not under /api/files etc.
-		const url = this.baseUrl.replace('/api', '') + '/api/config';
-		const response = await fetch(url);
-		if (!response.ok) {
-			throw new Error(`Failed to get server config: ${response.statusText}`);
-		}
-		return response.json();
+		return this.request<ServerConfigResponse>('/config');
 	}
 
 	/**
