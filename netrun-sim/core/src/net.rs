@@ -500,13 +500,12 @@ impl NetSim {
         // Initialize request tokens for nodes with OnNoSalvoTriggered trigger
         let mut request_tokens: HashMap<NodeName, bool> = HashMap::new();
         for (node_name, node) in graph.nodes() {
-            if let Some(config) = &node.dependency_request_config {
-                if config
+            if let Some(config) = &node.dependency_request_config
+                && config
                     .triggers
                     .contains(&DependencyRequestTrigger::OnNoSalvoTriggered)
-                {
-                    request_tokens.insert(node_name.clone(), true);
-                }
+            {
+                request_tokens.insert(node_name.clone(), true);
             }
         }
 
@@ -808,23 +807,22 @@ impl NetSim {
         if !self._startup_requests_sent {
             let mut found_startup = false;
             for (node_name, node) in self.graph.nodes() {
-                if let Some(config) = &node.dependency_request_config {
-                    if config
+                if let Some(config) = &node.dependency_request_config
+                    && config
                         .triggers
                         .contains(&DependencyRequestTrigger::OnStartup)
-                    {
-                        found_startup = true;
-                        all_events.push(NetEvent::RequestCreated(
-                            get_utc_now(),
-                            node_name.clone(),
-                            config.label.clone(),
-                            RequestCreatedSource::OnStartup,
-                        ));
-                        self._pending_requests.push(PendingRequest {
-                            node_name: node_name.clone(),
-                            label: config.label.clone(),
-                        });
-                    }
+                {
+                    found_startup = true;
+                    all_events.push(NetEvent::RequestCreated(
+                        get_utc_now(),
+                        node_name.clone(),
+                        config.label.clone(),
+                        RequestCreatedSource::OnStartup,
+                    ));
+                    self._pending_requests.push(PendingRequest {
+                        node_name: node_name.clone(),
+                        label: config.label.clone(),
+                    });
                 }
             }
             if found_startup {
@@ -1109,15 +1107,13 @@ impl NetSim {
     /// Set the request token for a node if it has an `OnNoSalvoTriggered` trigger.
     /// Called with `true` to replenish (on epoch finish/cancel) or `false` to reverse (on undo).
     fn set_request_token(&mut self, node_name: &NodeName, value: bool) {
-        if let Some(node) = self.graph.nodes().get(node_name) {
-            if let Some(config) = &node.dependency_request_config {
-                if config
-                    .triggers
-                    .contains(&DependencyRequestTrigger::OnNoSalvoTriggered)
-                {
-                    self._request_tokens.insert(node_name.clone(), value);
-                }
-            }
+        if let Some(node) = self.graph.nodes().get(node_name)
+            && let Some(config) = &node.dependency_request_config
+            && config
+                .triggers
+                .contains(&DependencyRequestTrigger::OnNoSalvoTriggered)
+        {
+            self._request_tokens.insert(node_name.clone(), value);
         }
     }
 
