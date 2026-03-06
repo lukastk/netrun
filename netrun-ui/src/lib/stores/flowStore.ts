@@ -1332,9 +1332,9 @@ export function updateNodeDimensions(
 }
 
 export function deleteNodes(ids: string[]) {
-	pushHistory();
 	const tab = get(activeTab);
 	if (!tab) return;
+	pushHistory();
 	const idSet = new Set(ids);
 	updateActiveTab({
 		nodes: tab.nodes.filter(node => !idSet.has(node.id)),
@@ -1452,9 +1452,9 @@ export function addEdges(newEdges: NetrunEdge[]) {
 }
 
 export function deleteEdges(ids: string[]) {
-	pushHistory();
 	const tab = get(activeTab);
 	if (!tab) return;
+	pushHistory();
 	const idSet = new Set(ids);
 	updateActiveTab({
 		edges: tab.edges.filter(edge => !idSet.has(edge.id))
