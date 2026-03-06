@@ -92,6 +92,10 @@ class EdgeConfig(EnvVarResolvableModel):
     # Shorthand notation: "NodeA.out" -> "NodeB.in"
     source_str: str | None = None
     target_str: str | None = None
+    dependency: bool = Field(
+        default=False,
+        description="If True, this edge participates in backward request cascades.",
+    )
 
     def model_post_init(self, __context):
         # Validate that either full form or shorthand is provided
@@ -429,6 +433,33 @@ def _get_effective_controls(node_config: "NodeConfig", net_config: "Any | None")
 
 # %%
 #|export
+class DependencyRequestConfig(EnvVarResolvableModel):
+    """Configuration for automatic packet requests on nodes with dependency edges.
+
+    When a node has dependency edges on its input ports, this config controls
+    when requests are automatically sent backward to trigger upstream computation.
+    """
+    triggers: list[Literal["on_startup", "on_no_salvo_triggered"]] = Field(
+        default=["on_startup"],
+        description="When to auto-send requests. 'on_startup' fires once on first RunStep. "
+                    "'on_no_salvo_triggered' fires when packets arrive but no salvo triggers.",
+    )
+    label: str = Field(
+        default="main",
+        description="Request label for deduplication. Same label + same source = one epoch.",
+    )
+
+    def to_netrun_sim(self) -> netrun_sim.DependencyRequestConfig:
+        sim_triggers = []
+        for t in self.triggers:
+            if t == "on_startup":
+                sim_triggers.append(netrun_sim.DependencyRequestTrigger.on_startup())
+            elif t == "on_no_salvo_triggered":
+                sim_triggers.append(netrun_sim.DependencyRequestTrigger.on_no_salvo_triggered())
+        return netrun_sim.DependencyRequestConfig(sim_triggers, self.label)
+
+# %%
+#|export
 class NodeConfig(EnvVarResolvableModel):
     """Configuration for a node's graph structure (ports and salvo conditions).
 
@@ -460,6 +491,11 @@ class NodeConfig(EnvVarResolvableModel):
     out_salvo_conditions: dict[str, SalvoConditionConfig] | None = Field(default=None, description="Output salvo conditions. None generates defaults on resolve().")
 
     execution_config: NodeExecutionConfig | None = Field(default=None, description="Runtime execution configuration for this node.")
+
+    dependency_request: DependencyRequestConfig | None = Field(
+        default=None,
+        description="Automatic request config for nodes with dependency edges.",
+    )
 
     extra: dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data (UI position, tags, documentation).")
 
@@ -808,6 +844,7 @@ class NodeConfig(EnvVarResolvableModel):
             out_ports={name: port.to_netrun_sim() for name, port in self.out_ports.items()},
             in_salvo_conditions={name: sc.to_netrun_sim() for name, sc in in_salvos.items()},
             out_salvo_conditions={name: sc.to_netrun_sim() for name, sc in out_salvos.items()},
+            dependency_request_config=self.dependency_request.to_netrun_sim() if self.dependency_request else None,
         )
 
 # %% [markdown]
