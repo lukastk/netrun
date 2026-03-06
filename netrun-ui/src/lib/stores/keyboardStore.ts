@@ -87,13 +87,14 @@ export function handleKeyboardEvent(event: KeyboardEvent): boolean {
 		// Check alt
 		if (wantsAlt !== event.altKey) continue;
 
-		// Special handling for Tab with Ctrl (tab switching)
-		// Don't block if input is focused unless it's a global shortcut
+		// Skip shortcuts when input is focused (except Tab and copy/paste/cut)
 		if (binding.key.toLowerCase() !== 'tab' && isInputFocused()) {
-			// Allow copy/paste/cut in inputs
 			if (['c', 'v', 'x'].includes(binding.key.toLowerCase()) && (event.metaKey || event.ctrlKey)) {
+				// Allow copy/paste/cut to pass through to native input handling
 				continue;
 			}
+			// Skip all other shortcuts when input is focused
+			continue;
 		}
 
 		// Execute the command
