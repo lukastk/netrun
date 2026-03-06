@@ -36,6 +36,7 @@
 		updateNodePositions,
 		graphExtra,
 		isExpandedChildNode,
+		isExposedPortEdge,
 		getParentSubgraphId,
 		type NetrunNodeData,
 		type NetrunEdge
@@ -245,7 +246,7 @@
 		// Separate child nodes/edges from parent-level ones
 		const childNodeIds = params.nodes.filter(n => isExpandedChildNode(n.id)).map(n => n.id);
 		const parentNodeIds = params.nodes.filter(n => !isExpandedChildNode(n.id)).map(n => n.id);
-		const childEdgeIds = params.edges.filter(e => isExpandedChildNode(e.id)).map(e => e.id);
+		const childEdgeIds = params.edges.filter(e => isExpandedChildNode(e.id) && !isExposedPortEdge(e.id)).map(e => e.id);
 		const parentEdges = params.edges.filter(e => !isExpandedChildNode(e.id));
 
 		// Handle child deletions via expand store

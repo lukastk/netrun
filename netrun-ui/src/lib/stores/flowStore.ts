@@ -170,6 +170,11 @@ export function makeChildNodeId(parentId: string, childId: string): string {
 	return `${parentId}${CHILD_SEPARATOR}${childId}`;
 }
 
+/** Check if an edge ID is a dynamically-generated exposed port edge (not deletable). */
+export function isExposedPortEdge(edgeId: string): boolean {
+	return edgeId.includes('::exposed-in::') || edgeId.includes('::exposed-out::');
+}
+
 // Re-export tab stores for convenience
 export { tabs, activeTab, activeTabId } from './tabsStore';
 export { createTab, switchTab, closeTab, closeActiveTab, switchToTabIndex, switchToNextTab, switchToPreviousTab, hasUnsavedChanges } from './tabsStore';
