@@ -1139,3 +1139,101 @@ async def test_irrelevant_source_nodes_not_executed():
 
 # %%
 asyncio.get_event_loop().run_until_complete(test_irrelevant_source_nodes_not_executed())
+
+# %% [markdown]
+# ## Test: control-triggered target node (no data input ports)
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_run_to_targets_control_triggered_target():
+    """Target node triggered purely by control edge should not hang.
+
+    Regression test for GitHub issue #21: function factory generates a
+    term=True "trigger" salvo for source nodes.  When the node also has
+    control ports (added by resolve()), that condition fires on every
+    run_step, creating infinite startable epochs.
+    """
+    def source_func(ctx, packets):
+        out_id = ctx.create_packet("done")
+        ctx.load_output_port("out", out_id)
+        ctx.send_output_salvo("send")
+
+    def target_func(ctx, packets):
+        """Target node: consume control packet, produce output."""
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+        out_id = ctx.create_packet("target_ran")
+        ctx.load_output_port("out", out_id)
+        ctx.send_output_salvo("default")
+
+    config = _make_net_config(
+        nodes=[
+            NodeConfig(
+                name="Source",
+                out_ports={"out": PortConfig()},
+                in_salvo_conditions={
+                    "trigger": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={},
+                        term=SalvoConditionTermTrueConfig(),
+                    ),
+                },
+                out_salvo_conditions={
+                    "send": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"out": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="out",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    pools=["main"],
+                    exec_node_func=source_func,
+                    run_on_startup=True,
+                    signals=["epoch_finished"],
+                ),
+            ),
+            NodeConfig(
+                name="Target",
+                out_ports={"out": PortConfig()},
+                out_salvo_conditions={
+                    "default": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"out": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="out",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    pools=["main"],
+                    exec_node_func=target_func,
+                    controls=["start_epoch"],
+                ),
+            ),
+        ],
+        edges=[
+            EdgeConfig(
+                source_str="Source.__signal_epoch_finished__",
+                target_str="Target.__control_start_epoch__",
+            ),
+        ],
+    )
+
+    net = Net(config)
+    try:
+        # Use asyncio.wait_for to prevent actual hang if the bug regresses
+        salvos = await asyncio.wait_for(
+            net.run_to_targets("Target"),
+            timeout=10.0,
+        )
+
+        assert len(salvos) == 1
+        assert salvos[0].node_name == "Target"
+    finally:
+        await net.stop()

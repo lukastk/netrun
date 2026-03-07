@@ -849,9 +849,11 @@ class NodeConfig(EnvVarResolvableModel):
                         ))
 
         # Check for reserved name patterns (control/signal prefixes)
+        # Skip names that have a matching port on the node — those are auto-generated
+        # by resolve() from signals/controls config and are legitimate.
         if self.in_salvo_conditions:
             for sc_name in self.in_salvo_conditions:
-                if is_control_port(sc_name):
+                if is_control_port(sc_name) and sc_name not in self.in_ports:
                     errors.append(ConfigValidationError(
                         loc=["in_salvo_conditions", sc_name],
                         msg=f"In-salvo condition name '{sc_name}' uses reserved control prefix '__control_...__'",
@@ -865,7 +867,7 @@ class NodeConfig(EnvVarResolvableModel):
                     ))
         if self.out_salvo_conditions:
             for sc_name in self.out_salvo_conditions:
-                if is_signal_port(sc_name):
+                if is_signal_port(sc_name) and sc_name not in self.out_ports:
                     errors.append(ConfigValidationError(
                         loc=["out_salvo_conditions", sc_name],
                         msg=f"Out-salvo condition name '{sc_name}' uses reserved signal prefix '__signal_...__'",
