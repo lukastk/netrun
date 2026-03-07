@@ -76,12 +76,19 @@ export interface BaseNodeData extends Record<string, unknown> {
 	validationErrors?: string[];
 }
 
+// Factory-provided default values (stored separately from user overrides)
+export interface FactoryDefaults {
+	description?: string;
+}
+
 // Extended data for regular/factory nodes
 export interface NetrunNodeData extends BaseNodeData {
 	nodeType: 'regular' | 'factory';
 	// For factory nodes
 	factory?: string;
 	factoryArgs?: Record<string, unknown>;
+	// Factory-provided defaults (transient, not saved to file)
+	_factoryDefaults?: FactoryDefaults;
 	// Extra config data
 	_config?: Record<string, unknown>;
 }
@@ -830,7 +837,8 @@ export function setAllDescExpanded(expanded: boolean): void {
 	pushHistory();
 	updateActiveTab({
 		nodes: tab.nodes.map(node => {
-			if (!node.data.description) return node;
+			const effectiveDesc = node.data.description || (node.data as NetrunNodeData)._factoryDefaults?.description;
+			if (!effectiveDesc) return node;
 
 			const config = (node.data._config || {}) as Record<string, unknown>;
 			const extra = (config.extra || {}) as Record<string, unknown>;
@@ -2234,6 +2242,7 @@ function convertApiNodes(apiNodes: UINode[]): FlowNode[] {
 					isValid: node.data.isValid ?? true,
 					validationErrors: node.data.validationErrors,
 					description: node.data.description,
+					_factoryDefaults: node.data._factoryDefaults as FactoryDefaults | undefined,
 					_config: node.data._config as Record<string, unknown> | undefined,
 				}
 			} as NetrunNode;
@@ -2750,12 +2759,11 @@ export async function updateFactoryNodePreview(nodeId: string): Promise<void> {
 			outPorts: withSignalPorts(newOutPorts, signalPorts),
 			isValid: true,
 			validationErrors: [],
+			_factoryDefaults: {
+				...(node.data as NetrunNodeData)._factoryDefaults,
+				description: preview.description ?? undefined,
+			},
 		};
-
-		// Set description from factory if the node doesn't already have one
-		if (preview.description && !node.data.description) {
-			previewUpdates.description = preview.description;
-		}
 
 		updateNodeData(nodeId, previewUpdates);
 	} catch (error) {

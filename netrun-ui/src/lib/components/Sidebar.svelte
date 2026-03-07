@@ -735,18 +735,51 @@
 						</div>
 						<div class="field">
 							<label for="node-description">Description{#if descNode('description')}<span class="has-tooltip-icon" use:tooltip={descNode('description')}>?</span>{/if}</label>
-							<textarea
-								id="node-description"
-								value={$selectedNode.data.description ?? ''}
-								oninput={(e) => {
-									const value = (e.target as HTMLTextAreaElement).value || undefined;
-									updateNodeDataLive($selectedNode.id, { description: value });
-								}}
-								onkeydown={(e) => e.stopPropagation()}
-								onblur={() => pushHistory()}
-								placeholder="Node description..."
-								rows="3"
-							></textarea>
+							{#if $selectedNode.data.nodeType === 'factory' && ($selectedNode.data as NetrunNodeData)._factoryDefaults?.description !== undefined}
+								{@const factoryDesc = ($selectedNode.data as NetrunNodeData)._factoryDefaults!.description!}
+								{@const usingDefaults = !$selectedNode.data.description}
+								<label class="defaults-toggle">
+									<input type="checkbox" checked={usingDefaults} onchange={() => {
+										if (usingDefaults) {
+											pushHistory();
+											updateNodeData($selectedNode.id, { description: factoryDesc });
+										} else {
+											pushHistory();
+											updateNodeData($selectedNode.id, { description: undefined });
+										}
+									}} />
+									<span>Use default (from factory)</span>
+								</label>
+								{#if usingDefaults}
+									<div class="readonly-value factory-description">{factoryDesc}</div>
+								{:else}
+									<textarea
+										id="node-description"
+										value={$selectedNode.data.description ?? ''}
+										oninput={(e) => {
+											const value = (e.target as HTMLTextAreaElement).value || undefined;
+											updateNodeDataLive($selectedNode.id, { description: value });
+										}}
+										onkeydown={(e) => e.stopPropagation()}
+										onblur={() => pushHistory()}
+										placeholder="Node description..."
+										rows="3"
+									></textarea>
+								{/if}
+							{:else}
+								<textarea
+									id="node-description"
+									value={$selectedNode.data.description ?? ''}
+									oninput={(e) => {
+										const value = (e.target as HTMLTextAreaElement).value || undefined;
+										updateNodeDataLive($selectedNode.id, { description: value });
+									}}
+									onkeydown={(e) => e.stopPropagation()}
+									onblur={() => pushHistory()}
+									placeholder="Node description..."
+									rows="3"
+								></textarea>
+							{/if}
 						</div>
 						<div class="field">
 							<label>Type</label>
@@ -2690,6 +2723,31 @@
 
 	input.mono {
 		font-size: 11px;
+	}
+
+	.defaults-toggle {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 12px;
+		color: var(--text-secondary, #a0a0a0);
+		cursor: pointer;
+		margin-bottom: 4px;
+	}
+
+	.defaults-toggle input[type='checkbox'] {
+		margin: 0;
+		cursor: pointer;
+	}
+
+	.defaults-toggle:hover {
+		color: var(--text-primary, #fff);
+	}
+
+	.factory-description {
+		white-space: pre-wrap;
+		color: var(--text-secondary, #a0a0a0);
+		font-size: 12px;
 	}
 
 	/* Textarea styling */

@@ -21,6 +21,7 @@ export interface UINodeData {
 	validationErrors?: string[];
 	description?: string;
 	_config?: Record<string, unknown>;
+	_factoryDefaults?: { description?: string };
 	// Subgraph-specific
 	source?: string;
 	nodeCount?: number;
