@@ -26,7 +26,7 @@ class CopyMode(str, Enum):
     deep = "deep"        # copy.deepcopy()
 
 # %% pts/netrun/07_node_factories/01_broadcast.pct.py 6
-def get_node_config(_net_config=None, *, num_inputs: int = 1, num_outputs: int, copy_mode: CopyMode | str = CopyMode.none) -> NodeConfig:
+def get_node_config(_net_config=None, *, num_inputs: int = 1, num_outputs: int = 2, copy_mode: CopyMode | str = CopyMode.none) -> NodeConfig:
     """Create a NodeConfig for a broadcast node.
 
     Args:
@@ -95,7 +95,7 @@ def get_node_config(_net_config=None, *, num_inputs: int = 1, num_outputs: int, 
     )
 
 
-def get_node_funcs(_net_config=None, *, num_inputs: int = 1, num_outputs: int, copy_mode: CopyMode | str = CopyMode.none) -> tuple:
+def get_node_funcs(_net_config=None, *, num_inputs: int = 1, num_outputs: int = 2, copy_mode: CopyMode | str = CopyMode.none) -> tuple:
     """Create execution functions for a broadcast node.
 
     Args:
