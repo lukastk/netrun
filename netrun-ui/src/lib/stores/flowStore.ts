@@ -2364,6 +2364,9 @@ export async function loadFromFile(path: string): Promise<void> {
 
 	// Update browser URL to reflect opened file
 	updateUrlWithFile(path);
+
+	// Refresh factory previews to populate _factoryDefaults and merge factory extra.ui
+	refreshAllFactoryPreviews();
 }
 
 // Reload the current file from disk, discarding in-memory changes
@@ -2408,6 +2411,9 @@ export async function reloadFile(): Promise<void> {
 		if (tabId && _tabReloadHandler) {
 			_tabReloadHandler.after(tabId);
 		}
+
+		// Refresh factory previews to populate _factoryDefaults and merge factory extra.ui
+		refreshAllFactoryPreviews();
 
 		toasts.success('File reloaded from disk');
 	} catch (e) {
@@ -2788,6 +2794,18 @@ export async function updateFactoryNodePreview(nodeId: string): Promise<void> {
 			validationErrors: [(error as Error).message],
 		});
 	}
+}
+
+/**
+ * Refresh all factory node previews in the active tab.
+ * Called after loading/reloading a file to populate _factoryDefaults and merge factory extra.ui.
+ */
+export async function refreshAllFactoryPreviews(): Promise<void> {
+	const tab = get(activeTab);
+	if (!tab) return;
+
+	const factoryNodes = tab.nodes.filter(n => n.data.nodeType === 'factory' && (n.data as NetrunNodeData).factory);
+	await Promise.all(factoryNodes.map(n => updateFactoryNodePreview(n.id)));
 }
 
 /**
