@@ -88,6 +88,7 @@ export interface FactoryPreviewResponse {
 	has_in_salvo_conditions: boolean;
 	has_out_salvo_conditions: boolean;
 	description: string | null;
+	extra: Record<string, unknown> | null;
 	error: string | null;
 }
 

@@ -192,6 +192,7 @@ class FactoryPreviewResponse(BaseModel):
     has_in_salvo_conditions: bool
     has_out_salvo_conditions: bool
     description: str | None = None
+    extra: dict[str, Any] | None = None
     error: str | None = None
 
 
@@ -444,6 +445,7 @@ async def preview_factory(request: FactoryPreviewRequest) -> FactoryPreviewRespo
             has_in_salvo_conditions=bool(node_config.in_salvo_conditions),
             has_out_salvo_conditions=bool(node_config.out_salvo_conditions),
             description=getattr(node_config, 'description', None),
+            extra=node_config.extra or None,
         )
 
     except (ImportError, FileNotFoundError) as e:
