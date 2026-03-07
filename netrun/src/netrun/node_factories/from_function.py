@@ -44,7 +44,7 @@ class PreCreatedPacket:
 
     Example::
 
-        from ..node_factories.from_function import PreCreatedPacket
+        from netrun.node_factories.from_function import PreCreatedPacket
 
         def my_func(data: str, ctx) -> {"out": str, "lazy": PreCreatedPacket(str)}:
             pid = ctx.create_packet_from_value_func(
@@ -242,7 +242,7 @@ def _is_list_type(annotation) -> bool:
 def _generate_input_salvo_condition(
     in_ports: dict[str, PortConfig],
     in_port_annotations: dict[str, Any] | None = None,
-) -> dict[str, SalvoConditionConfig]:
+) -> dict[str, SalvoConditionConfig] | None:
     """Generate default input salvo condition.
 
     Default: Fires when all input ports have at least one packet.
@@ -251,17 +251,13 @@ def _generate_input_salvo_condition(
         in_ports: The input port configurations.
 
     Returns:
-        Dict with a single "trigger" salvo condition.
+        Dict with a single "trigger" salvo condition, or None for source
+        nodes (no input ports) — letting NodeConfig.resolve() generate
+        the appropriate default based on full context (e.g. controls).
     """
     if not in_ports:
-        # No input ports - use always-true condition
-        return {
-            "trigger": SalvoConditionConfig(
-                max_salvos=MaxSalvosFiniteConfig(max=1),
-                ports={},
-                term=SalvoConditionTermTrueConfig(),
-            )
-        }
+        # No input ports — defer to resolve() which handles controls correctly
+        return None
 
     # Build condition: all ports must be non-empty
     port_terms = [
@@ -546,21 +542,24 @@ def _from_function(func: Callable|str, include_port_types: bool = True, manual_o
     # Generate base config - always use func.__name__
     node_name = func.__name__
 
+    in_salvos = _generate_input_salvo_condition(
+        parsed_sig.in_ports, parsed_sig.in_port_annotations
+    )
+
     base_config_dict = {
         "name": node_name,
         "in_ports": {k: v.model_dump() for k, v in parsed_sig.in_ports.items()},
         "out_ports": {k: v.model_dump() for k, v in parsed_sig.out_ports.items()},
-        "in_salvo_conditions": {
-            k: v.model_dump()
-            for k, v in _generate_input_salvo_condition(
-                parsed_sig.in_ports, parsed_sig.in_port_annotations
-            ).items()
-        },
         "out_salvo_conditions": {
             k: v.model_dump()
             for k, v in _generate_output_salvo_condition(parsed_sig.out_ports).items()
         },
     }
+
+    if in_salvos is not None:
+        base_config_dict["in_salvo_conditions"] = {
+            k: v.model_dump() for k, v in in_salvos.items()
+        }
 
     # Auto-populate description from function docstring
     if func.__doc__:
