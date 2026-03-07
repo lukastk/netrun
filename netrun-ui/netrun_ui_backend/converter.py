@@ -19,6 +19,8 @@ from typing import Any
 import importlib
 import logging
 
+from pydantic import ValidationError
+
 from .import_utils import is_file_path_ref, import_module_from_ref, reload_module
 
 from netrun.net.config import (
@@ -29,6 +31,14 @@ from netrun.net.config import (
     PortConfig as _PortConfig,
 )
 from netrun.net.config._base import is_signal_port, is_control_port
+
+
+class _PrefixedValidationError(Exception):
+    """Wraps a pydantic ValidationError with a node index prefix for error attribution."""
+    def __init__(self, node_idx: int, original: ValidationError):
+        self.node_idx = node_idx
+        self.original = original
+        super().__init__(str(original))
 
 logger = logging.getLogger(__name__)
 
@@ -448,6 +458,7 @@ def _ui_to_graph_config_model(
     config_nodes: list[_NodeConfig | _SubgraphConfig] = []
     config_edges: list[_EdgeConfig] = []
 
+    node_idx = 0  # Index among non-decoration nodes (for error attribution)
     for node in ui_nodes:
         data = node.get("data", {})
         # Skip decoration nodes — they are visual-only and not part of the graph config
@@ -462,77 +473,84 @@ def _ui_to_graph_config_model(
         dimensions = {"width": width, "height": height} if width is not None and height is not None else None
         merged_extra = _build_merged_extra(data, position, dimensions)
 
-        if node_type == "subgraph" or node.get("type") == "subgraphNode":
-            subgraph_config = data.get("_subgraphConfig", {})
-            subgraph_kwargs = {
-                **subgraph_config,
-                "name": node_name,
-                "extra": merged_extra,
-            }
-            if data.get("description"):
-                subgraph_kwargs["description"] = data["description"]
-            config_node = _SubgraphConfig.model_validate(subgraph_kwargs)
-
-        elif node_type == "factory":
-            # Build factory NodeConfig — no in_ports/out_ports (factory generates them)
-            kwargs: dict[str, Any] = {
-                "name": node_name,
-                "extra": merged_extra,
-            }
-            if data.get("factory"):
-                kwargs["factory"] = data["factory"]
-            if data.get("factoryArgs"):
-                filtered_args = {
-                    k: v for k, v in data["factoryArgs"].items()
-                    if v != "" and v is not None
+        try:
+            if node_type == "subgraph" or node.get("type") == "subgraphNode":
+                subgraph_config = data.get("_subgraphConfig", {})
+                subgraph_kwargs = {
+                    **subgraph_config,
+                    "name": node_name,
+                    "extra": merged_extra,
                 }
-                if filtered_args:
-                    kwargs["factory_args"] = filtered_args
-            # Restore known fields from _config (execution_config, salvo conditions, node_vars, etc.)
-            for key, value in extra_config.items():
-                if key not in ("extra",) and key not in kwargs:
-                    kwargs[key] = value
-            if data.get("description"):
-                kwargs["description"] = data["description"]
-            config_node = _NodeConfig(**kwargs)
+                if data.get("description"):
+                    subgraph_kwargs["description"] = data["description"]
+                config_node = _SubgraphConfig.model_validate(subgraph_kwargs)
 
-        else:
-            # Regular node — include port info and restore extra config fields
-            in_ports = {}
-            for port in data.get("inPorts", []):
-                # Skip control ports (auto-generated at resolve time)
-                if port.get("isControl") or is_control_port(port["name"]):
-                    continue
-                if port.get("type"):
-                    in_ports[port["name"]] = _PortConfig(port_type=port["type"])
-                else:
-                    in_ports[port["name"]] = _PortConfig()
+            elif node_type == "factory":
+                # Build factory NodeConfig — no in_ports/out_ports (factory generates them)
+                kwargs: dict[str, Any] = {
+                    "name": node_name,
+                    "extra": merged_extra,
+                }
+                if data.get("factory"):
+                    kwargs["factory"] = data["factory"]
+                if data.get("factoryArgs"):
+                    filtered_args = {
+                        k: v for k, v in data["factoryArgs"].items()
+                        if v != "" and v is not None
+                    }
+                    if filtered_args:
+                        kwargs["factory_args"] = filtered_args
+                # Restore known fields from _config (execution_config, salvo conditions, node_vars, etc.)
+                for key, value in extra_config.items():
+                    if key not in ("extra",) and key not in kwargs:
+                        kwargs[key] = value
+                if data.get("description"):
+                    kwargs["description"] = data["description"]
+                config_node = _NodeConfig(**kwargs)
 
-            out_ports = {}
-            for port in data.get("outPorts", []):
-                # Skip signal ports (auto-generated at resolve time)
-                if port.get("isSignal") or is_signal_port(port["name"]):
-                    continue
-                if port.get("type"):
-                    out_ports[port["name"]] = _PortConfig(port_type=port["type"])
-                else:
-                    out_ports[port["name"]] = _PortConfig()
+            else:
+                # Regular node — include port info and restore extra config fields
+                in_ports = {}
+                for port in data.get("inPorts", []):
+                    # Skip control ports (auto-generated at resolve time)
+                    if port.get("isControl") or is_control_port(port["name"]):
+                        continue
+                    if port.get("type"):
+                        in_ports[port["name"]] = _PortConfig(port_type=port["type"])
+                    else:
+                        in_ports[port["name"]] = _PortConfig()
 
-            kwargs = {
-                "name": node_name,
-                "in_ports": in_ports,
-                "out_ports": out_ports,
-                "extra": merged_extra,
-            }
-            # Restore known fields from _config (execution_config, salvo conditions, etc.)
-            for key, value in extra_config.items():
-                if key not in ("extra",) and key not in kwargs:
-                    kwargs[key] = value
-            if data.get("description"):
-                kwargs["description"] = data["description"]
-            config_node = _NodeConfig(**kwargs)
+                out_ports = {}
+                for port in data.get("outPorts", []):
+                    # Skip signal ports (auto-generated at resolve time)
+                    if port.get("isSignal") or is_signal_port(port["name"]):
+                        continue
+                    if port.get("type"):
+                        out_ports[port["name"]] = _PortConfig(port_type=port["type"])
+                    else:
+                        out_ports[port["name"]] = _PortConfig()
 
-        config_nodes.append(config_node)
+                kwargs = {
+                    "name": node_name,
+                    "in_ports": in_ports,
+                    "out_ports": out_ports,
+                    "extra": merged_extra,
+                }
+                # Restore known fields from _config (execution_config, salvo conditions, etc.)
+                for key, value in extra_config.items():
+                    if key not in ("extra",) and key not in kwargs:
+                        kwargs[key] = value
+                if data.get("description"):
+                    kwargs["description"] = data["description"]
+                config_node = _NodeConfig(**kwargs)
+
+            config_nodes.append(config_node)
+        except ValidationError as e:
+            # Re-raise with node index prefixed to each error loc so the
+            # validate endpoint can attribute errors to specific nodes.
+            raise _PrefixedValidationError(node_idx, e) from e
+
+        node_idx += 1
 
     # Convert edges
     for edge in ui_edges:
