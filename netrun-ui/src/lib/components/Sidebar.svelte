@@ -2733,6 +2733,8 @@
 		color: var(--text-secondary, #a0a0a0);
 		cursor: pointer;
 		margin-bottom: 4px;
+		text-transform: none;
+		letter-spacing: normal;
 	}
 
 	.defaults-toggle input[type='checkbox'] {
