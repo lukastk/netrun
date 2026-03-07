@@ -348,12 +348,12 @@ def graph_config_to_ui(
                         config_ui[key] = value
 
             # Promote description to a first-class UI field
-            # Use explicit node description, falling back to factory-resolved description
             node_description = node.get("description")
             if node_description:
                 ui_node["data"]["description"] = node_description
-            elif factory_description:
-                ui_node["data"]["description"] = factory_description
+            # Store factory description separately as a default
+            if factory_description:
+                ui_node["data"].setdefault("_factoryDefaults", {})["description"] = factory_description
 
             if dimensions:
                 ui_node["width"] = dimensions.get("width")

@@ -110,14 +110,15 @@
 	{/if}
 
 	<!-- Description -->
-	{#if data.description && !hideDescription}
+	{#if (data.description || data._factoryDefaults?.description) && !hideDescription}
+		{@const effectiveDescription = (data.description || data._factoryDefaults?.description)!}
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="node-description" onclick={() => toggleNodeDescExpanded(id)}>
 			<span class="desc-chevron" class:expanded={descExpanded}>&#9656;</span>
 			{#if descExpanded}
-				<span class="desc-content">{data.description}</span>
+				<span class="desc-content">{effectiveDescription}</span>
 			{:else}
-				<span class="desc-preview">{data.description.split('\n')[0]}</span>
+				<span class="desc-preview">{effectiveDescription.split('\n')[0]}</span>
 			{/if}
 		</div>
 	{/if}
