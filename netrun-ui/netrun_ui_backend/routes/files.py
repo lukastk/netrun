@@ -26,6 +26,7 @@ from ..converter import (
     extract_graph_and_extras,
     merge_graph_with_extras,
     dump_graph_config,
+    _PrefixedValidationError,
 )
 
 from netrun.net.config import NetConfig, GraphConfig, SubgraphConfig
@@ -737,6 +738,15 @@ async def validate_config(request: ValidateRequest) -> ValidateResponse:
     # Step 1: Build graph config (structural validation via pydantic models)
     try:
         graph = ui_to_graph_config(nodes, request.edges, request.extra)
+    except _PrefixedValidationError as e:
+        # Per-node validation error with node index already in loc
+        for err in e.original.errors():
+            errors.append(ValidationError_(
+                loc=["graph", "nodes", str(e.node_idx)] + [str(x) for x in err.get("loc", [])],
+                msg=err.get("msg", "Unknown error"),
+                type=err.get("type", "unknown"),
+            ))
+        return ValidateResponse(valid=False, errors=errors)
     except ValidationError as e:
         for err in e.errors():
             errors.append(ValidationError_(
