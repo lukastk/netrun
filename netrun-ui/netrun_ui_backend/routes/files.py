@@ -9,6 +9,17 @@ from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, ValidationError
 
+
+def is_netrun_file(name: str) -> bool:
+    """Check if a filename is a valid netrun config file.
+
+    Accepts both 'foo.netrun.json' and plain 'netrun.json'/'netrun.toml'.
+    """
+    return (
+        name.endswith('.netrun.json') or name.endswith('.netrun.toml')
+        or name == 'netrun.json' or name == 'netrun.toml'
+    )
+
 from ..converter import (
     ui_to_graph_config,
     graph_config_to_ui,
@@ -67,7 +78,7 @@ async def read_file(request: FileReadRequest) -> FileReadResponse:
     if not path.exists():
         raise HTTPException(status_code=404, detail=f"File not found: {path}")
 
-    if not (path.name.endswith('.netrun.json') or path.name.endswith('.netrun.toml')):
+    if not is_netrun_file(path.name):
         raise HTTPException(
             status_code=400,
             detail=f"Unsupported file format: {path.name}. Must be .netrun.json or .netrun.toml"
@@ -254,11 +265,7 @@ async def list_directory(request: DirectoryListRequest) -> DirectoryListResponse
             if not request.include_hidden and item.name.startswith('.'):
                 continue
 
-            is_netrun = (
-                item.is_file() and
-                (item.name.endswith('netrun.json') or
-                 item.name.endswith('netrun.toml'))
-            )
+            is_netrun = item.is_file() and is_netrun_file(item.name)
 
             entries.append(FileEntry(
                 name=item.name,
@@ -351,14 +358,14 @@ async def load_subgraph(request: SubgraphLoadRequest) -> SubgraphLoadResponse:
             if not path.is_file():
                 raise HTTPException(status_code=400, detail=f"Path is not a file: {path}")
 
-            if not (path.name.endswith('.netrun.json') or path.name.endswith('.netrun.toml')):
+            if not is_netrun_file(path.name):
                 raise HTTPException(
                     status_code=400,
                     detail=f"Not a valid netrun file (expected .netrun.json or .netrun.toml): {path.name}"
                 )
 
             content = path.read_text()
-            if path.name.endswith('.netrun.toml'):
+            if path.suffix == '.toml':
                 data = tomli.loads(content)
             else:
                 data = json.loads(content)
