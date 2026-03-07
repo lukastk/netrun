@@ -1636,7 +1636,7 @@ function validateNode(node: FlowNode, allNodes: FlowNode[]): string[] {
 			const path = data.source!.trim();
 			if (path === '') {
 				errors.push('Subgraph file path must not be empty');
-			} else if (!path.endsWith('.netrun.json') && !path.endsWith('.netrun.toml')) {
+			} else if (!path.endsWith('.netrun.json') && !path.endsWith('.netrun.toml') && path !== 'netrun.json' && path !== 'netrun.toml') {
 				errors.push('Subgraph file must be .netrun.json or .netrun.toml');
 			}
 		}
@@ -2529,7 +2529,7 @@ export async function saveToFile(path?: string): Promise<void> {
 	}
 
 	// Ensure file has a valid netrun extension
-	if (!savePath.endsWith('netrun.json') && !savePath.endsWith('netrun.toml')) {
+	if (!savePath.endsWith('.netrun.json') && !savePath.endsWith('.netrun.toml') && savePath !== 'netrun.json' && savePath !== 'netrun.toml') {
 		savePath = savePath + '.netrun.json';
 	}
 
