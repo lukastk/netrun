@@ -2771,19 +2771,21 @@ export async function updateFactoryNodePreview(nodeId: string): Promise<void> {
 			},
 		};
 
-		// Merge factory extra.ui defaults into _config (node's own values take precedence)
-		const factoryUi = (preview.extra as Record<string, unknown> | null)?.ui as Record<string, unknown> | undefined;
-		if (factoryUi) {
+		// Merge factory extra defaults into _config (node's own values take precedence)
+		const factoryExtra = preview.extra as Record<string, unknown> | null;
+		if (factoryExtra) {
 			const config = ((node.data as NetrunNodeData)._config || {}) as Record<string, unknown>;
 			const configExtra = (config.extra || {}) as Record<string, unknown>;
+			// Deep-merge ui, shallow-merge other keys
+			const factoryUi = factoryExtra.ui as Record<string, unknown> | undefined;
 			const configUi = (configExtra.ui || {}) as Record<string, unknown>;
-			const mergedUi = { ...factoryUi, ...configUi };
+			const mergedExtra: Record<string, unknown> = { ...factoryExtra, ...configExtra };
+			if (factoryUi) {
+				mergedExtra.ui = { ...factoryUi, ...configUi };
+			}
 			previewUpdates._config = {
 				...config,
-				extra: {
-					...configExtra,
-					ui: mergedUi,
-				},
+				extra: mergedExtra,
 			};
 		}
 
