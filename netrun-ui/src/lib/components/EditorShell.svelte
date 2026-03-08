@@ -5,6 +5,7 @@
 	import Sidebar from './Sidebar.svelte';
 	import FlowEditor from './FlowEditor.svelte';
 	import Modal from './Modal.svelte';
+	import CommandPalette from './CommandPalette.svelte';
 	import FactorySelectorModal from './FactorySelectorModal.svelte';
 	import RecipeModal from './RecipeModal.svelte';
 	import { extraData } from '$lib/stores/flowStore';
@@ -48,6 +49,7 @@
 </div>
 
 <Modal />
+<CommandPalette />
 
 {#if $factorySelectorState.isOpen}
 	{@const factories = (($extraData as Record<string, unknown>)?.factories as string[]) || []}

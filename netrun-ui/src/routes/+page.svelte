@@ -2,7 +2,6 @@
 	import { onMount } from 'svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
 	import FileExplorer from '$lib/components/FileExplorer.svelte';
-	import CommandPalette from '$lib/components/CommandPalette.svelte';
 	import EditorShell from '$lib/components/EditorShell.svelte';
 	import '$lib/configFieldRegistrations';
 	import { api } from '$lib/api';
@@ -269,8 +268,6 @@
 		</div>
 	</div>
 
-	<!-- Command Palette (modal overlay) -->
-	<CommandPalette />
 </div>
 
 <style>

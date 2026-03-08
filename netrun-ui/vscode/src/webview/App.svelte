@@ -3,6 +3,8 @@
 	import EditorShell from '$lib/components/EditorShell.svelte';
 	import ToastContainer from '$lib/components/ToastContainer.svelte';
 	import { loadFromFile, isDirty, saveToFile } from '$lib/stores/flowStore';
+	import { toggleCommandPalette } from '$lib/stores/commandStore';
+	import { initializeCommands } from '$lib/commands';
 	import { loadConfigSchema } from '$lib/stores/schemaStore';
 	import { loadSignalTypes } from '$lib/stores/signalStore';
 	import { loadControlTypes } from '$lib/stores/controlStore';
@@ -30,8 +32,15 @@
 		});
 	}
 
+	function handleVsCodeCommandPalette() {
+		toggleCommandPalette();
+	}
+
 	onMount(async () => {
 		window.addEventListener('netrun-vscode-save', handleVsCodeSave);
+		window.addEventListener('netrun-vscode-command-palette', handleVsCodeCommandPalette);
+
+		initializeCommands();
 
 		// Initialize schema and config
 		await Promise.all([
@@ -50,6 +59,7 @@
 
 	onDestroy(() => {
 		window.removeEventListener('netrun-vscode-save', handleVsCodeSave);
+		window.removeEventListener('netrun-vscode-command-palette', handleVsCodeCommandPalette);
 	});
 
 	// macOS Smart Quotes fix (same as +layout.svelte)

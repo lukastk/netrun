@@ -17,11 +17,16 @@ export class NetrunEditorProvider implements vscode.CustomTextEditorProvider {
 		private readonly context: vscode.ExtensionContext,
 		private readonly backendPort: number,
 	) {
-		// Register the save command
+		// Register commands
 		context.subscriptions.push(
 			vscode.commands.registerCommand('netrun-ui.save', () => {
 				if (this.activeWebview) {
 					this.activeWebview.postMessage({ type: 'save' });
+				}
+			}),
+			vscode.commands.registerCommand('netrun-ui.commandPalette', () => {
+				if (this.activeWebview) {
+					this.activeWebview.postMessage({ type: 'commandPalette' });
 				}
 			})
 		);
