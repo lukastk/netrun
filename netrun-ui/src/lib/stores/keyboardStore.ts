@@ -14,6 +14,8 @@ export interface ShortcutBinding {
 	shiftKey?: boolean;
 	altKey?: boolean;
 	commandId: string;
+	/** When true, this shortcut is skipped in embedded mode (e.g. VS Code webview) */
+	embeddedSkip?: boolean;
 }
 
 // Registered shortcuts
