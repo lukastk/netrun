@@ -6,6 +6,7 @@
  */
 import ELK, { type ElkNode, type ElkPort, type ElkExtendedEdge } from 'elkjs/lib/elk.bundled.js';
 import type { Node, Edge } from '@xyflow/svelte';
+import { PORT_ROW_HEIGHT } from '$lib/constants';
 
 // Module-level singleton
 const elk = new ELK();
@@ -186,9 +187,14 @@ export async function computeLayout(
 
 	const result = await elk.layout(elkGraph);
 
+	// Snap positions to PORT_ROW_HEIGHT grid so port handles can align horizontally
+	const snap = PORT_ROW_HEIGHT;
 	const positions: LayoutResult['positions'] = (result.children ?? []).map((child) => ({
 		id: child.id,
-		position: { x: child.x ?? 0, y: child.y ?? 0 },
+		position: {
+			x: Math.round((child.x ?? 0) / snap) * snap,
+			y: Math.round((child.y ?? 0) / snap) * snap,
+		},
 	}));
 
 	return { positions };
