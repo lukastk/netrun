@@ -348,14 +348,19 @@ def graph_config_to_ui(
                 if k not in ("name", "in_ports", "out_ports", "factory", "factory_args", "type", "description")
             }
 
-            # Merge factory extra.ui defaults (node's own values take precedence)
-            if factory_extra and "ui" in factory_extra:
+            # Merge factory extra defaults (node's own values take precedence)
+            if factory_extra:
                 config = ui_node["data"]["_config"]
                 config_extra = config.setdefault("extra", {})
-                config_ui = config_extra.setdefault("ui", {})
-                for key, value in factory_extra["ui"].items():
-                    if key not in config_ui:
-                        config_ui[key] = value
+                for key, value in factory_extra.items():
+                    if key == "ui":
+                        # Deep-merge ui dict
+                        config_ui = config_extra.setdefault("ui", {})
+                        for ui_key, ui_value in value.items():
+                            if ui_key not in config_ui:
+                                config_ui[ui_key] = ui_value
+                    elif key not in config_extra:
+                        config_extra[key] = value
 
             # Promote description to a first-class UI field
             node_description = node.get("description")

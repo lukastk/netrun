@@ -2,12 +2,15 @@
 	import { onMount, onDestroy } from 'svelte';
 	import EditorShell from '$lib/components/EditorShell.svelte';
 	import ToastContainer from '$lib/components/ToastContainer.svelte';
-	import { loadFromFile, isDirty, saveToFile } from '$lib/stores/flowStore';
+	import { loadFromFile, isDirty, saveToFile, graphExtra, selectedNodeIds } from '$lib/stores/flowStore';
 	import { toggleCommandPalette } from '$lib/stores/commandStore';
+	import { executeAction, type Action } from '$lib/stores/actionsStore';
+	import { toasts } from '$lib/stores/toastStore';
 	import { initializeCommands } from '$lib/commands';
 	import { loadConfigSchema } from '$lib/stores/schemaStore';
 	import { loadSignalTypes } from '$lib/stores/signalStore';
 	import { loadControlTypes } from '$lib/stores/controlStore';
+	import { get } from 'svelte/store';
 	import '$lib/configFieldRegistrations';
 
 	interface VsCodeApi {
@@ -36,9 +39,44 @@
 		toggleCommandPalette();
 	}
 
+	function handleNodeDblClick(e: Event) {
+		const { id, data } = (e as CustomEvent).detail;
+		const config = data._config as Record<string, unknown> | undefined;
+		const extra = config?.extra as Record<string, unknown> | undefined;
+
+		// Check for node-level 'open' action
+		const nodeUi = extra?.ui as Record<string, unknown> | undefined;
+		const nodeActions = (nodeUi?.actions as Action[]) || [];
+		const nodeOpenAction = nodeActions.find((a: Action) => a.id === 'open');
+
+		// Check project-level 'open' action
+		const gExtra = get(graphExtra) as Record<string, unknown> | undefined;
+		const gUi = gExtra?.ui as Record<string, unknown> | undefined;
+		const projectActions = (gUi?.actions as Action[]) || [];
+		const projectOpenAction = projectActions.find((a: Action) => a.id === 'open');
+
+		// Node action takes precedence over project action
+		const openAction = nodeOpenAction || projectOpenAction;
+
+		if (openAction) {
+			// Ensure node is selected so executeAction has the right context
+			selectedNodeIds.set(new Set([id]));
+			executeAction(openAction);
+		} else {
+			// Fall back to opening source_path in VS Code
+			const sourcePath = extra?.source_path as string | undefined;
+			if (sourcePath) {
+				vscode.postMessage({ type: 'openFile', filePath: sourcePath });
+			} else {
+				toasts.info(`No 'open' action or extra.source_path defined on node "${data.label}"`);
+			}
+		}
+	}
+
 	onMount(async () => {
 		window.addEventListener('netrun-vscode-save', handleVsCodeSave);
 		window.addEventListener('netrun-vscode-command-palette', handleVsCodeCommandPalette);
+		window.addEventListener('netrun-node-dblclick', handleNodeDblClick);
 
 		initializeCommands();
 
@@ -60,6 +98,7 @@
 	onDestroy(() => {
 		window.removeEventListener('netrun-vscode-save', handleVsCodeSave);
 		window.removeEventListener('netrun-vscode-command-palette', handleVsCodeCommandPalette);
+		window.removeEventListener('netrun-node-dblclick', handleNodeDblClick);
 	});
 
 	// macOS Smart Quotes fix (same as +layout.svelte)

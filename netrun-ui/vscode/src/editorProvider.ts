@@ -76,6 +76,14 @@ export class NetrunEditorProvider implements vscode.CustomTextEditorProvider {
 						'workbench.action.files.revert'
 					);
 					break;
+
+				case 'openFile': {
+					const fileUri = vscode.Uri.file(message.filePath);
+					await vscode.window.showTextDocument(fileUri, {
+						viewColumn: vscode.ViewColumn.Beside,
+					});
+					break;
+				}
 			}
 		});
 
