@@ -1,0 +1,29 @@
+{
+  "graph": {
+    "nodes": [
+      {
+        "name": "Node",
+        "in_ports": {
+          "in": {
+            "port_type": "any"
+          }
+        },
+        "out_ports": {
+          "out": {
+            "port_type": "any"
+          }
+        },
+        "extra": {
+          "ui": {
+            "position": {
+              "x": 200,
+              "y": 200
+            }
+          }
+        },
+        "type": "node"
+      }
+    ],
+    "edges": []
+  }
+}
