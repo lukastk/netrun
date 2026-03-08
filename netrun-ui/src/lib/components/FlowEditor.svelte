@@ -42,6 +42,8 @@
 		toggleEdgeDependency,
 		getNodeLocked,
 		updateNodeLocked,
+		sendNodesToFront,
+		sendNodesToBack,
 		type NetrunNodeData,
 		type NetrunEdgeData,
 		type NetrunEdge
@@ -415,6 +417,10 @@
 		if (action === 'toggle-lock') {
 			const locked = getNodeLocked(node.data as import('$lib/stores/flowStore').AnyNodeData);
 			updateNodeLocked(node.id, !locked);
+		} else if (action === 'send-to-front') {
+			sendNodesToFront([node.id]);
+		} else if (action === 'send-to-back') {
+			sendNodesToBack([node.id]);
 		} else if (action === 'delete') {
 			deleteNodes([node.id]);
 		}
@@ -630,6 +636,13 @@
 			>
 				<button class="context-item" onclick={() => handleNodeContextAction('toggle-lock')}>
 					{getNodeLocked(nodeContextMenu.node.data as import('$lib/stores/flowStore').AnyNodeData) ? 'Unlock Position' : 'Lock Position'}
+				</button>
+				<div class="context-separator"></div>
+				<button class="context-item" onclick={() => handleNodeContextAction('send-to-front')}>
+					Send to Front
+				</button>
+				<button class="context-item" onclick={() => handleNodeContextAction('send-to-back')}>
+					Send to Back
 				</button>
 				<div class="context-separator"></div>
 				<button class="context-item danger" onclick={() => handleNodeContextAction('delete')}>

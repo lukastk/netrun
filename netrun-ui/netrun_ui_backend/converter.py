@@ -374,6 +374,11 @@ def graph_config_to_ui(
                 ui_node["width"] = dimensions.get("width")
                 ui_node["height"] = dimensions.get("height")
 
+        # Restore zIndex from ui extra if present
+        z_index = ui_extra.get("zIndex")
+        if z_index is not None:
+            ui_node["zIndex"] = z_index
+
         ui_nodes.append(ui_node)
 
     # Build name -> id mapping for edges
