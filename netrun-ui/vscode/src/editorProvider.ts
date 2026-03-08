@@ -10,8 +10,17 @@ function getNonce(): string {
 	return text;
 }
 
+interface NodeInfo {
+	id: string;
+	name: string;
+	nodeType: string;
+	factory?: string;
+	sourcePath?: string;
+}
+
 export class NetrunEditorProvider implements vscode.CustomTextEditorProvider {
 	private activeWebview: vscode.Webview | null = null;
+	private nodeListResolve: ((nodes: NodeInfo[]) => void) | null = null;
 
 	constructor(
 		private readonly context: vscode.ExtensionContext,
@@ -28,8 +37,60 @@ export class NetrunEditorProvider implements vscode.CustomTextEditorProvider {
 				if (this.activeWebview) {
 					this.activeWebview.postMessage({ type: 'commandPalette' });
 				}
+			}),
+			vscode.commands.registerCommand('netrun-ui.openNode', () => {
+				this.showOpenNodePicker();
 			})
 		);
+	}
+
+	private async showOpenNodePicker(): Promise<void> {
+		if (!this.activeWebview) {
+			vscode.window.showInformationMessage('No netrun file open');
+			return;
+		}
+
+		// Request node list from webview
+		const nodes = await this.requestNodeList();
+		if (!nodes || nodes.length === 0) {
+			vscode.window.showInformationMessage('No nodes in current flow');
+			return;
+		}
+
+		// Build QuickPick items
+		const items = nodes.map(node => ({
+			label: node.name,
+			description: node.factory || node.nodeType,
+			detail: node.sourcePath,
+			nodeId: node.id,
+		}));
+
+		const picked = await vscode.window.showQuickPick(items, {
+			placeHolder: 'Select a node to open',
+			matchOnDescription: true,
+			matchOnDetail: true,
+		});
+
+		if (picked && this.activeWebview) {
+			this.activeWebview.postMessage({
+				type: 'openNode',
+				nodeId: picked.nodeId,
+			});
+		}
+	}
+
+	private requestNodeList(): Promise<NodeInfo[]> {
+		return new Promise((resolve) => {
+			this.nodeListResolve = resolve;
+			this.activeWebview!.postMessage({ type: 'getNodes' });
+			// Timeout after 3 seconds
+			setTimeout(() => {
+				if (this.nodeListResolve === resolve) {
+					this.nodeListResolve = null;
+					resolve([]);
+				}
+			}, 3000);
+		});
 	}
 
 	async resolveCustomTextEditor(
@@ -84,6 +145,13 @@ export class NetrunEditorProvider implements vscode.CustomTextEditorProvider {
 					});
 					break;
 				}
+
+				case 'nodeList':
+					if (this.nodeListResolve) {
+						this.nodeListResolve(message.nodes as NodeInfo[]);
+						this.nodeListResolve = null;
+					}
+					break;
 			}
 		});
 

@@ -44,6 +44,11 @@
 				"command": "netrun-ui.commandPalette",
 				"title": "Open Command Palette",
 				"category": "netrun-ui"
+			},
+			{
+				"command": "netrun-ui.openNode",
+				"title": "Open Node Source",
+				"category": "netrun-ui"
 			}
 		],
 		"keybindings": [
