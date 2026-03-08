@@ -2,7 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import EditorShell from '$lib/components/EditorShell.svelte';
 	import ToastContainer from '$lib/components/ToastContainer.svelte';
-	import { loadFromFile, isDirty, saveToFile, graphExtra, selectedNodeIds, nodes } from '$lib/stores/flowStore';
+	import { loadFromFile, isDirty, saveToFile, graphExtra, selectedNodeIds } from '$lib/stores/flowStore';
 	import { toggleCommandPalette } from '$lib/stores/commandStore';
 	import { executeAction, type Action } from '$lib/stores/actionsStore';
 	import { toasts } from '$lib/stores/toastStore';
@@ -105,44 +105,11 @@
 		}
 	}
 
-	function handleGetNodes() {
-		const allNodes = get(nodes);
-		const nodeList = allNodes
-			.filter(n => n.data.nodeType !== 'decoration')
-			.map(n => {
-				const config = n.data._config as Record<string, unknown> | undefined;
-				const extra = config?.extra as Record<string, unknown> | undefined;
-				const sourcePath = extra?.source_path as string | undefined;
-				const factory = (n.data as Record<string, unknown>).factory as string | undefined;
-				return {
-					id: n.id,
-					name: n.data.label || n.id,
-					nodeType: n.data.nodeType,
-					factory,
-					sourcePath,
-				};
-			});
-		vscode.postMessage({ type: 'nodeList', nodes: nodeList });
-	}
-
-	function handleOpenNode(e: Event) {
-		const { nodeId } = (e as CustomEvent).detail;
-		const node = get(nodes).find(n => n.id === nodeId);
-		if (!node) return;
-		// Select the node and dispatch open event (reuses existing open logic)
-		selectedNodeIds.set(new Set([nodeId]));
-		window.dispatchEvent(new CustomEvent('netrun-node-open', {
-			detail: { id: node.id, data: node.data },
-		}));
-	}
-
 	onMount(async () => {
 		window.addEventListener('netrun-vscode-save', handleVsCodeSave);
 		window.addEventListener('netrun-vscode-command-palette', handleVsCodeCommandPalette);
 		window.addEventListener('netrun-node-dblclick', handleNodeDblClick);
 		window.addEventListener('netrun-node-open', handleNodeOpen);
-		window.addEventListener('netrun-vscode-get-nodes', handleGetNodes);
-		window.addEventListener('netrun-vscode-open-node', handleOpenNode);
 
 		initializeCommands();
 
@@ -167,8 +134,6 @@
 		window.removeEventListener('netrun-vscode-command-palette', handleVsCodeCommandPalette);
 		window.removeEventListener('netrun-node-dblclick', handleNodeDblClick);
 		window.removeEventListener('netrun-node-open', handleNodeOpen);
-		window.removeEventListener('netrun-vscode-get-nodes', handleGetNodes);
-		window.removeEventListener('netrun-vscode-open-node', handleOpenNode);
 	});
 
 	// macOS Smart Quotes fix (same as +layout.svelte)
