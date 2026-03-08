@@ -614,6 +614,13 @@ def _from_function(func: Callable|str, include_port_types: bool = True, manual_o
             k: v.model_dump() for k, v in in_salvos.items()
         }
 
+    # Set source_path in extra to the source file of the function's module
+    try:
+        source_path = inspect.getfile(func)
+        base_config_dict["extra"] = {"source_path": source_path}
+    except (TypeError, OSError):
+        pass  # Built-in functions or functions without source files
+
     # Auto-populate description from function docstring
     if func.__doc__:
         base_config_dict["description"] = inspect.cleandoc(func.__doc__)
