@@ -281,7 +281,7 @@
 		</div>
 
 		<div class="toolbar-section right">
-			<button onclick={openCommandPalette} title="Command Palette (Cmd+Shift+P)" class="command-palette">
+			<button onclick={openCommandPalette} title="Command Palette (Cmd+E)" class="command-palette">
 				<span class="icon">⌘</span>
 			</button>
 		</div>
