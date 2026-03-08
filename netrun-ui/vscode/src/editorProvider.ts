@@ -36,6 +36,9 @@ export class NetrunEditorProvider implements vscode.CustomTextEditorProvider {
 			}),
 			vscode.commands.registerCommand('netrun-ui.openNode', () => {
 				this.showOpenNodePicker();
+			}),
+			vscode.commands.registerCommand('netrun-ui.openConfig', () => {
+				this.showOpenConfigPicker();
 			})
 		);
 	}
@@ -44,33 +47,43 @@ export class NetrunEditorProvider implements vscode.CustomTextEditorProvider {
 		return `http://127.0.0.1:${this.backendPort}/api`;
 	}
 
-	private async showOpenNodePicker(): Promise<void> {
-		// Find all netrun files in workspace
-		const files = await vscode.workspace.findFiles(
+	private async findNetrunFiles(): Promise<vscode.Uri[]> {
+		return vscode.workspace.findFiles(
 			'**/{*.netrun.json,*.netrun.toml,netrun.json,netrun.toml}',
 			'**/node_modules/**'
 		);
+	}
+
+	private async pickNetrunFile(placeHolder: string): Promise<vscode.Uri | undefined> {
+		const files = await this.findNetrunFiles();
 
 		if (files.length === 0) {
 			vscode.window.showInformationMessage('No netrun config files found in workspace');
-			return;
+			return undefined;
 		}
 
-		// Select file: skip picker if only one
-		let selectedFile: vscode.Uri;
 		if (files.length === 1) {
-			selectedFile = files[0];
-		} else {
-			const fileItems = files.map(f => ({
-				label: vscode.workspace.asRelativePath(f),
-				uri: f,
-			}));
-			const picked = await vscode.window.showQuickPick(fileItems, {
-				placeHolder: 'Select a netrun config file',
-			});
-			if (!picked) return;
-			selectedFile = picked.uri;
+			return files[0];
 		}
+
+		const fileItems = files.map(f => ({
+			label: vscode.workspace.asRelativePath(f),
+			uri: f,
+		}));
+		const picked = await vscode.window.showQuickPick(fileItems, { placeHolder });
+		return picked?.uri;
+	}
+
+	private async showOpenConfigPicker(): Promise<void> {
+		const file = await this.pickNetrunFile('Select a netrun config to open');
+		if (file) {
+			await vscode.commands.executeCommand('vscode.openWith', file, 'netrun-ui.flowEditor');
+		}
+	}
+
+	private async showOpenNodePicker(): Promise<void> {
+		const selectedFile = await this.pickNetrunFile('Select a netrun config file');
+		if (!selectedFile) return;
 
 		// Load file via backend API
 		let fileData: any;
