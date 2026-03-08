@@ -41,6 +41,7 @@
 		cascadeHighlight,
 		toggleEdgeDependency,
 		getNodeLocked,
+		updateNodeLocked,
 		type NetrunNodeData,
 		type NetrunEdgeData,
 		type NetrunEdge
@@ -385,11 +386,38 @@
 		event.event.preventDefault();
 		cascadeHighlight.set(null);
 		closeEdgeContextMenu();
+		closeNodeContextMenu();
+	}
+
+	// Node context menu state
+	let nodeContextMenu = $state<{ x: number; y: number; node: Node } | null>(null);
+
+	function closeNodeContextMenu() {
+		nodeContextMenu = null;
 	}
 
 	// Handle context menu on node
 	function onNodeContextMenu(event: { node: Node; event: MouseEvent }) {
 		event.event.preventDefault();
+		closeEdgeContextMenu();
+		nodeContextMenu = {
+			x: event.event.clientX,
+			y: event.event.clientY,
+			node: event.node,
+		};
+	}
+
+	function handleNodeContextAction(action: string) {
+		if (!nodeContextMenu) return;
+		const node = nodeContextMenu.node;
+		closeNodeContextMenu();
+
+		if (action === 'toggle-lock') {
+			const locked = getNodeLocked(node.data as import('$lib/stores/flowStore').AnyNodeData);
+			updateNodeLocked(node.id, !locked);
+		} else if (action === 'delete') {
+			deleteNodes([node.id]);
+		}
 	}
 
 	// Handle click on edge (selection + dependency cascade highlighting)
@@ -586,6 +614,26 @@
 				<div class="context-separator"></div>
 				<button class="context-item danger" onclick={() => handleEdgeContextAction('delete')}>
 					Delete Edge
+				</button>
+			</div>
+		</div>
+	{/if}
+
+	{#if nodeContextMenu}
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="context-overlay" onclick={closeNodeContextMenu} oncontextmenu={(e) => { e.preventDefault(); closeNodeContextMenu(); }}>
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div
+				class="context-menu"
+				style="left: {nodeContextMenu.x}px; top: {nodeContextMenu.y}px;"
+				onclick={(e) => e.stopPropagation()}
+			>
+				<button class="context-item" onclick={() => handleNodeContextAction('toggle-lock')}>
+					{getNodeLocked(nodeContextMenu.node.data as import('$lib/stores/flowStore').AnyNodeData) ? 'Unlock Position' : 'Lock Position'}
+				</button>
+				<div class="context-separator"></div>
+				<button class="context-item danger" onclick={() => handleNodeContextAction('delete')}>
+					Delete Node
 				</button>
 			</div>
 		</div>
