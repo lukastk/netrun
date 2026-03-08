@@ -47,13 +47,13 @@
 		// Check for node-level 'open' action
 		const nodeUi = extra?.ui as Record<string, unknown> | undefined;
 		const nodeActions = (nodeUi?.actions as Action[]) || [];
-		const nodeOpenAction = nodeActions.find((a: Action) => a.id === 'open');
+		const nodeOpenAction = nodeActions.find((a: Action) => a.label === 'open');
 
 		// Check project-level 'open' action
 		const gExtra = get(graphExtra) as Record<string, unknown> | undefined;
 		const gUi = gExtra?.ui as Record<string, unknown> | undefined;
 		const projectActions = (gUi?.actions as Action[]) || [];
-		const projectOpenAction = projectActions.find((a: Action) => a.id === 'open');
+		const projectOpenAction = projectActions.find((a: Action) => a.label === 'open');
 
 		// Node action takes precedence over project action
 		const openAction = nodeOpenAction || projectOpenAction;
