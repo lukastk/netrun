@@ -1,5 +1,4 @@
 import * as vscode from 'vscode';
-import * as path from 'path';
 
 function getNonce(): string {
 	let text = '';
@@ -10,17 +9,14 @@ function getNonce(): string {
 	return text;
 }
 
-interface NodeInfo {
+interface Action {
 	id: string;
-	name: string;
-	nodeType: string;
-	factory?: string;
-	sourcePath?: string;
+	label: string;
+	command: string;
 }
 
 export class NetrunEditorProvider implements vscode.CustomTextEditorProvider {
 	private activeWebview: vscode.Webview | null = null;
-	private nodeListResolve: ((nodes: NodeInfo[]) => void) | null = null;
 
 	constructor(
 		private readonly context: vscode.ExtensionContext,
@@ -44,26 +40,84 @@ export class NetrunEditorProvider implements vscode.CustomTextEditorProvider {
 		);
 	}
 
+	private get apiBase(): string {
+		return `http://127.0.0.1:${this.backendPort}/api`;
+	}
+
 	private async showOpenNodePicker(): Promise<void> {
-		if (!this.activeWebview) {
-			vscode.window.showInformationMessage('No netrun file open');
+		// Find all netrun files in workspace
+		const files = await vscode.workspace.findFiles(
+			'**/{*.netrun.json,*.netrun.toml,netrun.json,netrun.toml}',
+			'**/node_modules/**'
+		);
+
+		if (files.length === 0) {
+			vscode.window.showInformationMessage('No netrun config files found in workspace');
 			return;
 		}
 
-		// Request node list from webview
-		const nodes = await this.requestNodeList();
-		if (!nodes || nodes.length === 0) {
-			vscode.window.showInformationMessage('No nodes in current flow');
+		// Select file: skip picker if only one
+		let selectedFile: vscode.Uri;
+		if (files.length === 1) {
+			selectedFile = files[0];
+		} else {
+			const fileItems = files.map(f => ({
+				label: vscode.workspace.asRelativePath(f),
+				uri: f,
+			}));
+			const picked = await vscode.window.showQuickPick(fileItems, {
+				placeHolder: 'Select a netrun config file',
+			});
+			if (!picked) return;
+			selectedFile = picked.uri;
+		}
+
+		// Load file via backend API
+		let fileData: any;
+		try {
+			const resp = await fetch(`${this.apiBase}/files/read`, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({ path: selectedFile.fsPath }),
+			});
+			if (!resp.ok) {
+				throw new Error(`Backend returned ${resp.status}`);
+			}
+			fileData = await resp.json();
+		} catch (e) {
+			vscode.window.showErrorMessage(`Failed to load file: ${(e as Error).message}`);
 			return;
 		}
+
+		const uiNodes: any[] = fileData.nodes || [];
+		const nonDecorationNodes = uiNodes.filter(
+			(n: any) => n.data?.nodeType !== 'decoration'
+		);
+
+		if (nonDecorationNodes.length === 0) {
+			vscode.window.showInformationMessage('No nodes in selected config');
+			return;
+		}
+
+		// Extract graph-level extra for project actions and settings
+		const graphExtra = fileData.extra || {};
+		const graphUi = graphExtra.ui || {};
+		const projectActions: Action[] = graphUi.actions || [];
+		const projectOpenAction = projectActions.find((a: Action) => a.label === 'open');
 
 		// Build QuickPick items
-		const items = nodes.map(node => ({
-			label: node.name,
-			description: node.factory || node.nodeType,
-			detail: node.sourcePath,
-			nodeId: node.id,
-		}));
+		const items = nonDecorationNodes.map((n: any) => {
+			const config = n.data?._config || {};
+			const extra = config.extra || {};
+			const sourcePath = extra.source_path as string | undefined;
+			const factory = n.data?.factory as string | undefined;
+			return {
+				label: n.data?.label || n.id,
+				description: factory || n.data?.nodeType || '',
+				detail: sourcePath,
+				nodeData: n,
+			};
+		});
 
 		const picked = await vscode.window.showQuickPick(items, {
 			placeHolder: 'Select a node to open',
@@ -71,26 +125,48 @@ export class NetrunEditorProvider implements vscode.CustomTextEditorProvider {
 			matchOnDetail: true,
 		});
 
-		if (picked && this.activeWebview) {
-			this.activeWebview.postMessage({
-				type: 'openNode',
-				nodeId: picked.nodeId,
-			});
-		}
-	}
+		if (!picked) return;
 
-	private requestNodeList(): Promise<NodeInfo[]> {
-		return new Promise((resolve) => {
-			this.nodeListResolve = resolve;
-			this.activeWebview!.postMessage({ type: 'getNodes' });
-			// Timeout after 3 seconds
-			setTimeout(() => {
-				if (this.nodeListResolve === resolve) {
-					this.nodeListResolve = null;
-					resolve([]);
-				}
-			}, 3000);
-		});
+		const nodeData = picked.nodeData;
+		const config = nodeData.data?._config || {};
+		const extra = config.extra || {};
+		const nodeUi = extra.ui || {};
+		const nodeActions: Action[] = nodeUi.actions || [];
+		const nodeOpenAction = nodeActions.find((a: Action) => a.label === 'open');
+
+		const openAction = nodeOpenAction || projectOpenAction;
+
+		if (openAction) {
+			// Execute the open action via backend API
+			try {
+				const extraData = fileData.extra_data || {};
+				await fetch(`${this.apiBase}/actions/execute`, {
+					method: 'POST',
+					headers: { 'Content-Type': 'application/json' },
+					body: JSON.stringify({
+						command: openAction.command,
+						node_name: nodeData.data?.label,
+						net_file_path: selectedFile.fsPath,
+						project_root: extraData.project_root_override || graphUi.projectRoot,
+						default_cmd: graphUi.defaultCmd,
+						env: graphUi.env,
+					}),
+				});
+			} catch (e) {
+				vscode.window.showErrorMessage(`Failed to execute open action: ${(e as Error).message}`);
+			}
+		} else {
+			// Fall back to opening source_path in VS Code
+			const sourcePath = extra.source_path as string | undefined;
+			if (sourcePath) {
+				const fileUri = vscode.Uri.file(sourcePath);
+				await vscode.window.showTextDocument(fileUri);
+			} else {
+				vscode.window.showInformationMessage(
+					`No 'open' action or extra.source_path defined on node "${nodeData.data?.label}"`
+				);
+			}
+		}
 	}
 
 	async resolveCustomTextEditor(
@@ -145,13 +221,6 @@ export class NetrunEditorProvider implements vscode.CustomTextEditorProvider {
 					});
 					break;
 				}
-
-				case 'nodeList':
-					if (this.nodeListResolve) {
-						this.nodeListResolve(message.nodes as NodeInfo[]);
-						this.nodeListResolve = null;
-					}
-					break;
 			}
 		});
 

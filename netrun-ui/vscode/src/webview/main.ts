@@ -34,12 +34,6 @@ window.addEventListener('message', (event) => {
 		window.dispatchEvent(new CustomEvent('netrun-vscode-save'));
 	} else if (message.type === 'commandPalette') {
 		window.dispatchEvent(new CustomEvent('netrun-vscode-command-palette'));
-	} else if (message.type === 'getNodes') {
-		window.dispatchEvent(new CustomEvent('netrun-vscode-get-nodes'));
-	} else if (message.type === 'openNode') {
-		window.dispatchEvent(new CustomEvent('netrun-vscode-open-node', {
-			detail: { nodeId: message.nodeId },
-		}));
 	}
 });
 
