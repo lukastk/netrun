@@ -1,29 +1,18 @@
 <script lang="ts">
-	import { SvelteFlowProvider } from '@xyflow/svelte';
 	import { onMount } from 'svelte';
-	import Toolbar from '$lib/components/Toolbar.svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
-	import Breadcrumb from '$lib/components/Breadcrumb.svelte';
-	import Sidebar from '$lib/components/Sidebar.svelte';
-	import FlowEditor from '$lib/components/FlowEditor.svelte';
 	import FileExplorer from '$lib/components/FileExplorer.svelte';
-	import CommandPalette from '$lib/components/CommandPalette.svelte';
-	import Modal from '$lib/components/Modal.svelte';
-	import FactorySelectorModal from '$lib/components/FactorySelectorModal.svelte';
-	import RecipeModal from '$lib/components/RecipeModal.svelte';
+	import EditorShell from '$lib/components/EditorShell.svelte';
 	import '$lib/configFieldRegistrations';
 	import { api } from '$lib/api';
 	import { loadConfigSchema } from '$lib/stores/schemaStore';
 	import { loadSignalTypes } from '$lib/stores/signalStore';
 	import { loadControlTypes } from '$lib/stores/controlStore';
-	import { nodes, currentFilePath, activeTab, activeTabId, recentFiles, loadFromFile, clearFlow, isNewFile, saveToFile, selectNodeByName, extraData, hasUnsavedChanges } from '$lib/stores/flowStore';
+	import { nodes, currentFilePath, activeTab, activeTabId, recentFiles, loadFromFile, clearFlow, isNewFile, saveToFile, selectNodeByName, hasUnsavedChanges } from '$lib/stores/flowStore';
 	import { restoreExpansionState, refreshAllExpandedSubgraphs } from '$lib/stores/subgraphExpandStore';
-	import { factorySelectorState, closeFactorySelector } from '$lib/stores/factorySelectorStore';
-	import { recipeModalState } from '$lib/stores/recipeStore';
 	import { resolveFilePath } from '$lib/stores/fileExplorerStore';
 	import { showPrompt, showAlert } from '$lib/stores/modalStore';
 	import { initializeCommands } from '$lib/commands';
-	import { handleKeyboardEvent } from '$lib/stores/keyboardStore';
 	import type { PageData } from './$types';
 
 	// Page data from load function (URL query parameters)
@@ -132,21 +121,6 @@
 		}
 	}
 
-	// Global keyboard handler
-	function handleGlobalKeydown(event: KeyboardEvent) {
-		// Don't handle if target is an input/textarea (except for global shortcuts)
-		const target = event.target as HTMLElement;
-		const isInput = target instanceof HTMLInputElement ||
-			target instanceof HTMLTextAreaElement ||
-			target.getAttribute('contenteditable') === 'true';
-
-		// Let the keyboard store handle the event
-		// For inputs, only handle if it's a meta/ctrl shortcut (not single keys)
-		if (!isInput || event.metaKey || event.ctrlKey) {
-			handleKeyboardEvent(event);
-		}
-	}
-
 	// File explorer visibility state
 	let showFileExplorer = $state(true);
 
@@ -191,12 +165,10 @@
 	}
 </script>
 
-<svelte:window onkeydown={handleGlobalKeydown} onbeforeunload={handleBeforeUnload} />
+<svelte:window onbeforeunload={handleBeforeUnload} />
 
 <div class="app">
-	<Toolbar />
 	<TabBar />
-	<Breadcrumb />
 	<div class="main-content">
 		<!-- File Explorer (left, collapsible, resizable) -->
 		{#if showFileExplorer}
@@ -217,116 +189,85 @@
 			</button>
 		{/if}
 
-		<!-- Canvas (center) -->
-		<div class="canvas-container">
-			<SvelteFlowProvider>
-				<FlowEditor />
+		<!-- Editor (center + sidebar) -->
+		<div class="editor-container">
+			<EditorShell />
 
-				<!-- Empty state overlay when no nodes, no file open, and not a new file -->
-				{#if $nodes.length === 0 && !$currentFilePath && !$isNewFile}
-					<div class="empty-state">
-						<div class="empty-content">
-							<h2>Welcome to netrun-ui</h2>
-							<p>Visual editor for NetConfig files</p>
-							<div class="empty-actions">
-								<button class="primary" onclick={async () => {
-									const path = await showPrompt({
-										title: 'Open File',
-										message: 'Enter file path to open',
-										placeholder: '/path/to/file.netrun.json',
-										inputType: 'path',
-										confirmText: 'Open',
+			<!-- Empty state overlay when no nodes, no file open, and not a new file -->
+			{#if $nodes.length === 0 && !$currentFilePath && !$isNewFile}
+				<div class="empty-state">
+					<div class="empty-content">
+						<h2>Welcome to netrun-ui</h2>
+						<p>Visual editor for NetConfig files</p>
+						<div class="empty-actions">
+							<button class="primary" onclick={async () => {
+								const path = await showPrompt({
+									title: 'Open File',
+									message: 'Enter file path to open',
+									placeholder: '/path/to/file.netrun.json',
+									inputType: 'path',
+									confirmText: 'Open',
+								});
+								if (path) {
+									openRecentFile(path);
+								}
+							}}>
+								Open File
+							</button>
+							<button onclick={async () => {
+								const inputPath = await showPrompt({
+									title: 'Create New File',
+									message: 'Enter filename (relative to current folder) or absolute path',
+									placeholder: 'my_flow.netrun.json',
+									defaultValue: 'my_flow.netrun.json',
+									inputType: 'path',
+									confirmText: 'Create',
+								});
+								if (!inputPath) return;
+
+								const fullPath = resolveFilePath(inputPath);
+								const format = fullPath.endsWith('.toml') ? 'toml' : 'json';
+								const fileName = fullPath.split('/').pop() || 'Untitled';
+
+								clearFlow(format, fileName);
+
+								try {
+									await saveToFile(fullPath);
+								} catch (e) {
+									await showAlert({
+										title: 'Error',
+										message: `Failed to create file: ${(e as Error).message}`,
 									});
-									if (path) {
-										openRecentFile(path);
-									}
-								}}>
-									Open File
-								</button>
-								<button onclick={async () => {
-									const inputPath = await showPrompt({
-										title: 'Create New File',
-										message: 'Enter filename (relative to current folder) or absolute path',
-										placeholder: 'my_flow.netrun.json',
-										defaultValue: 'my_flow.netrun.json',
-										inputType: 'path',
-										confirmText: 'Create',
-									});
-									if (!inputPath) return;
-
-									const fullPath = resolveFilePath(inputPath);
-									const format = fullPath.endsWith('.toml') ? 'toml' : 'json';
-									const fileName = fullPath.split('/').pop() || 'Untitled';
-
-									clearFlow(format, fileName);
-
-									try {
-										await saveToFile(fullPath);
-									} catch (e) {
-										await showAlert({
-											title: 'Error',
-											message: `Failed to create file: ${(e as Error).message}`,
-										});
-									}
-								}}>
-									New File
-								</button>
-							</div>
-
-							{#if $recentFiles.length > 0}
-								<div class="recent-files">
-									<p class="recent-title">Recent Files</p>
-									<div class="recent-list">
-										{#each $recentFiles.slice(0, 5) as file}
-											<button
-												class="recent-file"
-												onclick={() => openRecentFile(file.path)}
-												title={file.path}
-											>
-												{file.name}
-											</button>
-										{/each}
-									</div>
-								</div>
-							{:else}
-								<p class="hint">Or use Cmd+O to open, Cmd+N for new file</p>
-							{/if}
+								}
+							}}>
+								New File
+							</button>
 						</div>
-					</div>
-				{/if}
-			</SvelteFlowProvider>
-		</div>
 
-		<!-- Properties Sidebar (right) -->
-		<Sidebar />
+						{#if $recentFiles.length > 0}
+							<div class="recent-files">
+								<p class="recent-title">Recent Files</p>
+								<div class="recent-list">
+									{#each $recentFiles.slice(0, 5) as file}
+										<button
+											class="recent-file"
+											onclick={() => openRecentFile(file.path)}
+											title={file.path}
+										>
+											{file.name}
+										</button>
+									{/each}
+								</div>
+							</div>
+						{:else}
+							<p class="hint">Or use Cmd+O to open, Cmd+N for new file</p>
+						{/if}
+					</div>
+				</div>
+			{/if}
+		</div>
 	</div>
 
-	<!-- Command Palette (modal overlay) -->
-	<CommandPalette />
-
-	<!-- Modal dialogs -->
-	<Modal />
-
-	<!-- Factory Selector Modal -->
-	{#if $factorySelectorState.isOpen}
-		{@const factories = (($extraData as Record<string, unknown>)?.factories as string[]) || []}
-		<FactorySelectorModal
-			{factories}
-			onSelect={(path) => closeFactorySelector(path)}
-			onCancel={() => closeFactorySelector(null)}
-		/>
-	{/if}
-
-	<!-- Recipe Modal -->
-	{#if $recipeModalState.show}
-		<RecipeModal
-			recipeName={$recipeModalState.recipeName}
-			prompts={$recipeModalState.prompts}
-			show={$recipeModalState.show}
-			onsubmit={(inputs) => $recipeModalState.onSubmit(inputs)}
-			oncancel={() => $recipeModalState.onCancel()}
-		/>
-	{/if}
 </div>
 
 <style>
@@ -384,9 +325,11 @@
 		background: var(--bg-tertiary, #2d2d2d);
 	}
 
-	.canvas-container {
+	.editor-container {
 		flex: 1;
 		height: 100%;
+		display: flex;
+		flex-direction: column;
 		position: relative;
 	}
 

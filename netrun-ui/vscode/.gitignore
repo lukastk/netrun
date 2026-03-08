@@ -1,0 +1,5 @@
+node_modules/
+dist/
+*.vsix
+sample_project/.venv/
+sample_project/uv.lock

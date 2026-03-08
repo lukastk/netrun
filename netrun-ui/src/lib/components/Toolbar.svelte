@@ -32,6 +32,8 @@
 
 	import type { ValidationResult } from '$lib/stores/flowStore';
 
+	let { hideFileActions = false }: { hideFileActions?: boolean } = $props();
+
 	// Validation state
 	let lastValidationResult = $state<ValidationResult | null>(null);
 	let isValidating = $state(false);
@@ -238,14 +240,16 @@
 <header class="toolbar">
 	<div class="toolbar-row">
 		<div class="toolbar-section left">
-			<button onclick={handleNew} title="New file (Cmd+N)">
-				<span class="icon">📄</span>
-				<span class="label">New</span>
-			</button>
-			<button onclick={handleOpen} title="Open file (Cmd+O)">
-				<span class="icon">📂</span>
-				<span class="label">Open</span>
-			</button>
+			{#if !hideFileActions}
+				<button onclick={handleNew} title="New file (Cmd+N)">
+					<span class="icon">📄</span>
+					<span class="label">New</span>
+				</button>
+				<button onclick={handleOpen} title="Open file (Cmd+O)">
+					<span class="icon">📂</span>
+					<span class="label">Open</span>
+				</button>
+			{/if}
 			<button onclick={handleSave} title="Save file (Cmd+S)" disabled={!$isDirty}>
 				<span class="icon">💾</span>
 				<span class="label">Save</span>

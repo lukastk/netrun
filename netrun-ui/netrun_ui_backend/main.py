@@ -15,15 +15,19 @@ app = FastAPI(
     version="0.1.0",
 )
 
-# Configure CORS for development
+# Configure CORS
+_cors_origins: list[str] = [
+    "http://localhost:5173",  # Vite dev server
+    "http://localhost:4173",  # Vite preview
+    "http://127.0.0.1:5173",
+    "http://127.0.0.1:4173",
+]
+# Allow all origins when running as a VS Code extension backend (or other embedded use)
+_allow_all_origins = os.environ.get("NETRUN_UI_ALLOW_ALL_ORIGINS", "").lower() in ("1", "true", "yes")
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",  # Vite dev server
-        "http://localhost:4173",  # Vite preview
-        "http://127.0.0.1:5173",
-        "http://127.0.0.1:4173",
-    ],
+    allow_origins=["*"] if _allow_all_origins else _cors_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -2,7 +2,7 @@
  * Recent files store with localStorage persistence
  */
 import { writable, get } from 'svelte/store';
-import { browser } from '$app/environment';
+const browser = typeof window !== 'undefined';
 
 const STORAGE_KEY = 'netrun-ui-recent-files';
 const MAX_RECENT_FILES = 10;

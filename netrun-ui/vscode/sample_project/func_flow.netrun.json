@@ -1,0 +1,89 @@
+{
+  "graph": {
+    "nodes": [
+      {
+        "name": "Fetch",
+        "execution_config": {},
+        "extra": {
+          "ui": {
+            "position": {
+              "x": 100,
+              "y": 150
+            }
+          }
+        },
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {
+          "func": "nodes.fetch_data"
+        },
+        "type": "node"
+      },
+      {
+        "name": "Transform",
+        "execution_config": {},
+        "extra": {
+          "ui": {
+            "position": {
+              "x": 450,
+              "y": 150
+            }
+          }
+        },
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {
+          "func": "nodes.transform"
+        },
+        "type": "node"
+      },
+      {
+        "name": "Save",
+        "execution_config": {},
+        "extra": {
+          "ui": {
+            "position": {
+              "x": 810,
+              "y": 90
+            }
+          }
+        },
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {
+          "func": "nodes.save_result"
+        },
+        "type": "node"
+      },
+      {
+        "name": "LogMetadata",
+        "in_ports": {
+          "in": {}
+        },
+        "extra": {
+          "ui": {
+            "position": {
+              "x": 800,
+              "y": 300
+            }
+          }
+        },
+        "type": "node"
+      }
+    ],
+    "edges": [
+      {
+        "source_str": "Fetch.out",
+        "target_str": "Transform.data",
+        "dependency": false
+      },
+      {
+        "source_str": "Transform.result",
+        "target_str": "Save.result",
+        "dependency": false
+      },
+      {
+        "source_str": "Transform.metadata",
+        "target_str": "LogMetadata.in",
+        "dependency": false
+      }
+    ]
+  }
+}

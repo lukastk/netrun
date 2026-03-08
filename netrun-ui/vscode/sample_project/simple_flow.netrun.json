@@ -1,0 +1,59 @@
+{
+  "graph": {
+    "nodes": [
+      {
+        "name": "Source",
+        "in_ports": {
+          "data": {}
+        },
+        "out_ports": {
+          "out": {}
+        },
+        "extra": {
+          "ui": {
+            "position": {"x": 100, "y": 150}
+          }
+        },
+        "type": "node"
+      },
+      {
+        "name": "Process",
+        "in_ports": {
+          "in": {}
+        },
+        "out_ports": {
+          "result": {}
+        },
+        "extra": {
+          "ui": {
+            "position": {"x": 450, "y": 150}
+          }
+        },
+        "type": "node"
+      },
+      {
+        "name": "Sink",
+        "in_ports": {
+          "in": {}
+        },
+        "out_ports": {},
+        "extra": {
+          "ui": {
+            "position": {"x": 800, "y": 150}
+          }
+        },
+        "type": "node"
+      }
+    ],
+    "edges": [
+      {
+        "source_str": "Source.out",
+        "target_str": "Process.in"
+      },
+      {
+        "source_str": "Process.result",
+        "target_str": "Sink.in"
+      }
+    ]
+  }
+}

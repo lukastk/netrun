@@ -1,0 +1,100 @@
+{
+	"name": "netrun-ui-vscode",
+	"displayName": "netrun-ui",
+	"description": "Visual editor for netrun flow configurations",
+	"version": "0.1.0",
+	"publisher": "netrun",
+	"engines": {
+		"vscode": "^1.85.0"
+	},
+	"categories": [
+		"Custom Editors"
+	],
+	"activationEvents": [],
+	"main": "./dist/extension.js",
+	"contributes": {
+		"customEditors": [
+			{
+				"viewType": "netrun-ui.flowEditor",
+				"displayName": "Netrun Flow Editor",
+				"selector": [
+					{
+						"filenamePattern": "*.netrun.json"
+					},
+					{
+						"filenamePattern": "*.netrun.toml"
+					},
+					{
+						"filenamePattern": "netrun.json"
+					},
+					{
+						"filenamePattern": "netrun.toml"
+					}
+				],
+				"priority": "default"
+			}
+		],
+		"commands": [
+			{
+				"command": "netrun-ui.save",
+				"title": "Save",
+				"category": "netrun-ui"
+			},
+			{
+				"command": "netrun-ui.commandPalette",
+				"title": "Open Command Palette",
+				"category": "netrun-ui"
+			}
+		],
+		"keybindings": [
+			{
+				"command": "netrun-ui.save",
+				"key": "cmd+s",
+				"linux": "ctrl+s",
+				"win": "ctrl+s",
+				"when": "activeCustomEditorId == 'netrun-ui.flowEditor'"
+			},
+			{
+				"command": "netrun-ui.commandPalette",
+				"key": "cmd+e",
+				"linux": "ctrl+e",
+				"win": "ctrl+e",
+				"when": "activeCustomEditorId == 'netrun-ui.flowEditor'"
+			}
+		],
+		"configuration": {
+			"title": "netrun-ui",
+			"properties": {
+				"netrun-ui.pythonPath": {
+					"type": "string",
+					"default": "python",
+					"description": "Path to Python interpreter with netrun-ui-backend installed"
+				},
+				"netrun-ui.backendPort": {
+					"type": "number",
+					"default": 0,
+					"description": "Backend port (0 = auto-detect free port)"
+				}
+			}
+		}
+	},
+	"scripts": {
+		"build": "npm run build:extension && npm run build:webview",
+		"build:extension": "node esbuild.config.mjs",
+		"build:webview": "vite build",
+		"watch:extension": "node esbuild.config.mjs --watch",
+		"watch:webview": "vite build --watch",
+		"dev": "npm run build:extension && npm run build:webview",
+		"package": "npx @vscode/vsce package --no-dependencies"
+	},
+	"devDependencies": {
+		"@sveltejs/vite-plugin-svelte": "^6.2.4",
+		"@types/vscode": "^1.85.0",
+		"@xyflow/svelte": "^1.5.0",
+		"esbuild": "^0.24.0",
+		"elkjs": "^0.11.0",
+		"svelte": "^5.48.2",
+		"typescript": "^5.9.3",
+		"vite": "^7.3.1"
+	}
+}
