@@ -40,7 +40,7 @@
 	}
 
 	function handleNodeDblClick(e: Event) {
-		const { id, data } = (e as CustomEvent).detail;
+		const { id, data, metaKey } = (e as CustomEvent).detail;
 		const config = data._config as Record<string, unknown> | undefined;
 		const extra = config?.extra as Record<string, unknown> | undefined;
 
@@ -66,7 +66,7 @@
 			// Fall back to opening source_path in VS Code
 			const sourcePath = extra?.source_path as string | undefined;
 			if (sourcePath) {
-				vscode.postMessage({ type: 'openFile', filePath: sourcePath });
+				vscode.postMessage({ type: 'openFile', filePath: sourcePath, beside: metaKey });
 			} else {
 				toasts.info(`No 'open' action or extra.source_path defined on node "${data.label}"`);
 			}
