@@ -80,10 +80,18 @@
 		}]);
 		pushHistory();
 	}
+
+	function handleDoubleClick(e: MouseEvent) {
+		// Don't trigger if double-clicking the description toggle
+		if ((e.target as HTMLElement).closest('.node-description')) return;
+		window.dispatchEvent(new CustomEvent('netrun-node-dblclick', { detail: { id, data, metaKey: e.metaKey } }));
+	}
 </script>
 
+<!-- svelte-ignore a11y_no_static_element_interactions -->
 <div
 	class="netrun-node shape-{shape}"
+	ondblclick={handleDoubleClick}
 	class:selected
 	class:factory={data.nodeType === 'factory'}
 	class:invalid={data.isValid === false}

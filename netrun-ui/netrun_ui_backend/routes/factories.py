@@ -445,7 +445,7 @@ async def preview_factory(request: FactoryPreviewRequest) -> FactoryPreviewRespo
             has_in_salvo_conditions=bool(node_config.in_salvo_conditions),
             has_out_salvo_conditions=bool(node_config.out_salvo_conditions),
             description=getattr(node_config, 'description', None),
-            extra=node_config.extra or None,
+            extra=getattr(node_config, 'extra', None) or None,
         )
 
     except (ImportError, FileNotFoundError) as e:

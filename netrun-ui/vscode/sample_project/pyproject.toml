@@ -1,0 +1,11 @@
+[project]
+name = "netrun-ui-sample-project"
+version = "0.1.0"
+description = "Sample project for testing the netrun-ui VS Code extension"
+requires-python = ">=3.11"
+dependencies = [
+    "netrun-ui",
+]
+
+[tool.uv.sources]
+netrun-ui = { path = "../../", editable = true }

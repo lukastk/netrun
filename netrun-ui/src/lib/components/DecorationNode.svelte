@@ -2,7 +2,7 @@
 	import { NodeResizer } from '@xyflow/svelte';
 	import type { DecorationNodeData } from '$lib/stores/flowStore';
 	import { updateNodeDimensions, pushHistory, getCurrentConfig } from '$lib/stores/flowStore';
-	import { API_BASE } from '$lib/api';
+	import { getApiBase } from '$lib/api';
 
 	interface Props {
 		id: string;
@@ -21,7 +21,7 @@
 		// Build URL to backend image endpoint
 		const config = getCurrentConfig();
 		const projectRoot = (config.project_root_path as string) || '';
-		return `${API_BASE}/files/image?path=${encodeURIComponent(data.imagePath)}&project_root=${encodeURIComponent(projectRoot)}`;
+		return `${getApiBase()}/files/image?path=${encodeURIComponent(data.imagePath)}&project_root=${encodeURIComponent(projectRoot)}`;
 	});
 
 	function onResizeEnd(
