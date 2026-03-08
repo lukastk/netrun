@@ -63,13 +63,6 @@
 				"linux": "ctrl+s",
 				"win": "ctrl+s",
 				"when": "activeCustomEditorId == 'netrun-ui.flowEditor'"
-			},
-			{
-				"command": "netrun-ui.commandPalette",
-				"key": "cmd+e",
-				"linux": "ctrl+e",
-				"win": "ctrl+e",
-				"when": "activeCustomEditorId == 'netrun-ui.flowEditor'"
 			}
 		],
 		"configuration": {
