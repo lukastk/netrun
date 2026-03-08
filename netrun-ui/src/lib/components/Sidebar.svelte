@@ -2460,7 +2460,7 @@
 		letter-spacing: 0.5px;
 	}
 
-	.field input {
+	.field input:not([type='checkbox']) {
 		width: 100%;
 	}
 
