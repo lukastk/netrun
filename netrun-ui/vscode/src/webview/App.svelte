@@ -3,7 +3,7 @@
 	import EditorShell from '$lib/components/EditorShell.svelte';
 	import ToastContainer from '$lib/components/ToastContainer.svelte';
 	import { loadFromFile, isDirty, saveToFile, graphExtra, selectedNodeIds } from '$lib/stores/flowStore';
-	import { toggleCommandPalette } from '$lib/stores/commandStore';
+	import { openCommandPalette } from '$lib/stores/commandStore';
 	import { executeAction, type Action } from '$lib/stores/actionsStore';
 	import { toasts } from '$lib/stores/toastStore';
 	import { initializeCommands } from '$lib/commands';
@@ -36,7 +36,7 @@
 	}
 
 	function handleVsCodeCommandPalette() {
-		toggleCommandPalette();
+		openCommandPalette();
 	}
 
 	function handleNodeDblClick(e: Event) {
@@ -111,7 +111,7 @@
 		window.addEventListener('netrun-node-dblclick', handleNodeDblClick);
 		window.addEventListener('netrun-node-open', handleNodeOpen);
 
-		initializeCommands();
+		initializeCommands({ embedded: true });
 
 		// Initialize schema and config
 		await Promise.all([

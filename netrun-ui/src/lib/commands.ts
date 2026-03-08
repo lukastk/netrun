@@ -945,8 +945,8 @@ const keyboardShortcuts: ShortcutBinding[] = [
 	{ key: 'v', metaKey: true, commandId: 'edit.paste' },
 	{ key: 'x', metaKey: true, commandId: 'edit.cut' },
 
-	// View
-	{ key: 'e', metaKey: true, commandId: 'view.commandPalette' },
+	// View (skipped when embedded in VS Code — handled by extension keybinding)
+	{ key: 'e', metaKey: true, commandId: 'view.commandPalette', embeddedSkip: true },
 
 	// Layout
 	{ key: 'l', metaKey: true, shiftKey: true, commandId: 'layout.layered-lr' },
@@ -1041,7 +1041,7 @@ const recipeCommands = derived(
 /**
  * Initialize all commands and shortcuts
  */
-export function initializeCommands(): void {
+export function initializeCommands(options?: { embedded?: boolean }): void {
 	// Register all commands
 	registerCommands([
 		...fileCommands,
@@ -1055,8 +1055,11 @@ export function initializeCommands(): void {
 		...tabCommands,
 	]);
 
-	// Register keyboard shortcuts
-	registerShortcuts(keyboardShortcuts);
+	// Register keyboard shortcuts (skip embeddedSkip bindings when in VS Code etc.)
+	const bindings = options?.embedded
+		? keyboardShortcuts.filter((b) => !b.embeddedSkip)
+		: keyboardShortcuts;
+	registerShortcuts(bindings);
 
 	// Dynamically register/unregister action commands based on selected node
 	actionCommands.subscribe((cmds) => {
