@@ -6,35 +6,35 @@
  * - Updating URL when tabs are switched
  * - Preserving URL state across navigation
  */
-import { browser } from '$app/environment';
-import { goto } from '$app/navigation';
+const isBrowser = typeof window !== 'undefined';
+
+function replaceUrl(url: string): void {
+	if (!isBrowser) return;
+	try {
+		window.history.replaceState({}, '', url);
+	} catch {
+		// ignore — may fail in VS Code webview or other restricted environments
+	}
+}
 
 /**
  * Update the URL to reflect the currently active file
  * Uses replaceState to avoid creating new history entries for every tab switch
  */
 export function updateUrlWithFile(filePath: string | null): void {
-	if (!browser) return;
+	if (!isBrowser) return;
 
 	const url = new URL(window.location.href);
 
 	if (filePath) {
-		// Set the file parameter to the active file
 		url.searchParams.set('file', filePath);
 	} else {
-		// No active file, remove the parameter
 		url.searchParams.delete('file');
 	}
 
-	// Remove node parameter when switching files
 	url.searchParams.delete('node');
 
-	// Use replaceState to update URL without navigation
-	goto(url.toString(), {
-		replaceState: true,
-		noScroll: true,
-		keepFocus: true,
-	});
+	replaceUrl(url.toString());
 }
 
 /**
@@ -42,28 +42,21 @@ export function updateUrlWithFile(filePath: string | null): void {
  * The first file in the array is considered the active one
  */
 export function updateUrlWithFiles(filePaths: string[]): void {
-	if (!browser) return;
+	if (!isBrowser) return;
 
 	const url = new URL(window.location.href);
 
-	// Clear existing file parameters
 	url.searchParams.delete('file');
 
-	// Add each file path
 	filePaths.forEach(path => {
 		if (path) {
 			url.searchParams.append('file', path);
 		}
 	});
 
-	// Remove node parameter
 	url.searchParams.delete('node');
 
-	goto(url.toString(), {
-		replaceState: true,
-		noScroll: true,
-		keepFocus: true,
-	});
+	replaceUrl(url.toString());
 }
 
 /**
@@ -71,7 +64,7 @@ export function updateUrlWithFiles(filePaths: string[]): void {
  * Useful for sharing links that highlight specific nodes
  */
 export function updateUrlWithNode(nodeName: string | null): void {
-	if (!browser) return;
+	if (!isBrowser) return;
 
 	const url = new URL(window.location.href);
 
@@ -81,35 +74,27 @@ export function updateUrlWithNode(nodeName: string | null): void {
 		url.searchParams.delete('node');
 	}
 
-	goto(url.toString(), {
-		replaceState: true,
-		noScroll: true,
-		keepFocus: true,
-	});
+	replaceUrl(url.toString());
 }
 
 /**
  * Clear all netrun-specific query parameters from URL
  */
 export function clearUrlParams(): void {
-	if (!browser) return;
+	if (!isBrowser) return;
 
 	const url = new URL(window.location.href);
 	url.searchParams.delete('file');
 	url.searchParams.delete('node');
 
-	goto(url.toString(), {
-		replaceState: true,
-		noScroll: true,
-		keepFocus: true,
-	});
+	replaceUrl(url.toString());
 }
 
 /**
  * Get the current file path from URL (if any)
  */
 export function getFileFromUrl(): string | null {
-	if (!browser) return null;
+	if (!isBrowser) return null;
 
 	const url = new URL(window.location.href);
 	return url.searchParams.get('file');
@@ -119,7 +104,7 @@ export function getFileFromUrl(): string | null {
  * Get all file paths from URL
  */
 export function getFilesFromUrl(): string[] {
-	if (!browser) return [];
+	if (!isBrowser) return [];
 
 	const url = new URL(window.location.href);
 	return url.searchParams.getAll('file').filter(f => f.length > 0);
@@ -129,7 +114,7 @@ export function getFilesFromUrl(): string[] {
  * Get the node name from URL (if any)
  */
 export function getNodeFromUrl(): string | null {
-	if (!browser) return null;
+	if (!isBrowser) return null;
 
 	const url = new URL(window.location.href);
 	return url.searchParams.get('node');

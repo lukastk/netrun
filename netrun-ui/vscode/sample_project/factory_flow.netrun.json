@@ -1,0 +1,122 @@
+{
+  "graph": {
+    "nodes": [
+      {
+        "name": "Input",
+        "in_ports": {
+          "data": {}
+        },
+        "out_ports": {
+          "out": {}
+        },
+        "extra": {
+          "ui": {
+            "position": {
+              "x": 100,
+              "y": 150
+            }
+          }
+        },
+        "type": "node"
+      },
+      {
+        "name": "Fanout",
+        "extra": {
+          "ui": {
+            "shape": "triangle-left",
+            "hideLabel": true,
+            "hideDescription": true,
+            "hidePortNames": true,
+            "position": {
+              "x": 450,
+              "y": 150
+            }
+          }
+        },
+        "factory": "netrun.node_factories.broadcast",
+        "factory_args": {
+          "num_inputs": 1,
+          "num_outputs": 3
+        },
+        "type": "node"
+      },
+      {
+        "name": "Branch_A",
+        "in_ports": {
+          "in": {}
+        },
+        "out_ports": {
+          "out": {}
+        },
+        "extra": {
+          "ui": {
+            "position": {
+              "x": 690,
+              "y": 0
+            },
+            "headerColor": "#ca1616"
+          }
+        },
+        "type": "node"
+      },
+      {
+        "name": "Branch_B",
+        "in_ports": {
+          "in": {}
+        },
+        "out_ports": {
+          "out": {}
+        },
+        "extra": {
+          "ui": {
+            "position": {
+              "x": 800,
+              "y": 200
+            }
+          }
+        },
+        "type": "node"
+      },
+      {
+        "name": "Branch_C",
+        "in_ports": {
+          "in": {}
+        },
+        "out_ports": {
+          "out": {}
+        },
+        "extra": {
+          "ui": {
+            "position": {
+              "x": 800,
+              "y": 400
+            }
+          }
+        },
+        "type": "node"
+      }
+    ],
+    "edges": [
+      {
+        "source_str": "Input.out",
+        "target_str": "Fanout.in_0",
+        "dependency": false
+      },
+      {
+        "source_str": "Fanout.out_0",
+        "target_str": "Branch_A.in",
+        "dependency": false
+      },
+      {
+        "source_str": "Fanout.out_1",
+        "target_str": "Branch_B.in",
+        "dependency": false
+      },
+      {
+        "source_str": "Fanout.out_2",
+        "target_str": "Branch_C.in",
+        "dependency": false
+      }
+    ]
+  }
+}

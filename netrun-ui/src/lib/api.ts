@@ -3,7 +3,15 @@
  */
 
 // In production, API is served from same origin. In dev, it's on port 8000.
-export const API_BASE = import.meta.env.DEV ? 'http://127.0.0.1:8000/api' : '/api';
+let _apiBase = import.meta.env.DEV ? 'http://127.0.0.1:8000/api' : '/api';
+
+export function setApiBase(url: string) {
+	_apiBase = url;
+}
+
+export function getApiBase(): string {
+	return _apiBase;
+}
 
 export interface PortInfo {
 	name: string;
@@ -241,10 +249,14 @@ export interface ControlTypesResponse {
 }
 
 class ApiClient {
-	private baseUrl: string;
+	private baseUrlOverride: string | undefined;
 
-	constructor(baseUrl: string = API_BASE) {
-		this.baseUrl = baseUrl;
+	constructor(baseUrl?: string) {
+		this.baseUrlOverride = baseUrl;
+	}
+
+	private get baseUrl(): string {
+		return this.baseUrlOverride ?? _apiBase;
 	}
 
 	private async request<T>(
