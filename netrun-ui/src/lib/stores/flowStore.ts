@@ -2263,7 +2263,6 @@ export function createDecorationNode(
 	} else if (decorationType === 'textbox') {
 		defaults.text = 'Text';
 		defaults.fontSize = 14;
-		defaults.fillColor = '#1f2937';
 		defaults.strokeColor = '#6b7280';
 		defaults.strokeWidth = 2;
 		width = 200;
@@ -2275,19 +2274,16 @@ export function createDecorationNode(
 		width = 4;
 		height = 200;
 	} else if (decorationType === 'circle') {
-		defaults.fillColor = '#374151';
 		defaults.strokeColor = '#6b7280';
 		defaults.strokeWidth = 2;
 		width = 100;
 		height = 100;
 	} else if (decorationType === 'image') {
-		defaults.fillColor = '#1f2937';
 		defaults.strokeColor = '#6b7280';
 		defaults.strokeWidth = 2;
 		width = 150;
 		height = 150;
 	} else {
-		defaults.fillColor = '#374151';
 		defaults.strokeColor = '#6b7280';
 		defaults.strokeWidth = 2;
 	}
