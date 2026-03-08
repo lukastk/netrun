@@ -18,6 +18,7 @@
 	import { derived, get } from 'svelte/store';
 	import { isValidConnection, activeTabId, panOnDrag, selectionOnDrag } from '$lib/stores/flowStore';
 	import { svelteFlowRef } from '$lib/stores/svelteFlowStore';
+	import { PORT_ROW_HEIGHT } from '$lib/constants';
 
 	import NetrunNodeComponent from './NetrunNode.svelte';
 	import SubgraphNodeComponent from './SubgraphNode.svelte';
@@ -576,7 +577,7 @@
 		{isValidConnection}
 		fitView
 		{fitViewOptions}
-		snapGrid={[15, 15]}
+		snapGrid={[PORT_ROW_HEIGHT, PORT_ROW_HEIGHT]}
 		defaultEdgeOptions={{
 			type: $edgeStyle,
 			animated: false,

@@ -42,38 +42,7 @@
 		return isPortGroupCollapsed(portGroupStates, side, ROOT_GROUP_PATH, totalPortCount);
 	}
 
-	// Collect visible handle IDs for children (excluding root)
-	function getChildVisibleIds(items: PortDisplayItem[]): string[] {
-		const ids: string[] = [];
-		for (const item of items) {
-			if (item.type === 'port') {
-				ids.push(item.port.name);
-			} else {
-				if (collapsed(item.fullPath, item.portCount)) {
-					ids.push(makeGroupHandleId(side, item.fullPath));
-				} else {
-					ids.push(...getChildVisibleIds(item.children));
-				}
-			}
-		}
-		return ids;
-	}
-
-	let visibleHandleIds = $derived(
-		ports.length <= 1
-			? getChildVisibleIds(portTree)
-			: rootCollapsed() ? [rootHandleId] : getChildVisibleIds(portTree)
-	);
-
-	function getHandleStyle(handleId: string): string {
-		const total = visibleHandleIds.length;
-		const index = visibleHandleIds.indexOf(handleId);
-		if (index === -1 || total === 0) return 'top: 50%';
-		if (total === 1) return 'top: 50%';
-		const spacing = 100 / (total + 1);
-		const top = spacing * (index + 1);
-		return `top: ${top}%`;
-	}
+	const HIDDEN_STYLE = 'opacity:0;width:0;height:0;pointer-events:none;';
 
 	let handlePosition = $derived(side === 'in' ? Position.Left : Position.Right);
 	let handleType = $derived(side === 'in' ? 'target' as const : 'source' as const);
@@ -154,9 +123,7 @@
 					type={handleType}
 					position={handlePosition}
 					id={makeGroupHandleId(side, item.fullPath)}
-					style={isCollapsed
-						? getHandleStyle(makeGroupHandleId(side, item.fullPath))
-						: 'opacity:0;width:0;height:0;pointer-events:none;'}
+					style={isCollapsed ? undefined : HIDDEN_STYLE}
 					class="group-handle {isCollapsed ? '' : 'hidden-handle'}"
 				/>
 			{/if}
@@ -172,9 +139,7 @@
 					type={handleType}
 					position={handlePosition}
 					id={makeGroupHandleId(side, item.fullPath)}
-					style={isCollapsed
-						? getHandleStyle(makeGroupHandleId(side, item.fullPath))
-						: 'opacity:0;width:0;height:0;pointer-events:none;'}
+					style={isCollapsed ? undefined : HIDDEN_STYLE}
 					class="group-handle {isCollapsed ? '' : 'hidden-handle'}"
 				/>
 			{/if}
@@ -236,9 +201,7 @@
 						type={handleType}
 						position={handlePosition}
 						id={rootHandleId}
-						style={isRootCollapsed
-							? getHandleStyle(rootHandleId)
-							: 'opacity:0;width:0;height:0;pointer-events:none;'}
+						style={isRootCollapsed ? undefined : HIDDEN_STYLE}
 						class="root-group-handle {isRootCollapsed ? '' : 'hidden-handle'}"
 					/>
 				{/if}
@@ -251,9 +214,7 @@
 						type={handleType}
 						position={handlePosition}
 						id={rootHandleId}
-						style={isRootCollapsed
-							? getHandleStyle(rootHandleId)
-							: 'opacity:0;width:0;height:0;pointer-events:none;'}
+						style={isRootCollapsed ? undefined : HIDDEN_STYLE}
 						class="root-group-handle {isRootCollapsed ? '' : 'hidden-handle'}"
 					/>
 				{/if}
@@ -301,7 +262,7 @@
 	.ports {
 		display: flex;
 		flex-direction: column;
-		gap: 2px;
+		gap: 0;
 	}
 
 	.in-ports {
@@ -319,7 +280,7 @@
 		display: flex;
 		align-items: center;
 		gap: 4px;
-		min-height: 18px;
+		height: 20px;
 	}
 
 	/* Offset handles to reach node edge (compensating for .in-ports/.out-ports padding) */
@@ -356,7 +317,7 @@
 	.port-group {
 		display: flex;
 		flex-direction: column;
-		gap: 2px;
+		gap: 0;
 	}
 
 	.group-header {
@@ -364,10 +325,10 @@
 		align-items: center;
 		gap: 4px;
 		position: relative;
-		min-height: 18px;
+		height: 20px;
 		cursor: pointer;
-		padding: 2px 4px;
-		margin: -2px -4px;
+		padding: 0 4px;
+		margin: 0 -4px;
 		border-radius: 4px;
 		transition: background 0.15s;
 	}
@@ -404,10 +365,10 @@
 		align-items: center;
 		gap: 4px;
 		position: relative;
-		min-height: 14px;
+		height: 20px;
 		cursor: pointer;
-		padding: 1px 4px;
-		margin: -1px -4px;
+		padding: 0 4px;
+		margin: 0 -4px;
 		border-radius: 4px;
 		transition: background 0.15s, opacity 0.15s;
 		opacity: 0.35;

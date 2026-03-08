@@ -2,6 +2,7 @@
 	import { NodeResizer } from '@xyflow/svelte';
 	import type { SubgraphNodeData } from '$lib/stores/flowStore';
 	import { updateNodeDimensions, pushHistory, toggleNodeDescExpanded } from '$lib/stores/flowStore';
+	import { PORT_ROW_HEIGHT, NODE_BORDER_WIDTH } from '$lib/constants';
 	import { openSubgraphTab } from '$lib/stores/tabsStore';
 	import { toggleSubgraphExpansion, isSubgraphExpanded } from '$lib/stores/subgraphExpandStore';
 	import PortList from './PortList.svelte';
@@ -107,6 +108,21 @@
 		(shape === 'triangle-left' && data.inPorts.length === 1)
 	);
 
+	// Port alignment: quantize pre-ports area to PORT_ROW_HEIGHT multiples
+	let prePortsEl: HTMLDivElement | undefined = $state();
+	let portsPaddingTop = $state(0);
+
+	$effect(() => {
+		if (!prePortsEl) return;
+		const observer = new ResizeObserver(() => {
+			const h = prePortsEl!.offsetHeight;
+			const raw = NODE_BORDER_WIDTH + h + PORT_ROW_HEIGHT / 2;
+			portsPaddingTop = Math.ceil(raw / PORT_ROW_HEIGHT) * PORT_ROW_HEIGHT - raw;
+		});
+		observer.observe(prePortsEl);
+		return () => observer.disconnect();
+	});
+
 	function handleResizeEnd(_event: unknown, params: { x: number; y: number; width: number; height: number }) {
 		updateNodeDimensions([{
 			id,
@@ -154,36 +170,39 @@
 		color="var(--node-selected, #3b82f6)"
 		onResizeEnd={handleResizeEnd}
 	/>
-	<!-- Header -->
-	{#if !hideLabel}
-		<div class="node-header" style:background={headerColor || undefined} style:color={fontColor || undefined}>
-			<button class="expand-toggle" onclick={handleToggleExpand} title={isExpanded ? 'Collapse subgraph' : 'Expand subgraph inline'}>
-				{isExpanded ? '\u25BC' : '\u25B6'}
-			</button>
-			<span class="subgraph-badge">SG</span>
-			<span class="node-label" style:color={fontColor || undefined}>{data.label}</span>
-			{#if locked}
-				<span class="lock-icon" title="Position locked">&#x1F512;</span>
-			{/if}
-		</div>
-	{/if}
+	<!-- Pre-ports area (measured for port alignment) -->
+	<div bind:this={prePortsEl}>
+		<!-- Header -->
+		{#if !hideLabel}
+			<div class="node-header" style:background={headerColor || undefined} style:color={fontColor || undefined}>
+				<button class="expand-toggle" onclick={handleToggleExpand} title={isExpanded ? 'Collapse subgraph' : 'Expand subgraph inline'}>
+					{isExpanded ? '\u25BC' : '\u25B6'}
+				</button>
+				<span class="subgraph-badge">SG</span>
+				<span class="node-label" style:color={fontColor || undefined}>{data.label}</span>
+				{#if locked}
+					<span class="lock-icon" title="Position locked">&#x1F512;</span>
+				{/if}
+			</div>
+		{/if}
 
-	<!-- Description (shown in both collapsed and expanded views) -->
-	{#if data.description && !hideDescription}
-		<!-- svelte-ignore a11y_no_static_element_interactions -->
-		<div class="node-description" onclick={(e) => { e.stopPropagation(); toggleNodeDescExpanded(id); }}>
-			<span class="desc-chevron" class:expanded={descExpanded}>&#9656;</span>
-			{#if descExpanded}
-				<span class="desc-content">{data.description}</span>
-			{:else}
-				<span class="desc-preview">{data.description.split('\n')[0]}</span>
-			{/if}
-		</div>
-	{/if}
+		<!-- Description (shown in both collapsed and expanded views) -->
+		{#if data.description && !hideDescription}
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div class="node-description" onclick={(e) => { e.stopPropagation(); toggleNodeDescExpanded(id); }}>
+				<span class="desc-chevron" class:expanded={descExpanded}>&#9656;</span>
+				{#if descExpanded}
+					<span class="desc-content">{data.description}</span>
+				{:else}
+					<span class="desc-preview">{data.description.split('\n')[0]}</span>
+				{/if}
+			</div>
+		{/if}
+	</div>
 
 	{#if !isExpanded}
 		<!-- Ports container (collapsed view) -->
-		<div class="ports-container">
+		<div class="ports-container" style:padding-top="{portsPaddingTop}px">
 			<PortList nodeId={id} ports={data.inPorts} side="in" {portGroupStates} {hidePortNames} />
 			<PortList nodeId={id} ports={data.outPorts} side="out" {portGroupStates} {hidePortNames} />
 		</div>
@@ -200,7 +219,7 @@
 		<div class="edit-hint">Double-click to edit</div>
 	{:else}
 		<!-- Expanded view: ports on edges, body is container for child nodes -->
-		<div class="expanded-ports">
+		<div class="expanded-ports" style:padding-top="{portsPaddingTop}px">
 			<PortList nodeId={id} ports={data.inPorts} side="in" {portGroupStates} {hidePortNames}
 				exposedPortNames={exposedInPortNames} />
 			<PortList nodeId={id} ports={data.outPorts} side="out" {portGroupStates} {hidePortNames}
@@ -287,7 +306,7 @@
 	.expanded-ports {
 		display: flex;
 		justify-content: space-between;
-		padding: 4px 0;
+		padding: 0;
 	}
 
 	.expanded-body {
@@ -593,7 +612,7 @@
 	.ports-container {
 		display: flex;
 		justify-content: space-between;
-		padding: 8px 0;
+		padding: 0 0 8px 0;
 		min-height: 40px;
 		flex: 1;
 	}
