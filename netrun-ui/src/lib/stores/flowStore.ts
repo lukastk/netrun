@@ -2661,7 +2661,8 @@ export async function saveToFile(path?: string): Promise<void> {
 	}
 
 	// Ensure file has a valid netrun extension
-	if (!savePath.endsWith('.netrun.json') && !savePath.endsWith('.netrun.toml') && savePath !== 'netrun.json' && savePath !== 'netrun.toml') {
+	const saveFileName = savePath.split('/').pop() || savePath;
+	if (!savePath.endsWith('.netrun.json') && !savePath.endsWith('.netrun.toml') && saveFileName !== 'netrun.json' && saveFileName !== 'netrun.toml') {
 		savePath = savePath + '.netrun.json';
 	}
 
