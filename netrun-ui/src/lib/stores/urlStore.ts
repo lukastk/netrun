@@ -12,8 +12,9 @@ function replaceUrl(url: string): void {
 	if (!isBrowser) return;
 	try {
 		window.history.replaceState({}, '', url);
-	} catch {
-		// ignore — may fail in VS Code webview or other restricted environments
+	} catch (e) {
+		// May fail in VS Code webview or other restricted environments
+		console.debug('replaceState failed (expected in restricted environments):', e);
 	}
 }
 
