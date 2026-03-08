@@ -933,7 +933,7 @@ const keyboardShortcuts: ShortcutBinding[] = [
 	{ key: 'n', metaKey: true, commandId: 'file.new' },
 	{ key: 't', metaKey: true, commandId: 'file.newTab' },
 	{ key: 'o', metaKey: true, commandId: 'file.open' },
-	{ key: 's', metaKey: true, commandId: 'file.save' },
+	{ key: 's', metaKey: true, commandId: 'file.save', embeddedSkip: true },
 	{ key: 's', metaKey: true, shiftKey: true, commandId: 'file.saveAs' },
 	{ key: 'r', metaKey: true, shiftKey: true, commandId: 'file.reload' },
 	{ key: 'w', metaKey: true, commandId: 'file.closeTab' },
@@ -1041,9 +1041,22 @@ const recipeCommands = derived(
 /**
  * Initialize all commands and shortcuts
  */
+// Command IDs to exclude when embedded in VS Code (file/tab management handled by host)
+const EMBEDDED_SKIP_COMMANDS = new Set([
+	'file.new',
+	'file.newJson',
+	'file.newToml',
+	'file.newTab',
+	'file.open',
+	'file.saveAs',
+	'file.closeTab',
+]);
+
 export function initializeCommands(options?: { embedded?: boolean }): void {
-	// Register all commands
-	registerCommands([
+	const embedded = options?.embedded ?? false;
+
+	// Register all commands (skip file/tab commands that don't apply in embedded mode)
+	let allCommands = [
 		...fileCommands,
 		...editCommands,
 		...viewCommands,
@@ -1052,12 +1065,19 @@ export function initializeCommands(options?: { embedded?: boolean }): void {
 		...subgraphCommands,
 		...decorationCommands,
 		...recipeStaticCommands,
-		...tabCommands,
-	]);
+		...(embedded ? [] : tabCommands),
+	];
+	if (embedded) {
+		allCommands = allCommands.filter((c) => !EMBEDDED_SKIP_COMMANDS.has(c.id));
+	}
+	registerCommands(allCommands);
 
-	// Register keyboard shortcuts (skip embeddedSkip bindings when in VS Code etc.)
-	const bindings = options?.embedded
-		? keyboardShortcuts.filter((b) => !b.embeddedSkip)
+	// Register keyboard shortcuts (skip bindings for excluded commands in embedded mode)
+	const bindings = embedded
+		? keyboardShortcuts.filter((b) =>
+			!b.embeddedSkip &&
+			!EMBEDDED_SKIP_COMMANDS.has(b.commandId) &&
+			!b.commandId.startsWith('tab.'))
 		: keyboardShortcuts;
 	registerShortcuts(bindings);
 
