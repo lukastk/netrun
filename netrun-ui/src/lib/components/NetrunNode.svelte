@@ -84,7 +84,7 @@
 	function handleDoubleClick(e: MouseEvent) {
 		// Don't trigger if double-clicking the description toggle
 		if ((e.target as HTMLElement).closest('.node-description')) return;
-		window.dispatchEvent(new CustomEvent('netrun-node-dblclick', { detail: { id, data } }));
+		window.dispatchEvent(new CustomEvent('netrun-node-dblclick', { detail: { id, data, metaKey: e.metaKey } }));
 	}
 </script>
 

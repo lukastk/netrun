@@ -80,7 +80,7 @@ export class NetrunEditorProvider implements vscode.CustomTextEditorProvider {
 				case 'openFile': {
 					const fileUri = vscode.Uri.file(message.filePath);
 					await vscode.window.showTextDocument(fileUri, {
-						viewColumn: vscode.ViewColumn.Beside,
+						viewColumn: message.beside ? vscode.ViewColumn.Beside : vscode.ViewColumn.Active,
 					});
 					break;
 				}
