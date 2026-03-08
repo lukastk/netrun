@@ -12,8 +12,8 @@
         "extra": {
           "ui": {
             "position": {
-              "x": 100,
-              "y": 150
+              "x": 12,
+              "y": 22.166666666666668
             }
           }
         },
@@ -28,8 +28,8 @@
             "hideDescription": true,
             "hidePortNames": true,
             "position": {
-              "x": 450,
-              "y": 150
+              "x": 262,
+              "y": 14.666666666666668
             }
           }
         },
@@ -51,8 +51,8 @@
         "extra": {
           "ui": {
             "position": {
-              "x": 690,
-              "y": 0
+              "x": 512,
+              "y": 169
             },
             "headerColor": "#ca1616"
           }
@@ -70,8 +70,8 @@
         "extra": {
           "ui": {
             "position": {
-              "x": 800,
-              "y": 200
+              "x": 512,
+              "y": 326
             }
           }
         },
@@ -88,8 +88,8 @@
         "extra": {
           "ui": {
             "position": {
-              "x": 800,
-              "y": 400
+              "x": 512,
+              "y": 12
             }
           }
         },
@@ -117,6 +117,17 @@
         "target_str": "Branch_C.in",
         "dependency": false
       }
-    ]
+    ],
+    "extra": {
+      "ui": {
+        "actions": [
+          {
+            "id": "action-1772960941604-ottxwp6m2",
+            "label": "Hello world",
+            "command": "echo \"Hello $NODE_NAME\""
+          }
+        ]
+      }
+    }
   }
 }

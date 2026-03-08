@@ -39,6 +39,11 @@
 				"command": "netrun-ui.save",
 				"title": "Save",
 				"category": "netrun-ui"
+			},
+			{
+				"command": "netrun-ui.commandPalette",
+				"title": "Open Command Palette",
+				"category": "netrun-ui"
 			}
 		],
 		"keybindings": [
@@ -47,6 +52,13 @@
 				"key": "cmd+s",
 				"linux": "ctrl+s",
 				"win": "ctrl+s",
+				"when": "activeCustomEditorId == 'netrun-ui.flowEditor'"
+			},
+			{
+				"command": "netrun-ui.commandPalette",
+				"key": "cmd+e",
+				"linux": "ctrl+e",
+				"win": "ctrl+e",
 				"when": "activeCustomEditorId == 'netrun-ui.flowEditor'"
 			}
 		],

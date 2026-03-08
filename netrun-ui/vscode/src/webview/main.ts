@@ -32,6 +32,8 @@ window.addEventListener('message', (event) => {
 	} else if (message.type === 'save') {
 		// Triggered by Cmd+S keybinding via extension host
 		window.dispatchEvent(new CustomEvent('netrun-vscode-save'));
+	} else if (message.type === 'commandPalette') {
+		window.dispatchEvent(new CustomEvent('netrun-vscode-command-palette'));
 	}
 });
 
