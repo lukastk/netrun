@@ -62,6 +62,8 @@ import {
 	isExpandedChildNode,
 	getNodeLocked,
 	updateNodeLocked,
+	sendNodesToFront,
+	sendNodesToBack,
 	type DecorationType,
 } from '$lib/stores/flowStore';
 import { showFactorySelector } from '$lib/stores/factorySelectorStore';
@@ -509,6 +511,30 @@ const nodeCommands: Command[] = [
 				const node = currentNodes.find(n => n.id === nodeId);
 				if (node) updateNodeLocked(nodeId, !currentlyLocked);
 			}
+		},
+		enabled: () => get(selectedNodeIds).size > 0,
+	},
+	{
+		id: 'node.sendToFront',
+		label: 'Send to Front',
+		category: 'node',
+		keywords: ['front', 'forward', 'above', 'top', 'z-index', 'layer', 'order'],
+		action: () => {
+			const selected = get(selectedNodeIds);
+			if (selected.size === 0) return;
+			sendNodesToFront([...selected]);
+		},
+		enabled: () => get(selectedNodeIds).size > 0,
+	},
+	{
+		id: 'node.sendToBack',
+		label: 'Send to Back',
+		category: 'node',
+		keywords: ['back', 'behind', 'below', 'bottom', 'z-index', 'layer', 'order'],
+		action: () => {
+			const selected = get(selectedNodeIds);
+			if (selected.size === 0) return;
+			sendNodesToBack([...selected]);
 		},
 		enabled: () => get(selectedNodeIds).size > 0,
 	},

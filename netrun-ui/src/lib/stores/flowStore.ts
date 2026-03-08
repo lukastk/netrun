@@ -696,6 +696,73 @@ export function updateNodeLocked(nodeId: string, locked: boolean): void {
 }
 
 /**
+ * Send nodes to front (highest zIndex) or back (lowest zIndex).
+ * For regular/factory/subgraph nodes: persisted in _config.extra.ui.zIndex
+ * For decoration nodes: persisted as top-level zIndex in decoration serialization
+ */
+export function sendNodesToFront(nodeIds: string[]): void {
+	const tab = get(activeTab);
+	if (!tab || nodeIds.length === 0) return;
+
+	// Find the current max zIndex across all nodes
+	const maxZ = Math.max(0, ...tab.nodes.map(n => n.zIndex ?? 0));
+	const newZ = maxZ + 1;
+
+	pushHistory();
+	updateActiveTab({
+		nodes: tab.nodes.map(node => {
+			if (!nodeIds.includes(node.id)) return node;
+			if (node.data.nodeType === 'decoration') {
+				return { ...node, zIndex: newZ };
+			}
+			const config = (node.data._config || {}) as Record<string, unknown>;
+			const extra = (config.extra || {}) as Record<string, unknown>;
+			const ui = (extra.ui || {}) as Record<string, unknown>;
+			return {
+				...node,
+				zIndex: newZ,
+				data: {
+					...node.data,
+					_config: { ...config, extra: { ...extra, ui: { ...ui, zIndex: newZ } } },
+				},
+			};
+		}),
+		isDirty: true,
+	});
+}
+
+export function sendNodesToBack(nodeIds: string[]): void {
+	const tab = get(activeTab);
+	if (!tab || nodeIds.length === 0) return;
+
+	// Find the current min zIndex across all nodes
+	const minZ = Math.min(0, ...tab.nodes.map(n => n.zIndex ?? 0));
+	const newZ = minZ - 1;
+
+	pushHistory();
+	updateActiveTab({
+		nodes: tab.nodes.map(node => {
+			if (!nodeIds.includes(node.id)) return node;
+			if (node.data.nodeType === 'decoration') {
+				return { ...node, zIndex: newZ };
+			}
+			const config = (node.data._config || {}) as Record<string, unknown>;
+			const extra = (config.extra || {}) as Record<string, unknown>;
+			const ui = (extra.ui || {}) as Record<string, unknown>;
+			return {
+				...node,
+				zIndex: newZ,
+				data: {
+					...node.data,
+					_config: { ...config, extra: { ...extra, ui: { ...ui, zIndex: newZ } } },
+				},
+			};
+		}),
+		isDirty: true,
+	});
+}
+
+/**
  * Get custom colors for a node from _config.extra.ui.
  */
 export function getNodeColors(nodeData: AnyNodeData): {
@@ -2262,6 +2329,7 @@ function convertApiNodes(apiNodes: UINode[]): FlowNode[] {
 				position: node.position,
 				...(node.width != null ? { width: node.width } : {}),
 				...(node.height != null ? { height: node.height } : {}),
+				...('zIndex' in node && node.zIndex != null ? { zIndex: node.zIndex as number } : {}),
 				data: {
 					label: node.data.label,
 					nodeType: 'subgraph' as const,
@@ -2283,6 +2351,7 @@ function convertApiNodes(apiNodes: UINode[]): FlowNode[] {
 				position: node.position,
 				...(node.width != null ? { width: node.width } : {}),
 				...(node.height != null ? { height: node.height } : {}),
+				...('zIndex' in node && node.zIndex != null ? { zIndex: node.zIndex as number } : {}),
 				data: {
 					label: node.data.label,
 					nodeType: node.data.nodeType as 'regular' | 'factory',
@@ -2331,7 +2400,7 @@ function extractDecorations(extra: Record<string, unknown> | null): {
 		position: d.position as { x: number; y: number },
 		...(d.width != null ? { width: d.width as number } : {}),
 		...(d.height != null ? { height: d.height as number } : {}),
-		zIndex: -1,
+		zIndex: (d.zIndex as number) ?? -1,
 		data: {
 			label: (d.label as string) || (d.id as string),
 			nodeType: 'decoration' as const,
@@ -2347,7 +2416,7 @@ function extractDecorations(extra: Record<string, unknown> | null): {
 			fontSize: d.fontSize as number | undefined,
 			fontColor: d.fontColor as string | undefined,
 			opacity: (d.opacity as number) ?? 1,
-		locked: (d.locked as boolean) || undefined,
+			locked: (d.locked as boolean) || undefined,
 		},
 	}));
 
@@ -2632,6 +2701,7 @@ export async function saveToFile(path?: string): Promise<void> {
 			...(d.fontColor ? { fontColor: d.fontColor } : {}),
 			...(d.opacity != null && d.opacity !== 1 ? { opacity: d.opacity } : {}),
 		...(d.locked ? { locked: true } : {}),
+			...(n.zIndex != null && n.zIndex !== -1 ? { zIndex: n.zIndex } : {}),
 		};
 	});
 
