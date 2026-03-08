@@ -28,7 +28,7 @@ _allow_all_origins = os.environ.get("NETRUN_UI_ALLOW_ALL_ORIGINS", "").lower() i
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"] if _allow_all_origins else _cors_origins,
-    allow_credentials=True,
+    allow_credentials=not _allow_all_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
