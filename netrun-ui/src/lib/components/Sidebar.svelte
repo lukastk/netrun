@@ -29,6 +29,8 @@
 		NODE_SHAPES,
 		updateNodeVisibility,
 		getNodeVisibility,
+		updateNodeLocked,
+		getNodeLocked,
 		updateNodeColor,
 		getNodeColors,
 		isExpandedChildNode,
@@ -882,6 +884,16 @@
 									}}
 								/>
 								<span class="checkbox-text">Hide port names</span>
+							</label>
+							<label class="checkbox-label">
+								<input
+									type="checkbox"
+									checked={getNodeLocked($selectedNode.data)}
+									onchange={(e) => {
+										if ($selectedNode) updateNodeLocked($selectedNode.id, (e.target as HTMLInputElement).checked);
+									}}
+								/>
+								<span class="checkbox-text">Lock position</span>
 							</label>
 						</div>
 						<button

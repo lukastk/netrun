@@ -5,6 +5,8 @@
 		pushHistory,
 		deleteNodes,
 		renameNode,
+		getNodeLocked,
+		updateNodeLocked,
 		DECORATION_TYPES,
 		type FlowNode,
 		type DecorationNodeData,
@@ -259,6 +261,16 @@
 </section>
 
 <section class="section">
+	<div class="field">
+		<label class="checkbox-row">
+			<input
+				type="checkbox"
+				checked={getNodeLocked(data)}
+				onchange={(e) => updateNodeLocked(node.id, (e.target as HTMLInputElement).checked)}
+			/>
+			<span>Lock position</span>
+		</label>
+	</div>
 	<button class="delete-btn" onclick={handleDelete}>Delete Decoration</button>
 </section>
 
@@ -397,6 +409,15 @@
 		color: var(--text-secondary, #a0a0a0);
 		min-width: 36px;
 		text-align: right;
+	}
+
+	.checkbox-row {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		font-size: 12px;
+		color: var(--text-primary, #fff);
+		cursor: pointer;
 	}
 
 	.delete-btn {

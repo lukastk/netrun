@@ -2,7 +2,7 @@
 	import { get } from 'svelte/store';
 	import { LAYOUT_ALGORITHMS, computeLayout } from '$lib/utils/autoLayout';
 	import { svelteFlowRef } from '$lib/stores/svelteFlowStore';
-	import { nodes, edges, pushHistory, updateNodePositions } from '$lib/stores/flowStore';
+	import { nodes, edges, pushHistory, updateNodePositions, getNodeLocked } from '$lib/stores/flowStore';
 	import { toasts } from '$lib/stores/toastStore';
 
 	let isOpen = $state(false);
@@ -20,8 +20,10 @@
 		isOpen = false;
 
 		const currentNodes = get(nodes);
-		// Filter out decoration nodes — they don't participate in layout
-		const layoutNodes = currentNodes.filter(n => (n.data as Record<string, unknown>)?.nodeType !== 'decoration');
+		// Filter out decoration nodes and locked nodes — they don't participate in layout
+		const layoutNodes = currentNodes.filter(n =>
+			(n.data as Record<string, unknown>)?.nodeType !== 'decoration' && !getNodeLocked(n.data)
+		);
 		if (layoutNodes.length < 2) {
 			toasts.info(layoutNodes.length === 0 ? 'No nodes to layout.' : 'Need at least 2 nodes to layout.');
 			return;

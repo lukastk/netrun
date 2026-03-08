@@ -70,6 +70,13 @@
 		return (ui?.fontColor as string) ?? null;
 	})());
 
+	let locked = $derived((() => {
+		const config = (data as Record<string, unknown>)._config as Record<string, unknown> | undefined;
+		const extra = config?.extra as Record<string, unknown> | undefined;
+		const ui = extra?.ui as Record<string, unknown> | undefined;
+		return (ui?.locked as boolean) ?? false;
+	})());
+
 	let isExpanded = $derived((() => {
 		const config = (data as Record<string, unknown>)._config as Record<string, unknown> | undefined;
 		const extra = config?.extra as Record<string, unknown> | undefined;
@@ -155,6 +162,9 @@
 			</button>
 			<span class="subgraph-badge">SG</span>
 			<span class="node-label" style:color={fontColor || undefined}>{data.label}</span>
+			{#if locked}
+				<span class="lock-icon" title="Position locked">&#x1F512;</span>
+			{/if}
 		</div>
 	{/if}
 
@@ -530,6 +540,13 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+	}
+
+	.lock-icon {
+		font-size: 10px;
+		opacity: 0.6;
+		flex-shrink: 0;
+		margin-left: auto;
 	}
 
 	.node-description {
