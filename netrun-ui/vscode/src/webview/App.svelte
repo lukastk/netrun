@@ -92,6 +92,7 @@
 			await loadFromFile(filePath);
 		} catch (e) {
 			console.error('Failed to load file:', e);
+			toasts.error(`Failed to load file: ${e}`);
 		}
 	});
 

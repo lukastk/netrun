@@ -617,7 +617,7 @@ def _from_function(func: Callable|str, include_port_types: bool = True, manual_o
     # Set source_path in extra to the source file of the function's module
     try:
         source_path = inspect.getfile(func)
-        base_config_dict["extra"] = {"source_path": source_path}
+        base_config_dict.setdefault("extra", {})["source_path"] = source_path
     except (TypeError, OSError):
         pass  # Built-in functions or functions without source files
 
