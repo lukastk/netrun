@@ -73,10 +73,43 @@
 		}
 	}
 
+	function handleNodeOpen(e: Event) {
+		const { id, data } = (e as CustomEvent).detail;
+		const config = data._config as Record<string, unknown> | undefined;
+		const extra = config?.extra as Record<string, unknown> | undefined;
+
+		// Check for node-level 'open' action
+		const nodeUi = extra?.ui as Record<string, unknown> | undefined;
+		const nodeActions = (nodeUi?.actions as Action[]) || [];
+		const nodeOpenAction = nodeActions.find((a: Action) => a.label === 'open');
+
+		// Check project-level 'open' action
+		const gExtra = get(graphExtra) as Record<string, unknown> | undefined;
+		const gUi = gExtra?.ui as Record<string, unknown> | undefined;
+		const projectActions = (gUi?.actions as Action[]) || [];
+		const projectOpenAction = projectActions.find((a: Action) => a.label === 'open');
+
+		const openAction = nodeOpenAction || projectOpenAction;
+
+		if (openAction) {
+			selectedNodeIds.set(new Set([id]));
+			executeAction(openAction);
+		} else {
+			// Fall back to opening source_path in VS Code
+			const sourcePath = extra?.source_path as string | undefined;
+			if (sourcePath) {
+				vscode.postMessage({ type: 'openFile', filePath: sourcePath });
+			} else {
+				toasts.info(`No 'open' action or extra.source_path defined on node "${data.label}"`);
+			}
+		}
+	}
+
 	onMount(async () => {
 		window.addEventListener('netrun-vscode-save', handleVsCodeSave);
 		window.addEventListener('netrun-vscode-command-palette', handleVsCodeCommandPalette);
 		window.addEventListener('netrun-node-dblclick', handleNodeDblClick);
+		window.addEventListener('netrun-node-open', handleNodeOpen);
 
 		initializeCommands();
 
@@ -100,6 +133,7 @@
 		window.removeEventListener('netrun-vscode-save', handleVsCodeSave);
 		window.removeEventListener('netrun-vscode-command-palette', handleVsCodeCommandPalette);
 		window.removeEventListener('netrun-node-dblclick', handleNodeDblClick);
+		window.removeEventListener('netrun-node-open', handleNodeOpen);
 	});
 
 	// macOS Smart Quotes fix (same as +layout.svelte)

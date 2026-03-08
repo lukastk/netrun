@@ -538,6 +538,30 @@ const nodeCommands: Command[] = [
 		},
 		enabled: () => get(selectedNodeIds).size > 0,
 	},
+	{
+		id: 'node.openSource',
+		label: 'Open Source',
+		category: 'node',
+		keywords: ['open', 'source', 'file', 'edit', 'code'],
+		action: () => {
+			const selected = get(selectedNodeIds);
+			if (selected.size === 0) return;
+			const nodeId = [...selected][0];
+			const node = get(nodes).find(n => n.id === nodeId);
+			if (node && node.data.nodeType !== 'decoration') {
+				window.dispatchEvent(new CustomEvent('netrun-node-open', {
+					detail: { id: node.id, data: node.data },
+				}));
+			}
+		},
+		enabled: () => {
+			const selected = get(selectedNodeIds);
+			if (selected.size === 0) return false;
+			const nodeId = [...selected][0];
+			const node = get(nodes).find(n => n.id === nodeId);
+			return !!node && node.data.nodeType !== 'decoration';
+		},
+	},
 ];
 
 // --- Subgraph Commands ---
