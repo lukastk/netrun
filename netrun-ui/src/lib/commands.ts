@@ -946,14 +946,14 @@ const keyboardShortcuts: ShortcutBinding[] = [
 	{ key: 'x', metaKey: true, commandId: 'edit.cut' },
 
 	// View
-	{ key: 'p', metaKey: true, shiftKey: true, commandId: 'view.commandPalette' },
+	{ key: 'e', metaKey: true, commandId: 'view.commandPalette' },
 
 	// Layout
 	{ key: 'l', metaKey: true, shiftKey: true, commandId: 'layout.layered-lr' },
 
 	// Subgraph
 	{ key: 'g', metaKey: true, commandId: 'subgraph.create' },
-	{ key: 'e', metaKey: true, commandId: 'subgraph.toggleExpand' },
+	{ key: 'e', metaKey: true, shiftKey: true, commandId: 'subgraph.toggleExpand' },
 
 	// Tab navigation
 	{ key: 'Tab', ctrlKey: true, commandId: 'tab.next' },
