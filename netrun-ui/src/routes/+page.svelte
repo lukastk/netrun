@@ -1,5 +1,5 @@
 <script lang="ts">
-	import { onMount } from 'svelte';
+	import { onMount, onDestroy } from 'svelte';
 	import TabBar from '$lib/components/TabBar.svelte';
 	import FileExplorer from '$lib/components/FileExplorer.svelte';
 	import EditorShell from '$lib/components/EditorShell.svelte';
@@ -8,11 +8,14 @@
 	import { loadConfigSchema } from '$lib/stores/schemaStore';
 	import { loadSignalTypes } from '$lib/stores/signalStore';
 	import { loadControlTypes } from '$lib/stores/controlStore';
-	import { nodes, currentFilePath, activeTab, activeTabId, recentFiles, loadFromFile, clearFlow, isNewFile, saveToFile, selectNodeByName, hasUnsavedChanges } from '$lib/stores/flowStore';
+	import { nodes, currentFilePath, activeTab, activeTabId, recentFiles, loadFromFile, clearFlow, isNewFile, saveToFile, selectNodeByName, hasUnsavedChanges, graphExtra } from '$lib/stores/flowStore';
 	import { restoreExpansionState, refreshAllExpandedSubgraphs } from '$lib/stores/subgraphExpandStore';
 	import { resolveFilePath } from '$lib/stores/fileExplorerStore';
 	import { showPrompt, showAlert } from '$lib/stores/modalStore';
 	import { initializeCommands } from '$lib/commands';
+	import { executeAction, type Action } from '$lib/stores/actionsStore';
+	import { toasts } from '$lib/stores/toastStore';
+	import { get } from 'svelte/store';
 	import type { PageData } from './$types';
 
 	// Page data from load function (URL query parameters)
@@ -60,6 +63,8 @@
 
 	// Initialize command system and process URL parameters
 	onMount(async () => {
+		window.addEventListener('netrun-node-dblclick', handleNodeOpen);
+		window.addEventListener('netrun-node-open', handleNodeOpen);
 		initializeCommands();
 		loadConfigSchema();
 		loadSignalTypes();
@@ -90,6 +95,11 @@
 				console.warn('Failed to auto-open first netrun file:', e);
 			}
 		}
+	});
+
+	onDestroy(() => {
+		window.removeEventListener('netrun-node-dblclick', handleNodeOpen);
+		window.removeEventListener('netrun-node-open', handleNodeOpen);
 	});
 
 	// Process files passed via URL parameters
@@ -150,6 +160,50 @@
 		document.removeEventListener('mouseup', stopExplorerResize);
 		document.body.style.cursor = '';
 		document.body.style.userSelect = '';
+	}
+
+	// Handle "Open Source" event from context menu / double-click
+	function handleNodeOpen(e: Event) {
+		const { id, data } = (e as CustomEvent).detail;
+		const config = data._config as Record<string, unknown> | undefined;
+		const extra = config?.extra as Record<string, unknown> | undefined;
+
+		// Check for node-level 'open' action
+		const nodeUi = extra?.ui as Record<string, unknown> | undefined;
+		const nodeActions = (nodeUi?.actions as Action[]) || [];
+		const nodeOpenAction = nodeActions.find((a: Action) => a.label === 'open');
+
+		// Check project-level 'open' action
+		const gExtra = get(graphExtra) as Record<string, unknown> | undefined;
+		const gUi = gExtra?.ui as Record<string, unknown> | undefined;
+		const projectActions = (gUi?.actions as Action[]) || [];
+		const projectOpenAction = projectActions.find((a: Action) => a.label === 'open');
+
+		const openAction = nodeOpenAction || projectOpenAction;
+
+		if (openAction) {
+			executeAction(openAction);
+		} else {
+			// Fall back to $DEFAULT_CMD + source_path
+			const sourcePath = extra?.source_path as string | undefined;
+			const defaultCmd = gUi?.defaultCmd as string | undefined;
+
+			if (!sourcePath) {
+				toasts.info(`No 'open' action or extra.source_path defined on node "${data.label}"`);
+				return;
+			}
+			if (!defaultCmd) {
+				toasts.info('Set DEFAULT_CMD in Project Settings to enable "Open Source"');
+				return;
+			}
+
+			// Execute using $DEFAULT_CMD $SOURCE_PATH
+			executeAction({
+				id: '_open_source',
+				label: 'open',
+				command: `$DEFAULT_CMD ${sourcePath}`,
+			});
+		}
 	}
 
 	// Handle opening a recent file

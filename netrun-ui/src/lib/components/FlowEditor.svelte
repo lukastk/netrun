@@ -421,6 +421,12 @@
 			sendNodesToFront([node.id]);
 		} else if (action === 'send-to-back') {
 			sendNodesToBack([node.id]);
+		} else if (action === 'open-source') {
+			// Select the node so executeAction has context, then dispatch open event
+			selectedNodeIds.set(new Set([node.id]));
+			window.dispatchEvent(new CustomEvent('netrun-node-open', {
+				detail: { id: node.id, data: node.data },
+			}));
 		} else if (action === 'delete') {
 			deleteNodes([node.id]);
 		}
@@ -634,8 +640,14 @@
 				style="left: {nodeContextMenu.x}px; top: {nodeContextMenu.y}px;"
 				onclick={(e) => e.stopPropagation()}
 			>
-				<button class="context-item" onclick={() => handleNodeContextAction('toggle-lock')}>
-					{getNodeLocked(nodeContextMenu.node.data as import('$lib/stores/flowStore').AnyNodeData) ? 'Unlock Position' : 'Lock Position'}
+				{#if nodeContextMenu.node.data.nodeType !== 'decoration'}
+				<button class="context-item" onclick={() => handleNodeContextAction('open-source')}>
+					Open Source
+				</button>
+				<div class="context-separator"></div>
+			{/if}
+			<button class="context-item" onclick={() => handleNodeContextAction('toggle-lock')}>
+				{getNodeLocked(nodeContextMenu.node.data as import('$lib/stores/flowStore').AnyNodeData) ? 'Unlock Position' : 'Lock Position'}
 				</button>
 				<div class="context-separator"></div>
 				<button class="context-item" onclick={() => handleNodeContextAction('send-to-front')}>
