@@ -67,6 +67,9 @@
 	style:--font-size="{data.fontSize ?? 14}px"
 	style:--font-color={data.fontColor || '#ffffff'}
 >
+	{#if data.locked}
+		<span class="lock-icon" title="Position locked">&#x1F512;</span>
+	{/if}
 	{#if data.decorationType === 'label'}
 		<span class="text-content">{data.text || ''}</span>
 	{:else if data.decorationType === 'textbox'}
@@ -240,6 +243,15 @@
 		color: var(--text-secondary, #a0a0a0);
 		font-style: italic;
 		user-select: none;
+	}
+
+	.lock-icon {
+		position: absolute;
+		top: 2px;
+		right: 4px;
+		font-size: 10px;
+		opacity: 0.6;
+		z-index: 2;
 	}
 
 	/* Selection highlight — handled by SvelteFlow, but add a subtle ring */

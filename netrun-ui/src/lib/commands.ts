@@ -60,6 +60,8 @@ import {
 	extraData,
 	updateExtraData,
 	isExpandedChildNode,
+	getNodeLocked,
+	updateNodeLocked,
 	type DecorationType,
 } from '$lib/stores/flowStore';
 import { showFactorySelector } from '$lib/stores/factorySelectorStore';
@@ -490,6 +492,26 @@ const nodeCommands: Command[] = [
 			}
 		},
 	},
+	{
+		id: 'node.toggleLock',
+		label: 'Toggle Lock Position',
+		category: 'node',
+		keywords: ['lock', 'unlock', 'freeze', 'pin', 'position', 'drag'],
+		action: () => {
+			const selected = get(selectedNodeIds);
+			if (selected.size === 0) return;
+			const currentNodes = get(nodes);
+			// Use first selected node's state to determine toggle direction
+			const firstNode = currentNodes.find(n => selected.has(n.id));
+			if (!firstNode) return;
+			const currentlyLocked = getNodeLocked(firstNode.data);
+			for (const nodeId of selected) {
+				const node = currentNodes.find(n => n.id === nodeId);
+				if (node) updateNodeLocked(nodeId, !currentlyLocked);
+			}
+		},
+		enabled: () => get(selectedNodeIds).size > 0,
+	},
 ];
 
 // --- Subgraph Commands ---
@@ -728,8 +750,10 @@ const recipeStaticCommands: Command[] = [
 
 async function runLayout(algorithmId: string): Promise<void> {
 	const currentNodes = get(nodes);
-	// Filter out expanded child nodes and decoration nodes - only layout parent-level functional nodes
-	const layoutNodes = currentNodes.filter(n => !isExpandedChildNode(n.id) && n.data.nodeType !== 'decoration');
+	// Filter out expanded child nodes, decoration nodes, and locked nodes
+	const layoutNodes = currentNodes.filter(n =>
+		!isExpandedChildNode(n.id) && n.data.nodeType !== 'decoration' && !getNodeLocked(n.data)
+	);
 	if (layoutNodes.length < 2) {
 		toasts.info(layoutNodes.length === 0 ? 'No nodes to layout.' : 'Need at least 2 nodes to layout.');
 		return;

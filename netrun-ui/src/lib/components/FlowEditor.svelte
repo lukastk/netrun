@@ -40,6 +40,7 @@
 		getParentSubgraphId,
 		cascadeHighlight,
 		toggleEdgeDependency,
+		getNodeLocked,
 		type NetrunNodeData,
 		type NetrunEdgeData,
 		type NetrunEdge
@@ -135,10 +136,14 @@
 	// Uses expandedView which includes child nodes from expanded subgraphs
 	const nodesWithSelection = derived(
 		[expandedView, selectedNodeIds],
-		([{ allNodes }, $selectedNodeIds]) => allNodes.map(node => ({
-			...node,
-			selected: $selectedNodeIds.has(node.id)
-		}))
+		([{ allNodes }, $selectedNodeIds]) => allNodes.map(node => {
+			const locked = getNodeLocked(node.data);
+			return {
+				...node,
+				selected: $selectedNodeIds.has(node.id),
+				...(locked ? { draggable: false } : {}),
+			};
+		})
 	);
 
 	const edgesWithSelection = derived(

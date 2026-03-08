@@ -65,6 +65,12 @@
 		return (ui?.fontColor as string) ?? null;
 	})());
 
+	let locked = $derived((() => {
+		const extra = (data._config?.extra ?? undefined) as Record<string, unknown> | undefined;
+		const ui = (extra?.ui ?? undefined) as Record<string, unknown> | undefined;
+		return (ui?.locked as boolean) ?? false;
+	})());
+
 	// True when the pointy side of a triangle has exactly 1 port
 	let singleTipPort = $derived(
 		(shape === 'triangle-right' && data.outPorts.length === 1) ||
@@ -114,6 +120,9 @@
 				<span class="factory-badge">F</span>
 			{/if}
 			<span class="node-label" style:color={fontColor || undefined}>{data.label}</span>
+			{#if locked}
+				<span class="lock-icon" title="Position locked">&#x1F512;</span>
+			{/if}
 		</div>
 	{/if}
 
@@ -435,6 +444,13 @@
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
+	}
+
+	.lock-icon {
+		font-size: 10px;
+		opacity: 0.6;
+		flex-shrink: 0;
+		margin-left: auto;
 	}
 
 	.node-description {

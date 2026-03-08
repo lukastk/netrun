@@ -144,6 +144,7 @@ export interface DecorationNodeData extends Record<string, unknown> {
 	fontSize?: number;
 	fontColor?: string;
 	opacity?: number;
+	locked?: boolean;
 }
 
 // Combined type for any flow node data
@@ -632,6 +633,56 @@ export function updateNodeVisibility(
 	const newUi = value
 		? { ...ui, [key]: true }
 		: (() => { const { [key]: _removed, ...rest } = ui; return rest; })();
+
+	updateNodeDataLive(nodeId, {
+		_config: {
+			...config,
+			extra: {
+				...extra,
+				ui: newUi,
+			},
+		},
+	});
+}
+
+/**
+ * Check if a node is position-locked.
+ * For regular/factory/subgraph nodes: stored in _config.extra.ui.locked
+ * For decoration nodes: stored as data.locked
+ */
+export function getNodeLocked(nodeData: AnyNodeData): boolean {
+	if (nodeData.nodeType === 'decoration') {
+		return (nodeData as DecorationNodeData).locked ?? false;
+	}
+	const config = (nodeData._config || (nodeData as Record<string, unknown>)._config || {}) as Record<string, unknown>;
+	const extra = (config.extra || {}) as Record<string, unknown>;
+	const ui = (extra.ui || {}) as Record<string, unknown>;
+	return (ui.locked as boolean) ?? false;
+}
+
+/**
+ * Toggle a node's position lock. Pushes history.
+ */
+export function updateNodeLocked(nodeId: string, locked: boolean): void {
+	const node = findNodeForRead(nodeId);
+	if (!node) return;
+
+	pushHistory();
+
+	if (node.data.nodeType === 'decoration') {
+		updateNodeDataLive(nodeId, {
+			locked: locked || undefined,
+		} as Partial<DecorationNodeData>);
+		return;
+	}
+
+	const config = (node.data._config || (node.data as Record<string, unknown>)._config || {}) as Record<string, unknown>;
+	const extra = (config.extra || {}) as Record<string, unknown>;
+	const ui = (extra.ui || {}) as Record<string, unknown>;
+
+	const newUi = locked
+		? { ...ui, locked: true }
+		: (() => { const { locked: _removed, ...rest } = ui; return rest; })();
 
 	updateNodeDataLive(nodeId, {
 		_config: {
@@ -2296,6 +2347,7 @@ function extractDecorations(extra: Record<string, unknown> | null): {
 			fontSize: d.fontSize as number | undefined,
 			fontColor: d.fontColor as string | undefined,
 			opacity: (d.opacity as number) ?? 1,
+		locked: (d.locked as boolean) || undefined,
 		},
 	}));
 
@@ -2579,6 +2631,7 @@ export async function saveToFile(path?: string): Promise<void> {
 			...(d.fontSize != null ? { fontSize: d.fontSize } : {}),
 			...(d.fontColor ? { fontColor: d.fontColor } : {}),
 			...(d.opacity != null && d.opacity !== 1 ? { opacity: d.opacity } : {}),
+		...(d.locked ? { locked: true } : {}),
 		};
 	});
 
