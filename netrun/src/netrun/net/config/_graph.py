@@ -12,7 +12,7 @@ from ...net.config._nodes import (
     SubgraphConfig,
     EdgeConfig,
     PortRefConfig,
-    EnvVarResolvableModel,
+    VarResolvableModel,
     ConfigValidationError,
     NodeVariable,
     DependencyRequestConfig,
@@ -41,7 +41,7 @@ GraphNodeConfig = Annotated[
 ]
 
 # %% pts/netrun/06_net/00_config/02_graph.pct.py 5
-class GraphConfig(EnvVarResolvableModel):
+class GraphConfig(VarResolvableModel):
     """Configuration for a complete flow-based network graph.
 
     Example:

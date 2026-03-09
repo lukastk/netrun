@@ -16,7 +16,7 @@ from ...net.config._base import (
     _import_from_path,
     VarRef,
     EnvVar,
-    EnvVarResolvableModel,
+    VarResolvableModel,
     ProjectRootPath,
     _extract_target_type,
     _resolve_var_ref_value,
@@ -32,7 +32,7 @@ from ...execution_manager import RunAllocationMethod
 from ...storage.config import StorageConfig
 
 # %% pts/netrun/06_net/00_config/03_net_config.pct.py 5
-class OutputQueueConfig(EnvVarResolvableModel):
+class OutputQueueConfig(VarResolvableModel):
     """Configuration for an output queue.
 
     Output queues collect packets that are sent from unconnected output ports
@@ -44,25 +44,25 @@ class OutputQueueConfig(EnvVarResolvableModel):
     """List of (node_name, port_name) tuples that feed this queue."""
 
 # %% pts/netrun/06_net/00_config/03_net_config.pct.py 7
-class MainPoolConfig(EnvVarResolvableModel):
+class MainPoolConfig(VarResolvableModel):
     """Configuration for running in the main thread/event loop."""
     type: Literal["main"] = "main"
 
 
-class ThreadPoolConfig(EnvVarResolvableModel):
+class ThreadPoolConfig(VarResolvableModel):
     """Configuration for a thread pool."""
     type: Literal["thread"] = "thread"
     num_workers: int | VarRef = 1
 
 
-class MultiprocessPoolConfig(EnvVarResolvableModel):
+class MultiprocessPoolConfig(VarResolvableModel):
     """Configuration for a multiprocess pool."""
     type: Literal["multiprocess"] = "multiprocess"
     num_processes: int | VarRef = 1
     threads_per_process: int | VarRef = 1
 
 
-class RemotePoolConfig(EnvVarResolvableModel):
+class RemotePoolConfig(VarResolvableModel):
     """Configuration for a remote pool.
 
     ``url`` and ``worker_name`` may be left as ``None`` when building a
@@ -83,7 +83,7 @@ PoolSpecConfig = Annotated[
 ]
 
 
-class PoolConfig(EnvVarResolvableModel):
+class PoolConfig(VarResolvableModel):
     """Configuration for a pool of workers."""
     print_flush_interval: float | VarRef = 0.1
     capture_prints: bool | VarRef = True
@@ -180,7 +180,7 @@ def _generate_default_output_queues(graph: "GraphConfig") -> dict[str, "OutputQu
     return queues
 
 
-class NetConfig(EnvVarResolvableModel):
+class NetConfig(VarResolvableModel):
     """Configuration for a Net."""
     model_config = {"arbitrary_types_allowed": True, "populate_by_name": True}
 
@@ -406,7 +406,7 @@ class NetConfig(EnvVarResolvableModel):
                         value, net_vars_resolved, target_type,
                         f"NetConfig.{field_name}",
                     )
-                elif isinstance(value, EnvVarResolvableModel):
+                elif isinstance(value, VarResolvableModel):
                     new_val = value.resolve_var_refs(net_vars_resolved)
                     if new_val is not value:
                         var_updates[field_name] = new_val

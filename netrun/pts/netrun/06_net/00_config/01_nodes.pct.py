@@ -30,7 +30,7 @@ from netrun.net.config._base import (
     _import_from_path,
     VarRef,
     EnvVar,
-    EnvVarResolvableModel,
+    VarResolvableModel,
     PortConfig,
     SalvoConditionConfig,
     MaxSalvosFiniteConfig,
@@ -71,7 +71,7 @@ class ConfigValidationError(BaseModel):
 
 # %%
 #|export
-class PortRefConfig(EnvVarResolvableModel):
+class PortRefConfig(VarResolvableModel):
     """Reference to a specific port on a node."""
     node_name: str
     port_type: Literal["input", "output"]
@@ -82,7 +82,7 @@ class PortRefConfig(EnvVarResolvableModel):
         return netrun_sim.PortRef(self.node_name, port_type, self.port_name)
 
 
-class EdgeConfig(EnvVarResolvableModel):
+class EdgeConfig(VarResolvableModel):
     """A connection between an output port and an input port.
 
     Can be specified as:
@@ -184,7 +184,7 @@ Args:
 
 # %%
 #|export
-class NodeVariable(EnvVarResolvableModel):
+class NodeVariable(VarResolvableModel):
     """A typed variable accessible to nodes via ctx.vars.
 
     When ``inherit=True`` (node-level only), the variable inherits its ``type``
@@ -266,7 +266,7 @@ class NodeVariable(EnvVarResolvableModel):
 
 # %%
 #|export
-class NodeExecutionConfig(EnvVarResolvableModel):
+class NodeExecutionConfig(VarResolvableModel):
     """Runtime configuration for a node's execution behavior."""
     model_config = {"arbitrary_types_allowed": True}
 
@@ -435,7 +435,7 @@ def _get_effective_controls(node_config: "NodeConfig", net_config: "Any | None")
 
 # %%
 #|export
-class DependencyRequestConfig(EnvVarResolvableModel):
+class DependencyRequestConfig(VarResolvableModel):
     """Configuration for automatic packet requests on nodes with dependency edges.
 
     When a node has dependency edges on its input ports, this config controls
@@ -464,7 +464,7 @@ class DependencyRequestConfig(EnvVarResolvableModel):
 
 # %%
 #|export
-class NodeConfig(EnvVarResolvableModel):
+class NodeConfig(VarResolvableModel):
     """Configuration for a node's graph structure (ports and salvo conditions).
 
     Can be created directly or from a factory module using the `factory` field
@@ -937,7 +937,7 @@ class NodeConfig(EnvVarResolvableModel):
 
 # %%
 #|export
-class ExposedPortConfig(EnvVarResolvableModel):
+class ExposedPortConfig(VarResolvableModel):
     """Maps an exposed port to an internal node's port.
 
     When a subgraph exposes a port, this config defines which internal
@@ -973,7 +973,7 @@ class ExposedPortConfig(EnvVarResolvableModel):
 
 # %%
 #|export
-class SubgraphConfig(EnvVarResolvableModel):
+class SubgraphConfig(VarResolvableModel):
     """A group of nodes that acts as a single node.
 
     Subgraphs can be defined in two ways:

@@ -131,7 +131,7 @@ All major modules are fully implemented:
 - `_base` - Timestamp generation, patching decorators
 - `hashing` - Hash computation utilities
 - `pickling` - Pickling method handling
-- `env_var` - `EnvVar` and `EnvVarResolvableModel` for environment variable resolution
+- `var_ref` - `VarRef`, `EnvVar` (alias), and `VarResolvableModel` for variable reference resolution
 
 ### Packets (`netrun.packets`)
 
