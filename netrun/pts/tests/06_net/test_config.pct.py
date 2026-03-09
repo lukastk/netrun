@@ -2934,11 +2934,11 @@ def test_factory_nodes_inside_subgraph_resolved():
 test_factory_nodes_inside_subgraph_resolved()
 
 # %% [markdown]
-# ## EnvVar Tests
+# ## VarRef Tests
 
 # %%
 #|export
-from netrun.net.config._base import EnvVar, EnvVarResolvableModel, _cast_env_var_value, _extract_target_type
+from netrun.net.config._base import EnvVar, VarResolvableModel, _cast_var_value, _extract_target_type
 from netrun.execution_manager import RunAllocationMethod
 from netrun.net.config import RemotePoolConfig, MultiprocessPoolConfig
 
@@ -2980,65 +2980,65 @@ test_env_var_model_from_json()
 
 # %%
 #|export
-def test_cast_env_var_value_scalars():
+def test_cast_var_value_scalars():
     """int, float, str, bool casting."""
-    assert _cast_env_var_value("42", int) == 42
-    assert _cast_env_var_value("3.14", float) == 3.14
-    assert _cast_env_var_value("hello", str) == "hello"
-    assert _cast_env_var_value("true", bool) is True
-    assert _cast_env_var_value("false", bool) is False
+    assert _cast_var_value("42", int) == 42
+    assert _cast_var_value("3.14", float) == 3.14
+    assert _cast_var_value("hello", str) == "hello"
+    assert _cast_var_value("true", bool) is True
+    assert _cast_var_value("false", bool) is False
 
 # %%
-test_cast_env_var_value_scalars()
+test_cast_var_value_scalars()
 
 # %%
 #|export
-def test_cast_env_var_value_bool_parsing():
+def test_cast_var_value_bool_parsing():
     """'true'/'false'/'1'/'0'/'yes'/'no' and invalid."""
-    assert _cast_env_var_value("true", bool) is True
-    assert _cast_env_var_value("True", bool) is True
-    assert _cast_env_var_value("TRUE", bool) is True
-    assert _cast_env_var_value("1", bool) is True
-    assert _cast_env_var_value("yes", bool) is True
-    assert _cast_env_var_value("YES", bool) is True
+    assert _cast_var_value("true", bool) is True
+    assert _cast_var_value("True", bool) is True
+    assert _cast_var_value("TRUE", bool) is True
+    assert _cast_var_value("1", bool) is True
+    assert _cast_var_value("yes", bool) is True
+    assert _cast_var_value("YES", bool) is True
 
-    assert _cast_env_var_value("false", bool) is False
-    assert _cast_env_var_value("False", bool) is False
-    assert _cast_env_var_value("0", bool) is False
-    assert _cast_env_var_value("no", bool) is False
-    assert _cast_env_var_value("NO", bool) is False
+    assert _cast_var_value("false", bool) is False
+    assert _cast_var_value("False", bool) is False
+    assert _cast_var_value("0", bool) is False
+    assert _cast_var_value("no", bool) is False
+    assert _cast_var_value("NO", bool) is False
 
     with pytest.raises(ValueError, match="Cannot parse"):
-        _cast_env_var_value("maybe", bool)
+        _cast_var_value("maybe", bool)
 
 # %%
-test_cast_env_var_value_bool_parsing()
+test_cast_var_value_bool_parsing()
 
 # %%
 #|export
-def test_cast_env_var_value_json_complex():
+def test_cast_var_value_json_complex():
     """JSON parsing for lists, dicts."""
-    result = _cast_env_var_value('[1, 2, 3]', list)
+    result = _cast_var_value('[1, 2, 3]', list)
     assert result == [1, 2, 3]
 
-    result = _cast_env_var_value('{"a": 1}', dict)
+    result = _cast_var_value('{"a": 1}', dict)
     assert result == {"a": 1}
 
 # %%
-test_cast_env_var_value_json_complex()
+test_cast_var_value_json_complex()
 
 # %%
 #|export
-def test_cast_env_var_value_enum():
+def test_cast_var_value_enum():
     """RunAllocationMethod enum resolution."""
-    result = _cast_env_var_value("round-robin", RunAllocationMethod)
+    result = _cast_var_value("round-robin", RunAllocationMethod)
     assert result == RunAllocationMethod.ROUND_ROBIN
 
-    result = _cast_env_var_value("random", RunAllocationMethod)
+    result = _cast_var_value("random", RunAllocationMethod)
     assert result == RunAllocationMethod.RANDOM
 
 # %%
-test_cast_env_var_value_enum()
+test_cast_var_value_enum()
 
 # %%
 #|export

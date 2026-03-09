@@ -180,18 +180,18 @@ def _import_from_path(import_path: str, project_root: 'Path | None' = None) -> A
     return getattr(module, name)
 
 # %% [markdown]
-# # EnvVar Model
+# # VarRef Model
 #
-# Allows config fields to reference environment variables for deployment flexibility.
+# Allows config fields to reference environment variables or node variables for deployment flexibility.
 
 # %%
 #|export
-from netrun._iutils.env_var import (
+from netrun._iutils.var_ref import (
     VarRef,
     EnvVar,
-    EnvVarResolvableModel,
+    VarResolvableModel,
     ProjectRootPath,
-    _cast_env_var_value,
+    _cast_var_value,
     _extract_target_type,
     _resolve_env_vars_in_list,
     _resolve_env_vars_in_dict,
@@ -202,6 +202,10 @@ from netrun._iutils.env_var import (
     _resolve_project_root_paths_in_list,
     _resolve_project_root_paths_in_dict,
 )
+
+# Backwards compat aliases
+EnvVarResolvableModel = VarResolvableModel
+_cast_env_var_value = _cast_var_value
 
 # %% [markdown]
 # # Port Configuration
@@ -216,7 +220,7 @@ from netrun._iutils.env_var import (
 
 # %%
 #|export
-class PortSlotSpecInfiniteConfig(EnvVarResolvableModel):
+class PortSlotSpecInfiniteConfig(VarResolvableModel):
     """Port can hold unlimited packets."""
     type: Literal["infinite"] = "infinite"
 
@@ -224,7 +228,7 @@ class PortSlotSpecInfiniteConfig(EnvVarResolvableModel):
         return netrun_sim.PortSlotSpec.infinite()
 
 
-class PortSlotSpecFiniteConfig(EnvVarResolvableModel):
+class PortSlotSpecFiniteConfig(VarResolvableModel):
     """Port can hold at most `capacity` packets."""
     type: Literal["finite"] = "finite"
     capacity: int | VarRef
@@ -245,7 +249,7 @@ PortSlotSpecConfig = Annotated[
 
 # %%
 #|export
-class PortTypeConfig(EnvVarResolvableModel):
+class PortTypeConfig(VarResolvableModel):
     """Detailed port type configuration.
 
     Used when you need more control than a simple type name string.
@@ -273,7 +277,7 @@ Can be:
 
 # %%
 #|export
-class PortConfig(EnvVarResolvableModel):
+class PortConfig(VarResolvableModel):
     """Configuration for a port on a node."""
     model_config = {"arbitrary_types_allowed": True}
 
@@ -344,7 +348,7 @@ class PortConfig(EnvVarResolvableModel):
 
 # %%
 #|export
-class PortStateEmptyConfig(EnvVarResolvableModel):
+class PortStateEmptyConfig(VarResolvableModel):
     """Port has zero packets."""
     type: Literal["empty"] = "empty"
 
@@ -352,7 +356,7 @@ class PortStateEmptyConfig(EnvVarResolvableModel):
         return netrun_sim.PortState.empty()
 
 
-class PortStateFullConfig(EnvVarResolvableModel):
+class PortStateFullConfig(VarResolvableModel):
     """Port is at capacity (always false for infinite ports)."""
     type: Literal["full"] = "full"
 
@@ -360,7 +364,7 @@ class PortStateFullConfig(EnvVarResolvableModel):
         return netrun_sim.PortState.full()
 
 
-class PortStateNonEmptyConfig(EnvVarResolvableModel):
+class PortStateNonEmptyConfig(VarResolvableModel):
     """Port has at least one packet."""
     type: Literal["non_empty"] = "non_empty"
 
@@ -368,7 +372,7 @@ class PortStateNonEmptyConfig(EnvVarResolvableModel):
         return netrun_sim.PortState.non_empty()
 
 
-class PortStateNonFullConfig(EnvVarResolvableModel):
+class PortStateNonFullConfig(VarResolvableModel):
     """Port is below capacity (always true for infinite ports)."""
     type: Literal["non_full"] = "non_full"
 
@@ -376,7 +380,7 @@ class PortStateNonFullConfig(EnvVarResolvableModel):
         return netrun_sim.PortState.non_full()
 
 
-class PortStateEqualsConfig(EnvVarResolvableModel):
+class PortStateEqualsConfig(VarResolvableModel):
     """Port has exactly `value` packets."""
     type: Literal["equals"] = "equals"
     value: int | VarRef
@@ -385,7 +389,7 @@ class PortStateEqualsConfig(EnvVarResolvableModel):
         return netrun_sim.PortState.equals(self.value)
 
 
-class PortStateLessThanConfig(EnvVarResolvableModel):
+class PortStateLessThanConfig(VarResolvableModel):
     """Port has fewer than `value` packets."""
     type: Literal["less_than"] = "less_than"
     value: int | VarRef
@@ -394,7 +398,7 @@ class PortStateLessThanConfig(EnvVarResolvableModel):
         return netrun_sim.PortState.less_than(self.value)
 
 
-class PortStateGreaterThanConfig(EnvVarResolvableModel):
+class PortStateGreaterThanConfig(VarResolvableModel):
     """Port has more than `value` packets."""
     type: Literal["greater_than"] = "greater_than"
     value: int | VarRef
@@ -403,7 +407,7 @@ class PortStateGreaterThanConfig(EnvVarResolvableModel):
         return netrun_sim.PortState.greater_than(self.value)
 
 
-class PortStateEqualsOrLessThanConfig(EnvVarResolvableModel):
+class PortStateEqualsOrLessThanConfig(VarResolvableModel):
     """Port has at most `value` packets."""
     type: Literal["equals_or_less_than"] = "equals_or_less_than"
     value: int | VarRef
@@ -412,7 +416,7 @@ class PortStateEqualsOrLessThanConfig(EnvVarResolvableModel):
         return netrun_sim.PortState.equals_or_less_than(self.value)
 
 
-class PortStateEqualsOrGreaterThanConfig(EnvVarResolvableModel):
+class PortStateEqualsOrGreaterThanConfig(VarResolvableModel):
     """Port has at least `value` packets."""
     type: Literal["equals_or_greater_than"] = "equals_or_greater_than"
     value: int | VarRef
@@ -436,7 +440,7 @@ PortStateConfig = Annotated[
 
 # %%
 #|export
-class PacketCountAllConfig(EnvVarResolvableModel):
+class PacketCountAllConfig(VarResolvableModel):
     """Take all packets from the port."""
     type: Literal["all"] = "all"
 
@@ -444,7 +448,7 @@ class PacketCountAllConfig(EnvVarResolvableModel):
         return netrun_sim.PacketCount.all()
 
 
-class PacketCountNConfig(EnvVarResolvableModel):
+class PacketCountNConfig(VarResolvableModel):
     """Take at most `count` packets (takes fewer if port has fewer)."""
     type: Literal["count"] = "count"
     count: int | VarRef
@@ -465,7 +469,7 @@ PacketCountConfig = Annotated[
 
 # %%
 #|export
-class MaxSalvosInfiniteConfig(EnvVarResolvableModel):
+class MaxSalvosInfiniteConfig(VarResolvableModel):
     """No limit on how many times the condition can trigger."""
     type: Literal["infinite"] = "infinite"
 
@@ -473,7 +477,7 @@ class MaxSalvosInfiniteConfig(EnvVarResolvableModel):
         return netrun_sim.MaxSalvos.infinite()
 
 
-class MaxSalvosFiniteConfig(EnvVarResolvableModel):
+class MaxSalvosFiniteConfig(VarResolvableModel):
     """Can trigger at most `max` times."""
     type: Literal["finite"] = "finite"
     max: int | VarRef
@@ -494,7 +498,7 @@ MaxSalvosConfig = Annotated[
 
 # %%
 #|export
-class SalvoConditionTermTrueConfig(EnvVarResolvableModel):
+class SalvoConditionTermTrueConfig(VarResolvableModel):
     """Always true. Useful for source nodes with no input ports."""
     type: Literal["true"] = "true"
 
@@ -502,7 +506,7 @@ class SalvoConditionTermTrueConfig(EnvVarResolvableModel):
         return netrun_sim.SalvoConditionTerm.true_()
 
 
-class SalvoConditionTermFalseConfig(EnvVarResolvableModel):
+class SalvoConditionTermFalseConfig(VarResolvableModel):
     """Always false. Useful as a placeholder or with Not."""
     type: Literal["false"] = "false"
 
@@ -510,7 +514,7 @@ class SalvoConditionTermFalseConfig(EnvVarResolvableModel):
         return netrun_sim.SalvoConditionTerm.false_()
 
 
-class SalvoConditionTermPortConfig(EnvVarResolvableModel):
+class SalvoConditionTermPortConfig(VarResolvableModel):
     """Check if a specific port matches a state predicate."""
     type: Literal["port"] = "port"
     port_name: str | VarRef
@@ -520,7 +524,7 @@ class SalvoConditionTermPortConfig(EnvVarResolvableModel):
         return netrun_sim.SalvoConditionTerm.port(self.port_name, self.state.to_netrun_sim())
 
 
-class SalvoConditionTermAndConfig(EnvVarResolvableModel):
+class SalvoConditionTermAndConfig(VarResolvableModel):
     """All sub-terms must be true."""
     type: Literal["and"] = "and"
     terms: list["SalvoConditionTermConfig"]
@@ -529,7 +533,7 @@ class SalvoConditionTermAndConfig(EnvVarResolvableModel):
         return netrun_sim.SalvoConditionTerm.and_([t.to_netrun_sim() for t in self.terms])
 
 
-class SalvoConditionTermOrConfig(EnvVarResolvableModel):
+class SalvoConditionTermOrConfig(VarResolvableModel):
     """At least one sub-term must be true."""
     type: Literal["or"] = "or"
     terms: list["SalvoConditionTermConfig"]
@@ -538,7 +542,7 @@ class SalvoConditionTermOrConfig(EnvVarResolvableModel):
         return netrun_sim.SalvoConditionTerm.or_([t.to_netrun_sim() for t in self.terms])
 
 
-class SalvoConditionTermNotConfig(EnvVarResolvableModel):
+class SalvoConditionTermNotConfig(VarResolvableModel):
     """The sub-term must be false."""
     type: Literal["not"] = "not"
     term: "SalvoConditionTermConfig"
@@ -583,7 +587,7 @@ def collect_ports_from_term(term: SalvoConditionTermConfig) -> set[str]:
 
 # %%
 #|export
-class SalvoConditionConfig(EnvVarResolvableModel):
+class SalvoConditionConfig(VarResolvableModel):
     """A condition that defines when packets can trigger an epoch or be sent.
 
     Input salvo conditions must have max_salvos set to finite(1).

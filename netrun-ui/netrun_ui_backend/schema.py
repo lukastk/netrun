@@ -94,7 +94,7 @@ def _strip_envvar(annotation: Any) -> tuple[Any, bool]:
     For ``bool | VarRef | None`` → ``(bool | None, True)``.
     For non-union types or unions without VarRef → ``(annotation, False)``.
     """
-    from netrun._iutils.env_var import VarRef
+    from netrun._iutils.var_ref import VarRef
 
     origin = get_origin(annotation)
     if origin is not types.UnionType and origin is not typing.Union:

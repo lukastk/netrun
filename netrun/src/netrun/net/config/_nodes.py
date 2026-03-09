@@ -18,7 +18,7 @@ from ...net.config._base import (
     _import_from_path,
     VarRef,
     EnvVar,
-    EnvVarResolvableModel,
+    VarResolvableModel,
     PortConfig,
     SalvoConditionConfig,
     MaxSalvosFiniteConfig,
@@ -51,7 +51,7 @@ class ConfigValidationError(BaseModel):
     type: str
 
 # %% pts/netrun/06_net/00_config/01_nodes.pct.py 6
-class PortRefConfig(EnvVarResolvableModel):
+class PortRefConfig(VarResolvableModel):
     """Reference to a specific port on a node."""
     node_name: str
     port_type: Literal["input", "output"]
@@ -62,7 +62,7 @@ class PortRefConfig(EnvVarResolvableModel):
         return netrun_sim.PortRef(self.node_name, port_type, self.port_name)
 
 
-class EdgeConfig(EnvVarResolvableModel):
+class EdgeConfig(VarResolvableModel):
     """A connection between an output port and an input port.
 
     Can be specified as:
@@ -150,7 +150,7 @@ Args:
 """;
 
 # %% pts/netrun/06_net/00_config/01_nodes.pct.py 10
-class NodeVariable(EnvVarResolvableModel):
+class NodeVariable(VarResolvableModel):
     """A typed variable accessible to nodes via ctx.vars.
 
     When ``inherit=True`` (node-level only), the variable inherits its ``type``
@@ -231,7 +231,7 @@ class NodeVariable(EnvVarResolvableModel):
         return resolved
 
 # %% pts/netrun/06_net/00_config/01_nodes.pct.py 11
-class NodeExecutionConfig(EnvVarResolvableModel):
+class NodeExecutionConfig(VarResolvableModel):
     """Runtime configuration for a node's execution behavior."""
     model_config = {"arbitrary_types_allowed": True}
 
@@ -398,7 +398,7 @@ def _get_effective_controls(node_config: "NodeConfig", net_config: "Any | None")
     return resolve_effective_controls(node_config.execution_config, default_controls)
 
 # %% pts/netrun/06_net/00_config/01_nodes.pct.py 13
-class DependencyRequestConfig(EnvVarResolvableModel):
+class DependencyRequestConfig(VarResolvableModel):
     """Configuration for automatic packet requests on nodes with dependency edges.
 
     When a node has dependency edges on its input ports, this config controls
@@ -426,7 +426,7 @@ class DependencyRequestConfig(EnvVarResolvableModel):
         return netrun_sim.DependencyRequestConfig(sim_triggers, self.label)
 
 # %% pts/netrun/06_net/00_config/01_nodes.pct.py 14
-class NodeConfig(EnvVarResolvableModel):
+class NodeConfig(VarResolvableModel):
     """Configuration for a node's graph structure (ports and salvo conditions).
 
     Can be created directly or from a factory module using the `factory` field
@@ -890,7 +890,7 @@ class NodeConfig(EnvVarResolvableModel):
         )
 
 # %% pts/netrun/06_net/00_config/01_nodes.pct.py 17
-class ExposedPortConfig(EnvVarResolvableModel):
+class ExposedPortConfig(VarResolvableModel):
     """Maps an exposed port to an internal node's port.
 
     When a subgraph exposes a port, this config defines which internal
@@ -918,7 +918,7 @@ class ExposedPortConfig(EnvVarResolvableModel):
         return self.rename if self.rename is not None else self.internal_port
 
 # %% pts/netrun/06_net/00_config/01_nodes.pct.py 19
-class SubgraphConfig(EnvVarResolvableModel):
+class SubgraphConfig(VarResolvableModel):
     """A group of nodes that acts as a single node.
 
     Subgraphs can be defined in two ways:

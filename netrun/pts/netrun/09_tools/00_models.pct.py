@@ -17,7 +17,7 @@ from nblite import nbl_export; nbl_export();
 #|export
 from pydantic import BaseModel
 from typing import Literal, Any
-from netrun.net.config._base import EnvVar, EnvVarResolvableModel
+from netrun.net.config._base import EnvVar, VarResolvableModel
 
 # %% [markdown]
 # # Tools Models
@@ -26,7 +26,7 @@ from netrun.net.config._base import EnvVar, EnvVarResolvableModel
 
 # %%
 #|export
-class ActionConfig(EnvVarResolvableModel):
+class ActionConfig(VarResolvableModel):
     """A single action (shell command with template variables)."""
     id: str
     label: str
@@ -58,7 +58,7 @@ class ActionResult(BaseModel):
     timed_out: bool = False
 
 
-class RecipeConfig(EnvVarResolvableModel):
+class RecipeConfig(VarResolvableModel):
     """A recipe definition (stored in extra data)."""
     path: str | EnvVar
     description: str | EnvVar | None = None

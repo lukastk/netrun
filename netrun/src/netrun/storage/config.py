@@ -7,7 +7,7 @@ from enum import Enum
 from typing import Annotated, Literal
 from pydantic import Field, model_validator
 
-from .._iutils.env_var import VarRef, EnvVar, EnvVarResolvableModel, ProjectRootPath
+from .._iutils.var_ref import VarRef, EnvVar, VarResolvableModel, ProjectRootPath
 from .._iutils.hashing import HashMethod
 from .._iutils.pickling import PicklingMethod
 from ..storage._serialization import SerializationMethod
@@ -21,7 +21,7 @@ class CacheWhat(Enum):
     INPUT_ONLY = "input"
 
 # %% pts/netrun/02_storage/00_config.pct.py 7
-class CacheConfig(EnvVarResolvableModel):
+class CacheConfig(VarResolvableModel):
     """Net-level cache configuration."""
     enabled: bool | VarRef = False
     version: int | VarRef = Field(default=0, description="Cache version. Changing this invalidates all cached entries.")
@@ -37,7 +37,7 @@ class CacheConfig(EnvVarResolvableModel):
     sample_size: int | VarRef | None = Field(default=None, description="Max cached entries per node (reservoir sampling). None = unlimited.")
 
 # %% pts/netrun/02_storage/00_config.pct.py 9
-class NodeCacheConfig(EnvVarResolvableModel):
+class NodeCacheConfig(VarResolvableModel):
     """Per-node cache overrides. None values inherit from CacheConfig."""
     enabled: bool | VarRef | None = None
     version: int | VarRef | None = None
@@ -61,13 +61,13 @@ class BundleFormat(str, Enum):
     zip = "zip"
 
 # %% pts/netrun/02_storage/00_config.pct.py 13
-class LocalBackendConfig(EnvVarResolvableModel):
+class LocalBackendConfig(VarResolvableModel):
     """Local filesystem backend configuration."""
     type: Literal["local"] = "local"
     base_path: Annotated[str | VarRef, ProjectRootPath()] = Field(description="Base directory for file storage. Resolved relative to project_root if relative.")
 
 
-class S3BackendConfig(EnvVarResolvableModel):
+class S3BackendConfig(VarResolvableModel):
     """AWS S3 backend configuration."""
     type: Literal["s3"] = "s3"
     bucket: str | VarRef
@@ -78,7 +78,7 @@ class S3BackendConfig(EnvVarResolvableModel):
     secret_key: str | VarRef | None = None
 
 
-class GCSBackendConfig(EnvVarResolvableModel):
+class GCSBackendConfig(VarResolvableModel):
     """Google Cloud Storage backend configuration."""
     type: Literal["gcs"] = "gcs"
     bucket: str | VarRef
@@ -86,7 +86,7 @@ class GCSBackendConfig(EnvVarResolvableModel):
     credentials_path: Annotated[str | VarRef | None, ProjectRootPath()] = None
 
 
-class SSHBackendConfig(EnvVarResolvableModel):
+class SSHBackendConfig(VarResolvableModel):
     """SSH/SFTP backend configuration."""
     type: Literal["ssh"] = "ssh"
     host: str | VarRef
@@ -97,7 +97,7 @@ class SSHBackendConfig(EnvVarResolvableModel):
     password: str | VarRef | None = None
 
 
-class RcloneBackendConfig(EnvVarResolvableModel):
+class RcloneBackendConfig(VarResolvableModel):
     """Rclone backend configuration."""
     type: Literal["rclone"] = "rclone"
     remote: str | VarRef = Field(description="Rclone remote spec, e.g. 'myremote:bucket/path'.")
@@ -110,7 +110,7 @@ BackendConfig = Annotated[
 ]
 
 # %% pts/netrun/02_storage/00_config.pct.py 16
-class NodeFileStorageConfig(EnvVarResolvableModel):
+class NodeFileStorageConfig(VarResolvableModel):
     """Per-node file storage configuration."""
     enabled: bool | VarRef = True
     backend: str | BackendConfig = Field(description="Named backend from registry, or inline BackendConfig.")
@@ -149,7 +149,7 @@ class NodeFileStorageConfig(EnvVarResolvableModel):
     version: int | VarRef = 0
 
 # %% pts/netrun/02_storage/00_config.pct.py 19
-class NodeStorageConfig(EnvVarResolvableModel):
+class NodeStorageConfig(VarResolvableModel):
     """Per-node storage configuration. Cache and file_storage are mutually exclusive."""
     cache: NodeCacheConfig | None = None
     file_storage: NodeFileStorageConfig | None = None
@@ -164,7 +164,7 @@ class NodeStorageConfig(EnvVarResolvableModel):
         return self
 
 # %% pts/netrun/02_storage/00_config.pct.py 21
-class StorageConfig(EnvVarResolvableModel):
+class StorageConfig(VarResolvableModel):
     """Net-level storage configuration."""
     backends: dict[str, BackendConfig] = Field(
         default_factory=dict,

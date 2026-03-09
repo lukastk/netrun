@@ -8,9 +8,10 @@ from ._base import (
     _is_file_path_ref,
     _import_from_file_path,
     _import_from_path,
-    # EnvVar
+    # VarRef
     EnvVar,
-    EnvVarResolvableModel,
+    VarResolvableModel,
+    EnvVarResolvableModel,  # backwards compat alias
     # Port configs
     PortSlotSpecInfiniteConfig,
     PortSlotSpecFiniteConfig,
