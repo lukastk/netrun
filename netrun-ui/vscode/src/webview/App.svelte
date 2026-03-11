@@ -2,7 +2,7 @@
 	import { onMount, onDestroy } from 'svelte';
 	import EditorShell from '$lib/components/EditorShell.svelte';
 	import ToastContainer from '$lib/components/ToastContainer.svelte';
-	import { loadFromFile, isDirty, saveToFile, graphExtra, selectedNodeIds } from '$lib/stores/flowStore';
+	import { loadFromFile, isDirty, saveToFile, graphExtra, extraData, selectedNodeIds } from '$lib/stores/flowStore';
 	import { openCommandPalette } from '$lib/stores/commandStore';
 	import { executeAction, type Action } from '$lib/stores/actionsStore';
 	import { toasts } from '$lib/stores/toastStore';
@@ -20,6 +20,23 @@
 	}
 
 	let { filePath, vscode }: { filePath: string; vscode: VsCodeApi } = $props();
+
+	/** Resolve a potentially relative source_path to absolute using project root. */
+	function resolveSourcePath(sourcePath: string): string {
+		if (sourcePath.startsWith('/')) return sourcePath; // Already absolute
+		const gExtra = get(graphExtra) as Record<string, unknown> | undefined;
+		const gUi = gExtra?.ui as Record<string, unknown> | undefined;
+		const ed = get(extraData) as Record<string, unknown> | null;
+		const projectRoot = (ed?.project_root_override as string | undefined) ?? (gUi?.projectRoot as string | undefined);
+		const configDir = filePath.substring(0, filePath.lastIndexOf('/'));
+		let base: string;
+		if (projectRoot) {
+			base = projectRoot.startsWith('/') ? projectRoot : configDir + '/' + projectRoot;
+		} else {
+			base = configDir;
+		}
+		return base + '/' + sourcePath;
+	}
 
 	// Track dirty state and notify extension host
 	$effect(() => {
@@ -66,7 +83,7 @@
 			// Fall back to opening source_path in VS Code
 			const sourcePath = extra?.source_path as string | undefined;
 			if (sourcePath) {
-				vscode.postMessage({ type: 'openFile', filePath: sourcePath, beside: metaKey });
+				vscode.postMessage({ type: 'openFile', filePath: resolveSourcePath(sourcePath), beside: metaKey });
 			} else {
 				toasts.info(`No 'open' action or extra.source_path defined on node "${data.label}"`);
 			}
@@ -98,7 +115,7 @@
 			// Fall back to opening source_path in VS Code
 			const sourcePath = extra?.source_path as string | undefined;
 			if (sourcePath) {
-				vscode.postMessage({ type: 'openFile', filePath: sourcePath });
+				vscode.postMessage({ type: 'openFile', filePath: resolveSourcePath(sourcePath) });
 			} else {
 				toasts.info(`No 'open' action or extra.source_path defined on node "${data.label}"`);
 			}

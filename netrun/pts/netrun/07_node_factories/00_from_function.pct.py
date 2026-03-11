@@ -27,6 +27,7 @@ import inspect
 import asyncio
 import tomllib
 import importlib
+import os
 
 from netrun.net.config import (
     NodeConfig,
@@ -555,7 +556,7 @@ def _parse_node_config_override(override: Any) -> dict:
 
 # %%
 #|exporti
-def _from_function(func: Callable|str, include_port_types: bool = True, manual_output: bool = False) -> NodeConfig:
+def _from_function(func: Callable|str, include_port_types: bool = True, manual_output: bool = False, project_root=None) -> NodeConfig:
     """Create a NodeConfig from a function.
 
     Parses the function signature to determine input/output ports and
@@ -617,6 +618,11 @@ def _from_function(func: Callable|str, include_port_types: bool = True, manual_o
     # Set source_path in extra to the source file of the function's module
     try:
         source_path = inspect.getfile(func)
+        if project_root is not None:
+            try:
+                source_path = os.path.relpath(source_path, str(project_root))
+            except ValueError:
+                pass  # relpath fails across drives on Windows; keep absolute
         base_config_dict.setdefault("extra", {})["source_path"] = source_path
     except (TypeError, OSError):
         pass  # Built-in functions or functions without source files
@@ -680,7 +686,7 @@ def get_node_config(_net_config=None, *, func: Callable | str, include_port_type
         func = _get_func_from_import_path(func, project_root=project_root)
 
     # Get full config and strip execution_config
-    config = _from_function(func, include_port_types, manual_output=manual_output)
+    config = _from_function(func, include_port_types, manual_output=manual_output, project_root=project_root)
     config.execution_config = None
     return config
 
