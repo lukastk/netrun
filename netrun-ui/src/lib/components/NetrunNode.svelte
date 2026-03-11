@@ -150,8 +150,9 @@
 		{#if (data.description || data._factoryDefaults?.description) && !hideDescription}
 			{@const effectiveDescription = (data.description || data._factoryDefaults?.description)!}
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<div class="node-description" onclick={() => toggleNodeDescExpanded(id)}>
-				<span class="desc-chevron" class:expanded={descExpanded}>&#9656;</span>
+			<div class="node-description" style:cursor={selected ? 'pointer' : undefined} onclick={selected ? () => toggleNodeDescExpanded(id) : undefined}>
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<span class="desc-chevron" class:expanded={descExpanded} onclick={!selected ? (e: MouseEvent) => { e.stopPropagation(); toggleNodeDescExpanded(id); } : undefined}>&#9656;</span>
 				{#if descExpanded}
 					<span class="desc-content">{effectiveDescription}</span>
 				{:else}
@@ -477,7 +478,6 @@
 	.node-description {
 		padding: 4px 10px;
 		border-bottom: 1px solid var(--border-color, #404040);
-		cursor: pointer;
 		display: flex;
 		align-items: flex-start;
 		gap: 4px;
@@ -495,6 +495,7 @@
 		transition: transform 0.15s ease;
 		flex-shrink: 0;
 		line-height: 14px;
+		cursor: pointer;
 	}
 
 	.desc-chevron.expanded {
