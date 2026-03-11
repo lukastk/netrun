@@ -72,6 +72,12 @@
 		return (ui?.locked as boolean) ?? false;
 	})());
 
+	let isDisabled = $derived((() => {
+		const config = (data._config ?? {}) as Record<string, unknown>;
+		const exec = (config.execution_config ?? {}) as Record<string, unknown>;
+		return exec.enabled === false;
+	})());
+
 	// True when the pointy side of a triangle has exactly 1 port
 	let singleTipPort = $derived(
 		(shape === 'triangle-right' && data.outPorts.length === 1) ||
@@ -122,6 +128,7 @@
 	class:single-tip-port={singleTipPort}
 	class:cascade-source={isCascadeSource}
 	class:cascade-visited={isCascadeVisited}
+	class:node-disabled={isDisabled}
 	style:background={headerColor ? headerColor + '22' : undefined}
 >
 	<NodeResizer
@@ -217,6 +224,10 @@
 	.netrun-node.cascade-visited {
 		border-color: #a78bfa;
 		opacity: 0.7;
+	}
+
+	.netrun-node.node-disabled {
+		opacity: 0.4;
 	}
 
 	/* ── Shape: rounded ─────────────────────────────── */
