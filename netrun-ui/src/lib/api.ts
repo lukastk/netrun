@@ -87,6 +87,7 @@ export interface FactoryParameter {
 	optional: boolean;
 	default: unknown;
 	has_default: boolean;
+	description?: string | null;
 	enum_options?: string[] | null;
 }
 
