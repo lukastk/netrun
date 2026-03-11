@@ -78,6 +78,12 @@
 		return (ui?.locked as boolean) ?? false;
 	})());
 
+	let isDisabled = $derived((() => {
+		const config = (data as Record<string, unknown>)._config as Record<string, unknown> | undefined;
+		const exec = (config?.execution_config ?? {}) as Record<string, unknown>;
+		return exec.enabled === false;
+	})());
+
 	let isExpanded = $derived((() => {
 		const config = (data as Record<string, unknown>)._config as Record<string, unknown> | undefined;
 		const extra = config?.extra as Record<string, unknown> | undefined;
@@ -159,6 +165,7 @@
 	class:selected
 	class:invalid={data.isValid === false}
 	class:expanded={isExpanded}
+	class:node-disabled={isDisabled}
 	class:single-tip-port={singleTipPort}
 	ondblclick={handleDoubleClick}
 	style:background={headerColor ? headerColor + '22' : undefined}
@@ -268,6 +275,10 @@
 
 	.subgraph-node.invalid {
 		border-color: var(--error-color, #ef4444);
+	}
+
+	.subgraph-node.node-disabled {
+		opacity: 0.4;
 	}
 
 	/* ── Expanded state ────────────────────────────── */
