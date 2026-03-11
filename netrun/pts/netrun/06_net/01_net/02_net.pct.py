@@ -232,9 +232,12 @@ class Net:
             if not exec_config.enabled:
                 self._disabled_nodes.add(node_name)
 
-        # Build node output ports lookup (for type validation)
+        # Build node port lookups (for type validation)
+        self._node_in_ports: dict[str, dict[str, PortConfig]] = {}
         self._node_out_ports: dict[str, dict[str, PortConfig]] = {}
         for node_config in self._config_resolved.graph.nodes:
+            if node_config.in_ports:
+                self._node_in_ports[node_config.name] = node_config.in_ports
             if node_config.out_ports:
                 self._node_out_ports[node_config.name] = node_config.out_ports
 
@@ -250,6 +253,7 @@ class Net:
         # Create func_preprocessor with node configs
         func_preprocessor = create_net_func_preprocessor(
             self._node_execution_configs,
+            self._node_in_ports,
             self._node_out_ports,
             self._node_factories,
             net_node_vars=self._config_resolved.node_vars,
@@ -385,12 +389,15 @@ class Net:
             A func_preprocessor callable for use with ExecutionManager/RemotePoolServer.
         """
         node_execution_configs = {}
+        node_in_ports = {}
         node_out_ports = {}
         node_factories = {}
 
         for node_config in config_resolved.graph.nodes:
             if node_config.execution_config is not None:
                 node_execution_configs[node_config.name] = node_config.execution_config
+            if node_config.in_ports:
+                node_in_ports[node_config.name] = node_config.in_ports
             if node_config.out_ports:
                 node_out_ports[node_config.name] = node_config.out_ports
             if node_config.factory:
@@ -401,6 +408,7 @@ class Net:
 
         return create_net_func_preprocessor(
             node_execution_configs,
+            node_in_ports,
             node_out_ports,
             node_factories,
             net_node_vars=config_resolved.node_vars,
@@ -2935,10 +2943,12 @@ class Net:
 
         # Create context
         from netrun.net._net._context import NodeExecutionContext, DeferredActionQueue
+        in_ports = self._node_in_ports.get(node_name, {})
         ctx = NodeExecutionContext(
             epoch_id=f"outside_{uuid.uuid4()}",
             node_name=node_name,
             _input_packet_values=packet_values,
+            _in_ports=in_ports,
             _out_ports=out_ports,
             _node_vars=node_vars,
             _type_checking_enabled=(
@@ -2947,6 +2957,9 @@ class Net:
                 else (self._config_resolved.type_checking_enabled or True)
             ),
         )
+
+        # Validate input packet types
+        ctx._validate_input_packets(packets)
 
         # Call the function
         result = actual_func(ctx, packets)

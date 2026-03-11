@@ -334,3 +334,271 @@ class TestTypeCheckMethod:
         assert expected == "list"
         assert matches is True
         assert mode == "string"
+
+# %%
+#|export
+class TestInputTypeValidation:
+    """Tests for input-side type validation via _validate_input_packets."""
+
+    def create_context(self, in_ports=None, input_packet_values=None):
+        """Helper to create a context for testing."""
+        return NodeExecutionContext(
+            epoch_id="epoch123",
+            node_name="TestNode",
+            _in_ports=in_ports or {},
+            _input_packet_values=input_packet_values or {},
+        )
+
+    def test_no_in_ports_no_validation(self):
+        """No validation when in_ports is empty."""
+        ctx = self.create_context(input_packet_values={"p1": "hello"})
+        # Should not raise
+        ctx._validate_input_packets({"data": ["p1"]})
+
+    def test_no_port_type_no_validation(self):
+        """No validation when port has no port_type."""
+        ctx = self.create_context(
+            in_ports={"data": PortConfig()},
+            input_packet_values={"p1": "hello"},
+        )
+        ctx._validate_input_packets({"data": ["p1"]})
+
+    def test_type_match_passes(self):
+        """Matching type does not raise."""
+        ctx = self.create_context(
+            in_ports={"data": PortConfig(port_type=int)},
+            input_packet_values={"p1": 42},
+        )
+        ctx._validate_input_packets({"data": ["p1"]})
+
+    def test_type_mismatch_raises(self):
+        """Mismatched type raises PacketTypeMismatch."""
+        ctx = self.create_context(
+            in_ports={"data": PortConfig(port_type=int)},
+            input_packet_values={"p1": "not an int"},
+        )
+        with pytest.raises(PacketTypeMismatch) as exc_info:
+            ctx._validate_input_packets({"data": ["p1"]})
+        assert exc_info.value.port_name == "data"
+        assert exc_info.value.node_name == "TestNode"
+
+    def test_generic_type_validation(self):
+        """Generic types like list[int] are validated via beartype."""
+        ctx = self.create_context(
+            in_ports={"data": PortConfig(port_type=list[int])},
+            input_packet_values={"p1": [1, 2, 3]},
+        )
+        ctx._validate_input_packets({"data": ["p1"]})
+
+    def test_generic_type_mismatch(self):
+        """Generic type mismatch raises PacketTypeMismatch."""
+        ctx = self.create_context(
+            in_ports={"data": PortConfig(port_type=list[int])},
+            input_packet_values={"p1": ["not", "ints"]},
+        )
+        with pytest.raises(PacketTypeMismatch):
+            ctx._validate_input_packets({"data": ["p1"]})
+
+    def test_multiple_packets_all_validated(self):
+        """All packets on a port are validated."""
+        ctx = self.create_context(
+            in_ports={"data": PortConfig(port_type=int)},
+            input_packet_values={"p1": 1, "p2": "bad", "p3": 3},
+        )
+        with pytest.raises(PacketTypeMismatch) as exc_info:
+            ctx._validate_input_packets({"data": ["p1", "p2", "p3"]})
+        assert exc_info.value.packet_id == "p2"
+
+    def test_multiple_ports_validated(self):
+        """Validation applies to all ports with types."""
+        ctx = self.create_context(
+            in_ports={
+                "x": PortConfig(port_type=int),
+                "y": PortConfig(port_type=str),
+            },
+            input_packet_values={"p1": 42, "p2": "hello"},
+        )
+        ctx._validate_input_packets({"x": ["p1"], "y": ["p2"]})
+
+    def test_type_checking_disabled_skips(self):
+        """No validation when type checking is disabled."""
+        ctx = NodeExecutionContext(
+            epoch_id="epoch123",
+            node_name="TestNode",
+            _in_ports={"data": PortConfig(port_type=int)},
+            _input_packet_values={"p1": "not an int"},
+            _type_checking_enabled=False,
+        )
+        # Should not raise
+        ctx._validate_input_packets({"data": ["p1"]})
+
+    def test_string_type_validation(self):
+        """String port types use name matching."""
+        ctx = self.create_context(
+            in_ports={"data": PortConfig(port_type="int")},
+            input_packet_values={"p1": 42},
+        )
+        ctx._validate_input_packets({"data": ["p1"]})
+
+    def test_string_type_mismatch(self):
+        """String port type mismatch raises."""
+        ctx = self.create_context(
+            in_ports={"data": PortConfig(port_type="int")},
+            input_packet_values={"p1": "not an int"},
+        )
+        with pytest.raises(PacketTypeMismatch):
+            ctx._validate_input_packets({"data": ["p1"]})
+
+# %%
+#|export
+import asyncio
+from netrun.net import Net
+from netrun.net.config import (
+    NetConfig, GraphConfig, NodeConfig,
+    PoolConfig, MainPoolConfig, EdgeConfig,
+)
+from netrun.net._net import EpochError
+
+
+class TestInputTypeValidationIntegration:
+    """End-to-end tests for input-side type checking through the Net."""
+
+    def test_input_type_mismatch_raises_epoch_error(self):
+        """Sending wrong type to a typed input port raises EpochError."""
+        def producer() -> str:
+            return "not an int"  # str passes output check, but consumer expects int
+
+        def consumer(data: int) -> int:
+            return data * 2
+
+        net_config = NetConfig(
+            pools={"main": PoolConfig(spec=MainPoolConfig())},
+            graph=GraphConfig(
+                nodes=[
+                    NodeConfig.from_factory(
+                        factory="netrun.node_factories.from_function",
+                        args={"func": producer},
+                    ),
+                    NodeConfig.from_factory(
+                        factory="netrun.node_factories.from_function",
+                        args={"func": consumer},
+                    ),
+                ],
+                edges=[EdgeConfig(source_str="producer.out", target_str="consumer.data")],
+            ),
+        )
+
+        async def _run():
+            async with Net(net_config) as net:
+                await net.execute_node("producer")
+                await net.run_until_blocked()
+
+        with pytest.raises(EpochError) as exc_info:
+            asyncio.run(_run())
+        assert isinstance(exc_info.value.__cause__, PacketTypeMismatch)
+        assert exc_info.value.__cause__.port_name == "data"
+
+    def test_input_type_match_passes(self):
+        """Correct types flow through without errors."""
+        received = {}
+
+        def producer() -> int:
+            return 42
+
+        def consumer(data: int) -> None:
+            received["data"] = data
+
+        net_config = NetConfig(
+            pools={"main": PoolConfig(spec=MainPoolConfig())},
+            graph=GraphConfig(
+                nodes=[
+                    NodeConfig.from_factory(
+                        factory="netrun.node_factories.from_function",
+                        args={"func": producer},
+                    ),
+                    NodeConfig.from_factory(
+                        factory="netrun.node_factories.from_function",
+                        args={"func": consumer},
+                    ),
+                ],
+                edges=[EdgeConfig(source_str="producer.out", target_str="consumer.data")],
+            ),
+        )
+
+        async def _run():
+            async with Net(net_config) as net:
+                await net.execute_node("producer")
+                await net.run_until_blocked()
+
+        asyncio.run(_run())
+        assert received["data"] == 42
+
+    def test_input_type_checking_disabled(self):
+        """No error when type checking is disabled."""
+        received = {}
+
+        def producer() -> str:
+            return "not an int"
+
+        def consumer(data: int) -> None:
+            received["data"] = data
+
+        net_config = NetConfig(
+            type_checking_enabled=False,
+            pools={"main": PoolConfig(spec=MainPoolConfig())},
+            graph=GraphConfig(
+                nodes=[
+                    NodeConfig.from_factory(
+                        factory="netrun.node_factories.from_function",
+                        args={"func": producer},
+                    ),
+                    NodeConfig.from_factory(
+                        factory="netrun.node_factories.from_function",
+                        args={"func": consumer},
+                    ),
+                ],
+                edges=[EdgeConfig(source_str="producer.out", target_str="consumer.data")],
+            ),
+        )
+
+        async def _run():
+            async with Net(net_config) as net:
+                await net.execute_node("producer")
+                await net.run_until_blocked()
+
+        asyncio.run(_run())
+        assert received["data"] == "not an int"
+
+    def test_generic_input_type_validated(self):
+        """Generic types like list[int] are validated on input."""
+        def producer() -> list:
+            return ["not", "ints"]  # list[str], consumer expects list[int]
+
+        def consumer(data: list[int]) -> int:
+            return sum(data)
+
+        net_config = NetConfig(
+            pools={"main": PoolConfig(spec=MainPoolConfig())},
+            graph=GraphConfig(
+                nodes=[
+                    NodeConfig.from_factory(
+                        factory="netrun.node_factories.from_function",
+                        args={"func": producer},
+                    ),
+                    NodeConfig.from_factory(
+                        factory="netrun.node_factories.from_function",
+                        args={"func": consumer},
+                    ),
+                ],
+                edges=[EdgeConfig(source_str="producer.out", target_str="consumer.data")],
+            ),
+        )
+
+        async def _run():
+            async with Net(net_config) as net:
+                await net.execute_node("producer")
+                await net.run_until_blocked()
+
+        with pytest.raises(EpochError) as exc_info:
+            asyncio.run(_run())
+        assert isinstance(exc_info.value.__cause__, PacketTypeMismatch)
