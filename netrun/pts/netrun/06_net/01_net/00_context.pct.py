@@ -188,7 +188,8 @@ class NodeExecutionContext:
     # Input packet values passed from Net (packet_id -> value)
     _input_packet_values: dict[str, Any] = field(default_factory=dict, repr=False)
 
-    # Output port configurations for type validation
+    # Port configurations for type validation
+    _in_ports: dict[str, PortConfig] = field(default_factory=dict, repr=False)
     _out_ports: dict[str, PortConfig] = field(default_factory=dict, repr=False)
 
     # Deferred actions queue
@@ -268,6 +269,30 @@ class NodeExecutionContext:
         self._deferred_actions.add_consume_packet(packet_id)
         self._consumed_packets.append(packet_id)
         return value
+
+    def _validate_input_packets(self, packets: dict[str, list[str]]) -> None:
+        """Validate input packet values against input port types.
+
+        Called before the node function executes.  Checks each packet's value
+        against the ``port_type`` declared on its input port.
+
+        Args:
+            packets: Mapping of port_name -> list of packet IDs.
+
+        Raises:
+            PacketTypeMismatch: If any packet value doesn't match its port's type.
+        """
+        if not self._type_checking_enabled or not self._in_ports:
+            return
+
+        for port_name, packet_ids in packets.items():
+            port_config = self._in_ports.get(port_name)
+            if not port_config or port_config.port_type is None:
+                continue
+            for packet_id in packet_ids:
+                if packet_id in self._input_packet_values:
+                    value = self._input_packet_values[packet_id]
+                    self._validate_port_type(port_name, port_config.port_type, value, packet_id)
 
     def load_output_port(self, port_name: str, packet_id: str) -> None:
         """Load a packet into an output port.
@@ -735,6 +760,9 @@ class NetFuncPreprocessorNodeConfig:
     out_ports: dict[str, dict[str, Any]]
     """Output port configs (serialized as dicts for pickling)."""
 
+    in_ports: dict[str, dict[str, Any]] = field(default_factory=dict)
+    """Input port configs (serialized as dicts for pickling)."""
+
     # Copy of NodeExecutionConfig fields needed for context creation
     capture_prints: bool = True
     print_flush_interval: float = 0.1
@@ -758,6 +786,7 @@ class NetFuncPreprocessorNodeConfig:
     def from_node_config(
         cls,
         exec_config: NodeExecutionConfig,
+        in_ports: dict[str, PortConfig],
         out_ports: dict[str, PortConfig],
         factory: str | None,
         factory_args: dict[str, Any],
@@ -769,6 +798,7 @@ class NetFuncPreprocessorNodeConfig:
         return cls(
             factory=factory,
             factory_args=factory_args,
+            in_ports={name: port.model_dump() for name, port in in_ports.items()},
             out_ports={name: port.model_dump() for name, port in out_ports.items()},
             capture_prints=exec_config.capture_prints,
             print_flush_interval=exec_config.print_flush_interval,
@@ -847,8 +877,13 @@ class NetFuncPreprocessor:
             retry_exceptions: list[Exception] | None = None,
         ) -> NodeExecutionResult:
             config = preprocessor_self._node_configs.get(node_name)
+            in_ports = {}
             out_ports = {}
             if config:
+                in_ports = {
+                    name: PortConfig.model_validate(port_dict)
+                    for name, port_dict in config.in_ports.items()
+                }
                 out_ports = {
                     name: PortConfig.model_validate(port_dict)
                     for name, port_dict in config.out_ports.items()
@@ -886,6 +921,7 @@ class NetFuncPreprocessor:
                 retry_exceptions=retry_exceptions or [],
                 _config=exec_config,
                 _input_packet_values=packet_values,
+                _in_ports=in_ports,
                 _out_ports=out_ports,
                 _node_vars=_node_vars,
                 _type_checking_enabled=type_checking_enabled,
@@ -906,6 +942,8 @@ class NetFuncPreprocessor:
             exception = None
 
             try:
+                # Validate input packet types before executing the node function
+                ctx._validate_input_packets(packets)
                 func_result = actual_func(ctx, packets)
             except EpochCancelled:
                 # Expected when ctx.cancel_epoch() is called
@@ -939,6 +977,7 @@ class _FactoryPlaceholder:
 
 def create_net_func_preprocessor(
     node_execution_configs: dict[str, NodeExecutionConfig],
+    node_in_ports: dict[str, dict[str, PortConfig]] | None = None,
     node_out_ports: dict[str, dict[str, PortConfig]] | None = None,
     node_factories: dict[str, tuple[str, dict[str, Any]]] | None = None,
     net_node_vars: dict[str, NodeVariable] | None = None,
@@ -950,11 +989,13 @@ def create_net_func_preprocessor(
     The preprocessor transforms `exec_node_func(ctx, packets)` into a wrapped function
     that:
     1. Creates a NodeExecutionContext with input packet values
-    2. Runs the node function (resolving factory functions lazily)
-    3. Returns NodeExecutionResult with deferred actions and print buffer
+    2. Validates input packet types against port configurations
+    3. Runs the node function (resolving factory functions lazily)
+    4. Returns NodeExecutionResult with deferred actions and print buffer
 
     Args:
         node_execution_configs: Mapping of node names to their execution configs.
+        node_in_ports: Mapping of node names to their input port configs (for type validation).
         node_out_ports: Mapping of node names to their output port configs (for type validation).
         node_factories: Mapping of node names to (factory_path, factory_args) tuples for
             factory-based nodes. Factory functions are resolved lazily on workers.
@@ -966,12 +1007,14 @@ def create_net_func_preprocessor(
     Returns:
         A picklable NetFuncPreprocessor instance.
     """
+    node_in_ports = node_in_ports or {}
     node_out_ports = node_out_ports or {}
     node_factories = node_factories or {}
 
     # Convert to picklable config format
     node_configs = {}
     for node_name, config in node_execution_configs.items():
+        in_ports = node_in_ports.get(node_name, {})
         out_ports = node_out_ports.get(node_name, {})
         factory_info = node_factories.get(node_name)
         factory = factory_info[0] if factory_info else None
@@ -1015,7 +1058,7 @@ def create_net_func_preprocessor(
             type_checking_enabled = net_type_checking_enabled
 
         node_configs[node_name] = NetFuncPreprocessorNodeConfig.from_node_config(
-            config, out_ports, factory, factory_args,
+            config, in_ports, out_ports, factory, factory_args,
             node_vars=merged_vars,
             type_checking_enabled=type_checking_enabled,
             net_config_data=net_config_data,
