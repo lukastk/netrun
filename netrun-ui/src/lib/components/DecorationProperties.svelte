@@ -4,7 +4,6 @@
 		updateNodeDimensions,
 		pushHistory,
 		deleteNodes,
-		renameNode,
 		getNodeLocked,
 		updateNodeLocked,
 		DECORATION_TYPES,
@@ -20,34 +19,6 @@
 	let { node }: Props = $props();
 
 	let data = $derived(node.data as DecorationNodeData);
-
-	// Name editing
-	let editingName = $state(false);
-	let nameInput = $state('');
-
-	function startEditName() {
-		nameInput = data.label;
-		editingName = true;
-	}
-
-	function commitName() {
-		editingName = false;
-		const trimmed = nameInput.trim();
-		if (trimmed && trimmed !== data.label) {
-			pushHistory();
-			renameNode(node.id, trimmed);
-		}
-	}
-
-	function cancelName() {
-		editingName = false;
-	}
-
-	function handleNameKeydown(e: KeyboardEvent) {
-		e.stopPropagation();
-		if (e.key === 'Enter') commitName();
-		else if (e.key === 'Escape') cancelName();
-	}
 
 	// Property updates
 	function updateProp(key: keyof DecorationNodeData, value: unknown) {
@@ -71,24 +42,6 @@
 
 <section class="section">
 	<h3 class="section-title">Decoration</h3>
-
-	<!-- Name -->
-	<div class="field">
-		<label class="field-label">Name</label>
-		{#if editingName}
-			<input
-				type="text"
-				class="field-input"
-				bind:value={nameInput}
-				onblur={commitName}
-				onkeydown={handleNameKeydown}
-			/>
-		{:else}
-			<button class="name-display" ondblclick={startEditName} title="Double-click to rename">
-				{data.label}
-			</button>
-		{/if}
-	</div>
 
 	<!-- Decoration Type -->
 	<div class="field">
@@ -332,22 +285,6 @@
 	.field-textarea {
 		resize: vertical;
 		min-height: 36px;
-	}
-
-	.name-display {
-		width: 100%;
-		padding: 6px 8px;
-		background: var(--bg-primary, #1a1a1a);
-		border: 1px solid transparent;
-		border-radius: 4px;
-		color: var(--text-primary, #fff);
-		font-size: 12px;
-		text-align: left;
-		cursor: pointer;
-	}
-
-	.name-display:hover {
-		border-color: var(--border-color, #404040);
 	}
 
 	.color-row {
