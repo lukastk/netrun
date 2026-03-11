@@ -44,6 +44,7 @@
 	}
 
 	function handleNameKeydown(e: KeyboardEvent) {
+		e.stopPropagation();
 		if (e.key === 'Enter') commitName();
 		else if (e.key === 'Escape') cancelName();
 	}
@@ -127,6 +128,7 @@
 				value={data.imagePath || ''}
 				oninput={(e) => updateProp('imagePath', (e.target as HTMLInputElement).value || undefined)}
 				onchange={() => pushHistory()}
+				onkeydown={(e) => e.stopPropagation()}
 				placeholder="path/to/image.png"
 			/>
 		</div>
@@ -206,6 +208,7 @@
 				max="20"
 				step="1"
 				onchange={(e) => updatePropWithHistory('strokeWidth', Number((e.target as HTMLInputElement).value))}
+				onkeydown={(e) => e.stopPropagation()}
 			/>
 		</div>
 	{/if}
@@ -221,6 +224,7 @@
 			max="200"
 			step="1"
 			onchange={(e) => updatePropWithHistory('fontSize', Number((e.target as HTMLInputElement).value))}
+			onkeydown={(e) => e.stopPropagation()}
 		/>
 	</div>
 
@@ -305,7 +309,7 @@
 	.field-textarea {
 		width: 100%;
 		padding: 6px 8px;
-		background: var(--bg-tertiary, #2d2d2d);
+		background: var(--bg-primary, #1a1a1a);
 		border: 1px solid var(--border-color, #404040);
 		border-radius: 4px;
 		color: var(--text-primary, #fff);
@@ -333,7 +337,7 @@
 	.name-display {
 		width: 100%;
 		padding: 6px 8px;
-		background: var(--bg-tertiary, #2d2d2d);
+		background: var(--bg-primary, #1a1a1a);
 		border: 1px solid transparent;
 		border-radius: 4px;
 		color: var(--text-primary, #fff);
@@ -379,7 +383,7 @@
 
 	.reset-btn {
 		padding: 2px 6px;
-		background: var(--bg-tertiary, #2d2d2d);
+		background: var(--bg-primary, #1a1a1a);
 		border: 1px solid var(--border-color, #404040);
 		border-radius: 3px;
 		color: var(--text-secondary, #a0a0a0);
