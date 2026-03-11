@@ -1,4 +1,5 @@
 import * as vscode from 'vscode';
+import * as path from 'path';
 
 function getNonce(): string {
 	let text = '';
@@ -172,7 +173,17 @@ export class NetrunEditorProvider implements vscode.CustomTextEditorProvider {
 			// Fall back to opening source_path in VS Code
 			const sourcePath = extra.source_path as string | undefined;
 			if (sourcePath) {
-				const fileUri = vscode.Uri.file(sourcePath);
+				let resolvedPath = sourcePath;
+				if (!path.isAbsolute(sourcePath)) {
+					const extraData = fileData.extra_data || {};
+					const prOverride = extraData.project_root_override || graphUi.projectRoot;
+					const configDir = path.dirname(selectedFile.fsPath);
+					const basePath = prOverride
+						? (path.isAbsolute(prOverride) ? prOverride : path.resolve(configDir, prOverride))
+						: configDir;
+					resolvedPath = path.resolve(basePath, sourcePath);
+				}
+				const fileUri = vscode.Uri.file(resolvedPath);
 				await vscode.window.showTextDocument(fileUri);
 			} else {
 				vscode.window.showInformationMessage(
