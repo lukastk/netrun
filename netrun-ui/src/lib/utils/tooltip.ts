@@ -19,9 +19,29 @@ export function tooltip(node: HTMLElement, text: string | undefined) {
 	function position() {
 		if (!el) return;
 		const rect = node.getBoundingClientRect();
-		// Place above the icon, centered horizontally
-		el.style.left = `${rect.left + rect.width / 2}px`;
+		const centerX = rect.left + rect.width / 2;
+		const tooltipRect = el.getBoundingClientRect();
+		const margin = 8;
+
+		// Default: centered above the icon via CSS transform translateX(-50%)
+		let left = centerX;
+		let transform = 'translateX(-50%) translateY(-100%)';
+
+		// Clamp to viewport edges
+		const halfWidth = tooltipRect.width / 2;
+		if (centerX + halfWidth > window.innerWidth - margin) {
+			// Would overflow right — anchor right edge to viewport
+			left = window.innerWidth - margin;
+			transform = 'translateX(-100%) translateY(-100%)';
+		} else if (centerX - halfWidth < margin) {
+			// Would overflow left — anchor left edge to viewport
+			left = margin;
+			transform = 'translateY(-100%)';
+		}
+
+		el.style.left = `${left}px`;
 		el.style.top = `${rect.top - 6}px`;
+		el.style.transform = transform;
 	}
 
 	function hide() {

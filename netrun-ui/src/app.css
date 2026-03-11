@@ -92,7 +92,7 @@ input:focus, select:focus, textarea:focus {
 /* Global tooltip (rendered into body by tooltip action) */
 .global-tooltip {
   position: fixed;
-  transform: translateX(-50%) translateY(-100%);
+  /* transform set dynamically by tooltip.ts to avoid viewport clipping */
   background: var(--bg-primary, #1a1a1a);
   border: 1px solid var(--border-color, #404040);
   color: var(--text-primary, #fff);
