@@ -60,6 +60,7 @@
 	import ProjectSettings from './ProjectSettings.svelte';
 	import ActionEditor from './ActionEditor.svelte';
 	import RecipeEditor from './RecipeEditor.svelte';
+	import FactoryArgEditor from './FactoryArgEditor.svelte';
 	import TextInputModal from './TextInputModal.svelte';
 	import {
 		projectActions,
@@ -434,21 +435,13 @@
 		updateNodeData($selectedNode.id, { [portType]: ports });
 	}
 
-	function updateFactoryArg(key: string, value: string | boolean) {
+	function updateFactoryArg(key: string, value: unknown) {
 		if (!$selectedNode) return;
 		const factoryArgs: Record<string, unknown> = { ...($selectedNode.data.factoryArgs || {}) };
 
-		// Find the parameter definition to determine type conversion
-		const param = factoryParams.find(p => p.name === key);
-		if (param) {
-			const converted = convertFactoryArgValue(param, value);
-			if (converted === undefined) {
-				delete factoryArgs[key];
-			} else {
-				factoryArgs[key] = converted;
-			}
+		if (value === undefined) {
+			delete factoryArgs[key];
 		} else {
-			// No param info, store as-is
 			factoryArgs[key] = value;
 		}
 
@@ -536,89 +529,6 @@
 			lastFactoryPath = null;
 		}
 	});
-
-	// Determine if a parameter type represents an import path (non-primitive)
-	function isImportPathParam(param: FactoryParameter): boolean {
-		if (!param.type) return false;
-		const primitiveTypes = ['str', 'int', 'float', 'bool', 'None', 'NoneType'];
-		// Check if it's a primitive type or optional primitive
-		const typeStr = param.type.toLowerCase();
-		return !primitiveTypes.some(t => typeStr === t || typeStr === `${t} | none` || typeStr === `none | ${t}`);
-	}
-
-	// Check if parameter is a boolean type
-	function isBoolParam(param: FactoryParameter): boolean {
-		if (!param.type) return false;
-		const typeStr = param.type.toLowerCase();
-		return typeStr === 'bool' || typeStr === 'bool | none' || typeStr === 'none | bool';
-	}
-
-	// Check if parameter is an integer type
-	function isIntParam(param: FactoryParameter): boolean {
-		if (!param.type) return false;
-		const typeStr = param.type.toLowerCase();
-		return typeStr === 'int' || typeStr === 'int | none' || typeStr === 'none | int';
-	}
-
-	// Check if parameter is a float type
-	function isFloatParam(param: FactoryParameter): boolean {
-		if (!param.type) return false;
-		const typeStr = param.type.toLowerCase();
-		return typeStr === 'float' || typeStr === 'float | none' || typeStr === 'none | float';
-	}
-
-	// Check if parameter has enum options
-	function isEnumParam(param: FactoryParameter): boolean {
-		return Array.isArray(param.enum_options) && param.enum_options.length > 0;
-	}
-
-	// Convert a string value to the appropriate type based on parameter type
-	function convertFactoryArgValue(param: FactoryParameter, value: string | boolean): unknown {
-		// If it's already a boolean (from checkbox), return as-is
-		if (typeof value === 'boolean') return value;
-
-		const strValue = value.trim();
-
-		// Handle empty string - return undefined to clear the value
-		if (strValue === '') return undefined;
-
-		if (isBoolParam(param)) {
-			// Convert string to boolean
-			return strValue.toLowerCase() === 'true' || strValue === '1';
-		}
-
-		if (isIntParam(param)) {
-			const parsed = parseInt(strValue, 10);
-			return isNaN(parsed) ? strValue : parsed;
-		}
-
-		if (isFloatParam(param)) {
-			const parsed = parseFloat(strValue);
-			return isNaN(parsed) ? strValue : parsed;
-		}
-
-		// For strings and other types, keep as string
-		return strValue;
-	}
-
-	// Get placeholder text for a parameter
-	function getParamPlaceholder(param: FactoryParameter): string {
-		if (isImportPathParam(param)) {
-			return 'module.path.to.object';
-		}
-		if (param.has_default && param.default !== null) {
-			return String(param.default);
-		}
-		return '';
-	}
-
-	// Get label hint for parameter type
-	function getParamTypeHint(param: FactoryParameter): string {
-		if (isImportPathParam(param)) {
-			return '(import path)';
-		}
-		return param.type ? `(${param.type})` : '';
-	}
 
 	// Validate factory arguments against required parameters
 	function validateFactoryArgs(
@@ -950,63 +860,26 @@
 											<div class="factory-arg">
 												<div class="arg-header">
 													<span class="arg-key">{param.name}</span>
-													<span class="arg-type">{getParamTypeHint(param)}</span>
+													<span class="arg-type">({param.type ?? 'untyped'})</span>
 													{#if !param.has_default}
 														<span class="arg-required">*</span>
 													{/if}
 												</div>
-												{#if isBoolParam(param)}
-													{@const storedValue = $selectedNode.data.factoryArgs?.[param.name]}
-													{@const effectiveValue = storedValue !== undefined ? storedValue === true : param.default === true}
-													<label class="checkbox-label">
-														<input
-															type="checkbox"
-															checked={effectiveValue}
-															onchange={(e) => {
-																updateFactoryArg(param.name, (e.target as HTMLInputElement).checked);
-																pushHistory();
-																refreshFactoryPreview();
-															}}
-														/>
-														<span class="checkbox-text">{effectiveValue ? 'True' : 'False'}{storedValue === undefined ? ' (default)' : ''}</span>
-													</label>
-												{:else if isEnumParam(param)}
-													<!-- Enum: dropdown -->
-													<select
-														value={String($selectedNode.data.factoryArgs?.[param.name] ?? param.default ?? '')}
-														onchange={(e) => {
-															updateFactoryArg(param.name, (e.target as HTMLSelectElement).value);
-															pushHistory();
-															refreshFactoryPreview();
-														}}
-													>
-														{#if !param.has_default && !$selectedNode.data.factoryArgs?.[param.name]}
-															<option value="" disabled selected>Select...</option>
-														{/if}
-														{#each param.enum_options as option}
-															<option value={option}>{option}</option>
-														{/each}
-													</select>
-												{:else if isIntParam(param) || isFloatParam(param)}
-													<input
-														type="number"
-														step={isIntParam(param) ? '1' : 'any'}
-														value={$selectedNode.data.factoryArgs?.[param.name] ?? ''}
-														placeholder={getParamPlaceholder(param)}
-														oninput={(e) => updateFactoryArg(param.name, (e.target as HTMLInputElement).value)}
+												{#if param.type_info}
+													<FactoryArgEditor
+														type_info={param.type_info}
+														value={$selectedNode.data.factoryArgs?.[param.name] ?? param.default}
+														optional={param.optional}
+														onchange={(v) => updateFactoryArg(param.name, v)}
 														onblur={() => { pushHistory(); refreshFactoryPreview(); }}
-														class:required-missing={!param.has_default && $selectedNode.data.factoryArgs?.[param.name] === undefined}
 													/>
 												{:else}
+													<!-- Fallback for missing type info -->
 													<input
 														type="text"
 														value={String($selectedNode.data.factoryArgs?.[param.name] ?? '')}
-														placeholder={getParamPlaceholder(param)}
 														oninput={(e) => updateFactoryArg(param.name, (e.target as HTMLInputElement).value)}
 														onblur={() => { pushHistory(); refreshFactoryPreview(); }}
-														onmousedown={selectDottedSegment}
-														class:import-path={isImportPathParam(param)}
-														class:required-missing={!param.has_default && !$selectedNode.data.factoryArgs?.[param.name]}
 													/>
 												{/if}
 											</div>
@@ -2562,21 +2435,7 @@
 		width: 100%;
 	}
 
-	.factory-arg input.import-path {
-		font-size: 12px;
-	}
-
-	.factory-arg input.required-missing {
-		border-color: var(--error-color, #ef4444);
-		background: rgba(239, 68, 68, 0.05);
-	}
-
-	.factory-arg input.required-missing:focus {
-		border-color: var(--error-color, #ef4444);
-		box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
-	}
-
-	/* Checkbox styling (reused for visibility toggles and factory args) */
+	/* Checkbox styling (reused for visibility toggles) */
 	.field .checkbox-label {
 		display: flex;
 		align-items: center;
@@ -2598,46 +2457,6 @@
 	.field .checkbox-text {
 		font-size: 12px;
 		color: var(--text-secondary, #a0a0a0);
-	}
-
-	.factory-arg .checkbox-label {
-		display: flex;
-		align-items: center;
-		gap: 8px;
-		padding: 6px 0;
-		cursor: pointer;
-	}
-
-	.factory-arg .checkbox-label input[type="checkbox"] {
-		width: 16px;
-		height: 16px;
-		margin: 0;
-		cursor: pointer;
-		accent-color: var(--accent-color, #3b82f6);
-	}
-
-	.factory-arg .checkbox-text {
-		font-size: 12px;
-		color: var(--text-secondary, #a0a0a0);
-	}
-
-	.factory-arg input[type="number"] {
-		font-size: 12px;
-	}
-
-	.factory-arg select {
-		padding: 8px;
-		background: var(--bg-primary, #1a1a1a);
-		border: 1px solid var(--border-color, #404040);
-		border-radius: 4px;
-		color: var(--text-primary, #fff);
-		font-size: 12px;
-		cursor: pointer;
-	}
-
-	.factory-arg select:focus {
-		outline: none;
-		border-color: var(--accent-color, #3b82f6);
 	}
 
 	.loading-hint {

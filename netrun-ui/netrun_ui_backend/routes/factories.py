@@ -5,8 +5,9 @@ import inspect
 import json
 import os
 import sys
+import types
 from contextlib import contextmanager
-from typing import Any, Union, get_args
+from typing import Any, Annotated, Union, get_args, get_origin
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -148,6 +149,112 @@ async def list_builtin_factories() -> ListBuiltinFactoriesResponse:
     return ListBuiltinFactoriesResponse(factories=factories, errors=errors)
 
 
+class TypeInfo(BaseModel):
+    """Structured type information for a factory parameter.
+
+    Used by the frontend to select the correct editor widget.
+    """
+    kind: str  # "str", "int", "float", "bool", "enum", "list", "dict", "union", "unknown"
+    options: list[str] | None = None       # For enum
+    item: "TypeInfo | None" = None         # For list
+    value: "TypeInfo | None" = None        # For dict
+    variants: list["TypeInfo"] | None = None  # For union
+    raw: str | None = None                 # For unknown
+
+
+_PRIMITIVE_MAP: dict[type, str] = {str: "str", int: "int", float: "float", bool: "bool"}
+
+
+def _is_union_type(annotation: Any) -> bool:
+    """Check if annotation is a Union type (typing.Union or T | U syntax)."""
+    origin = get_origin(annotation)
+    if origin is Union:
+        return True
+    # Python 3.10+ T | U syntax produces types.UnionType
+    return isinstance(annotation, types.UnionType)
+
+
+def parse_type_annotation(annotation: Any) -> tuple[TypeInfo, bool]:
+    """Parse a Python type annotation into a TypeInfo and optional flag.
+
+    Returns (type_info, is_optional) where is_optional is True if None is
+    in the type union.
+    """
+    # Handle Annotated[T, ...] — unwrap to inner type
+    if get_origin(annotation) is Annotated:
+        args = get_args(annotation)
+        if args:
+            return parse_type_annotation(args[0])
+
+    # Handle Union / T | U | None
+    if _is_union_type(annotation):
+        args = get_args(annotation)
+        is_optional = type(None) in args
+        non_none = [a for a in args if a is not type(None)]
+
+        # Parse each non-None variant
+        variants: list[TypeInfo] = []
+        for arg in non_none:
+            ti, _ = parse_type_annotation(arg)
+            variants.append(ti)
+
+        # Filter out unknown variants
+        known = [v for v in variants if v.kind != "unknown"]
+
+        # If a union contains an enum that subclasses str, filter redundant str
+        enum_variants = [v for v in known if v.kind == "enum"]
+        if enum_variants:
+            known = [v for v in known if v.kind != "str"]
+
+        if len(known) == 0:
+            # All variants unknown — report as unknown
+            return TypeInfo(kind="unknown", raw=str(annotation)), is_optional
+        elif len(known) == 1:
+            return known[0], is_optional
+        else:
+            return TypeInfo(kind="union", variants=known), is_optional
+
+    # Handle primitives
+    if annotation in _PRIMITIVE_MAP:
+        return TypeInfo(kind=_PRIMITIVE_MAP[annotation]), False
+
+    # Handle Enum subclasses
+    if isinstance(annotation, type) and issubclass(annotation, enum.Enum):
+        options = [member.value for member in annotation]
+        return TypeInfo(kind="enum", options=options), False
+
+    # Handle list[T]
+    if get_origin(annotation) is list:
+        args = get_args(annotation)
+        if args:
+            item_info, _ = parse_type_annotation(args[0])
+        else:
+            item_info = TypeInfo(kind="unknown", raw="unparameterized list")
+        return TypeInfo(kind="list", item=item_info), False
+
+    # Handle dict[K, V]
+    if get_origin(annotation) is dict:
+        args = get_args(annotation)
+        if args and len(args) >= 2:
+            value_info, _ = parse_type_annotation(args[1])
+        else:
+            value_info = TypeInfo(kind="unknown", raw="unparameterized dict")
+        return TypeInfo(kind="dict", value=value_info), False
+
+    # Handle tuple[T, ...] as list[T] (common Python pattern)
+    if get_origin(annotation) is tuple:
+        args = get_args(annotation)
+        if args:
+            item_info, _ = parse_type_annotation(args[0])
+        else:
+            item_info = TypeInfo(kind="unknown", raw="unparameterized tuple")
+        return TypeInfo(kind="list", item=item_info), False
+
+    # Unknown type
+    raw = getattr(annotation, "__name__", None) or str(annotation)
+    return TypeInfo(kind="unknown", raw=raw), False
+
+
 class FactorySignatureRequest(BaseModel):
     """Request to get factory function signature."""
     factory_path: str
@@ -158,6 +265,8 @@ class FactoryParameter(BaseModel):
     """A parameter from the factory signature."""
     name: str
     type: str | None = None
+    type_info: TypeInfo | None = None
+    optional: bool = False
     default: Any | None = None
     has_default: bool = False
     enum_options: list[str] | None = None
@@ -245,21 +354,27 @@ async def get_factory_signature(request: FactorySignatureRequest) -> FactorySign
             # Skip internal parameters (e.g. _net_config) injected by the system
             if name.startswith("_"):
                 continue
-            # Get type annotation as string
+            # Get type annotation as string (for display / backward compat)
             type_str = None
-            if param.annotation != inspect.Parameter.empty:
-                if hasattr(param.annotation, "__name__"):
-                    type_str = param.annotation.__name__
-                else:
-                    type_str = str(param.annotation)
-
-            # Detect Enum types and extract member values
-            enum_options = None
             annotation = param.annotation
             if annotation != inspect.Parameter.empty:
-                actual_type = _unwrap_optional(annotation)
-                if actual_type is not None and isinstance(actual_type, type) and issubclass(actual_type, enum.Enum):
-                    enum_options = [member.value for member in actual_type]
+                if hasattr(annotation, "__name__"):
+                    type_str = annotation.__name__
+                else:
+                    type_str = str(annotation)
+
+            # Parse structured type info
+            type_info: TypeInfo | None = None
+            is_optional = False
+            if annotation != inspect.Parameter.empty:
+                type_info, is_optional = parse_type_annotation(annotation)
+            else:
+                type_info = TypeInfo(kind="str")  # default for untyped params
+
+            # Extract enum_options for backward compat
+            enum_options = None
+            if type_info and type_info.kind == "enum" and type_info.options:
+                enum_options = type_info.options
 
             # Get default value
             has_default = param.default != inspect.Parameter.empty
@@ -269,6 +384,8 @@ async def get_factory_signature(request: FactorySignatureRequest) -> FactorySign
             if default is not None:
                 if isinstance(default, enum.Enum):
                     default = default.value
+                elif isinstance(default, tuple):
+                    default = list(default)
                 else:
                     try:
                         json.dumps(default)  # Test if serializable
@@ -278,6 +395,8 @@ async def get_factory_signature(request: FactorySignatureRequest) -> FactorySign
             parameters.append(FactoryParameter(
                 name=name,
                 type=type_str,
+                type_info=type_info,
+                optional=is_optional,
                 default=default,
                 has_default=has_default,
                 enum_options=enum_options,
