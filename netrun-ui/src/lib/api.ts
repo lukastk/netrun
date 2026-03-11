@@ -69,9 +69,22 @@ export interface FileSaveResponse {
 	path: string;
 }
 
+export type TypeInfo =
+	| { kind: 'str' }
+	| { kind: 'int' }
+	| { kind: 'float' }
+	| { kind: 'bool' }
+	| { kind: 'enum'; options: string[] }
+	| { kind: 'list'; item: TypeInfo }
+	| { kind: 'dict'; value: TypeInfo }
+	| { kind: 'union'; variants: TypeInfo[] }
+	| { kind: 'unknown'; raw: string | null };
+
 export interface FactoryParameter {
 	name: string;
 	type: string | null;
+	type_info: TypeInfo | null;
+	optional: boolean;
 	default: unknown;
 	has_default: boolean;
 	enum_options?: string[] | null;
