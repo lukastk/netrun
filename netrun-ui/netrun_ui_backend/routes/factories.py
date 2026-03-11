@@ -261,6 +261,81 @@ class FactorySignatureRequest(BaseModel):
     project_root: str | None = None
 
 
+def _parse_google_args(docstring: str | None) -> dict[str, str]:
+    """Parse Google-style Args section from a docstring.
+
+    Returns a dict mapping parameter names to their description text.
+    """
+    if not docstring:
+        return {}
+
+    result: dict[str, str] = {}
+    lines = docstring.split("\n")
+    in_args = False
+    current_name: str | None = None
+    current_desc_lines: list[str] = []
+    args_indent: int | None = None
+
+    for line in lines:
+        stripped = line.strip()
+
+        # Detect start of Args section
+        if stripped in ("Args:", "Arguments:"):
+            in_args = True
+            args_indent = None
+            continue
+
+        if not in_args:
+            continue
+
+        # Detect end of Args section (another section header or unindented non-empty line)
+        if stripped and not line[0].isspace():
+            # Non-indented non-empty line ends Args section
+            break
+
+        if not stripped:
+            # Blank line — could be between params or end of section
+            if current_name:
+                current_desc_lines.append("")
+            continue
+
+        # Determine the indentation level of args entries
+        indent = len(line) - len(line.lstrip())
+        if args_indent is None:
+            args_indent = indent
+
+        # Check if this is a new parameter (at args indent level, contains colon)
+        if indent == args_indent and ":" in stripped:
+            # Save previous param
+            if current_name:
+                result[current_name] = " ".join(
+                    l for l in current_desc_lines if l
+                ).strip()
+
+            # Parse "param_name: description" or "param_name (type): description"
+            colon_idx = stripped.index(":")
+            param_part = stripped[:colon_idx].strip()
+            desc_part = stripped[colon_idx + 1:].strip()
+
+            # Strip type in parens: "param (type)" -> "param"
+            if "(" in param_part:
+                param_part = param_part[:param_part.index("(")].strip()
+
+            current_name = param_part
+            current_desc_lines = [desc_part] if desc_part else []
+        elif current_name and indent > (args_indent or 0):
+            # Continuation line for current param
+            current_desc_lines.append(stripped)
+
+    # Save last param
+    if current_name:
+        result[current_name] = " ".join(
+            l for l in current_desc_lines if l
+        ).strip()
+
+    return result
+
+
 class FactoryParameter(BaseModel):
     """A parameter from the factory signature."""
     name: str
@@ -269,6 +344,7 @@ class FactoryParameter(BaseModel):
     optional: bool = False
     default: Any | None = None
     has_default: bool = False
+    description: str | None = None
     enum_options: list[str] | None = None
 
 
@@ -350,6 +426,10 @@ async def get_factory_signature(request: FactorySignatureRequest) -> FactorySign
         sig = inspect.signature(get_node_config)
         parameters = []
 
+        # Parse parameter descriptions from docstring
+        func_docstring = inspect.getdoc(get_node_config)
+        param_descriptions = _parse_google_args(func_docstring)
+
         for name, param in sig.parameters.items():
             # Skip internal parameters (e.g. _net_config) injected by the system
             if name.startswith("_"):
@@ -399,6 +479,7 @@ async def get_factory_signature(request: FactorySignatureRequest) -> FactorySign
                 optional=is_optional,
                 default=default,
                 has_default=has_default,
+                description=param_descriptions.get(name),
                 enum_options=enum_options,
             ))
 

@@ -864,6 +864,9 @@
 													{#if !param.has_default}
 														<span class="arg-required">*</span>
 													{/if}
+													{#if param.description}
+														<span class="has-tooltip-icon" use:tooltip={param.description}>?</span>
+													{/if}
 												</div>
 												{#if param.type_info}
 													<FactoryArgEditor
