@@ -1,12 +1,14 @@
 """Node functions demonstrating advanced flow control features."""
 
+from netrun.node_factories.from_function import Batch
 
-def batch_processor(data: list[str], print) -> str:
+
+def batch_processor(data: Batch(str, count=3), print) -> str:
     """Processes a batch of items.
 
     Has a custom input salvo condition: fires when the 'data' port
     has 3 or more packets accumulated (uses equals_or_greater_than(3) predicate).
-    The port config also uses finite slots to limit buffering.
+    The Batch annotation tells the factory this port collects multiple packets.
     """
     print(f"Processing batch of {len(data)} items: {data}")
     return f"batch({', '.join(data)})"

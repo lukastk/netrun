@@ -21,7 +21,7 @@ from nblite import nbl_export, show_doc; nbl_export();
 
 # %%
 #|export
-from typing import Callable, Any, get_type_hints, get_origin, get_args
+from typing import Callable, Any, get_type_hints, get_origin
 from dataclasses import dataclass, field
 import inspect
 import asyncio
@@ -44,6 +44,59 @@ from netrun.net.config import (
     PacketCountNConfig,
     PortStateNonEmptyConfig,
 )
+
+# %% [markdown]
+# ## Batch Annotation
+#
+# Annotation for input ports that collect multiple packets into a list.
+
+# %%
+#|export
+@dataclass
+class Batch:
+    """Input-annotation wrapper marking a port as collecting multiple packets.
+
+    When a parameter is annotated with ``Batch``, the factory generates a salvo
+    condition that grabs multiple packets from that port and passes them to the
+    function as a ``list``.  This cleanly separates **flow control** (how many
+    packets to collect) from **type declarations** (what type each packet is).
+
+    Without ``Batch``, each input port consumes exactly **one** packet per
+    epoch and the function receives the packet's value directly.  With
+    ``Batch``, the port's salvo entry uses ``PacketCountAllConfig`` (grab all
+    available packets) or ``PacketCountNConfig(count=N)`` (grab at most N),
+    and the function always receives a ``list`` of values — even if only one
+    packet was available.
+
+    Args:
+        port_type: The type of **each individual packet** on the port.
+            Can be a type, string, ``PortConfig``, or ``None``.
+        count: How many packets to collect per epoch.
+
+            - ``None`` (default): collect **all** available packets
+              (maps to ``PacketCountAllConfig``).
+            - ``int``: collect at most *count* packets
+              (maps to ``PacketCountNConfig(count=N)``).
+
+    Examples::
+
+        from netrun.node_factories.from_function import Batch
+
+        # Collect all available string packets into a list:
+        def process_all(items: Batch(str)) -> str:
+            return ", ".join(items)   # items is list[str]
+
+        # Collect at most 5 int packets:
+        def process_batch(nums: Batch(int, count=5)) -> float:
+            return sum(nums) / len(nums)  # nums is list[int], len <= 5
+
+        # list[int] is NOT batch — it's a single packet whose value is a list:
+        def process_list(ids: list[int]) -> int:
+            return len(ids)  # ids is list[int], a single packet value
+    """
+
+    port_type: Any = None
+    count: int | None = None
 
 # %% [markdown]
 # ## PreCreatedPacket Annotation
@@ -114,8 +167,12 @@ class _ParsedSignature:
     regular_params: list[str]
     """Ordered list of regular parameter names (input ports)."""
 
-    in_port_annotations: dict[str, Any] = field(default_factory=dict)
-    """Raw type annotations for input ports (for detecting list types)."""
+    batch_ports: dict[str, int | None] = field(default_factory=dict)
+    """Input ports annotated with Batch.
+
+    Maps port name to count (int for at-most-N, None for all).
+    Ports not in this dict consume exactly 1 packet (scalar).
+    """
 
     packet_ports: set[str] = field(default_factory=set)
     """Output ports annotated with PreCreatedPacket (receive packet IDs, not values)."""
@@ -123,6 +180,11 @@ class _ParsedSignature:
 
 def _annotation_to_port_config(annotation: Any, include_type: bool = True) -> PortConfig:
     """Convert a type annotation to a PortConfig.
+
+    ``Batch`` annotations are unwrapped: the inner ``port_type`` is used for
+    the port's type constraint.  The ``Batch`` wrapper itself is handled
+    separately by ``_generate_input_salvo_condition`` and ``_prepare_kwargs``
+    (via the ``batch_ports`` set on ``_ParsedSignature``).
 
     Args:
         annotation: The type annotation from the function signature.
@@ -134,6 +196,10 @@ def _annotation_to_port_config(annotation: Any, include_type: bool = True) -> Po
     if not include_type:
         # Skip type information entirely
         return PortConfig()
+
+    # Unwrap Batch to get the inner port_type
+    if isinstance(annotation, Batch):
+        annotation = annotation.port_type
 
     if annotation is _MISSING or annotation is inspect.Parameter.empty or annotation is None:
         # No annotation - default port with no type constraint
@@ -224,7 +290,7 @@ def _parse_function_signature(func: Callable|str, include_port_types: bool = Tru
     sig = inspect.signature(func)
 
     in_ports: dict[str, PortConfig] = {}
-    in_port_annotations: dict[str, Any] = {}
+    batch_ports: dict[str, int | None] = {}
     special_params: set[str] = set()
     regular_params: list[str] = []
 
@@ -243,7 +309,8 @@ def _parse_function_signature(func: Callable|str, include_port_types: bool = Tru
         # Regular parameter - becomes an input port
         annotation = param.annotation if param.annotation is not inspect.Parameter.empty else _MISSING
         in_ports[param_name] = _annotation_to_port_config(annotation, include_port_types)
-        in_port_annotations[param_name] = annotation
+        if isinstance(annotation, Batch):
+            batch_ports[param_name] = annotation.count
         regular_params.append(param_name)
 
     # Parse return annotation for output ports
@@ -255,7 +322,7 @@ def _parse_function_signature(func: Callable|str, include_port_types: bool = Tru
         out_ports=out_ports,
         special_params=special_params,
         regular_params=regular_params,
-        in_port_annotations=in_port_annotations,
+        batch_ports=batch_ports,
         packet_ports=packet_ports,
     )
 
@@ -266,33 +333,38 @@ def _parse_function_signature(func: Callable|str, include_port_types: bool = Tru
 
 # %%
 #|exporti
-def _is_list_type(annotation) -> bool:
-    """Check if annotation is a list type like list[T] or List[T]."""
-    if annotation is _MISSING or annotation is inspect.Parameter.empty:
-        return False
-    origin = get_origin(annotation)
-    return origin is list
-
-
 def _generate_input_salvo_condition(
     in_ports: dict[str, PortConfig],
-    in_port_annotations: dict[str, Any] | None = None,
+    batch_ports: dict[str, int | None] | None = None,
 ) -> dict[str, SalvoConditionConfig] | None:
-    """Generate default input salvo condition.
+    """Generate the default ``"trigger"`` input salvo condition.
 
-    Default: Fires when all input ports have at least one packet.
+    Fires when all input ports have at least one packet.  The per-port packet
+    count is determined by ``Batch`` annotations:
+
+    - Ports **not** in ``batch_ports``: grab exactly 1 packet (scalar).
+    - Ports in ``batch_ports`` with ``count=None``: grab **all** available
+      packets (``PacketCountAllConfig``).
+    - Ports in ``batch_ports`` with ``count=N``: grab at most *N* packets
+      (``PacketCountNConfig(count=N)``).
+
+    The exec_func reads back the ``"trigger"`` salvo's per-port packet counts
+    to decide whether to pass a scalar or a list to the user function.
 
     Args:
         in_ports: The input port configurations.
+        batch_ports: Mapping of port name → count from ``Batch`` annotations.
+            ``None`` count means "all".
 
     Returns:
-        Dict with a single "trigger" salvo condition, or None for source
-        nodes (no input ports) — letting NodeConfig.resolve() generate
-        the appropriate default based on full context (e.g. controls).
+        Dict with a single ``"trigger"`` salvo condition, or ``None`` for
+        source nodes (no input ports) — letting ``NodeConfig.resolve()``
+        generate the appropriate default based on full context.
     """
     if not in_ports:
-        # No input ports — defer to resolve() which handles controls correctly
         return None
+
+    batch_ports = batch_ports or {}
 
     # Build condition: all ports must be non-empty
     port_terms = [
@@ -305,14 +377,15 @@ def _generate_input_salvo_condition(
     else:
         term = SalvoConditionTermAndConfig(terms=port_terms)
 
-    # Determine packet count per port based on type annotation:
-    # - list types: grab all packets (function receives them as a list)
-    # - non-list types: grab exactly 1 packet (function receives a single value)
+    # Determine packet count per port from Batch annotations
     ports = {}
     for port_name in in_ports.keys():
-        annotation = (in_port_annotations or {}).get(port_name, _MISSING)
-        if _is_list_type(annotation):
-            ports[port_name] = PacketCountAllConfig()
+        if port_name in batch_ports:
+            count = batch_ports[port_name]
+            if count is None:
+                ports[port_name] = PacketCountAllConfig()
+            else:
+                ports[port_name] = PacketCountNConfig(count=count)
         else:
             ports[port_name] = PacketCountNConfig(count=1)
 
@@ -387,20 +460,16 @@ def _create_exec_func(func: Callable, parsed_sig: _ParsedSignature, manual_outpu
         # Extract packet values for regular parameters
         for param_name in parsed_sig.regular_params:
             if param_name in packets and packets[param_name]:
-                annotation = parsed_sig.in_port_annotations.get(param_name, _MISSING)
+                packet_ids = packets[param_name]
 
-                if _is_list_type(annotation):
-                    # List type - consume ALL packets and return as list
-                    values = []
-                    for packet_id in packets[param_name]:
-                        value = ctx.consume_packet(packet_id)
-                        values.append(value)
+                if param_name in parsed_sig.batch_ports:
+                    # Batch port — consume all delivered packets, always pass as list
+                    values = [ctx.consume_packet(pid) for pid in packet_ids]
                     kwargs[param_name] = values
                 else:
-                    # Non-list type - consume first packet only
-                    packet_id = packets[param_name][0]
-                    value = ctx.consume_packet(packet_id)
-                    kwargs[param_name] = value
+                    # Scalar port — consume exactly 1 packet
+                    packet_id = packet_ids[0]
+                    kwargs[param_name] = ctx.consume_packet(packet_id)
             else:
                 # Port has no packets - this shouldn't happen with proper salvo conditions
                 raise ValueError(f"No packets in port '{param_name}' for function {func.__name__}")
@@ -596,9 +665,7 @@ def _from_function(func: Callable|str, include_port_types: bool = True, manual_o
     # Generate base config - always use func.__name__
     node_name = func.__name__
 
-    in_salvos = _generate_input_salvo_condition(
-        parsed_sig.in_ports, parsed_sig.in_port_annotations
-    )
+    in_salvos = _generate_input_salvo_condition(parsed_sig.in_ports, parsed_sig.batch_ports)
 
     base_config_dict = {
         "name": node_name,
@@ -735,8 +802,20 @@ Creates a node from a regular Python function.
 becomes an input port. If the parameter has a type annotation, the port gets
 that type for runtime type checking.
 
-- ``list[T]``-annotated parameters consume **all** packets on the port and
-  receive them as a list. Non-list parameters consume exactly **one** packet.
+- Type annotations are purely for type validation — ``list[int]`` means
+  "this port expects a single packet whose value is a ``list[int]``".
+- To collect **multiple packets** into a list, use the ``Batch`` annotation::
+
+      from netrun.node_factories.from_function import Batch
+
+      def process(items: Batch(str)):           # all available str packets
+          ...
+      def process(items: Batch(int, count=5)):  # at most 5 int packets
+          ...
+
+  ``Batch`` controls the ``"trigger"`` salvo condition's per-port packet
+  count.  The function **always** receives a ``list`` for ``Batch`` ports,
+  even if only one packet was available.
 - Parameters named ``ctx`` or ``print`` are special: ``ctx`` receives the
   ``NodeExecutionContext``; ``print`` receives ``ctx.print`` for captured output.
   These do **not** become input ports.
@@ -755,8 +834,9 @@ that type for runtime type checking.
 
 **Salvo conditions** are generated automatically:
 
-- Input: fires when all input ports are non-empty (one packet per non-list
-  port, all packets for list ports).
+- Input: fires when all input ports are non-empty.  Packet count per port
+  is derived from ``Batch`` annotations: ``Batch()`` → all packets,
+  ``Batch(count=N)`` → at most N, no ``Batch`` → exactly 1.
 - Output: sends all output port packets in a single salvo.
 """
 
