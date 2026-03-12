@@ -1,0 +1,30 @@
+{
+  "output_queues": {
+    "reports": {
+      "ports": [["format_report", "out"]]
+    }
+  },
+  "graph": {
+    "nodes": [
+      {
+        "name": "fetch_data",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": { "func": "nodes.fetch_data" }
+      },
+      {
+        "name": "process",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": { "func": "nodes.process" }
+      },
+      {
+        "name": "format_report",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": { "func": "nodes.format_report" }
+      }
+    ],
+    "edges": [
+      { "source_node": "fetch_data", "source_port": "out", "target_node": "process", "target_port": "data" },
+      { "source_node": "process", "source_port": "out", "target_node": "format_report", "target_port": "stats" }
+    ]
+  }
+}
