@@ -129,7 +129,7 @@
 	class:cascade-source={isCascadeSource}
 	class:cascade-visited={isCascadeVisited}
 	class:node-disabled={isDisabled}
-	style:background={headerColor ? headerColor + '22' : undefined}
+	style:background={headerColor ? `color-mix(in srgb, ${headerColor} 13%, var(--node-bg, #2d2d2d))` : undefined}
 >
 	<NodeResizer
 		minWidth={150}
