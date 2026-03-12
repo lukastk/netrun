@@ -54,6 +54,3 @@ htmlcov/
 
 # Built frontend (generated during pip install)
 netrun_ui_backend/static/
-
-# Bundled vis app assets for export-html (generated during build)
-netrun_ui_backend/vis_assets/
