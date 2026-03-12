@@ -51,6 +51,3 @@ htmlcov/
 
 # mypy
 .mypy_cache/
-
-# Built frontend (generated during pip install)
-netrun_ui_backend/static/
