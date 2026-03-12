@@ -455,7 +455,7 @@ Extract the default dark theme as a standalone CSS file that consumers can impor
 
 The vis package components reference these `--netrun-*` prefixed properties internally, with fallback values. The current netrun-ui maps its existing `--bg-primary` etc. to these.
 
-### Phase 6: Static HTML Export Tool
+### Phase 6: Static HTML Export Tool [DONE]
 
 Build a tool that takes a `.netrun.json` file and produces a standalone `.html`:
 
