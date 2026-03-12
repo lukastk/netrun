@@ -234,12 +234,12 @@
 
 	/* Cascade highlight states */
 	.netrun-node.cascade-source {
-		border-color: #a78bfa;
+		border-color: var(--netrun-dependency-color, #a78bfa);
 		box-shadow: 0 0 0 2px rgba(167, 139, 250, 0.4);
 	}
 
 	.netrun-node.cascade-visited {
-		border-color: #a78bfa;
+		border-color: var(--netrun-dependency-color, #a78bfa);
 		opacity: 0.7;
 	}
 

@@ -31,7 +31,8 @@
 	--netrun-node-desc-font-size: 10px;
 	--netrun-node-port-font-size: 11px;
 
-	/* Dependency edges */
+	/* Dependency edges / cascade */
 	--netrun-dependency-color: #a78bfa;
 	--netrun-dependency-selected: #c4b5fd;
+	--netrun-dependency-visited: #7c3aed;
 }

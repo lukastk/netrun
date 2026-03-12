@@ -428,12 +428,12 @@
 
 	.control-label {
 		font-style: italic;
-		color: #7c3aed !important;
+		color: var(--netrun-dependency-visited, #7c3aed) !important;
 		font-size: calc(var(--netrun-node-port-font-size, 11px) - 1px);
 	}
 
 	:global(.control-handle) {
-		background: #7c3aed !important;
+		background: var(--netrun-dependency-visited, #7c3aed) !important;
 		width: 6px !important;
 		height: 6px !important;
 	}

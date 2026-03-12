@@ -39,6 +39,9 @@
   --netrun-port-input: var(--port-input);
   --netrun-port-output: var(--port-output);
   --netrun-subgraph-border: var(--success-color);
+  --netrun-dependency-color: #a78bfa;
+  --netrun-dependency-selected: #c4b5fd;
+  --netrun-dependency-visited: #7c3aed;
 }
 
 * {

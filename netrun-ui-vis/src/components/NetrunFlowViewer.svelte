@@ -105,7 +105,7 @@
 		type: MarkerType.ArrowClosed,
 		width: 20,
 		height: 20,
-		color: '#a78bfa',
+		color: 'var(--netrun-dependency-color, #a78bfa)',
 	};
 
 	// Get marker config based on setting
@@ -329,25 +329,25 @@
 
 	/* Dependency edge styling */
 	:global(.svelte-flow__edge.dependency-edge .svelte-flow__edge-path) {
-		stroke: #a78bfa;
+		stroke: var(--netrun-dependency-color, #a78bfa);
 		stroke-width: 2;
 	}
 
 	:global(.svelte-flow__edge.dependency-edge.selected .svelte-flow__edge-path) {
-		stroke: #c4b5fd;
+		stroke: var(--netrun-dependency-selected, #c4b5fd);
 	}
 
 	:global(.svelte-flow__edge.dependency-edge marker path) {
-		fill: #a78bfa;
+		fill: var(--netrun-dependency-color, #a78bfa);
 	}
 
 	:global(.svelte-flow__edge.dependency-edge.selected marker path) {
-		fill: #c4b5fd;
+		fill: var(--netrun-dependency-selected, #c4b5fd);
 	}
 
 	/* Cascade-visited (non-dependency) edge styling */
 	:global(.svelte-flow__edge.cascade-edge .svelte-flow__edge-path) {
-		stroke: #a78bfa;
+		stroke: var(--netrun-dependency-color, #a78bfa);
 		opacity: 0.5;
 	}
 
