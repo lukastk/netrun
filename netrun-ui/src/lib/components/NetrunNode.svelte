@@ -131,6 +131,7 @@
 	class:node-disabled={isDisabled}
 	style:background={headerColor ? `color-mix(in srgb, ${headerColor} 13%, var(--node-bg, #2d2d2d))` : undefined}
 >
+	{#if isDisabled}<div class="disabled-overlay"></div>{/if}
 	<NodeResizer
 		minWidth={150}
 		minHeight={60}
@@ -188,6 +189,7 @@
 
 <style>
 	.netrun-node {
+		position: relative;
 		background: var(--node-bg, #2d2d2d);
 		border: 2px solid var(--node-border, #404040);
 		border-radius: 8px;
@@ -227,7 +229,22 @@
 	}
 
 	.netrun-node.node-disabled {
-		opacity: 0.4;
+		opacity: 0.5;
+	}
+
+	.disabled-overlay {
+		position: absolute;
+		inset: 0;
+		border-radius: inherit;
+		pointer-events: none;
+		z-index: 10;
+		background: repeating-linear-gradient(
+			-45deg,
+			transparent,
+			transparent 4px,
+			rgba(255, 255, 255, 0.06) 4px,
+			rgba(255, 255, 255, 0.06) 5px
+		);
 	}
 
 	/* ── Shape: rounded ─────────────────────────────── */
