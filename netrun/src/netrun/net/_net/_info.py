@@ -374,18 +374,12 @@ class EdgeInfo:
 
         Returns a copy to prevent accidental modifications.
         """
-        from ...net.config import EdgeConfig, PortRefConfig
+        from ...net.config import EdgeConfig
         return EdgeConfig(
-            source=PortRefConfig(
-                node_name=self._edge.source.node_name,
-                port_name=self._edge.source.port_name,
-                port_type="output",
-            ),
-            target=PortRefConfig(
-                node_name=self._edge.target.node_name,
-                port_name=self._edge.target.port_name,
-                port_type="input",
-            ),
+            source_node=self._edge.source.node_name,
+            source_port=self._edge.source.port_name,
+            target_node=self._edge.target.node_name,
+            target_port=self._edge.target.port_name,
         )
 
     @property

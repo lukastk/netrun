@@ -11,7 +11,10 @@
         },
         "extra": {
           "ui": {
-            "position": {"x": 100, "y": 150}
+            "position": {
+              "x": 100,
+              "y": 150
+            }
           }
         },
         "type": "node"
@@ -26,7 +29,10 @@
         },
         "extra": {
           "ui": {
-            "position": {"x": 450, "y": 150}
+            "position": {
+              "x": 450,
+              "y": 150
+            }
           }
         },
         "type": "node"
@@ -39,7 +45,10 @@
         "out_ports": {},
         "extra": {
           "ui": {
-            "position": {"x": 800, "y": 150}
+            "position": {
+              "x": 800,
+              "y": 150
+            }
           }
         },
         "type": "node"
@@ -47,12 +56,16 @@
     ],
     "edges": [
       {
-        "source_str": "Source.out",
-        "target_str": "Process.in"
+        "source_node": "Source",
+        "source_port": "out",
+        "target_node": "Process",
+        "target_port": "in"
       },
       {
-        "source_str": "Process.result",
-        "target_str": "Sink.in"
+        "source_node": "Process",
+        "source_port": "result",
+        "target_node": "Sink",
+        "target_port": "in"
       }
     ]
   }

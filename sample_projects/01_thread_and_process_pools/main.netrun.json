@@ -2,15 +2,35 @@
   "output_queues": {
     "primes": {
       "ports": [
-        ["in_main_pool", "out"],
-        ["in_thread_pool", "out"],
-        ["in_process_pool", "out"],
-        ["in_remote_pool", "out"],
-        ["in_all_pools", "out"]
+        [
+          "in_main_pool",
+          "out"
+        ],
+        [
+          "in_thread_pool",
+          "out"
+        ],
+        [
+          "in_process_pool",
+          "out"
+        ],
+        [
+          "in_remote_pool",
+          "out"
+        ],
+        [
+          "in_all_pools",
+          "out"
+        ]
       ]
     },
     "count": {
-      "ports": [["count_once", "out"]]
+      "ports": [
+        [
+          "count_once",
+          "out"
+        ]
+      ]
     }
   },
   "recipes": {
@@ -20,8 +40,14 @@
     }
   },
   "node_vars": {
-    "label": {"value": "primes", "type": "str"},
-    "verbose": {"value": "false", "type": "bool"}
+    "label": {
+      "value": "primes",
+      "type": "str"
+    },
+    "verbose": {
+      "value": "false",
+      "type": "bool"
+    }
   },
   "pools": {
     "main": {
@@ -58,23 +84,42 @@
         "type": "node",
         "name": "in_main_pool",
         "extra": {
-          "ui": {"position": {"x": 540, "y": -75}}
+          "ui": {
+            "position": {
+              "x": 540,
+              "y": -75
+            }
+          }
         },
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.find_primes"}
+        "factory_args": {
+          "func": "nodes.find_primes"
+        }
       },
       {
         "type": "node",
         "name": "in_thread_pool",
         "extra": {
-          "ui": {"position": {"x": 540, "y": 45}}
+          "ui": {
+            "position": {
+              "x": 540,
+              "y": 45
+            }
+          }
         },
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.find_primes"},
+        "factory_args": {
+          "func": "nodes.find_primes"
+        },
         "execution_config": {
-          "pools": ["threads"],
+          "pools": [
+            "threads"
+          ],
           "node_vars": {
-            "label": {"value": "thread-worker", "type": "str"}
+            "label": {
+              "value": "thread-worker",
+              "type": "str"
+            }
           }
         }
       },
@@ -82,15 +127,30 @@
         "type": "node",
         "name": "in_process_pool",
         "extra": {
-          "ui": {"position": {"x": 540, "y": 165}}
+          "ui": {
+            "position": {
+              "x": 540,
+              "y": 165
+            }
+          }
         },
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.find_primes"},
+        "factory_args": {
+          "func": "nodes.find_primes"
+        },
         "execution_config": {
-          "pools": ["processes"],
+          "pools": [
+            "processes"
+          ],
           "node_vars": {
-            "label": {"value": "process-worker", "type": "str"},
-            "verbose": {"value": "true", "type": "bool"}
+            "label": {
+              "value": "process-worker",
+              "type": "str"
+            },
+            "verbose": {
+              "value": "true",
+              "type": "bool"
+            }
           }
         }
       },
@@ -98,24 +158,45 @@
         "type": "node",
         "name": "in_remote_pool",
         "extra": {
-          "ui": {"position": {"x": 540, "y": 285}}
+          "ui": {
+            "position": {
+              "x": 540,
+              "y": 285
+            }
+          }
         },
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.find_primes"},
+        "factory_args": {
+          "func": "nodes.find_primes"
+        },
         "execution_config": {
-          "pools": ["remote"]
+          "pools": [
+            "remote"
+          ]
         }
       },
       {
         "type": "node",
         "name": "in_all_pools",
         "extra": {
-          "ui": {"position": {"x": 540, "y": 405}}
+          "ui": {
+            "position": {
+              "x": 540,
+              "y": 405
+            }
+          }
         },
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.find_primes"},
+        "factory_args": {
+          "func": "nodes.find_primes"
+        },
         "execution_config": {
-          "pools": ["processes", "main", "threads", "remote"],
+          "pools": [
+            "processes",
+            "main",
+            "threads",
+            "remote"
+          ],
           "pool_allocation_method": "least-busy"
         }
       },
@@ -123,12 +204,21 @@
         "type": "node",
         "name": "count_once",
         "extra": {
-          "ui": {"position": {"x": 540, "y": 525}}
+          "ui": {
+            "position": {
+              "x": 540,
+              "y": 525
+            }
+          }
         },
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.count_primes"},
+        "factory_args": {
+          "func": "nodes.count_primes"
+        },
         "execution_config": {
-          "pools": ["main"],
+          "pools": [
+            "main"
+          ],
           "max_epochs": 1,
           "print_echo_stdout": true
         }

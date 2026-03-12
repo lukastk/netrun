@@ -951,7 +951,7 @@ def create_simple_graph_config():
             ),
         ],
         edges=[
-            EdgeConfig(source_str="Source.out", target_str="Sink.in"),
+            EdgeConfig(source_node="Source", source_port="out", target_node="Sink", target_port="in"),
         ],
     )
 
@@ -1043,7 +1043,7 @@ def test_net_with_node_execution_configs():
                 # No execution config
             ),
         ],
-        edges=[EdgeConfig(source_str="NodeA.out", target_str="NodeB.in")],
+        edges=[EdgeConfig(source_node="NodeA", source_port="out", target_node="NodeB", target_port="in")],
     )
 
     config = NetConfig(
@@ -2322,7 +2322,7 @@ def test_net_nodes_property():
                 NodeConfig(name="Source", in_ports={"in": PortConfig()}, out_ports={"out": PortConfig()}),
                 NodeConfig(name="Sink", in_ports={"in": PortConfig()}),
             ],
-            edges=[EdgeConfig(source_str="Source.out", target_str="Sink.in")],
+            edges=[EdgeConfig(source_node="Source", source_port="out", target_node="Sink", target_port="in")],
         ),
     )
     net = Net(config)
@@ -2344,7 +2344,7 @@ def test_net_edges_property():
                 NodeConfig(name="Source", out_ports={"out": PortConfig()}),
                 NodeConfig(name="Sink", in_ports={"in": PortConfig()}),
             ],
-            edges=[EdgeConfig(source_str="Source.out", target_str="Sink.in")],
+            edges=[EdgeConfig(source_node="Source", source_port="out", target_node="Sink", target_port="in")],
         ),
     )
     net = Net(config)
@@ -2507,8 +2507,8 @@ def test_node_info_incoming_outgoing_edges():
                 NodeConfig(name="Sink", in_ports={"in": PortConfig()}),
             ],
             edges=[
-                EdgeConfig(source_str="Source.out", target_str="Middle.in"),
-                EdgeConfig(source_str="Middle.out", target_str="Sink.in"),
+                EdgeConfig(source_node="Source", source_port="out", target_node="Middle", target_port="in"),
+                EdgeConfig(source_node="Middle", source_port="out", target_node="Sink", target_port="in"),
             ],
         ),
     )
@@ -2563,7 +2563,7 @@ def test_edge_info_properties():
                 NodeConfig(name="Source", out_ports={"out": PortConfig()}),
                 NodeConfig(name="Sink", in_ports={"in": PortConfig()}),
             ],
-            edges=[EdgeConfig(source_str="Source.out", target_str="Sink.in")],
+            edges=[EdgeConfig(source_node="Source", source_port="out", target_node="Sink", target_port="in")],
         ),
     )
     net = Net(config)
@@ -2586,7 +2586,7 @@ def test_edge_info_cfg():
                 NodeConfig(name="Source", out_ports={"out": PortConfig()}),
                 NodeConfig(name="Sink", in_ports={"in": PortConfig()}),
             ],
-            edges=[EdgeConfig(source_str="Source.out", target_str="Sink.in")],
+            edges=[EdgeConfig(source_node="Source", source_port="out", target_node="Sink", target_port="in")],
         ),
     )
     net = Net(config)
@@ -2609,7 +2609,7 @@ def test_edge_info_packet_tracking_empty():
                 NodeConfig(name="Source", out_ports={"out": PortConfig()}),
                 NodeConfig(name="Sink", in_ports={"in": PortConfig()}),
             ],
-            edges=[EdgeConfig(source_str="Source.out", target_str="Sink.in")],
+            edges=[EdgeConfig(source_node="Source", source_port="out", target_node="Sink", target_port="in")],
         ),
     )
     net = Net(config)
@@ -2631,7 +2631,7 @@ def test_edge_info_packet_tracking_with_packets():
                 NodeConfig(name="Source", out_ports={"out": PortConfig()}),
                 NodeConfig(name="Sink", in_ports={"in": PortConfig()}),
             ],
-            edges=[EdgeConfig(source_str="Source.out", target_str="Sink.in")],
+            edges=[EdgeConfig(source_node="Source", source_port="out", target_node="Sink", target_port="in")],
         ),
     )
     net = Net(config)
@@ -2660,7 +2660,7 @@ def test_edge_info_node_info_methods():
                 NodeConfig(name="Source", out_ports={"out": PortConfig()}),
                 NodeConfig(name="Sink", in_ports={"in": PortConfig()}),
             ],
-            edges=[EdgeConfig(source_str="Source.out", target_str="Sink.in")],
+            edges=[EdgeConfig(source_node="Source", source_port="out", target_node="Sink", target_port="in")],
         ),
     )
     net = Net(config)
@@ -2698,7 +2698,7 @@ def test_edge_info_repr():
                 NodeConfig(name="Source", out_ports={"out": PortConfig()}),
                 NodeConfig(name="Sink", in_ports={"in": PortConfig()}),
             ],
-            edges=[EdgeConfig(source_str="Source.out", target_str="Sink.in")],
+            edges=[EdgeConfig(source_node="Source", source_port="out", target_node="Sink", target_port="in")],
         ),
     )
     net = Net(config)
@@ -5261,8 +5261,8 @@ async def test_run_on_startup_outputs_flow_downstream():
         ],
         edges=[
             EdgeConfig(
-                source_str="Source.out",
-                target_str="Sink.in",
+                source_node="Source", source_port="out",
+                target_node="Sink", target_port="in",
             ),
         ],
     )
@@ -5863,7 +5863,7 @@ async def test_node_info_epoch_callbacks():
                 ),
             ],
             edges=[
-                EdgeConfig(source_str="A.out", target_str="B.in"),
+                EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in"),
             ],
         ),
     )

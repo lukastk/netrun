@@ -86,7 +86,7 @@ class GraphConfig(VarResolvableModel):
                 ),
             ],
             edges=[
-                EdgeConfig(source_str="A.out", target_str="B.in"),
+                EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in"),
             ],
         )
         graph = config.get_graph()
@@ -190,7 +190,13 @@ class GraphConfig(VarResolvableModel):
                         port_name=internal_port,
                     )
 
-            final_edges.append(EdgeConfig(source=new_source, target=new_target, dependency=edge.dependency))
+            final_edges.append(EdgeConfig(
+                source_node=new_source.node_name,
+                source_port=new_source.port_name,
+                target_node=new_target.node_name,
+                target_port=new_target.port_name,
+                dependency=edge.dependency,
+            ))
 
         # Auto-apply default DependencyRequestConfig for nodes with dependency edges
         dep_target_nodes = set()
@@ -312,7 +318,7 @@ class GraphConfig(VarResolvableModel):
                 node_out_ports[node.name] = set(node.out_ports.keys())
 
         # Validate edges: node existence, port existence, collect sources for fan-out
-        source_keys: dict[str, list[int]] = {}  # "node.port" -> list of edge indices
+        source_keys: dict[tuple[str, str], list[int]] = {}  # (node, port) -> list of edge indices
 
         for idx, edge in enumerate(self.edges):
             try:
@@ -358,7 +364,7 @@ class GraphConfig(VarResolvableModel):
                     ))
 
             # Collect source key for fan-out detection
-            src_key = f"{source.node_name}.{source.port_name}"
+            src_key = (source.node_name, source.port_name)
             source_keys.setdefault(src_key, []).append(idx)
 
         # Detect fan-out
@@ -367,7 +373,7 @@ class GraphConfig(VarResolvableModel):
                 for idx in edge_indices:
                     errors.append(ConfigValidationError(
                         loc=["edges", idx],
-                        msg=f"Fan-out: output port '{src_key}' is connected by multiple edges (indices {edge_indices}). Use 'netrun.node_factories.broadcast' to replicate output to multiple targets.",
+                        msg=f"Fan-out: output port '{src_key[0]}.{src_key[1]}' is connected by multiple edges (indices {edge_indices}). Use 'netrun.node_factories.broadcast' to replicate output to multiple targets.",
                         type="fan_out",
                     ))
 

@@ -23,12 +23,16 @@ factory_args = { func = "nodes.format_result" }
 execution_config = { pools = ["main"] }
 
 [[graph.edges]]
-source_str = "double.out"
-target_str = "add.a"
+source_node = "double"
+source_port = "out"
+target_node = "add"
+target_port = "a"
 
 [[graph.edges]]
-source_str = "add.out"
-target_str = "format_result.value"
+source_node = "add"
+source_port = "out"
+target_node = "format_result"
+target_port = "value"
 
 [output_queues.results]
 ports = [["format_result", "out"]]

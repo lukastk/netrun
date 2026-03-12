@@ -71,8 +71,10 @@
         ],
         "edges": [
           {
-            "source_str": "Filter.passed",
-            "target_str": "Enrich.data"
+            "source_node": "Filter",
+            "source_port": "passed",
+            "target_node": "Enrich",
+            "target_port": "data"
           }
         ],
         "exposed_in_ports": {
@@ -175,24 +177,34 @@
     ],
     "edges": [
       {
-        "source_str": "DataSource.stream1",
-        "target_str": "InlineProcessor.input"
+        "source_node": "DataSource",
+        "source_port": "stream1",
+        "target_node": "InlineProcessor",
+        "target_port": "input"
       },
       {
-        "source_str": "DataSource.stream2",
-        "target_str": "FileProcessor.data_in"
+        "source_node": "DataSource",
+        "source_port": "stream2",
+        "target_node": "FileProcessor",
+        "target_port": "data_in"
       },
       {
-        "source_str": "InlineProcessor.output",
-        "target_str": "Merger.input1"
+        "source_node": "InlineProcessor",
+        "source_port": "output",
+        "target_node": "Merger",
+        "target_port": "input1"
       },
       {
-        "source_str": "FileProcessor.data_out",
-        "target_str": "Merger.input2"
+        "source_node": "FileProcessor",
+        "source_port": "data_out",
+        "target_node": "Merger",
+        "target_port": "input2"
       },
       {
-        "source_str": "Merger.merged",
-        "target_str": "Sink.final"
+        "source_node": "Merger",
+        "source_port": "merged",
+        "target_node": "Sink",
+        "target_port": "final"
       }
     ]
   }

@@ -3,74 +3,149 @@
     "description": "Demonstrates error handling: retries, dead letter queue, type checking, epoch cancellation, timeout"
   },
   "pools": {
-    "main": {"spec": {"type": "main"}},
-    "thread": {"spec": {"type": "thread", "num_workers": 1}}
+    "main": {
+      "spec": {
+        "type": "main"
+      }
+    },
+    "thread": {
+      "spec": {
+        "type": "thread",
+        "num_workers": 1
+      }
+    }
   },
   "graph": {
     "nodes": [
       {
         "name": "flaky",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.flaky_node"},
+        "factory_args": {
+          "func": "nodes.flaky_node"
+        },
         "execution_config": {
-          "pools": ["main"],
+          "pools": [
+            "main"
+          ],
           "retries": 3,
           "retry_wait": 0.1,
           "on_node_failure": "nodes.on_failure"
         },
-        "extra": {"ui": {"position": {"x": 300, "y": 50}}}
+        "extra": {
+          "ui": {
+            "position": {
+              "x": 300,
+              "y": 50
+            }
+          }
+        }
       },
       {
         "name": "once_only",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.run_once"},
+        "factory_args": {
+          "func": "nodes.run_once"
+        },
         "execution_config": {
-          "pools": ["main"],
+          "pools": [
+            "main"
+          ],
           "max_epochs": 1,
           "propagate_exceptions": false
         },
-        "extra": {"ui": {"position": {"x": 300, "y": 150}}}
+        "extra": {
+          "ui": {
+            "position": {
+              "x": 300,
+              "y": 150
+            }
+          }
+        }
       },
       {
         "name": "canceller",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.cancelling_node"},
-        "execution_config": {
-          "pools": ["main"]
+        "factory_args": {
+          "func": "nodes.cancelling_node"
         },
-        "extra": {"ui": {"position": {"x": 300, "y": 250}}}
+        "execution_config": {
+          "pools": [
+            "main"
+          ]
+        },
+        "extra": {
+          "ui": {
+            "position": {
+              "x": 300,
+              "y": 250
+            }
+          }
+        }
       },
       {
         "name": "type_checked",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.typed_output"},
+        "factory_args": {
+          "func": "nodes.typed_output"
+        },
         "execution_config": {
-          "pools": ["main"],
+          "pools": [
+            "main"
+          ],
           "type_checking_enabled": true,
           "propagate_exceptions": false
         },
-        "extra": {"ui": {"position": {"x": 300, "y": 350}}}
+        "extra": {
+          "ui": {
+            "position": {
+              "x": 300,
+              "y": 350
+            }
+          }
+        }
       },
       {
         "name": "slow",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.slow_node"},
+        "factory_args": {
+          "func": "nodes.slow_node"
+        },
         "execution_config": {
-          "pools": ["thread"],
+          "pools": [
+            "thread"
+          ],
           "timeout": 0.5,
           "propagate_exceptions": false
         },
-        "extra": {"ui": {"position": {"x": 300, "y": 450}}}
+        "extra": {
+          "ui": {
+            "position": {
+              "x": 300,
+              "y": 450
+            }
+          }
+        }
       },
       {
         "name": "quiet",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.quiet_fail"},
+        "factory_args": {
+          "func": "nodes.quiet_fail"
+        },
         "execution_config": {
-          "pools": ["main"],
+          "pools": [
+            "main"
+          ],
           "propagate_exceptions": false
         },
-        "extra": {"ui": {"position": {"x": 300, "y": 550}}}
+        "extra": {
+          "ui": {
+            "position": {
+              "x": 300,
+              "y": 550
+            }
+          }
+        }
       }
     ],
     "edges": []

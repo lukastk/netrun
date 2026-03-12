@@ -521,29 +521,9 @@ test_port_ref_config_input();
 
 # %%
 #|export
-def test_edge_config_full_form():
-    """Test EdgeConfig with full PortRefConfig objects."""
-    config = EdgeConfig(
-        source=PortRefConfig(node_name="A", port_type="output", port_name="out"),
-        target=PortRefConfig(node_name="B", port_type="input", port_name="in"),
-    )
-    source = config.get_source()
-    target = config.get_target()
-    assert source.node_name == "A"
-    assert target.node_name == "B"
-
-    result = config.to_netrun_sim()
-    assert result.source.node_name == "A"
-    assert result.target.node_name == "B"
-
-# %%
-test_edge_config_full_form();
-
-# %%
-#|export
-def test_edge_config_shorthand():
-    """Test EdgeConfig with shorthand string notation."""
-    config = EdgeConfig(source_str="A.out", target_str="B.in")
+def test_edge_config_flat_fields():
+    """Test EdgeConfig with flat fields."""
+    config = EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in")
     source = config.get_source()
     target = config.get_target()
     assert source.node_name == "A"
@@ -558,43 +538,7 @@ def test_edge_config_shorthand():
     assert result.target.node_name == "B"
 
 # %%
-test_edge_config_shorthand();
-
-# %%
-#|export
-def test_edge_config_validation_neither():
-    """Test EdgeConfig raises error when neither form provided."""
-    with pytest.raises(ValueError, match="Must provide either"):
-        EdgeConfig()
-
-# %%
-test_edge_config_validation_neither();
-
-# %%
-#|export
-def test_edge_config_validation_both():
-    """Test EdgeConfig raises error when both forms provided."""
-    with pytest.raises(ValueError, match="Cannot provide both"):
-        EdgeConfig(
-            source=PortRefConfig(node_name="A", port_type="output", port_name="out"),
-            target=PortRefConfig(node_name="B", port_type="input", port_name="in"),
-            source_str="A.out",
-            target_str="B.in",
-        )
-
-# %%
-test_edge_config_validation_both();
-
-# %%
-#|export
-def test_edge_config_invalid_shorthand():
-    """Test EdgeConfig raises error for invalid shorthand format."""
-    config = EdgeConfig(source_str="invalid", target_str="B.in")
-    with pytest.raises(ValueError, match="Invalid port string"):
-        config.get_source()
-
-# %%
-test_edge_config_invalid_shorthand();
+test_edge_config_flat_fields();
 
 # %% [markdown]
 # ## Node Graph Config Tests
@@ -814,7 +758,7 @@ def test_graph_config_simple():
                 },
             ),
         ],
-        edges=[EdgeConfig(source_str="A.out", target_str="B.in")],
+        edges=[EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in")],
     )
     assert len(config.nodes) == 2
     assert len(config.edges) == 1
@@ -882,8 +826,8 @@ def test_graph_config_complex():
             ),
         ],
         edges=[
-            EdgeConfig(source_str="Source.out", target_str="Processor.in1"),
-            EdgeConfig(source_str="Processor.out", target_str="Sink.in"),
+            EdgeConfig(source_node="Source", source_port="out", target_node="Processor", target_port="in1"),
+            EdgeConfig(source_node="Processor", source_port="out", target_node="Sink", target_port="in"),
         ],
     )
 
@@ -905,7 +849,7 @@ def test_graph_config_validates_correctly():
             NodeConfig(name="A", out_ports={"out": PortConfig()}),
             NodeConfig(name="B", in_ports={"in": PortConfig()}),
         ],
-        edges=[EdgeConfig(source_str="A.out", target_str="B.in")],
+        edges=[EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in")],
     )
     assert len(valid_config.get_graph().validate()) == 0
 
@@ -1037,7 +981,7 @@ def test_graph_config_json_roundtrip():
                 },
             ),
         ],
-        edges=[EdgeConfig(source_str="A.out", target_str="B.in")],
+        edges=[EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in")],
     )
 
     json_str = config.model_dump_json()
@@ -1093,7 +1037,7 @@ def test_graph_config_json_roundtrip_complex():
                 },
             ),
         ],
-        edges=[EdgeConfig(source_str="Source.out", target_str="Processor.in1")],
+        edges=[EdgeConfig(source_node="Source", source_port="out", target_node="Processor", target_port="in1")],
     )
 
     json_str = config.model_dump_json(indent=2)
@@ -1135,7 +1079,7 @@ def test_config_to_netrun_sim_integration():
                 },
             ),
         ],
-        edges=[EdgeConfig(source_str="A.out", target_str="B.in")],
+        edges=[EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in")],
     )
 
     graph = config.get_graph()
@@ -1209,7 +1153,7 @@ def test_subgraph_config_inline():
                 out_ports={"out": PortConfig()},
             ),
         ],
-        edges=[EdgeConfig(source_str="A.out", target_str="B.in")],
+        edges=[EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in")],
         exposed_in_ports={"input": ExposedPortConfig(internal_node="A", internal_port="in")},
         exposed_out_ports={"output": ExposedPortConfig(internal_node="B", internal_port="out")},
     )
@@ -1265,7 +1209,7 @@ def test_subgraph_resolve_inline():
                 out_ports={"out": PortConfig()},
             ),
         ],
-        edges=[EdgeConfig(source_str="A.out", target_str="B.in")],
+        edges=[EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in")],
         exposed_in_ports={"input": ExposedPortConfig(internal_node="A", internal_port="in")},
         exposed_out_ports={"output": ExposedPortConfig(internal_node="B", internal_port="out")},
     )
@@ -1315,7 +1259,7 @@ def test_graph_config_with_subgraph():
                         out_ports={"out": PortConfig()},
                     ),
                 ],
-                edges=[EdgeConfig(source_str="A.out", target_str="B.in")],
+                edges=[EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in")],
                 exposed_in_ports={"input": ExposedPortConfig(internal_node="A", internal_port="in")},
                 exposed_out_ports={"output": ExposedPortConfig(internal_node="B", internal_port="out")},
             ),
@@ -1325,8 +1269,8 @@ def test_graph_config_with_subgraph():
             ),
         ],
         edges=[
-            EdgeConfig(source_str="Source.out", target_str="preprocess.input"),
-            EdgeConfig(source_str="preprocess.output", target_str="Sink.in"),
+            EdgeConfig(source_node="Source", source_port="out", target_node="preprocess", target_port="input"),
+            EdgeConfig(source_node="preprocess", source_port="output", target_node="Sink", target_port="in"),
         ],
     )
 
@@ -1409,8 +1353,8 @@ def test_subgraph_nested():
                     ),
                 ],
                 edges=[
-                    EdgeConfig(source_str="Entry.out", target_str="inner.input"),
-                    EdgeConfig(source_str="inner.output", target_str="Exit.in"),
+                    EdgeConfig(source_node="Entry", source_port="out", target_node="inner", target_port="input"),
+                    EdgeConfig(source_node="inner", source_port="output", target_node="Exit", target_port="in"),
                 ],
                 exposed_in_ports={"input": ExposedPortConfig(internal_node="Entry", internal_port="in")},
                 exposed_out_ports={"output": ExposedPortConfig(internal_node="Exit", internal_port="out")},
@@ -1418,8 +1362,8 @@ def test_subgraph_nested():
             NodeConfig(name="Sink", in_ports={"in": PortConfig()}),
         ],
         edges=[
-            EdgeConfig(source_str="Source.out", target_str="outer.input"),
-            EdgeConfig(source_str="outer.output", target_str="Sink.in"),
+            EdgeConfig(source_node="Source", source_port="out", target_node="outer", target_port="input"),
+            EdgeConfig(source_node="outer", source_port="output", target_node="Sink", target_port="in"),
         ],
     )
 
@@ -1464,7 +1408,7 @@ def test_subgraph_name_collision():
             ),
         ],
         edges=[
-            EdgeConfig(source_str="sg.output", target_str="sg.input"),
+            EdgeConfig(source_node="sg", source_port="output", target_node="sg", target_port="input"),
         ],
     )
 
@@ -1493,7 +1437,7 @@ def test_subgraph_json_roundtrip():
                 out_ports={"out": PortConfig()},
             ),
         ],
-        edges=[EdgeConfig(source_str="A.out", target_str="B.in")],
+        edges=[EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in")],
         exposed_in_ports={"input": ExposedPortConfig(internal_node="A", internal_port="in")},
         exposed_out_ports={"output": ExposedPortConfig(internal_node="B", internal_port="out")},
         extra={"description": "Preprocessing pipeline"},
@@ -1534,8 +1478,8 @@ def test_graph_config_with_subgraph_json_roundtrip():
             NodeConfig(name="Sink", in_ports={"in": PortConfig()}),
         ],
         edges=[
-            EdgeConfig(source_str="Source.out", target_str="preprocess.input"),
-            EdgeConfig(source_str="preprocess.output", target_str="Sink.in"),
+            EdgeConfig(source_node="Source", source_port="out", target_node="preprocess", target_port="input"),
+            EdgeConfig(source_node="preprocess", source_port="output", target_node="Sink", target_port="in"),
         ],
     )
 
@@ -2507,8 +2451,8 @@ def test_net_config_default_output_queues():
                 NodeConfig(name="Sink", in_ports={"in": PortConfig()}, out_ports={"result": PortConfig()}),
             ],
             edges=[
-                EdgeConfig(source_str="Source.out", target_str="Middle.in"),
-                EdgeConfig(source_str="Middle.out1", target_str="Sink.in"),
+                EdgeConfig(source_node="Source", source_port="out", target_node="Middle", target_port="in"),
+                EdgeConfig(source_node="Middle", source_port="out1", target_node="Sink", target_port="in"),
                 # Middle.out2 and Sink.result are unconnected
             ],
         ),
@@ -2606,8 +2550,8 @@ def test_factory_returns_subgraph_basic():
                 ]
                 edges = [
                     EdgeConfig(
-                        source_str=f"stage_{i}.out",
-                        target_str=f"stage_{i+1}.in",
+                        source_node=f"stage_{i}", source_port="out",
+                        target_node=f"stage_{i+1}", target_port="in",
                     )
                     for i in range(num_stages - 1)
                 ]
@@ -2677,7 +2621,7 @@ def test_factory_returns_subgraph_exposed_ports():
                             out_ports={"out": PortConfig()},
                         ),
                     ],
-                    edges=[EdgeConfig(source_str="A.out", target_str="B.in")],
+                    edges=[EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in")],
                     exposed_in_ports={"input": ExposedPortConfig(
                         internal_node="A", internal_port="in",
                     )},
@@ -2694,8 +2638,8 @@ def test_factory_returns_subgraph_exposed_ports():
                 NodeConfig(name="Sink", in_ports={"in": PortConfig()}),
             ],
             edges=[
-                EdgeConfig(source_str="Source.out", target_str="middle.input"),
-                EdgeConfig(source_str="middle.output", target_str="Sink.in"),
+                EdgeConfig(source_node="Source", source_port="out", target_node="middle", target_port="input"),
+                EdgeConfig(source_node="middle", source_port="output", target_node="Sink", target_port="in"),
             ],
         )
 
@@ -2917,8 +2861,8 @@ def test_factory_nodes_inside_subgraph_resolved():
                 NodeConfig(name="Sink", in_ports={"in": PortConfig()}),
             ],
             edges=[
-                EdgeConfig(source_str="Source.out", target_str="sg.in"),
-                EdgeConfig(source_str="sg.out", target_str="Sink.in"),
+                EdgeConfig(source_node="Source", source_port="out", target_node="sg", target_port="in"),
+                EdgeConfig(source_node="sg", source_port="out", target_node="Sink", target_port="in"),
             ],
         )
 
@@ -3255,7 +3199,7 @@ def test_validate_valid_graph():
                 },
             ),
         ],
-        edges=[EdgeConfig(source_str="A.out", target_str="B.in")],
+        edges=[EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in")],
     )
     errors = graph.validate()
     assert errors == []
@@ -3312,8 +3256,8 @@ def test_validate_fan_out():
             NodeConfig(name="C", in_ports={"in1": PortConfig()}),
         ],
         edges=[
-            EdgeConfig(source_str="A.out", target_str="B.in1"),
-            EdgeConfig(source_str="A.out", target_str="C.in1"),
+            EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in1"),
+            EdgeConfig(source_node="A", source_port="out", target_node="C", target_port="in1"),
         ],
     )
     errors = graph.validate()
@@ -3335,7 +3279,7 @@ def test_validate_missing_source_node():
         nodes=[
             NodeConfig(name="B", in_ports={"in": PortConfig()}),
         ],
-        edges=[EdgeConfig(source_str="NOPE.out", target_str="B.in")],
+        edges=[EdgeConfig(source_node="NOPE", source_port="out", target_node="B", target_port="in")],
     )
     errors = graph.validate()
     missing = [e for e in errors if e.type == "missing_node"]
@@ -3354,7 +3298,7 @@ def test_validate_missing_target_node():
         nodes=[
             NodeConfig(name="A", out_ports={"out": PortConfig()}),
         ],
-        edges=[EdgeConfig(source_str="A.out", target_str="NOPE.in")],
+        edges=[EdgeConfig(source_node="A", source_port="out", target_node="NOPE", target_port="in")],
     )
     errors = graph.validate()
     missing = [e for e in errors if e.type == "missing_node"]
@@ -3373,7 +3317,7 @@ def test_validate_missing_port():
             NodeConfig(name="A", out_ports={"out": PortConfig()}),
             NodeConfig(name="B", in_ports={"in": PortConfig()}),
         ],
-        edges=[EdgeConfig(source_str="A.nope", target_str="B.in")],
+        edges=[EdgeConfig(source_node="A", source_port="nope", target_node="B", target_port="in")],
     )
     errors = graph.validate()
     port_errors = [e for e in errors if e.type == "missing_port"]
@@ -3393,7 +3337,7 @@ def test_validate_skips_factory_port_check():
             NodeConfig(name="A", factory="some.factory.module"),
             NodeConfig(name="B", in_ports={"in": PortConfig()}),
         ],
-        edges=[EdgeConfig(source_str="A.out", target_str="B.in")],
+        edges=[EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in")],
     )
     errors = graph.validate()
     # Should NOT have missing_port for A.out since A is a factory node
@@ -3418,7 +3362,7 @@ def test_validate_subgraph_exposed_ports():
                 exposed_out_ports={},
             ),
         ],
-        edges=[EdgeConfig(source_str="A.out", target_str="sg.x")],
+        edges=[EdgeConfig(source_node="A", source_port="out", target_node="sg", target_port="x")],
     )
     errors = graph.validate()
     assert len(errors) == 0
@@ -3435,7 +3379,7 @@ def test_validate_subgraph_exposed_ports():
                 exposed_out_ports={},
             ),
         ],
-        edges=[EdgeConfig(source_str="A.out", target_str="sg.nope")],
+        edges=[EdgeConfig(source_node="A", source_port="out", target_node="sg", target_port="nope")],
     )
     errors2 = graph2.validate()
     port_errors = [e for e in errors2 if e.type == "missing_port"]

@@ -2597,8 +2597,10 @@ export function saveInlineSubgraphToParent(): boolean {
 			}
 		}),
 		edges: tab.edges.map(e => ({
-			source_str: `${e.source}.${e.sourceHandle || 'out'}`,
-			target_str: `${e.target}.${e.targetHandle || 'in'}`,
+			source_node: e.source,
+			source_port: e.sourceHandle || 'out',
+			target_node: e.target,
+			target_port: e.targetHandle || 'in',
 		})),
 	};
 
@@ -3314,8 +3316,10 @@ registerBeforeTabSwitchHandler((fromTab: TabState) => {
 				}
 			}),
 			edges: fromTab.edges.map(e => ({
-				source_str: `${e.source}.${e.sourceHandle || 'out'}`,
-				target_str: `${e.target}.${e.targetHandle || 'in'}`,
+				source_node: e.source,
+				source_port: e.sourceHandle || 'out',
+				target_node: e.target,
+				target_port: e.targetHandle || 'in',
 			})),
 		};
 

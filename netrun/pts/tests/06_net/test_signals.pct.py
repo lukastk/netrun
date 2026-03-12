@@ -354,7 +354,7 @@ async def test_epoch_finished_signal_triggers_downstream():
                 ),
             ],
             edges=[
-                EdgeConfig(source_str="A.__signal_epoch_finished__", target_str="B.trigger"),
+                EdgeConfig(source_node="A", source_port="__signal_epoch_finished__", target_node="B", target_port="trigger"),
             ],
         ),
     )
@@ -422,7 +422,7 @@ async def test_epoch_failed_signal_triggers_downstream():
                 ),
             ],
             edges=[
-                EdgeConfig(source_str="A.__signal_epoch_failed__", target_str="B.trigger"),
+                EdgeConfig(source_node="A", source_port="__signal_epoch_failed__", target_node="B", target_port="trigger"),
             ],
         ),
     )
@@ -485,7 +485,7 @@ async def test_node_started_signal():
                 ),
             ],
             edges=[
-                EdgeConfig(source_str="A.__signal_node_started__", target_str="B.trigger"),
+                EdgeConfig(source_node="A", source_port="__signal_node_started__", target_node="B", target_port="trigger"),
             ],
         ),
     )
@@ -654,7 +654,7 @@ async def test_default_signals_applied_to_all_nodes():
                 ),
             ],
             edges=[
-                EdgeConfig(source_str="A.__signal_epoch_finished__", target_str="B.trigger"),
+                EdgeConfig(source_node="A", source_port="__signal_epoch_finished__", target_node="B", target_port="trigger"),
             ],
         ),
     )
@@ -740,8 +740,8 @@ async def test_signal_with_regular_output():
                 ),
             ],
             edges=[
-                EdgeConfig(source_str="A.__signal_epoch_finished__", target_str="SignalHandler.trigger"),
-                EdgeConfig(source_str="A.out", target_str="DataHandler.data_in"),
+                EdgeConfig(source_node="A", source_port="__signal_epoch_finished__", target_node="SignalHandler", target_port="trigger"),
+                EdgeConfig(source_node="A", source_port="out", target_node="DataHandler", target_port="data_in"),
             ],
         ),
     )
@@ -803,7 +803,7 @@ async def test_node_started_signal_deferred_startup():
                 ),
             ],
             edges=[
-                EdgeConfig(source_str="A.__signal_node_started__", target_str="B.trigger"),
+                EdgeConfig(source_node="A", source_port="__signal_node_started__", target_node="B", target_port="trigger"),
             ],
         ),
     )
@@ -886,7 +886,7 @@ async def test_per_node_signal_override():
             ],
             edges=[
                 # A has no signal ports (opted out), so no edge from A
-                EdgeConfig(source_str="B.__signal_epoch_finished__", target_str="HandlerB.trigger"),
+                EdgeConfig(source_node="B", source_port="__signal_epoch_finished__", target_node="HandlerB", target_port="trigger"),
             ],
         ),
     )
@@ -948,7 +948,7 @@ async def test_epoch_started_signal_triggers_downstream():
                 ),
             ],
             edges=[
-                EdgeConfig(source_str="A.__signal_epoch_started__", target_str="B.trigger"),
+                EdgeConfig(source_node="A", source_port="__signal_epoch_started__", target_node="B", target_port="trigger"),
             ],
         ),
     )
@@ -1011,7 +1011,7 @@ async def test_epoch_cancelled_signal_user_cancel():
                 ),
             ],
             edges=[
-                EdgeConfig(source_str="A.__signal_epoch_cancelled__", target_str="B.trigger"),
+                EdgeConfig(source_node="A", source_port="__signal_epoch_cancelled__", target_node="B", target_port="trigger"),
             ],
         ),
     )
@@ -1105,8 +1105,8 @@ async def test_epoch_cancelled_signal_max_epochs():
                 ),
             ],
             edges=[
-                EdgeConfig(source_str="A.out", target_str="A.in"),  # self-loop
-                EdgeConfig(source_str="A.__signal_epoch_cancelled__", target_str="B.trigger"),
+                EdgeConfig(source_node="A", source_port="out", target_node="A", target_port="in"),  # self-loop
+                EdgeConfig(source_node="A", source_port="__signal_epoch_cancelled__", target_node="B", target_port="trigger"),
             ],
         ),
     )

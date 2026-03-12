@@ -4,16 +4,40 @@
   },
   "output_queues": {
     "batch_results": {
-      "ports": [["batch_processor", "out"]]
+      "ports": [
+        [
+          "batch_processor",
+          "out"
+        ]
+      ]
     },
     "rate_limited_results": {
-      "ports": [["rate_limited_worker", "out"]]
+      "ports": [
+        [
+          "rate_limited_worker",
+          "out"
+        ]
+      ]
     },
     "main_results": {
-      "ports": [["multi_output", "main_out"]]
+      "ports": [
+        [
+          "multi_output",
+          "main_out"
+        ]
+      ]
     },
     "secondary_results": {
-      "ports": [["multi_output", "debug_out"], ["multi_output", "extra_out"]]
+      "ports": [
+        [
+          "multi_output",
+          "debug_out"
+        ],
+        [
+          "multi_output",
+          "extra_out"
+        ]
+      ]
     }
   },
   "graph": {
@@ -21,46 +45,93 @@
       {
         "name": "batch_processor",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.batch_processor"},
+        "factory_args": {
+          "func": "nodes.batch_processor"
+        },
         "in_ports": {
           "data": {
-            "slots_spec": {"type": "finite", "capacity": 5}
+            "slots_spec": {
+              "type": "finite",
+              "capacity": 5
+            }
           }
         },
         "in_salvo_conditions": {
           "trigger": {
-            "max_salvos": {"type": "finite", "max": 1},
-            "ports": {"data": {"type": "count", "count": 3}},
+            "max_salvos": {
+              "type": "finite",
+              "max": 1
+            },
+            "ports": {
+              "data": {
+                "type": "count",
+                "count": 3
+              }
+            },
             "term": {
               "type": "port",
               "port_name": "data",
-              "state": {"type": "equals_or_greater_than", "value": 3}
+              "state": {
+                "type": "equals_or_greater_than",
+                "value": 3
+              }
             }
           }
         },
         "execution_config": {
-          "pools": ["main"]
+          "pools": [
+            "main"
+          ]
         },
-        "extra": {"ui": {"position": {"x": 300, "y": 50}}}
+        "extra": {
+          "ui": {
+            "position": {
+              "x": 300,
+              "y": 50
+            }
+          }
+        }
       },
       {
         "name": "rate_limited_worker",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.rate_limited_worker"},
+        "factory_args": {
+          "func": "nodes.rate_limited_worker"
+        },
         "execution_config": {
-          "pools": ["main"],
+          "pools": [
+            "main"
+          ],
           "rate_limit_per_second": 2
         },
-        "extra": {"ui": {"position": {"x": 300, "y": 200}}}
+        "extra": {
+          "ui": {
+            "position": {
+              "x": 300,
+              "y": 200
+            }
+          }
+        }
       },
       {
         "name": "multi_output",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.multi_output"},
-        "execution_config": {
-          "pools": ["main"]
+        "factory_args": {
+          "func": "nodes.multi_output"
         },
-        "extra": {"ui": {"position": {"x": 300, "y": 350}}}
+        "execution_config": {
+          "pools": [
+            "main"
+          ]
+        },
+        "extra": {
+          "ui": {
+            "position": {
+              "x": 300,
+              "y": 350
+            }
+          }
+        }
       }
     ],
     "edges": []

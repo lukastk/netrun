@@ -305,7 +305,7 @@ def test_single_output_dict_return_unwrapped():
                     args={"func": consumer},
                 ),
             ],
-            edges=[EdgeConfig(source_str="producer.data", target_str="consumer.data")],
+            edges=[EdgeConfig(source_node="producer", source_port="data", target_node="consumer", target_port="data")],
         ),
     )
 
@@ -342,7 +342,7 @@ def test_single_output_plain_return_unchanged():
                     args={"func": consumer},
                 ),
             ],
-            edges=[EdgeConfig(source_str="producer.out", target_str="consumer.out")],
+            edges=[EdgeConfig(source_node="producer", source_port="out", target_node="consumer", target_port="out")],
         ),
     )
 

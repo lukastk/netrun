@@ -65,44 +65,22 @@ class PortRefConfig(VarResolvableModel):
 class EdgeConfig(VarResolvableModel):
     """A connection between an output port and an input port.
 
-    Can be specified as:
-    - Full form: source and target PortRefConfig objects
-    - Shorthand: source_str and target_str as "node.port" strings
+    Specified with four flat fields: source_node, source_port, target_node, target_port.
     """
-    source: PortRefConfig | None = None
-    target: PortRefConfig | None = None
-    # Shorthand notation: "NodeA.out" -> "NodeB.in"
-    source_str: str | None = None
-    target_str: str | None = None
+    source_node: str
+    source_port: str
+    target_node: str
+    target_port: str
     dependency: bool = Field(
         default=False,
         description="If True, this edge participates in backward request cascades.",
     )
 
-    def model_post_init(self, __context):
-        # Validate that either full form or shorthand is provided
-        has_full = self.source is not None and self.target is not None
-        has_short = self.source_str is not None and self.target_str is not None
-        if not (has_full or has_short):
-            raise ValueError("Must provide either (source, target) or (source_str, target_str)")
-        if has_full and has_short:
-            raise ValueError("Cannot provide both (source, target) and (source_str, target_str)")
-
-    def _parse_port_str(self, s: str, port_type: Literal["input", "output"]) -> PortRefConfig:
-        parts = s.split(".")
-        if len(parts) != 2:
-            raise ValueError(f"Invalid port string '{s}', expected 'NodeName.port_name'")
-        return PortRefConfig(node_name=parts[0], port_type=port_type, port_name=parts[1])
-
     def get_source(self) -> PortRefConfig:
-        if self.source is not None:
-            return self.source
-        return self._parse_port_str(self.source_str, "output")
+        return PortRefConfig(node_name=self.source_node, port_type="output", port_name=self.source_port)
 
     def get_target(self) -> PortRefConfig:
-        if self.target is not None:
-            return self.target
-        return self._parse_port_str(self.target_str, "input")
+        return PortRefConfig(node_name=self.target_node, port_type="input", port_name=self.target_port)
 
     def to_netrun_sim(self) -> netrun_sim.Edge:
         return netrun_sim.Edge(
@@ -935,7 +913,7 @@ class SubgraphConfig(VarResolvableModel):
                 NodeConfig(name="A", ...),
                 NodeConfig(name="B", ...),
             ],
-            edges=[EdgeConfig(source_str="A.out", target_str="B.in")],
+            edges=[EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in")],
             exposed_in_ports={"input": ExposedPortConfig(internal_node="A", internal_port="in")},
             exposed_out_ports={"output": ExposedPortConfig(internal_node="B", internal_port="out")},
         )
@@ -1140,16 +1118,10 @@ class SubgraphConfig(VarResolvableModel):
                     target = PortRefConfig(node_name=target_node, port_type="input", port_name=port_name)
 
             prefixed_edge = EdgeConfig(
-                source=PortRefConfig(
-                    node_name=f"{self.name}.{source.node_name}",
-                    port_type=source.port_type,
-                    port_name=source.port_name,
-                ),
-                target=PortRefConfig(
-                    node_name=f"{self.name}.{target.node_name}",
-                    port_type=target.port_type,
-                    port_name=target.port_name,
-                ),
+                source_node=f"{self.name}.{source.node_name}",
+                source_port=source.port_name,
+                target_node=f"{self.name}.{target.node_name}",
+                target_port=target.port_name,
                 dependency=edge.dependency,
             )
             prefixed_edges.append(prefixed_edge)

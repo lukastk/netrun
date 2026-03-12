@@ -4,19 +4,38 @@
   },
   "output_queues": {
     "consumer_output": {
-      "ports": [["Consumer", "out"]]
+      "ports": [
+        [
+          "Consumer",
+          "out"
+        ]
+      ]
     },
     "reporter_output": {
-      "ports": [["Reporter", "out"]]
+      "ports": [
+        [
+          "Reporter",
+          "out"
+        ]
+      ]
     },
     "merger_output": {
-      "ports": [["Merger", "out"]]
+      "ports": [
+        [
+          "Merger",
+          "out"
+        ]
+      ]
     }
   },
   "graph": {
     "extra": {
       "ui": {
-        "viewport": {"x": 0, "y": 0, "zoom": 1},
+        "viewport": {
+          "x": 0,
+          "y": 0,
+          "zoom": 1
+        },
         "actions": [
           {
             "id": "action-run-project",
@@ -30,73 +49,150 @@
       {
         "name": "DataSource",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.data_source"},
+        "factory_args": {
+          "func": "nodes.data_source"
+        },
         "extra": {
-          "ui": {"position": {"x": 100, "y": 50}}
+          "ui": {
+            "position": {
+              "x": 100,
+              "y": 50
+            }
+          }
         }
       },
       {
         "name": "Consumer",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.consumer"},
+        "factory_args": {
+          "func": "nodes.consumer"
+        },
         "dependency_request": {
-          "triggers": ["on_startup"],
+          "triggers": [
+            "on_startup"
+          ],
           "label": "init"
         },
         "extra": {
-          "ui": {"position": {"x": 400, "y": 50}}
+          "ui": {
+            "position": {
+              "x": 400,
+              "y": 50
+            }
+          }
         }
       },
       {
         "name": "Generator",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.generator"},
+        "factory_args": {
+          "func": "nodes.generator"
+        },
         "extra": {
-          "ui": {"position": {"x": 100, "y": 200}}
+          "ui": {
+            "position": {
+              "x": 100,
+              "y": 200
+            }
+          }
         }
       },
       {
         "name": "Processor",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.processor"},
+        "factory_args": {
+          "func": "nodes.processor"
+        },
         "extra": {
-          "ui": {"position": {"x": 400, "y": 200}}
+          "ui": {
+            "position": {
+              "x": 400,
+              "y": 200
+            }
+          }
         }
       },
       {
         "name": "Reporter",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.reporter"},
+        "factory_args": {
+          "func": "nodes.reporter"
+        },
         "extra": {
-          "ui": {"position": {"x": 700, "y": 200}}
+          "ui": {
+            "position": {
+              "x": 700,
+              "y": 200
+            }
+          }
         }
       },
       {
         "name": "ConfigSource",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.config_source"},
+        "factory_args": {
+          "func": "nodes.config_source"
+        },
         "extra": {
-          "ui": {"position": {"x": 100, "y": 400}}
+          "ui": {
+            "position": {
+              "x": 100,
+              "y": 400
+            }
+          }
         }
       },
       {
         "name": "Merger",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.merger"},
+        "factory_args": {
+          "func": "nodes.merger"
+        },
         "dependency_request": {
-          "triggers": ["on_startup"],
+          "triggers": [
+            "on_startup"
+          ],
           "label": "config"
         },
         "extra": {
-          "ui": {"position": {"x": 400, "y": 400}}
+          "ui": {
+            "position": {
+              "x": 400,
+              "y": 400
+            }
+          }
         }
       }
     ],
     "edges": [
-      {"source_str": "DataSource.out", "target_str": "Consumer.data", "dependency": true},
-      {"source_str": "Generator.out", "target_str": "Processor.seed", "dependency": true},
-      {"source_str": "Processor.out", "target_str": "Reporter.result", "dependency": true},
-      {"source_str": "ConfigSource.out", "target_str": "Merger.config", "dependency": true}
+      {
+        "source_node": "DataSource",
+        "source_port": "out",
+        "target_node": "Consumer",
+        "target_port": "data",
+        "dependency": true
+      },
+      {
+        "source_node": "Generator",
+        "source_port": "out",
+        "target_node": "Processor",
+        "target_port": "seed",
+        "dependency": true
+      },
+      {
+        "source_node": "Processor",
+        "source_port": "out",
+        "target_node": "Reporter",
+        "target_port": "result",
+        "dependency": true
+      },
+      {
+        "source_node": "ConfigSource",
+        "source_port": "out",
+        "target_node": "Merger",
+        "target_port": "config",
+        "dependency": true
+      }
     ]
   }
 }

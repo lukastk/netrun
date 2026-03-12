@@ -9,13 +9,18 @@
         "name": "Input",
         "in_ports": {},
         "out_ports": {
-          "data": {"port_type": "any"}
+          "data": {
+            "port_type": "any"
+          }
         },
         "meta": {
           "ui": {
             "id": "node-input",
             "label": "Input",
-            "position": {"x": 50, "y": 100}
+            "position": {
+              "x": 50,
+              "y": 100
+            }
           }
         }
       },
@@ -26,16 +31,23 @@
           {
             "name": "L1_Process",
             "in_ports": {
-              "in": {"port_type": "any"}
+              "in": {
+                "port_type": "any"
+              }
             },
             "out_ports": {
-              "out": {"port_type": "any"}
+              "out": {
+                "port_type": "any"
+              }
             },
             "meta": {
               "ui": {
                 "id": "l1-process",
                 "label": "L1_Process",
-                "position": {"x": 100, "y": 50}
+                "position": {
+                  "x": 100,
+                  "y": 50
+                }
               }
             }
           },
@@ -46,16 +58,23 @@
               {
                 "name": "L2_Transform",
                 "in_ports": {
-                  "in": {"port_type": "any"}
+                  "in": {
+                    "port_type": "any"
+                  }
                 },
                 "out_ports": {
-                  "out": {"port_type": "any"}
+                  "out": {
+                    "port_type": "any"
+                  }
                 },
                 "meta": {
                   "ui": {
                     "id": "l2-transform",
                     "label": "L2_Transform",
-                    "position": {"x": 100, "y": 50}
+                    "position": {
+                      "x": 100,
+                      "y": 50
+                    }
                   }
                 }
               },
@@ -66,89 +85,148 @@
                   {
                     "name": "L3_Core",
                     "in_ports": {
-                      "in": {"port_type": "any"}
+                      "in": {
+                        "port_type": "any"
+                      }
                     },
                     "out_ports": {
-                      "out": {"port_type": "any"}
+                      "out": {
+                        "port_type": "any"
+                      }
                     },
                     "meta": {
                       "ui": {
                         "id": "l3-core",
                         "label": "L3_Core",
-                        "position": {"x": 150, "y": 100}
+                        "position": {
+                          "x": 150,
+                          "y": 100
+                        }
                       }
                     }
                   }
                 ],
                 "edges": [],
                 "exposed_in_ports": {
-                  "in": {"internal_node": "L3_Core", "internal_port": "in"}
+                  "in": {
+                    "internal_node": "L3_Core",
+                    "internal_port": "in"
+                  }
                 },
                 "exposed_out_ports": {
-                  "out": {"internal_node": "L3_Core", "internal_port": "out"}
+                  "out": {
+                    "internal_node": "L3_Core",
+                    "internal_port": "out"
+                  }
                 },
                 "meta": {
                   "ui": {
                     "id": "subgraph-level3",
                     "label": "Level3",
-                    "position": {"x": 350, "y": 50}
+                    "position": {
+                      "x": 350,
+                      "y": 50
+                    }
                   }
                 }
               }
             ],
             "edges": [
-              {"source_str": "L2_Transform.out", "target_str": "Level3.in"}
+              {
+                "source_node": "L2_Transform",
+                "source_port": "out",
+                "target_node": "Level3",
+                "target_port": "in"
+              }
             ],
             "exposed_in_ports": {
-              "in": {"internal_node": "L2_Transform", "internal_port": "in"}
+              "in": {
+                "internal_node": "L2_Transform",
+                "internal_port": "in"
+              }
             },
             "exposed_out_ports": {
-              "out": {"internal_node": "Level3", "internal_port": "out"}
+              "out": {
+                "internal_node": "Level3",
+                "internal_port": "out"
+              }
             },
             "meta": {
               "ui": {
                 "id": "subgraph-level2",
                 "label": "Level2",
-                "position": {"x": 350, "y": 50}
+                "position": {
+                  "x": 350,
+                  "y": 50
+                }
               }
             }
           }
         ],
         "edges": [
-          {"source_str": "L1_Process.out", "target_str": "Level2.in"}
+          {
+            "source_node": "L1_Process",
+            "source_port": "out",
+            "target_node": "Level2",
+            "target_port": "in"
+          }
         ],
         "exposed_in_ports": {
-          "in": {"internal_node": "L1_Process", "internal_port": "in"}
+          "in": {
+            "internal_node": "L1_Process",
+            "internal_port": "in"
+          }
         },
         "exposed_out_ports": {
-          "out": {"internal_node": "Level2", "internal_port": "out"}
+          "out": {
+            "internal_node": "Level2",
+            "internal_port": "out"
+          }
         },
         "meta": {
           "ui": {
             "id": "subgraph-level1",
             "label": "Level1",
-            "position": {"x": 250, "y": 100}
+            "position": {
+              "x": 250,
+              "y": 100
+            }
           }
         }
       },
       {
         "name": "Output",
         "in_ports": {
-          "data": {"port_type": "any"}
+          "data": {
+            "port_type": "any"
+          }
         },
         "out_ports": {},
         "meta": {
           "ui": {
             "id": "node-output",
             "label": "Output",
-            "position": {"x": 500, "y": 100}
+            "position": {
+              "x": 500,
+              "y": 100
+            }
           }
         }
       }
     ],
     "edges": [
-      {"source_str": "Input.data", "target_str": "Level1.in"},
-      {"source_str": "Level1.out", "target_str": "Output.data"}
+      {
+        "source_node": "Input",
+        "source_port": "data",
+        "target_node": "Level1",
+        "target_port": "in"
+      },
+      {
+        "source_node": "Level1",
+        "source_port": "out",
+        "target_node": "Output",
+        "target_port": "data"
+      }
     ]
   }
 }

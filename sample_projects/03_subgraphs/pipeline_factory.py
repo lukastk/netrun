@@ -34,8 +34,10 @@ def get_node_config(_net_config=None, *, num_stages: int = 2) -> SubgraphConfig:
 
     edges = [
         EdgeConfig(
-            source_str=f"stage_{i}.out",
-            target_str=f"stage_{i+1}.data",
+            source_node=f"stage_{i}",
+            source_port="out",
+            target_node=f"stage_{i+1}",
+            target_port="data",
         )
         for i in range(num_stages - 1)
     ]

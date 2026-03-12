@@ -168,11 +168,9 @@ def structure(
 
     edges_out = []
     for e in net_config.graph.edges:
-        src = e.get_source()
-        tgt = e.get_target()
         edges_out.append({
-            "source": f"{src.node_name}.{src.port_name}",
-            "target": f"{tgt.node_name}.{tgt.port_name}",
+            "source": f"{e.source_node}.{e.source_port}",
+            "target": f"{e.target_node}.{e.target_port}",
         })
 
     output_json({"nodes": nodes_out, "edges": edges_out}, pretty)

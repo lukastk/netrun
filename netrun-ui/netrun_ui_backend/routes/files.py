@@ -592,8 +592,10 @@ async def create_subgraph(request: SubgraphCreateRequest) -> SubgraphCreateRespo
         source_label = id_to_label.get(edge["source"], edge["source"])
         target_label = id_to_label.get(edge["target"], edge["target"])
         internal_edges_config.append({
-            "source_str": f"{source_label}.{edge.get('sourceHandle', 'out')}",
-            "target_str": f"{target_label}.{edge.get('targetHandle', 'in')}",
+            "source_node": source_label,
+            "source_port": edge.get('sourceHandle', 'out'),
+            "target_node": target_label,
+            "target_port": edge.get('targetHandle', 'in'),
         })
 
     # Create the subgraph UI node

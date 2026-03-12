@@ -989,7 +989,7 @@ async def test_two_node_pipeline_cache():
     cache = CacheConfig(enabled=True, include_nodes=["Processor"])
     net = _make_net(
         source, processor,
-        edges=[EdgeConfig(source_str="Source.out", target_str="Processor.in")],
+        edges=[EdgeConfig(source_node="Source", source_port="out", target_node="Processor", target_port="in")],
         cache=cache,
         output_queues={"results": OutputQueueConfig(ports=[("Processor", "out")])},
     )

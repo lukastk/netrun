@@ -4,7 +4,12 @@
   },
   "output_queues": {
     "results": {
-      "ports": [["summarize", "out"]]
+      "ports": [
+        [
+          "summarize",
+          "out"
+        ]
+      ]
     }
   },
   "graph": {
@@ -12,31 +17,62 @@
       {
         "name": "generate_data",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.generate_data"},
+        "factory_args": {
+          "func": "nodes.generate_data"
+        },
         "extra": {
-          "ui": {"position": {"x": 100, "y": 150}}
+          "ui": {
+            "position": {
+              "x": 100,
+              "y": 150
+            }
+          }
         }
       },
       {
         "name": "transform",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.transform"},
+        "factory_args": {
+          "func": "nodes.transform"
+        },
         "extra": {
-          "ui": {"position": {"x": 400, "y": 150}}
+          "ui": {
+            "position": {
+              "x": 400,
+              "y": 150
+            }
+          }
         }
       },
       {
         "name": "summarize",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.summarize"},
+        "factory_args": {
+          "func": "nodes.summarize"
+        },
         "extra": {
-          "ui": {"position": {"x": 700, "y": 150}}
+          "ui": {
+            "position": {
+              "x": 700,
+              "y": 150
+            }
+          }
         }
       }
     ],
     "edges": [
-      {"source_str": "generate_data.out", "target_str": "transform.data"},
-      {"source_str": "transform.out", "target_str": "summarize.stats"}
+      {
+        "source_node": "generate_data",
+        "source_port": "out",
+        "target_node": "transform",
+        "target_port": "data"
+      },
+      {
+        "source_node": "transform",
+        "source_port": "out",
+        "target_node": "summarize",
+        "target_port": "stats"
+      }
     ]
   }
 }

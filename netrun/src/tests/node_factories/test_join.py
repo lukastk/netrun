@@ -211,8 +211,8 @@ async def test_join_two_sources():
                 _join_node_with_exec(["left", "right"]),
             ],
             edges=[
-                EdgeConfig(source_str="src_a.out", target_str="join.left"),
-                EdgeConfig(source_str="src_b.out", target_str="join.right"),
+                EdgeConfig(source_node="src_a", source_port="out", target_node="join", target_port="left"),
+                EdgeConfig(source_node="src_b", source_port="out", target_node="join", target_port="right"),
             ],
         ),
         output_queues={"results": OutputQueueConfig(ports=[("join", "out")])},
@@ -249,8 +249,8 @@ async def test_join_batch_port():
                 _join_node_with_exec({"scalar": 1, "batch": 2}),
             ],
             edges=[
-                EdgeConfig(source_str="src_scalar.out", target_str="join.scalar"),
-                EdgeConfig(source_str="src_batch.out", target_str="join.batch"),
+                EdgeConfig(source_node="src_scalar", source_port="out", target_node="join", target_port="scalar"),
+                EdgeConfig(source_node="src_batch", source_port="out", target_node="join", target_port="batch"),
             ],
         ),
         output_queues={"results": OutputQueueConfig(ports=[("join", "out")])},
