@@ -24,6 +24,7 @@ from pathlib import Path
 from typing import Annotated, Any, Optional
 
 import typer
+from pydantic import ValidationError
 
 from netrun.cli._helpers import (
     ConfigOpt,
@@ -62,6 +63,12 @@ def validate(
         net_config = NetConfig.from_file(config_path)
         node_count = len(net_config.graph.nodes)
         edge_count = len(net_config.graph.edges)
+    except ValidationError as e:
+        for err in e.errors():
+            loc = " → ".join(str(l) for l in err["loc"])
+            errors.append({"loc": loc, "msg": err["msg"], "type": err["type"]})
+        output_json({"valid": False, "file": str(config_path), "errors": errors}, pretty)
+        raise typer.Exit(1)
     except Exception as e:
         errors.append(f"Config validation error: {e}")
         output_json({"valid": False, "file": str(config_path), "errors": errors}, pretty)
