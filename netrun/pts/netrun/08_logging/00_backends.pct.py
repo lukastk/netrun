@@ -23,10 +23,8 @@ from nblite import nbl_export; nbl_export();
 #|export
 import json
 from pathlib import Path
-from typing import Any
-from datetime import datetime
 
-from netrun.net._net._context import EpochLog, SimActionLog, SimEventLog, NodeLogEntry
+from netrun.net._net._context import EpochLog, SimActionLog
 
 # %% [markdown]
 # ## JSONL Backends
@@ -56,6 +54,12 @@ class JsonlEpochLogger:
         if self._fh is not None:
             self._fh.close()
             self._fh = None
+
+    def __enter__(self) -> "JsonlEpochLogger":
+        return self
+
+    def __exit__(self, *exc_info) -> None:
+        self.close()
 
     @staticmethod
     def load(path: str | Path) -> list[EpochLog]:
@@ -94,6 +98,12 @@ class JsonlSimActionLogger:
             self._fh.close()
             self._fh = None
 
+    def __enter__(self) -> "JsonlSimActionLogger":
+        return self
+
+    def __exit__(self, *exc_info) -> None:
+        self.close()
+
     @staticmethod
     def load(path: str | Path) -> list[SimActionLog]:
         """Load all SimActionLog entries from a JSONL file."""
@@ -102,21 +112,7 @@ class JsonlSimActionLogger:
             for line in f:
                 line = line.strip()
                 if line:
-                    d = json.loads(line)
-                    actions.append(SimActionLog(
-                        timestamp=datetime.fromisoformat(d["timestamp"]),
-                        action_kind=d["action_kind"],
-                        action_detail=d["action_detail"],
-                        events=[
-                            SimEventLog(
-                                timestamp=datetime.fromisoformat(e["timestamp"]),
-                                kind=e["kind"],
-                                detail=e["detail"],
-                            )
-                            for e in d.get("events", [])
-                        ],
-                        epoch_id=d.get("epoch_id"),
-                    ))
+                    actions.append(SimActionLog.from_dict(json.loads(line)))
         return actions
 
 # %% [markdown]
@@ -198,26 +194,15 @@ class SqliteLogger:
     def load_sim_action_logs(self) -> list[SimActionLog]:
         """Load all SimActionLog entries from the database."""
         cursor = self._conn.execute("SELECT data FROM sim_action_logs ORDER BY id")
-        results = []
-        for row in cursor.fetchall():
-            d = json.loads(row[0])
-            results.append(SimActionLog(
-                timestamp=datetime.fromisoformat(d["timestamp"]),
-                action_kind=d["action_kind"],
-                action_detail=d["action_detail"],
-                events=[
-                    SimEventLog(
-                        timestamp=datetime.fromisoformat(e["timestamp"]),
-                        kind=e["kind"],
-                        detail=e["detail"],
-                    )
-                    for e in d.get("events", [])
-                ],
-                epoch_id=d.get("epoch_id"),
-            ))
-        return results
+        return [SimActionLog.from_dict(json.loads(row[0])) for row in cursor.fetchall()]
 
     def close(self) -> None:
         if self._conn is not None:
             self._conn.close()
             self._conn = None
+
+    def __enter__(self) -> "SqliteLogger":
+        return self
+
+    def __exit__(self, *exc_info) -> None:
+        self.close()

@@ -88,8 +88,14 @@ def _action_detail(action) -> dict:
     return {}
 
 
-def _event_to_sim_event_log(event) -> SimEventLog:
-    """Convert a netrun_sim NetEvent to a SimEventLog."""
+def _event_to_sim_event_log(event, timestamp: datetime) -> SimEventLog:
+    """Convert a netrun_sim NetEvent to a SimEventLog.
+
+    Args:
+        event: The netrun_sim NetEvent.
+        timestamp: The timestamp of the parent action (shared across all
+            events within a single do_action call for consistency).
+    """
     kind = str(event)
     paren = kind.find("(")
     if paren != -1:
@@ -101,7 +107,7 @@ def _event_to_sim_event_log(event) -> SimEventLog:
             if val is not None:
                 detail[attr] = str(val)
     return SimEventLog(
-        timestamp=get_timestamp_utc(),
+        timestamp=timestamp,
         kind=kind,
         detail=detail,
     )
@@ -1483,7 +1489,7 @@ class Net:
             timestamp=timestamp,
             action_kind=_action_kind(action),
             action_detail=_action_detail(action),
-            events=[_event_to_sim_event_log(e) for e in events_list],
+            events=[_event_to_sim_event_log(e, timestamp) for e in events_list],
             epoch_id=str(epoch_id) if epoch_id is not None else None,
         )
 
@@ -1534,11 +1540,12 @@ class Net:
 
         # Capture the run_step result as a SimActionLog
         if events:
+            run_step_timestamp = get_timestamp_utc()
             run_step_action = SimActionLog(
-                timestamp=get_timestamp_utc(),
+                timestamp=run_step_timestamp,
                 action_kind="RunStep",
                 action_detail={},
-                events=[_event_to_sim_event_log(e) for e in events],
+                events=[_event_to_sim_event_log(e, run_step_timestamp) for e in events],
             )
             self._step_sim_actions.append(run_step_action)
             if self._config_resolved.retain_sim_action_logs:
@@ -2734,7 +2741,7 @@ class Net:
             record.was_cancelled = True
             record.ended_at = get_timestamp_utc()
             record.destroyed_packets = list(response.destroyed_packets)
-            await self._fire_epoch_end(node_name, epoch_id, error=error)
+            await self._fire_epoch_end(node_name, epoch_id, error=error, retry_count=retry_count)
 
             # Store in dead letter queue
             self._dead_letter_queue.append({
@@ -3856,7 +3863,7 @@ class Net:
             else:
                 cb(node_name, epoch_id)
 
-    async def _fire_epoch_end(self, node_name: str, epoch_id: str, *, error: Exception | None = None) -> None:
+    async def _fire_epoch_end(self, node_name: str, epoch_id: str, *, error: Exception | None = None, retry_count: int = 0) -> None:
         """Assemble EpochLog and fire all registered on_epoch_end callbacks."""
         record = self._epochs[epoch_id]
 
@@ -3871,6 +3878,7 @@ class Net:
             node_log_entries=self._epoch_log_buffers.get(epoch_id, []),
             sim_actions=self._epoch_sim_actions.get(epoch_id, []),
             factory=factory,
+            retry_count=retry_count,
             error=error,
         )
 

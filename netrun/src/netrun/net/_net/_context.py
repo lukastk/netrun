@@ -98,6 +98,24 @@ class SimActionLog:
             "epoch_id": self.epoch_id,
         }
 
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "SimActionLog":
+        """Deserialize from a plain dict."""
+        return cls(
+            timestamp=datetime.fromisoformat(d["timestamp"]),
+            action_kind=d["action_kind"],
+            action_detail=d.get("action_detail", {}),
+            events=[
+                SimEventLog(
+                    timestamp=datetime.fromisoformat(e["timestamp"]),
+                    kind=e["kind"],
+                    detail=e["detail"],
+                )
+                for e in d.get("events", [])
+            ],
+            epoch_id=d.get("epoch_id"),
+        )
+
 
 @dataclass
 class EpochLog:
@@ -230,20 +248,7 @@ class EpochLog:
             ],
             user_fields=d.get("user_fields", {}),
             sim_actions=[
-                SimActionLog(
-                    timestamp=datetime.fromisoformat(a["timestamp"]),
-                    action_kind=a["action_kind"],
-                    action_detail=a["action_detail"],
-                    events=[
-                        SimEventLog(
-                            timestamp=datetime.fromisoformat(e["timestamp"]),
-                            kind=e["kind"],
-                            detail=e["detail"],
-                        )
-                        for e in a.get("events", [])
-                    ],
-                    epoch_id=a.get("epoch_id"),
-                )
+                SimActionLog.from_dict(a)
                 for a in d.get("sim_actions", [])
             ],
             logs=[
@@ -733,13 +738,7 @@ class NodeExecutionContext:
         if self._config is not None and self._config.print_echo_stdout:
             import builtins
             ts = timestamp.strftime("%H:%M:%S.%f")[:-3]
-            field_parts = " ".join(f"{k}={_format_value(v)}" for k, v in fields.items())
-            parts = []
-            if message:
-                parts.append(message)
-            if field_parts:
-                parts.append(field_parts)
-            builtins.print(f"[{ts}] [{self.node_name}] {' | '.join(parts)}", flush=True)
+            builtins.print(f"[{ts}] [{self.node_name}] {formatted}", flush=True)
 
     @property
     def vars(self) -> dict[str, Any]:
