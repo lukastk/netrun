@@ -15,6 +15,7 @@ import importlib
 from beartype.door import is_bearable
 
 from ...net.config import NodeExecutionConfig, NodeVariable, PortConfig, PortTypeConfig
+from ...net.config._nodes import resolve_effective_exec_field, INHERITABLE_EXEC_FIELDS
 from ..._iutils import get_timestamp_utc
 from ...packets import LazyPacketValueSpec
 
@@ -726,11 +727,16 @@ class NetFuncPreprocessorNodeConfig:
         factory: str | None,
         factory_args: dict[str, Any],
         node_vars: dict[str, dict[str, str]] | None = None,
-        type_checking_enabled: bool = True,
-        print_echo_stdout: bool = False,
+        effective_fields: dict[str, Any] | None = None,
         net_config_data: dict | None = None,
     ) -> "NetFuncPreprocessorNodeConfig":
-        """Create from execution config, port configs, and factory info."""
+        """Create from execution config, port configs, and factory info.
+
+        Args:
+            effective_fields: Resolved inheritable fields (from resolve_effective_exec_field).
+                Keys are field names, values are the effective (merged) values.
+        """
+        ef = effective_fields or {}
         return cls(
             factory=factory,
             factory_args=factory_args,
@@ -739,12 +745,12 @@ class NetFuncPreprocessorNodeConfig:
             capture_prints=exec_config.capture_prints,
             print_flush_interval=exec_config.print_flush_interval,
             print_buffer_max_size=exec_config.print_buffer_max_size,
-            print_echo_stdout=print_echo_stdout,
-            retries=exec_config.retries,
-            retry_wait=exec_config.retry_wait,
-            timeout=exec_config.timeout,
+            print_echo_stdout=ef.get("print_echo_stdout", False),
+            retries=ef.get("retries", 0),
+            retry_wait=ef.get("retry_wait", 0.0),
+            timeout=ef.get("timeout", None),
             node_vars=node_vars,
-            type_checking_enabled=type_checking_enabled,
+            type_checking_enabled=ef.get("type_checking_enabled", True),
             net_config_data=net_config_data,
         )
 
@@ -917,8 +923,7 @@ def create_net_func_preprocessor(
     node_out_ports: dict[str, dict[str, PortConfig]] | None = None,
     node_factories: dict[str, tuple[str, dict[str, Any]]] | None = None,
     net_node_vars: dict[str, NodeVariable] | None = None,
-    net_type_checking_enabled: bool = True,
-    net_print_echo_stdout: bool = False,
+    net_config: Any = None,
     net_config_data: dict | None = None,
 ) -> NetFuncPreprocessor:
     """Create a func_preprocessor for Net execution.
@@ -937,8 +942,7 @@ def create_net_func_preprocessor(
         node_factories: Mapping of node names to (factory_path, factory_args) tuples for
             factory-based nodes. Factory functions are resolved lazily on workers.
         net_node_vars: Net-level default node variables.
-        net_type_checking_enabled: Net-level default for type checking (can be overridden per-node).
-        net_print_echo_stdout: Net-level default for print echo to stdout (can be overridden per-node).
+        net_config: The resolved NetConfig, used for inheritable field resolution.
         net_config_data: Serialized NetConfig (model_dump()) for reconstructing on workers.
             Passed to factory get_node_funcs() as _net_config during lazy resolution.
 
@@ -989,23 +993,16 @@ def create_net_func_preprocessor(
             if merged:
                 merged_vars = merged
 
-        # Determine type checking: node-level overrides net-level
-        if config.type_checking_enabled is not None:
-            type_checking_enabled = config.type_checking_enabled
-        else:
-            type_checking_enabled = net_type_checking_enabled
-
-        # Determine print_echo_stdout: node-level overrides net-level
-        if config.print_echo_stdout is not None:
-            print_echo_stdout = config.print_echo_stdout
-        else:
-            print_echo_stdout = net_print_echo_stdout
+        # Resolve all inheritable fields (node-level overrides net-level)
+        effective = {
+            fname: resolve_effective_exec_field(fname, config, net_config)
+            for fname in INHERITABLE_EXEC_FIELDS
+        }
 
         node_configs[node_name] = NetFuncPreprocessorNodeConfig.from_node_config(
             config, in_ports, out_ports, factory, factory_args,
             node_vars=merged_vars,
-            type_checking_enabled=type_checking_enabled,
-            print_echo_stdout=print_echo_stdout,
+            effective_fields=effective,
             net_config_data=net_config_data,
         )
 

@@ -18,6 +18,7 @@ from ...pool.multiprocess import MultiprocessPool
 from ...pool.aio import SingleWorkerPool
 from ...pool.remote import RemotePoolClient
 from ...net.config import NetConfig, NodeExecutionConfig, PortConfig, RemotePoolConfig, SignalValue, EpochSignalValue, EpochFailedSignalValue, signal_port_name, is_signal_port, is_control_port, control_type_from_port, is_control_salvo_condition, control_port_name
+from ...net.config._nodes import resolve_effective_exec_field
 from ...execution_manager import ExecutionManager, PoolType, RunAllocationMethod
 from ..._iutils import get_timestamp_utc
 from ...packets import PacketStore
@@ -233,8 +234,7 @@ class Net:
             self._node_out_ports,
             self._node_factories,
             net_node_vars=self._config_resolved.node_vars,
-            net_type_checking_enabled=self._config_resolved.type_checking_enabled,
-            net_print_echo_stdout=self._config_resolved.print_echo_stdout,
+            net_config=self._config_resolved,
             net_config_data=self._config.model_dump(),
         )
         # Validate RemotePoolConfig fields are set before constructing pools
@@ -389,8 +389,7 @@ class Net:
             node_out_ports,
             node_factories,
             net_node_vars=config_resolved.node_vars,
-            net_type_checking_enabled=config_resolved.type_checking_enabled,
-            net_print_echo_stdout=config_resolved.print_echo_stdout,
+            net_config=config_resolved,
             net_config_data=config_resolved.model_dump(),
         )
 
@@ -567,13 +566,8 @@ class Net:
         Returns:
             Tuple of (propagate_exceptions, print_exceptions).
         """
-        propagate = self._config_resolved.propagate_exceptions
-        print_exc = self._config_resolved.print_exceptions
-        if config is not None:
-            if config.propagate_exceptions is not None:
-                propagate = config.propagate_exceptions
-            if config.print_exceptions is not None:
-                print_exc = config.print_exceptions
+        propagate = resolve_effective_exec_field("propagate_exceptions", config, self._config_resolved)
+        print_exc = resolve_effective_exec_field("print_exceptions", config, self._config_resolved)
         return propagate, print_exc
 
     def _route_orphaned_packet(
@@ -1721,9 +1715,7 @@ class Net:
         self._node_epoch_counts[node_name] = self._node_epoch_counts.get(node_name, 0) + 1
 
         # Resolve effective max_epochs: per-node overrides global, -1 means unlimited
-        effective_max_epochs = self._config_resolved.max_epochs  # global default
-        if config is not None and config.max_epochs is not None:
-            effective_max_epochs = config.max_epochs
+        effective_max_epochs = resolve_effective_exec_field("max_epochs", config, self._config_resolved)
 
         if effective_max_epochs != -1:
             if self._node_epoch_counts[node_name] > effective_max_epochs:
@@ -1874,8 +1866,9 @@ class Net:
                     "retry_exceptions": retry_exceptions,
                 },
             )
-            if config.timeout is not None:
-                job_result = await asyncio.wait_for(coro, timeout=config.timeout)
+            effective_timeout = resolve_effective_exec_field("timeout", config, self._config_resolved)
+            if effective_timeout is not None:
+                job_result = await asyncio.wait_for(coro, timeout=effective_timeout)
             else:
                 job_result = await coro
         except asyncio.TimeoutError:
@@ -1886,7 +1879,7 @@ class Net:
                 packets=packets,
                 packet_values=packet_values,
                 error=TimeoutError(
-                    f"Node '{node_name}' exceeded timeout of {config.timeout}s"
+                    f"Node '{node_name}' exceeded timeout of {effective_timeout}s"
                 ),
                 retry_count=retry_count,
                 retry_timestamps=retry_timestamps,
@@ -2550,10 +2543,12 @@ class Net:
             await self._call_failure_callback(config.on_node_failure, failure_ctx)
 
         # Check if we should retry
-        if retry_count < config.retries:
+        effective_retries = resolve_effective_exec_field("retries", config, self._config_resolved)
+        effective_retry_wait = resolve_effective_exec_field("retry_wait", config, self._config_resolved)
+        if retry_count < effective_retries:
             # Wait before retry
-            if config.retry_wait > 0:
-                await asyncio.sleep(config.retry_wait)
+            if effective_retry_wait > 0:
+                await asyncio.sleep(effective_retry_wait)
 
             # Retry (deferred actions were discarded, so we start fresh)
             return await self._execute_epoch_with_retry(

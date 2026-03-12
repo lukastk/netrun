@@ -269,9 +269,9 @@ class NodeExecutionConfig(VarResolvableModel):
 
     defer_net_actions: bool | VarRef | None = Field(default=None, description="Defer net action notifications until epoch completes successfully. Required if retries enabled.")
 
-    retries: int | VarRef = Field(default=0, description="Number of retry attempts on failure.")
-    retry_wait: float | VarRef = Field(default=0.0, description="Wait time in seconds between retries.")
-    timeout: float | VarRef | None = Field(default=None, description="Epoch execution timeout in seconds.")
+    retries: int | VarRef | None = Field(default=None, description="Number of retry attempts on failure. None inherits from NetConfig.")
+    retry_wait: float | VarRef | None = Field(default=None, description="Wait time in seconds between retries. None inherits from NetConfig.")
+    timeout: float | VarRef | None = Field(default=None, description="Epoch execution timeout in seconds. None inherits from NetConfig.")
 
     capture_prints: bool | VarRef = Field(default=True, description="Capture print statements in the node.")
 
@@ -363,6 +363,45 @@ class NodeExecutionConfig(VarResolvableModel):
         if updates:
             return self.model_copy(update=updates)
         return self
+
+# %%
+#|export
+# Registry of NodeExecutionConfig fields that inherit from NetConfig.
+# Maps node field name -> (net field name, fallback if both are None).
+INHERITABLE_EXEC_FIELDS: dict[str, tuple[str, Any]] = {
+    "type_checking_enabled": ("type_checking_enabled", True),
+    "print_echo_stdout": ("print_echo_stdout", True),
+    "propagate_exceptions": ("propagate_exceptions", True),
+    "print_exceptions": ("print_exceptions", False),
+    "max_epochs": ("max_epochs", -1),
+    "retries": ("retries", 0),
+    "retry_wait": ("retry_wait", 0.0),
+    "timeout": ("timeout", None),
+}
+
+
+def resolve_effective_exec_field(
+    field_name: str,
+    node_config: "NodeExecutionConfig | None",
+    net_config: Any,
+) -> Any:
+    """Resolve an inheritable execution field: node-level if not None, else net-level.
+
+    Args:
+        field_name: Field name on NodeExecutionConfig.
+        node_config: The node's execution config, or None.
+        net_config: The NetConfig instance.
+
+    Returns:
+        The effective value for the field.
+    """
+    net_field, fallback = INHERITABLE_EXEC_FIELDS[field_name]
+    net_value = getattr(net_config, net_field, fallback) if net_config is not None else fallback
+    if node_config is not None:
+        node_value = getattr(node_config, field_name)
+        if node_value is not None:
+            return node_value
+    return net_value
 
 # %%
 #|export

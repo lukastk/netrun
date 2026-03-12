@@ -662,6 +662,8 @@ def test_net_config_type_checking():
 # %% pts/tests/06_net/test_net.pct.py 68
 def test_preprocessor_type_checking_inheritance():
     """Test that preprocessor correctly inherits/overrides type_checking_enabled."""
+    from types import SimpleNamespace
+
     # Create node configs with different settings
     node_configs = {
         "inherit_node": NodeExecutionConfig(),  # None = inherit
@@ -670,9 +672,12 @@ def test_preprocessor_type_checking_inheritance():
     }
 
     # Test with net-level enabled (default)
+    net_cfg_enabled = SimpleNamespace(type_checking_enabled=True, print_echo_stdout=True,
+        propagate_exceptions=True, print_exceptions=False, max_epochs=-1,
+        retries=0, retry_wait=0.0, timeout=None)
     preprocessor_enabled = create_net_func_preprocessor(
         node_configs,
-        net_type_checking_enabled=True,
+        net_config=net_cfg_enabled,
     )
 
     # Check the configs passed through
@@ -681,9 +686,12 @@ def test_preprocessor_type_checking_inheritance():
     assert preprocessor_enabled._node_configs["disabled_node"].type_checking_enabled is False
 
     # Test with net-level disabled
+    net_cfg_disabled = SimpleNamespace(type_checking_enabled=False, print_echo_stdout=True,
+        propagate_exceptions=True, print_exceptions=False, max_epochs=-1,
+        retries=0, retry_wait=0.0, timeout=None)
     preprocessor_disabled = create_net_func_preprocessor(
         node_configs,
-        net_type_checking_enabled=False,
+        net_config=net_cfg_disabled,
     )
 
     # inherit_node should now be False, but explicit settings stay
@@ -1487,11 +1495,11 @@ def test_net_clear_dead_letter_queue():
 
 # %% pts/tests/06_net/test_net.pct.py 161
 def test_node_execution_config_retry_defaults():
-    """Test NodeExecutionConfig retry defaults."""
+    """Test NodeExecutionConfig retry defaults (None means inherit from net-level)."""
     config = NodeExecutionConfig()
 
-    assert config.retries == 0
-    assert config.retry_wait == 0.0
+    assert config.retries is None
+    assert config.retry_wait is None
     assert config.on_node_failure is None
 
 # %% pts/tests/06_net/test_net.pct.py 163

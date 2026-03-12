@@ -343,6 +343,10 @@ class NetConfig(VarResolvableModel):
 
     max_epochs: int | VarRef = Field(default=-1, description="Default max epochs for all nodes. -1 = unlimited. Can be overridden per-node.")
 
+    retries: int | VarRef = Field(default=0, description="Default retry attempts for all nodes. Can be overridden per-node.")
+    retry_wait: float | VarRef = Field(default=0.0, description="Default wait time between retries for all nodes. Can be overridden per-node.")
+    timeout: float | VarRef | None = Field(default=None, description="Default epoch execution timeout for all nodes. Can be overridden per-node.")
+
     storage: StorageConfig | None = Field(default=None, description="Storage configuration (caching, file storage, backend registry).")
 
     default_signals: list[str] | VarRef = Field(default_factory=list, description="Default signal types for all nodes. Nodes inherit this unless they set their own signals list. Valid types: 'epoch_started', 'epoch_finished', 'epoch_failed', 'epoch_cancelled', 'node_started', 'node_stopped'.")
