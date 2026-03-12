@@ -242,8 +242,8 @@
 			-45deg,
 			transparent,
 			transparent 4px,
-			rgba(255, 255, 255, 0.06) 4px,
-			rgba(255, 255, 255, 0.06) 5px
+			rgba(255, 255, 255, 0.15) 4px,
+			rgba(255, 255, 255, 0.15) 7px
 		);
 	}
 
