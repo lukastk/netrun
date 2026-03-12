@@ -37,13 +37,22 @@ from ..cli._download_agents import download_agents
 app.command("download-agents")(download_agents)
 
 # %% pts/netrun/10_cli/00_app.pct.py 7
+from ..cli._graph import add_node, remove_node, edit_node, add_edge, remove_edge
+
+app.command("add-node")(add_node)
+app.command("remove-node")(remove_node)
+app.command("edit-node")(edit_node)
+app.command("add-edge")(add_edge)
+app.command("remove-edge")(remove_edge)
+
+# %% pts/netrun/10_cli/00_app.pct.py 8
 from ..cli._actions import actions_app
 from ..cli._recipes import recipes_app
 
 app.add_typer(actions_app, name="actions")
 app.add_typer(recipes_app, name="recipes")
 
-# %% pts/netrun/10_cli/00_app.pct.py 8
+# %% pts/netrun/10_cli/00_app.pct.py 9
 def app_main() -> None:
     """Entry point for the netrun CLI."""
     app()

@@ -1,0 +1,431 @@
+# ---
+# jupyter:
+#   kernelspec:
+#     display_name: .venv
+#     language: python
+#     name: python3
+# ---
+
+# %%
+#|default_exp cli._graph
+
+# %%
+#|hide
+from nblite import nbl_export; nbl_export();
+
+# %%
+#|export
+import json
+import sys
+from pathlib import Path
+from typing import Annotated, Any, Optional
+
+import typer
+
+from netrun.cli._helpers import (
+    ConfigOpt,
+    PrettyOpt,
+    find_config,
+    load_raw_data,
+    output_json,
+    write_config_data,
+    deep_merge,
+    auto_position,
+    validate_after_write,
+)
+
+# %% [markdown]
+# # Graph Management CLI Commands
+#
+# Commands for adding, removing, and editing nodes and edges in netrun config files.
+# All mutating commands operate on raw dicts (not Pydantic models) to preserve
+# arbitrary extra fields and work on partially invalid configs.
+
+# %% [markdown]
+# ## add-node
+
+# %%
+#|export
+NoValidateOpt = Annotated[bool, typer.Option("--no-validate", help="Skip post-write validation.")]
+
+
+def add_node(
+    name: Annotated[str, typer.Argument(help="Name for the new node.")],
+    config: ConfigOpt = None,
+    factory: Annotated[Optional[str], typer.Option("--factory", "-f", help="Factory import path.")] = None,
+    factory_arg: Annotated[Optional[list[str]], typer.Option("--factory-arg", help="Factory arg as key=value (repeatable).")] = None,
+    in_ports: Annotated[Optional[str], typer.Option("--in-ports", help="Comma-separated input port names.")] = None,
+    out_ports: Annotated[Optional[str], typer.Option("--out-ports", help="Comma-separated output port names.")] = None,
+    position: Annotated[Optional[str], typer.Option("--position", help="UI position as x,y.")] = None,
+    from_json: Annotated[bool, typer.Option("--json", help="Read full node dict from stdin.")] = False,
+    pretty: PrettyOpt = True,
+    no_validate: NoValidateOpt = False,
+) -> None:
+    """Add a node to the graph."""
+    data, config_path = load_raw_data(config)
+    graph = data.setdefault("graph", {})
+    nodes_list: list[dict] = graph.setdefault("nodes", [])
+
+    # Check name uniqueness
+    for existing in nodes_list:
+        if existing.get("name") == name:
+            typer.echo(f"Error: node '{name}' already exists.", err=True)
+            raise typer.Exit(1)
+
+    # Build node dict
+    if from_json:
+        raw_input = sys.stdin.read()
+        try:
+            node_dict = json.loads(raw_input)
+        except json.JSONDecodeError as e:
+            typer.echo(f"Error: invalid JSON from stdin: {e}", err=True)
+            raise typer.Exit(1)
+        node_dict["name"] = name
+    else:
+        node_dict: dict[str, Any] = {"name": name}
+        if factory:
+            node_dict["factory"] = factory
+        if factory_arg:
+            fa: dict[str, Any] = {}
+            for item in factory_arg:
+                if "=" not in item:
+                    typer.echo(f"Error: --factory-arg must be key=value, got: {item}", err=True)
+                    raise typer.Exit(1)
+                k, v = item.split("=", 1)
+                fa[k] = v
+            node_dict["factory_args"] = fa
+        if in_ports:
+            node_dict["in_ports"] = {p.strip(): {} for p in in_ports.split(",")}
+        if out_ports:
+            node_dict["out_ports"] = {p.strip(): {} for p in out_ports.split(",")}
+
+    # Position
+    if position:
+        parts = position.split(",")
+        if len(parts) != 2:
+            typer.echo("Error: --position must be x,y", err=True)
+            raise typer.Exit(1)
+        pos = {"x": float(parts[0]), "y": float(parts[1])}
+    else:
+        pos = auto_position(nodes_list)
+    node_dict.setdefault("extra", {}).setdefault("ui", {})["position"] = pos
+
+    nodes_list.append(node_dict)
+    write_config_data(data, config_path)
+
+    if not no_validate:
+        validate_after_write(config_path)
+
+    output_json(node_dict, pretty)
+
+# %% [markdown]
+# ## remove-node
+
+# %%
+#|export
+def _edge_references_node(edge: dict, node_name: str) -> bool:
+    """Check if an edge (shorthand or full-form) references a node."""
+    # Shorthand form
+    for key in ("source_str", "target_str"):
+        val = edge.get(key, "")
+        if val.split(".")[0] == node_name:
+            return True
+    # Full-form
+    for key in ("source", "target"):
+        ref = edge.get(key, {})
+        if isinstance(ref, dict) and ref.get("node_name") == node_name:
+            return True
+    return False
+
+
+def remove_node(
+    name: Annotated[str, typer.Argument(help="Name of the node to remove.")],
+    config: ConfigOpt = None,
+    pretty: PrettyOpt = True,
+    no_validate: NoValidateOpt = False,
+) -> None:
+    """Remove a node and its connected edges from the graph."""
+    data, config_path = load_raw_data(config)
+    graph = data.get("graph", {})
+    nodes_list: list[dict] = graph.get("nodes", [])
+
+    # Find and remove node
+    found = False
+    for i, n in enumerate(nodes_list):
+        if n.get("name") == name:
+            nodes_list.pop(i)
+            found = True
+            break
+
+    if not found:
+        typer.echo(f"Error: node '{name}' not found.", err=True)
+        raise typer.Exit(1)
+
+    # Remove connected edges
+    edges: list[dict] = graph.get("edges", [])
+    original_edge_count = len(edges)
+    graph["edges"] = [e for e in edges if not _edge_references_node(e, name)]
+    edges_removed = original_edge_count - len(graph["edges"])
+
+    # Clean output_queues that reference this node
+    oq = data.get("output_queues")
+    if isinstance(oq, dict):
+        keys_to_remove = []
+        for qname, qcfg in oq.items():
+            if isinstance(qcfg, dict):
+                ports = qcfg.get("ports", [])
+                qcfg["ports"] = [p for p in ports if not _port_ref_matches_node(p, name)]
+                if not qcfg["ports"]:
+                    keys_to_remove.append(qname)
+            elif isinstance(qcfg, str) and qcfg.startswith(f"{name}."):
+                keys_to_remove.append(qname)
+        for k in keys_to_remove:
+            del oq[k]
+
+    write_config_data(data, config_path)
+
+    if not no_validate:
+        validate_after_write(config_path)
+
+    output_json({"removed": name, "edges_removed": edges_removed}, pretty)
+
+
+def _port_ref_matches_node(port_ref: Any, node_name: str) -> bool:
+    """Check if a port reference (string or dict) refers to a given node."""
+    if isinstance(port_ref, str):
+        return port_ref.split(".")[0] == node_name
+    if isinstance(port_ref, dict):
+        return port_ref.get("node_name") == node_name
+    return False
+
+# %% [markdown]
+# ## edit-node
+
+# %%
+#|export
+def _update_edge_node_refs(edges: list[dict], old_name: str, new_name: str) -> None:
+    """Rename node references in edges (both shorthand and full-form)."""
+    for edge in edges:
+        for key in ("source_str", "target_str"):
+            val = edge.get(key, "")
+            if val.split(".")[0] == old_name:
+                edge[key] = new_name + val[len(old_name):]
+        for key in ("source", "target"):
+            ref = edge.get(key, {})
+            if isinstance(ref, dict) and ref.get("node_name") == old_name:
+                ref["node_name"] = new_name
+
+
+def edit_node(
+    name: Annotated[str, typer.Argument(help="Name of the node to edit.")],
+    config: ConfigOpt = None,
+    rename: Annotated[Optional[str], typer.Option("--rename", help="Rename the node.")] = None,
+    add_in_port: Annotated[Optional[list[str]], typer.Option("--add-in-port", help="Add input port (repeatable).")] = None,
+    remove_in_port: Annotated[Optional[list[str]], typer.Option("--remove-in-port", help="Remove input port (repeatable).")] = None,
+    add_out_port: Annotated[Optional[list[str]], typer.Option("--add-out-port", help="Add output port (repeatable).")] = None,
+    remove_out_port: Annotated[Optional[list[str]], typer.Option("--remove-out-port", help="Remove output port (repeatable).")] = None,
+    merge: Annotated[Optional[str], typer.Option("--merge", help="JSON string to deep-merge into the node.")] = None,
+    merge_stdin: Annotated[bool, typer.Option("--merge-stdin", help="Read JSON from stdin and deep-merge into the node.")] = False,
+    pretty: PrettyOpt = True,
+    no_validate: NoValidateOpt = False,
+) -> None:
+    """Edit an existing node in the graph."""
+    data, config_path = load_raw_data(config)
+    graph = data.get("graph", {})
+    nodes_list: list[dict] = graph.get("nodes", [])
+
+    # Find node
+    node_dict = None
+    for n in nodes_list:
+        if n.get("name") == name:
+            node_dict = n
+            break
+    if node_dict is None:
+        typer.echo(f"Error: node '{name}' not found.", err=True)
+        raise typer.Exit(1)
+
+    # Rename
+    if rename:
+        # Check uniqueness
+        for n in nodes_list:
+            if n.get("name") == rename:
+                typer.echo(f"Error: node '{rename}' already exists.", err=True)
+                raise typer.Exit(1)
+        old_name = node_dict["name"]
+        node_dict["name"] = rename
+        # Update edge references
+        _update_edge_node_refs(graph.get("edges", []), old_name, rename)
+        # Update output_queue refs
+        oq = data.get("output_queues")
+        if isinstance(oq, dict):
+            for qcfg in oq.values():
+                if isinstance(qcfg, dict):
+                    ports = qcfg.get("ports", [])
+                    for i, p in enumerate(ports):
+                        if isinstance(p, str) and p.split(".")[0] == old_name:
+                            ports[i] = rename + p[len(old_name):]
+                        elif isinstance(p, dict) and p.get("node_name") == old_name:
+                            p["node_name"] = rename
+
+    # Port modifications
+    if add_in_port:
+        ip = node_dict.setdefault("in_ports", {})
+        for p in add_in_port:
+            ip[p] = {}
+    if remove_in_port:
+        ip = node_dict.get("in_ports", {})
+        for p in remove_in_port:
+            ip.pop(p, None)
+    if add_out_port:
+        op = node_dict.setdefault("out_ports", {})
+        for p in add_out_port:
+            op[p] = {}
+    if remove_out_port:
+        op = node_dict.get("out_ports", {})
+        for p in remove_out_port:
+            op.pop(p, None)
+
+    # Merge
+    if merge:
+        try:
+            merge_data = json.loads(merge)
+        except json.JSONDecodeError as e:
+            typer.echo(f"Error: invalid --merge JSON: {e}", err=True)
+            raise typer.Exit(1)
+        merged = deep_merge(node_dict, merge_data)
+        # Replace in-place
+        node_dict.clear()
+        node_dict.update(merged)
+    if merge_stdin:
+        raw_input = sys.stdin.read()
+        try:
+            merge_data = json.loads(raw_input)
+        except json.JSONDecodeError as e:
+            typer.echo(f"Error: invalid JSON from stdin: {e}", err=True)
+            raise typer.Exit(1)
+        merged = deep_merge(node_dict, merge_data)
+        node_dict.clear()
+        node_dict.update(merged)
+
+    write_config_data(data, config_path)
+
+    if not no_validate:
+        validate_after_write(config_path)
+
+    output_json(node_dict, pretty)
+
+# %% [markdown]
+# ## add-edge
+
+# %%
+#|export
+def add_edge(
+    source_port: Annotated[str, typer.Argument(help="Source as Node.port")],
+    target_port: Annotated[str, typer.Argument(help="Target as Node.port")],
+    config: ConfigOpt = None,
+    dependency: Annotated[bool, typer.Option("--dependency", help="Mark edge as a dependency edge.")] = False,
+    pretty: PrettyOpt = True,
+    no_validate: NoValidateOpt = False,
+) -> None:
+    """Add an edge between two ports."""
+    # Validate format
+    if "." not in source_port or "." not in target_port:
+        typer.echo("Error: source and target must be in Node.port format.", err=True)
+        raise typer.Exit(1)
+
+    data, config_path = load_raw_data(config)
+    graph = data.setdefault("graph", {})
+    nodes_list: list[dict] = graph.get("nodes", [])
+    edges: list[dict] = graph.setdefault("edges", [])
+
+    src_node = source_port.split(".")[0]
+    tgt_node = target_port.split(".")[0]
+    node_names = {n.get("name") for n in nodes_list}
+
+    if src_node not in node_names:
+        typer.echo(f"Error: source node '{src_node}' not found.", err=True)
+        raise typer.Exit(1)
+    if tgt_node not in node_names:
+        typer.echo(f"Error: target node '{tgt_node}' not found.", err=True)
+        raise typer.Exit(1)
+
+    # Warn on fan-out
+    for e in edges:
+        existing_src = e.get("source_str", "")
+        if not existing_src:
+            ref = e.get("source", {})
+            if isinstance(ref, dict):
+                existing_src = f"{ref.get('node_name', '')}.{ref.get('port_name', '')}"
+        if existing_src == source_port:
+            typer.echo(
+                f"Warning: fan-out — '{source_port}' already has an edge. "
+                "Consider using 'netrun.node_factories.broadcast' to replicate output to multiple targets.",
+                err=True,
+            )
+            break
+
+    edge_dict: dict[str, Any] = {
+        "source_str": source_port,
+        "target_str": target_port,
+    }
+    if dependency:
+        edge_dict["dependency"] = True
+
+    edges.append(edge_dict)
+    write_config_data(data, config_path)
+
+    if not no_validate:
+        validate_after_write(config_path)
+
+    output_json(edge_dict, pretty)
+
+# %% [markdown]
+# ## remove-edge
+
+# %%
+#|export
+def _edge_matches(edge: dict, source_port: str, target_port: str) -> bool:
+    """Check if an edge matches the given source and target port strings."""
+    # Check shorthand form
+    if edge.get("source_str") == source_port and edge.get("target_str") == target_port:
+        return True
+    # Check full-form
+    src = edge.get("source", {})
+    tgt = edge.get("target", {})
+    if isinstance(src, dict) and isinstance(tgt, dict):
+        src_str = f"{src.get('node_name', '')}.{src.get('port_name', '')}"
+        tgt_str = f"{tgt.get('node_name', '')}.{tgt.get('port_name', '')}"
+        if src_str == source_port and tgt_str == target_port:
+            return True
+    return False
+
+
+def remove_edge(
+    source_port: Annotated[str, typer.Argument(help="Source as Node.port")],
+    target_port: Annotated[str, typer.Argument(help="Target as Node.port")],
+    config: ConfigOpt = None,
+    pretty: PrettyOpt = True,
+    no_validate: NoValidateOpt = False,
+) -> None:
+    """Remove an edge between two ports."""
+    data, config_path = load_raw_data(config)
+    graph = data.get("graph", {})
+    edges: list[dict] = graph.get("edges", [])
+
+    found = False
+    for i, e in enumerate(edges):
+        if _edge_matches(e, source_port, target_port):
+            edges.pop(i)
+            found = True
+            break
+
+    if not found:
+        typer.echo(f"Error: edge '{source_port}' -> '{target_port}' not found.", err=True)
+        raise typer.Exit(1)
+
+    write_config_data(data, config_path)
+
+    if not no_validate:
+        validate_after_write(config_path)
+
+    output_json({"removed_source": source_port, "removed_target": target_port}, pretty)
