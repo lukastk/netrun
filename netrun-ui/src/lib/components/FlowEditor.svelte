@@ -602,14 +602,14 @@
 					if (cascade.visitedNodes.has(node.id)) return '#7c3aed';
 				}
 				if (node.data?.nodeType === 'decoration') return '#6b7280';
-				// Use custom headerColor from extra.ui if set
+				// Use custom headerColor from extra.ui if set, otherwise default header color
 				const extra = (node.data?._config?.extra ?? undefined) as Record<string, unknown> | undefined;
 				const ui = (extra?.ui ?? undefined) as Record<string, unknown> | undefined;
 				const headerColor = ui?.headerColor as string | undefined;
 				if (headerColor) return headerColor;
 				if (node.data?.nodeType === 'subgraph') return '#22c55e';
-				if (node.data?.nodeType === 'factory') return '#7c3aed';
-				return '#3b82f6';
+				if (node.data?.nodeType === 'factory') return '#4f46e5';
+				return '#3d3d3d';
 			}}
 			maskColor="rgba(0, 0, 0, 0.7)"
 			pannable

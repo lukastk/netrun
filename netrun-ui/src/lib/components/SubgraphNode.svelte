@@ -168,7 +168,7 @@
 	class:node-disabled={isDisabled}
 	class:single-tip-port={singleTipPort}
 	ondblclick={handleDoubleClick}
-	style:background={headerColor ? headerColor + '22' : undefined}
+	style:background={headerColor ? `color-mix(in srgb, ${headerColor} 13%, var(--node-bg, #2d2d2d))` : undefined}
 >
 	<NodeResizer
 		minWidth={isExpanded ? 400 : 160}
