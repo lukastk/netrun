@@ -1,0 +1,605 @@
+<script lang="ts">
+	import { NodeResizer } from '@xyflow/svelte';
+	import type { NetrunNodeData } from '../types/nodes.js';
+	import type { CascadeHighlightState, PortTypeConfig } from '../types/events.js';
+	import { PORT_ROW_HEIGHT, NODE_BORDER_WIDTH } from '../constants.js';
+	import PortList from './PortList.svelte';
+
+	interface Props {
+		id: string;
+		data: NetrunNodeData;
+		selected?: boolean;
+		/** Cascade highlight state for dependency visualization */
+		cascadeHighlight?: CascadeHighlightState | null;
+		/** Signal port configuration */
+		signalConfig?: PortTypeConfig;
+		/** Control port configuration */
+		controlConfig?: PortTypeConfig;
+		/** Called when the node is resized */
+		onResize?: (event: { nodeId: string; width: number; height: number; position: { x: number; y: number } }) => void;
+		/** Called when description expand/collapse is toggled */
+		onDescriptionToggle?: (event: { nodeId: string }) => void;
+		/** Called on double-click */
+		onDoubleClick?: (event: { nodeId: string; data: NetrunNodeData; metaKey: boolean }) => void;
+		/** Called when a port group is toggled */
+		onPortGroupToggle?: (event: { nodeId: string; side: 'in' | 'out'; groupPath: string; portCount: number }) => void;
+	}
+
+	let {
+		id, data, selected = false, cascadeHighlight,
+		signalConfig, controlConfig,
+		onResize, onDescriptionToggle, onDoubleClick, onPortGroupToggle,
+	}: Props = $props();
+
+	let isCascadeSource = $derived(cascadeHighlight?.sourceNodes.has(id) ?? false);
+	let isCascadeVisited = $derived(
+		(cascadeHighlight?.visitedNodes.has(id) ?? false) && !isCascadeSource
+	);
+
+	let descExpanded = $derived((() => {
+		const extra = (data._config?.extra ?? undefined) as Record<string, unknown> | undefined;
+		const ui = (extra?.ui ?? undefined) as Record<string, unknown> | undefined;
+		return (ui?.descriptionExpanded as boolean) ?? false;
+	})());
+
+	let portGroupStates = $derived((() => {
+		const extra = (data._config?.extra ?? undefined) as Record<string, unknown> | undefined;
+		const ui = (extra?.ui ?? undefined) as Record<string, unknown> | undefined;
+		return ui?.portGroups as Record<string, boolean> | undefined;
+	})());
+
+	let shape = $derived((() => {
+		const extra = (data._config?.extra ?? undefined) as Record<string, unknown> | undefined;
+		const ui = (extra?.ui ?? undefined) as Record<string, unknown> | undefined;
+		return (ui?.shape as string) ?? 'rectangle';
+	})());
+
+	let hideLabel = $derived((() => {
+		const extra = (data._config?.extra ?? undefined) as Record<string, unknown> | undefined;
+		const ui = (extra?.ui ?? undefined) as Record<string, unknown> | undefined;
+		return (ui?.hideLabel as boolean) ?? false;
+	})());
+
+	let hideDescription = $derived((() => {
+		const extra = (data._config?.extra ?? undefined) as Record<string, unknown> | undefined;
+		const ui = (extra?.ui ?? undefined) as Record<string, unknown> | undefined;
+		return (ui?.hideDescription as boolean) ?? false;
+	})());
+
+	let hidePortNames = $derived((() => {
+		const extra = (data._config?.extra ?? undefined) as Record<string, unknown> | undefined;
+		const ui = (extra?.ui ?? undefined) as Record<string, unknown> | undefined;
+		return (ui?.hidePortNames as boolean) ?? false;
+	})());
+
+	let headerColor = $derived((() => {
+		const extra = (data._config?.extra ?? undefined) as Record<string, unknown> | undefined;
+		const ui = (extra?.ui ?? undefined) as Record<string, unknown> | undefined;
+		return (ui?.headerColor as string) ?? null;
+	})());
+
+	let fontColor = $derived((() => {
+		const extra = (data._config?.extra ?? undefined) as Record<string, unknown> | undefined;
+		const ui = (extra?.ui ?? undefined) as Record<string, unknown> | undefined;
+		return (ui?.fontColor as string) ?? null;
+	})());
+
+	let locked = $derived((() => {
+		const extra = (data._config?.extra ?? undefined) as Record<string, unknown> | undefined;
+		const ui = (extra?.ui ?? undefined) as Record<string, unknown> | undefined;
+		return (ui?.locked as boolean) ?? false;
+	})());
+
+	let isDisabled = $derived((() => {
+		const config = (data._config ?? {}) as Record<string, unknown>;
+		const exec = (config.execution_config ?? {}) as Record<string, unknown>;
+		return exec.enabled === false;
+	})());
+
+	// True when the pointy side of a triangle has exactly 1 port
+	let singleTipPort = $derived(
+		(shape === 'triangle-right' && data.outPorts.length === 1) ||
+		(shape === 'triangle-left' && data.inPorts.length === 1)
+	);
+
+	// Port alignment: quantize pre-ports area to PORT_ROW_HEIGHT multiples
+	let prePortsEl: HTMLDivElement | undefined = $state();
+	let portsPaddingTop = $state(0);
+
+	$effect(() => {
+		if (!prePortsEl) return;
+		const observer = new ResizeObserver(() => {
+			const h = prePortsEl!.offsetHeight;
+			const raw = NODE_BORDER_WIDTH + h + PORT_ROW_HEIGHT / 2;
+			portsPaddingTop = Math.ceil(raw / PORT_ROW_HEIGHT) * PORT_ROW_HEIGHT - raw;
+		});
+		observer.observe(prePortsEl);
+		return () => observer.disconnect();
+	});
+
+	function handleResizeEnd(_event: unknown, params: { x: number; y: number; width: number; height: number }) {
+		onResize?.({ nodeId: id, width: params.width, height: params.height, position: { x: params.x, y: params.y } });
+	}
+
+	function handleDoubleClick(e: MouseEvent) {
+		if ((e.target as HTMLElement).closest('.node-description')) return;
+		onDoubleClick?.({ nodeId: id, data, metaKey: e.metaKey });
+	}
+
+	function handleDescToggle() {
+		onDescriptionToggle?.({ nodeId: id });
+	}
+</script>
+
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div
+	class="netrun-node shape-{shape}"
+	ondblclick={handleDoubleClick}
+	class:selected
+	class:factory={data.nodeType === 'factory'}
+	class:invalid={data.isValid === false}
+	class:single-tip-port={singleTipPort}
+	class:cascade-source={isCascadeSource}
+	class:cascade-visited={isCascadeVisited}
+	class:node-disabled={isDisabled}
+	style:background={headerColor ? `color-mix(in srgb, ${headerColor} 13%, var(--node-bg, #2d2d2d))` : undefined}
+>
+	{#if isDisabled}<div class="disabled-overlay"></div>{/if}
+	<NodeResizer
+		minWidth={150}
+		minHeight={60}
+		isVisible={selected}
+		color="var(--node-selected, #3b82f6)"
+		onResizeEnd={handleResizeEnd}
+	/>
+	<!-- Pre-ports area (measured for port alignment) -->
+	<div bind:this={prePortsEl}>
+		<!-- Header -->
+		{#if !hideLabel}
+			<div class="node-header" style:background={headerColor || undefined} style:color={fontColor || undefined}>
+				{#if data.nodeType === 'factory'}
+					<span class="factory-badge">F</span>
+				{/if}
+				<span class="node-label" style:color={fontColor || undefined}>{data.label}</span>
+				{#if locked}
+					<span class="lock-icon" title="Position locked">&#x1F512;</span>
+				{/if}
+			</div>
+		{/if}
+
+		<!-- Description -->
+		{#if (data.description || data._factoryDefaults?.description) && !hideDescription}
+			{@const effectiveDescription = (data.description || data._factoryDefaults?.description)!}
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div class="node-description" style:cursor={selected ? 'pointer' : undefined} onclick={selected ? handleDescToggle : undefined}>
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<span class="desc-chevron" class:expanded={descExpanded} onclick={!selected ? (e: MouseEvent) => { e.stopPropagation(); handleDescToggle(); } : undefined}>&#9656;</span>
+				{#if descExpanded}
+					<span class="desc-content">{effectiveDescription}</span>
+				{:else}
+					<span class="desc-preview">{effectiveDescription.split('\n')[0]}</span>
+				{/if}
+			</div>
+		{/if}
+	</div>
+
+	<!-- Ports container -->
+	<div class="ports-container" style:padding-top="{portsPaddingTop}px">
+		<PortList nodeId={id} ports={data.inPorts} side="in" {portGroupStates} {hidePortNames}
+			{signalConfig} {controlConfig} {onPortGroupToggle} />
+		<PortList nodeId={id} ports={data.outPorts} side="out" {portGroupStates} {hidePortNames}
+			{signalConfig} {controlConfig} {onPortGroupToggle} />
+	</div>
+
+	<!-- Validation errors -->
+	{#if data.isValid === false && data.validationErrors}
+		<div class="validation-errors">
+			{#each data.validationErrors as error}
+				<div class="error">{error}</div>
+			{/each}
+		</div>
+	{/if}
+
+</div>
+
+<style>
+	.netrun-node {
+		position: relative;
+		background: var(--node-bg, #2d2d2d);
+		border: 2px solid var(--node-border, #404040);
+		border-radius: 8px;
+		min-width: 150px;
+		font-size: var(--node-title-font-size, 12px);
+		width: 100%;
+		height: 100%;
+		box-sizing: border-box;
+		display: flex;
+		flex-direction: column;
+	}
+
+	/* Larger resize handles when selected */
+	:global(.netrun-node .svelte-flow__resize-control.handle) {
+		width: 12px;
+		height: 12px;
+	}
+
+	.netrun-node.selected {
+		border-color: var(--node-selected, #3b82f6);
+		box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
+	}
+
+	.netrun-node.invalid {
+		border-color: var(--error-color, #ef4444);
+	}
+
+	/* Cascade highlight states */
+	.netrun-node.cascade-source {
+		border-color: #a78bfa;
+		box-shadow: 0 0 0 2px rgba(167, 139, 250, 0.4);
+	}
+
+	.netrun-node.cascade-visited {
+		border-color: #a78bfa;
+		opacity: 0.7;
+	}
+
+	.netrun-node.node-disabled {
+		opacity: 0.5;
+	}
+
+	.disabled-overlay {
+		position: absolute;
+		inset: 0;
+		border-radius: inherit;
+		pointer-events: none;
+		z-index: 10;
+		background: repeating-linear-gradient(
+			-45deg,
+			transparent,
+			transparent 4px,
+			rgba(255, 255, 255, 0.15) 4px,
+			rgba(255, 255, 255, 0.15) 7px
+		);
+	}
+
+	/* Shape: rounded */
+	.netrun-node.shape-rounded {
+		border-radius: 16px;
+	}
+	.netrun-node.shape-rounded .node-header {
+		border-radius: 14px 14px 0 0;
+	}
+
+	/* Shape: pill / stadium */
+	.netrun-node.shape-pill {
+		border-radius: 999px;
+	}
+	.netrun-node.shape-pill .node-header {
+		background: transparent;
+		border-bottom: none;
+		border-radius: 0;
+		justify-content: center;
+	}
+	.netrun-node.shape-pill .ports-container {
+		padding-left: 16px;
+		padding-right: 16px;
+	}
+
+	/* Shape: diamond */
+	.netrun-node.shape-diamond {
+		background: transparent;
+		border-color: transparent;
+		position: relative;
+		overflow: visible;
+	}
+	.netrun-node.shape-diamond::before {
+		content: '';
+		position: absolute;
+		inset: -2px;
+		clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+		background: var(--node-border, #404040);
+		z-index: -2;
+	}
+	.netrun-node.shape-diamond::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
+		background: var(--node-bg, #2d2d2d);
+		z-index: -1;
+	}
+	.netrun-node.shape-diamond.selected::before {
+		background: var(--node-selected, #3b82f6);
+	}
+	.netrun-node.shape-diamond.invalid::before {
+		background: var(--error-color, #ef4444);
+	}
+	.netrun-node.shape-diamond .node-header {
+		background: transparent;
+		border-bottom: none;
+		border-radius: 0;
+		justify-content: center;
+	}
+	.netrun-node.shape-diamond .ports-container {
+		padding: 0 25%;
+	}
+
+	/* Shape: hexagon */
+	.netrun-node.shape-hexagon {
+		background: transparent;
+		border-color: transparent;
+		position: relative;
+		overflow: visible;
+	}
+	.netrun-node.shape-hexagon::before {
+		content: '';
+		position: absolute;
+		inset: -2px;
+		clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+		background: var(--node-border, #404040);
+		z-index: -2;
+	}
+	.netrun-node.shape-hexagon::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
+		background: var(--node-bg, #2d2d2d);
+		z-index: -1;
+	}
+	.netrun-node.shape-hexagon.selected::before {
+		background: var(--node-selected, #3b82f6);
+	}
+	.netrun-node.shape-hexagon.invalid::before {
+		background: var(--error-color, #ef4444);
+	}
+	.netrun-node.shape-hexagon .node-header {
+		background: transparent;
+		border-bottom: none;
+		border-radius: 0;
+		justify-content: center;
+	}
+	.netrun-node.shape-hexagon .ports-container {
+		padding: 0 15%;
+	}
+
+	/* Shape: cylinder */
+	.netrun-node.shape-cylinder {
+		border-radius: 50% / 12px;
+		position: relative;
+		padding-bottom: 10px;
+	}
+	.netrun-node.shape-cylinder .node-header {
+		border-radius: 50% 50% 0 0 / 12px 12px 0 0;
+	}
+	.netrun-node.shape-cylinder::after {
+		content: '';
+		position: absolute;
+		bottom: -2px;
+		left: -2px;
+		right: -2px;
+		height: 16px;
+		border-radius: 0 0 50% 50% / 0 0 100% 100%;
+		border: 2px solid var(--node-border, #404040);
+		border-top: none;
+		background: var(--node-bg, #2d2d2d);
+	}
+	.netrun-node.shape-cylinder.selected::after {
+		border-color: var(--node-selected, #3b82f6);
+	}
+	.netrun-node.shape-cylinder.invalid::after {
+		border-color: var(--error-color, #ef4444);
+	}
+
+	/* Shape: triangle-right */
+	.netrun-node.shape-triangle-right {
+		background: transparent;
+		border-color: transparent;
+		position: relative;
+		overflow: visible;
+	}
+	.netrun-node.shape-triangle-right::before {
+		content: '';
+		position: absolute;
+		inset: -2px;
+		clip-path: polygon(0% 0%, 100% 50%, 0% 100%);
+		background: var(--node-border, #404040);
+		z-index: -2;
+	}
+	.netrun-node.shape-triangle-right::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		clip-path: polygon(0% 0%, 100% 50%, 0% 100%);
+		background: var(--node-bg, #2d2d2d);
+		z-index: -1;
+	}
+	.netrun-node.shape-triangle-right.selected::before {
+		background: var(--node-selected, #3b82f6);
+	}
+	.netrun-node.shape-triangle-right.invalid::before {
+		background: var(--error-color, #ef4444);
+	}
+	.netrun-node.shape-triangle-right .node-header {
+		background: transparent;
+		border-bottom: none;
+		border-radius: 0;
+	}
+	.netrun-node.shape-triangle-right .ports-container {
+		padding-right: 30%;
+	}
+	.netrun-node.shape-triangle-right.single-tip-port :global(.out-ports .port-row) {
+		position: static;
+	}
+	.netrun-node.shape-triangle-right.single-tip-port :global(.out-ports .svelte-flow__handle-right:not(.hidden-handle)) {
+		top: 50% !important;
+	}
+
+	/* Shape: triangle-left */
+	.netrun-node.shape-triangle-left {
+		background: transparent;
+		border-color: transparent;
+		position: relative;
+		overflow: visible;
+	}
+	.netrun-node.shape-triangle-left::before {
+		content: '';
+		position: absolute;
+		inset: -2px;
+		clip-path: polygon(100% 0%, 0% 50%, 100% 100%);
+		background: var(--node-border, #404040);
+		z-index: -2;
+	}
+	.netrun-node.shape-triangle-left::after {
+		content: '';
+		position: absolute;
+		inset: 0;
+		clip-path: polygon(100% 0%, 0% 50%, 100% 100%);
+		background: var(--node-bg, #2d2d2d);
+		z-index: -1;
+	}
+	.netrun-node.shape-triangle-left.selected::before {
+		background: var(--node-selected, #3b82f6);
+	}
+	.netrun-node.shape-triangle-left.invalid::before {
+		background: var(--error-color, #ef4444);
+	}
+	.netrun-node.shape-triangle-left .node-header {
+		background: transparent;
+		border-bottom: none;
+		border-radius: 0;
+	}
+	.netrun-node.shape-triangle-left .ports-container {
+		padding-left: 30%;
+	}
+	.netrun-node.shape-triangle-left.single-tip-port :global(.in-ports .port-row) {
+		position: static;
+	}
+	.netrun-node.shape-triangle-left.single-tip-port :global(.in-ports .svelte-flow__handle-left:not(.hidden-handle)) {
+		top: 50% !important;
+	}
+
+	.node-header {
+		background: var(--bg-tertiary, #3d3d3d);
+		padding: 8px 12px;
+		border-radius: 6px 6px 0 0;
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		border-bottom: 1px solid var(--border-color, #404040);
+	}
+
+	.factory-badge {
+		background: rgba(255, 255, 255, 0.2);
+		padding: 2px 6px;
+		border-radius: 3px;
+		font-size: 10px;
+		font-weight: 600;
+	}
+
+	.node-label {
+		font-weight: 500;
+		color: var(--text-primary, #fff);
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+	}
+
+	.lock-icon {
+		font-size: 10px;
+		opacity: 0.6;
+		flex-shrink: 0;
+		margin-left: auto;
+	}
+
+	.node-description {
+		padding: 4px 10px;
+		border-bottom: 1px solid var(--border-color, #404040);
+		display: flex;
+		align-items: flex-start;
+		gap: 4px;
+		font-size: var(--node-desc-font-size, 10px);
+		color: var(--text-secondary, #a0a0a0);
+		overflow: hidden;
+		width: 0;
+		min-width: 100%;
+		box-sizing: border-box;
+	}
+
+	.desc-chevron {
+		display: inline-block;
+		font-size: 9px;
+		transition: transform 0.15s ease;
+		flex-shrink: 0;
+		line-height: 14px;
+		cursor: pointer;
+	}
+
+	.desc-chevron.expanded {
+		transform: rotate(90deg);
+	}
+
+	.desc-preview {
+		white-space: nowrap;
+		overflow: hidden;
+		text-overflow: ellipsis;
+		min-width: 0;
+	}
+
+	.desc-content {
+		white-space: pre-wrap;
+		word-wrap: break-word;
+		overflow-wrap: break-word;
+		min-width: 0;
+	}
+
+	.ports-container {
+		display: flex;
+		justify-content: space-between;
+		padding: 0 0 8px 0;
+		min-height: 40px;
+		flex: 1;
+	}
+
+	.validation-errors {
+		padding: 6px 12px;
+		border-top: 1px solid var(--border-color, #404040);
+		background: rgba(239, 68, 68, 0.1);
+	}
+
+	.error {
+		color: var(--error-color, #ef4444);
+		font-size: 10px;
+	}
+
+	/* Handle styling */
+	:global(.netrun-node .svelte-flow__handle) {
+		width: 10px;
+		height: 10px;
+		border: 2px solid var(--bg-secondary, #242424);
+	}
+
+	:global(.netrun-node .svelte-flow__handle-left) {
+		background: var(--port-input, #22c55e);
+	}
+
+	:global(.netrun-node .svelte-flow__handle-right) {
+		background: var(--port-output, #f59e0b);
+	}
+
+	:global(.netrun-node .svelte-flow__handle.connecting) {
+		background: var(--accent-color, #3b82f6);
+	}
+
+	:global(.netrun-node .svelte-flow__handle.group-handle) {
+		width: 12px;
+		height: 12px;
+		border-radius: 3px;
+	}
+
+	:global(.netrun-node .svelte-flow__handle.root-group-handle) {
+		width: 14px;
+		height: 14px;
+		border-radius: 3px;
+	}
+</style>
