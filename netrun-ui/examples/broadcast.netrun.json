@@ -92,20 +92,28 @@
     ],
     "edges": [
       {
-        "source_str": "Source.data",
-        "target_str": "broadcast.in_0"
+        "source_node": "Source",
+        "source_port": "data",
+        "target_node": "broadcast",
+        "target_port": "in_0"
       },
       {
-        "source_str": "broadcast.out_0",
-        "target_str": "ConsumerA.input"
+        "source_node": "broadcast",
+        "source_port": "out_0",
+        "target_node": "ConsumerA",
+        "target_port": "input"
       },
       {
-        "source_str": "broadcast.out_1",
-        "target_str": "ConsumerB.input"
+        "source_node": "broadcast",
+        "source_port": "out_1",
+        "target_node": "ConsumerB",
+        "target_port": "input"
       },
       {
-        "source_str": "broadcast.out_2",
-        "target_str": "ConsumerC.input"
+        "source_node": "broadcast",
+        "source_port": "out_2",
+        "target_node": "ConsumerC",
+        "target_port": "input"
       }
     ]
   }

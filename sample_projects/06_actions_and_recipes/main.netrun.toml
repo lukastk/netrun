@@ -116,9 +116,13 @@ position = { x = 700, y = 100 }
 
 # --- Edges ---
 [[graph.edges]]
-source_str = "greeter.out"
-target_str = "transformer.data"
+source_node = "greeter"
+source_port = "out"
+target_node = "transformer"
+target_port = "data"
 
 [[graph.edges]]
-source_str = "transformer.out"
-target_str = "format_output.value"
+source_node = "transformer"
+source_port = "out"
+target_node = "format_output"
+target_port = "value"

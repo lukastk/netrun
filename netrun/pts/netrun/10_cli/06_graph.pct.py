@@ -124,17 +124,11 @@ def add_node(
 # %%
 #|export
 def _edge_references_node(edge: dict, node_name: str) -> bool:
-    """Check if an edge (shorthand or full-form) references a node."""
-    # Shorthand form
-    for key in ("source_str", "target_str"):
-        val = edge.get(key, "")
-        if val.split(".")[0] == node_name:
-            return True
-    # Full-form
-    for key in ("source", "target"):
-        ref = edge.get(key, {})
-        if isinstance(ref, dict) and ref.get("node_name") == node_name:
-            return True
+    """Check if an edge references a node."""
+    if edge.get("source_node") == node_name:
+        return True
+    if edge.get("target_node") == node_name:
+        return True
     return False
 
 
@@ -204,16 +198,12 @@ def _port_ref_matches_node(port_ref: Any, node_name: str) -> bool:
 # %%
 #|export
 def _update_edge_node_refs(edges: list[dict], old_name: str, new_name: str) -> None:
-    """Rename node references in edges (both shorthand and full-form)."""
+    """Rename node references in edges."""
     for edge in edges:
-        for key in ("source_str", "target_str"):
-            val = edge.get(key, "")
-            if val.split(".")[0] == old_name:
-                edge[key] = new_name + val[len(old_name):]
-        for key in ("source", "target"):
-            ref = edge.get(key, {})
-            if isinstance(ref, dict) and ref.get("node_name") == old_name:
-                ref["node_name"] = new_name
+        if edge.get("source_node") == old_name:
+            edge["source_node"] = new_name
+        if edge.get("target_node") == old_name:
+            edge["target_node"] = new_name
 
 
 def edit_node(
@@ -320,53 +310,45 @@ def edit_node(
 # %%
 #|export
 def add_edge(
-    source_port: Annotated[str, typer.Argument(help="Source as Node.port")],
-    target_port: Annotated[str, typer.Argument(help="Target as Node.port")],
+    source_node_arg: Annotated[str, typer.Argument(help="Source node name.")],
+    source_port_arg: Annotated[str, typer.Argument(help="Source port name.")],
+    target_node_arg: Annotated[str, typer.Argument(help="Target node name.")],
+    target_port_arg: Annotated[str, typer.Argument(help="Target port name.")],
     config: ConfigOpt = None,
     dependency: Annotated[bool, typer.Option("--dependency", help="Mark edge as a dependency edge.")] = False,
     pretty: PrettyOpt = True,
     no_validate: NoValidateOpt = False,
 ) -> None:
     """Add an edge between two ports."""
-    # Validate format
-    if "." not in source_port or "." not in target_port:
-        typer.echo("Error: source and target must be in Node.port format.", err=True)
-        raise typer.Exit(1)
-
     data, config_path = load_raw_data(config)
     graph = data.setdefault("graph", {})
     nodes_list: list[dict] = graph.get("nodes", [])
     edges: list[dict] = graph.setdefault("edges", [])
 
-    src_node = source_port.split(".")[0]
-    tgt_node = target_port.split(".")[0]
     node_names = {n.get("name") for n in nodes_list}
 
-    if src_node not in node_names:
-        typer.echo(f"Error: source node '{src_node}' not found.", err=True)
+    if source_node_arg not in node_names:
+        typer.echo(f"Error: source node '{source_node_arg}' not found.", err=True)
         raise typer.Exit(1)
-    if tgt_node not in node_names:
-        typer.echo(f"Error: target node '{tgt_node}' not found.", err=True)
+    if target_node_arg not in node_names:
+        typer.echo(f"Error: target node '{target_node_arg}' not found.", err=True)
         raise typer.Exit(1)
 
     # Warn on fan-out
     for e in edges:
-        existing_src = e.get("source_str", "")
-        if not existing_src:
-            ref = e.get("source", {})
-            if isinstance(ref, dict):
-                existing_src = f"{ref.get('node_name', '')}.{ref.get('port_name', '')}"
-        if existing_src == source_port:
+        if e.get("source_node") == source_node_arg and e.get("source_port") == source_port_arg:
             typer.echo(
-                f"Warning: fan-out — '{source_port}' already has an edge. "
+                f"Warning: fan-out — '{source_node_arg}.{source_port_arg}' already has an edge. "
                 "Consider using 'netrun.node_factories.broadcast' to replicate output to multiple targets.",
                 err=True,
             )
             break
 
     edge_dict: dict[str, Any] = {
-        "source_str": source_port,
-        "target_str": target_port,
+        "source_node": source_node_arg,
+        "source_port": source_port_arg,
+        "target_node": target_node_arg,
+        "target_port": target_port_arg,
     }
     if dependency:
         edge_dict["dependency"] = True
@@ -384,25 +366,21 @@ def add_edge(
 
 # %%
 #|export
-def _edge_matches(edge: dict, source_port: str, target_port: str) -> bool:
-    """Check if an edge matches the given source and target port strings."""
-    # Check shorthand form
-    if edge.get("source_str") == source_port and edge.get("target_str") == target_port:
-        return True
-    # Check full-form
-    src = edge.get("source", {})
-    tgt = edge.get("target", {})
-    if isinstance(src, dict) and isinstance(tgt, dict):
-        src_str = f"{src.get('node_name', '')}.{src.get('port_name', '')}"
-        tgt_str = f"{tgt.get('node_name', '')}.{tgt.get('port_name', '')}"
-        if src_str == source_port and tgt_str == target_port:
-            return True
-    return False
+def _edge_matches(edge: dict, source_node: str, source_port: str, target_node: str, target_port: str) -> bool:
+    """Check if an edge matches the given source and target fields."""
+    return (
+        edge.get("source_node") == source_node
+        and edge.get("source_port") == source_port
+        and edge.get("target_node") == target_node
+        and edge.get("target_port") == target_port
+    )
 
 
 def remove_edge(
-    source_port: Annotated[str, typer.Argument(help="Source as Node.port")],
-    target_port: Annotated[str, typer.Argument(help="Target as Node.port")],
+    source_node_arg: Annotated[str, typer.Argument(help="Source node name.")],
+    source_port_arg: Annotated[str, typer.Argument(help="Source port name.")],
+    target_node_arg: Annotated[str, typer.Argument(help="Target node name.")],
+    target_port_arg: Annotated[str, typer.Argument(help="Target port name.")],
     config: ConfigOpt = None,
     pretty: PrettyOpt = True,
     no_validate: NoValidateOpt = False,
@@ -414,13 +392,17 @@ def remove_edge(
 
     found = False
     for i, e in enumerate(edges):
-        if _edge_matches(e, source_port, target_port):
+        if _edge_matches(e, source_node_arg, source_port_arg, target_node_arg, target_port_arg):
             edges.pop(i)
             found = True
             break
 
     if not found:
-        typer.echo(f"Error: edge '{source_port}' -> '{target_port}' not found.", err=True)
+        typer.echo(
+            f"Error: edge '{source_node_arg}.{source_port_arg}' -> "
+            f"'{target_node_arg}.{target_port_arg}' not found.",
+            err=True,
+        )
         raise typer.Exit(1)
 
     write_config_data(data, config_path)
@@ -428,4 +410,9 @@ def remove_edge(
     if not no_validate:
         validate_after_write(config_path)
 
-    output_json({"removed_source": source_port, "removed_target": target_port}, pretty)
+    output_json({
+        "removed_source_node": source_node_arg,
+        "removed_source_port": source_port_arg,
+        "removed_target_node": target_node_arg,
+        "removed_target_port": target_port_arg,
+    }, pretty)

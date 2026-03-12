@@ -54,7 +54,7 @@ def _base_config() -> dict:
                 },
             ],
             "edges": [
-                {"source_str": "A.out", "target_str": "B.in"},
+                {"source_node": "A", "source_port": "out", "target_node": "B", "target_port": "in"},
             ],
         }
     }
@@ -179,7 +179,7 @@ def test_edit_node_rename(tmp_path):
     # Verify edge refs updated
     written = json.loads(Path(cfg).read_text())
     edge = written["graph"]["edges"][0]
-    assert edge["source_str"] == "Alpha.out"
+    assert edge["source_node"] == "Alpha"
 
 
 def test_edit_node_ports(tmp_path):
@@ -229,11 +229,13 @@ def test_add_edge_basic(tmp_path):
     data = _base_config()
     data["graph"]["edges"] = []  # Start with no edges
     cfg = _make_config(tmp_path, data)
-    result = runner.invoke(app, ["add-edge", "A.out", "B.in", "-c", cfg, "--no-validate"])
+    result = runner.invoke(app, ["add-edge", "A", "out", "B", "in", "-c", cfg, "--no-validate"])
     assert result.exit_code == 0, result.output
     edge = json.loads(result.stdout)
-    assert edge["source_str"] == "A.out"
-    assert edge["target_str"] == "B.in"
+    assert edge["source_node"] == "A"
+    assert edge["source_port"] == "out"
+    assert edge["target_node"] == "B"
+    assert edge["target_port"] == "in"
     # Verify written
     written = json.loads(Path(cfg).read_text())
     assert len(written["graph"]["edges"]) == 1
@@ -243,7 +245,7 @@ def test_add_edge_dependency(tmp_path):
     data = _base_config()
     data["graph"]["edges"] = []
     cfg = _make_config(tmp_path, data)
-    result = runner.invoke(app, ["add-edge", "A.out", "B.in", "-c", cfg, "--dependency", "--no-validate"])
+    result = runner.invoke(app, ["add-edge", "A", "out", "B", "in", "-c", cfg, "--dependency", "--no-validate"])
     assert result.exit_code == 0, result.output
     edge = json.loads(result.stdout)
     assert edge["dependency"] is True
@@ -254,23 +256,16 @@ def test_add_edge_fan_out_warning(tmp_path):
     # A.out already has an edge; adding another should warn
     # First add a third node
     runner.invoke(app, ["add-node", "C", "-c", cfg, "--in-ports", "in", "--no-validate"])
-    result = runner.invoke(app, ["add-edge", "A.out", "C.in", "-c", cfg, "--no-validate"])
+    result = runner.invoke(app, ["add-edge", "A", "out", "C", "in", "-c", cfg, "--no-validate"])
     assert result.exit_code == 0, result.output
     assert "fan-out" in result.output.lower() or "Fan-out" in result.output
 
 
 def test_add_edge_missing_node(tmp_path):
     cfg = _make_config(tmp_path, _base_config())
-    result = runner.invoke(app, ["add-edge", "Z.out", "B.in", "-c", cfg, "--no-validate"])
+    result = runner.invoke(app, ["add-edge", "Z", "out", "B", "in", "-c", cfg, "--no-validate"])
     assert result.exit_code == 1
     assert "not found" in result.output
-
-
-def test_add_edge_bad_format(tmp_path):
-    cfg = _make_config(tmp_path, _base_config())
-    result = runner.invoke(app, ["add-edge", "Aout", "Bin", "-c", cfg, "--no-validate"])
-    assert result.exit_code == 1
-    assert "Node.port" in result.output
 
 # %% [markdown]
 # ## Test remove-edge
@@ -279,10 +274,11 @@ def test_add_edge_bad_format(tmp_path):
 #|export
 def test_remove_edge_basic(tmp_path):
     cfg = _make_config(tmp_path, _base_config())
-    result = runner.invoke(app, ["remove-edge", "A.out", "B.in", "-c", cfg, "--no-validate"])
+    result = runner.invoke(app, ["remove-edge", "A", "out", "B", "in", "-c", cfg, "--no-validate"])
     assert result.exit_code == 0, result.output
     out = json.loads(result.stdout)
-    assert out["removed_source"] == "A.out"
+    assert out["removed_source_node"] == "A"
+    assert out["removed_source_port"] == "out"
     # Verify
     written = json.loads(Path(cfg).read_text())
     assert len(written["graph"]["edges"]) == 0
@@ -290,7 +286,7 @@ def test_remove_edge_basic(tmp_path):
 
 def test_remove_edge_not_found(tmp_path):
     cfg = _make_config(tmp_path, _base_config())
-    result = runner.invoke(app, ["remove-edge", "X.out", "Y.in", "-c", cfg, "--no-validate"])
+    result = runner.invoke(app, ["remove-edge", "X", "out", "Y", "in", "-c", cfg, "--no-validate"])
     assert result.exit_code == 1
     assert "not found" in result.output
 
@@ -310,8 +306,8 @@ def test_validate_fan_out_suggestion():
             NodeConfig(name="C", in_ports={"in": PortConfig()}),
         ],
         edges=[
-            EdgeConfig(source_str="A.out", target_str="B.in"),
-            EdgeConfig(source_str="A.out", target_str="C.in"),
+            EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in"),
+            EdgeConfig(source_node="A", source_port="out", target_node="C", target_port="in"),
         ],
     )
     errors = config.validate()

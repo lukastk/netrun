@@ -2,18 +2,45 @@
   "nodes": [
     {
       "name": "clean",
-      "in_ports": {"raw": {}},
-      "out_ports": {"cleaned": {}},
-      "extra": {"ui": {"position": {"x": 50, "y": 50}}}
+      "in_ports": {
+        "raw": {}
+      },
+      "out_ports": {
+        "cleaned": {}
+      },
+      "extra": {
+        "ui": {
+          "position": {
+            "x": 50,
+            "y": 50
+          }
+        }
+      }
     },
     {
       "name": "normalize",
-      "in_ports": {"data": {}},
-      "out_ports": {"normalized": {}},
-      "extra": {"ui": {"position": {"x": 300, "y": 50}}}
+      "in_ports": {
+        "data": {}
+      },
+      "out_ports": {
+        "normalized": {}
+      },
+      "extra": {
+        "ui": {
+          "position": {
+            "x": 300,
+            "y": 50
+          }
+        }
+      }
     }
   ],
   "edges": [
-    {"source_str": "clean.cleaned", "target_str": "normalize.data"}
+    {
+      "source_node": "clean",
+      "source_port": "cleaned",
+      "target_node": "normalize",
+      "target_port": "data"
+    }
   ]
 }

@@ -31,7 +31,7 @@ netrun is a flow-based runtime. You define a **graph** of **nodes** connected by
       }
     ],
     "edges": [
-      {"source_str": "A.out", "target_str": "B.in"}
+      {"source_node": "A", "source_port": "out", "target_node": "B", "target_port": "in"}
     ]
   }
 }
@@ -123,11 +123,11 @@ echo '{"extra": {"description": "Processes data"}}' | netrun edit-node my_node -
 #### add-edge
 
 ```bash
-# Connect two ports (format: Node.port)
-netrun add-edge source_node.out target_node.in
+# Connect two ports (4 positional args: SOURCE_NODE SOURCE_PORT TARGET_NODE TARGET_PORT)
+netrun add-edge source_node out target_node in
 
 # Add a dependency edge
-netrun add-edge data_node.out processor.trigger --dependency
+netrun add-edge data_node out processor trigger --dependency
 ```
 
 Warns on fan-out (same source port already has an edge) and suggests the broadcast factory.
@@ -135,7 +135,7 @@ Warns on fan-out (same source port already has an edge) and suggests the broadca
 #### remove-edge
 
 ```bash
-netrun remove-edge source_node.out target_node.in
+netrun remove-edge source_node out target_node in
 ```
 
 ### Actions & Recipes
@@ -171,8 +171,8 @@ netrun add-node process -f netrun.node_factories.from_function --factory-arg fun
 netrun add-node save -f netrun.node_factories.from_function --factory-arg func=nodes.save
 
 # 3. Connect them
-netrun add-edge fetch.out process.data
-netrun add-edge process.result save.data
+netrun add-edge fetch out process data
+netrun add-edge process result save data
 
 # 4. Validate
 netrun validate
@@ -189,9 +189,9 @@ netrun structure
 netrun add-node transform -f netrun.node_factories.from_function --factory-arg func=nodes.transform
 
 # 3. Rewire: remove old edge, add two new ones
-netrun remove-edge fetch.out process.data
-netrun add-edge fetch.out transform.input
-netrun add-edge transform.output process.data
+netrun remove-edge fetch out process data
+netrun add-edge fetch out transform input
+netrun add-edge transform output process data
 
 # 4. Validate
 netrun validate
@@ -208,9 +208,9 @@ netrun add-node broadcast_data -f netrun.node_factories.broadcast \
   --factory-arg 'output_ports=["out_a", "out_b"]'
 
 # Wire it up
-netrun add-edge source.out broadcast_data.in
-netrun add-edge broadcast_data.out_a consumer_a.data
-netrun add-edge broadcast_data.out_b consumer_b.data
+netrun add-edge source out broadcast_data in
+netrun add-edge broadcast_data out_a consumer_a data
+netrun add-edge broadcast_data out_b consumer_b data
 ```
 
 ### Rename a node

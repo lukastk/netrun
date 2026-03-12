@@ -6,7 +6,7 @@ UI Format (flowStore.ts):
 
 GraphConfig Format (netrun.net.config):
 - nodes: list of NodeConfig {name, in_ports, out_ports, in_salvo_conditions, out_salvo_conditions, factory, factory_args, extra, ...}
-- edges: list of EdgeConfig {source_str, target_str} or {source, target}
+- edges: list of EdgeConfig {source_node, source_port, target_node, target_port}
 - extra: optional dict for graph-level extra data
 
 NetConfig Format (netrun.net.config):
@@ -390,20 +390,10 @@ def graph_config_to_ui(
     # Convert edges
     for i, edge in enumerate(edges_data):
         # Parse edge source/target
-        if edge.get("source_str"):
-            source_parts = edge["source_str"].split(".")
-            target_parts = edge["target_str"].split(".")
-            source_node = source_parts[0]
-            source_port = source_parts[1]
-            target_node = target_parts[0]
-            target_port = target_parts[1]
-        else:
-            source_ref = edge.get("source", {})
-            target_ref = edge.get("target", {})
-            source_node = source_ref.get("node_name", "")
-            source_port = source_ref.get("port_name", "")
-            target_node = target_ref.get("node_name", "")
-            target_port = target_ref.get("port_name", "")
+        source_node = edge.get("source_node", "")
+        source_port = edge.get("source_port", "")
+        target_node = edge.get("target_node", "")
+        target_port = edge.get("target_port", "")
 
         # Get node IDs
         source_id = name_to_id.get(source_node, source_node)
@@ -570,8 +560,10 @@ def _ui_to_graph_config_model(
         target_handle = edge.get("targetHandle", "in")
         dependency = edge.get("data", {}).get("dependency", False)
         config_edges.append(_EdgeConfig(
-            source_str=f"{source_name}.{source_handle}",
-            target_str=f"{target_name}.{target_handle}",
+            source_node=source_name,
+            source_port=source_handle,
+            target_node=target_name,
+            target_port=target_handle,
             dependency=dependency,
         ))
 

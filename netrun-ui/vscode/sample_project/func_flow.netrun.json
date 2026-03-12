@@ -70,18 +70,24 @@
     ],
     "edges": [
       {
-        "source_str": "Fetch.out",
-        "target_str": "Transform.data",
+        "source_node": "Fetch",
+        "source_port": "out",
+        "target_node": "Transform",
+        "target_port": "data",
         "dependency": false
       },
       {
-        "source_str": "Transform.result",
-        "target_str": "Save.result",
+        "source_node": "Transform",
+        "source_port": "result",
+        "target_node": "Save",
+        "target_port": "result",
         "dependency": false
       },
       {
-        "source_str": "Transform.metadata",
-        "target_str": "LogMetadata.in",
+        "source_node": "Transform",
+        "source_port": "metadata",
+        "target_node": "LogMetadata",
+        "target_port": "in",
         "dependency": false
       }
     ]

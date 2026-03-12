@@ -10,7 +10,12 @@
   },
   "output_queues": {
     "reports": {
-      "ports": [["format_report", "out"]]
+      "ports": [
+        [
+          "format_report",
+          "out"
+        ]
+      ]
     }
   },
   "graph": {
@@ -18,31 +23,62 @@
       {
         "name": "fetch_data",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.fetch_data"},
+        "factory_args": {
+          "func": "nodes.fetch_data"
+        },
         "extra": {
-          "ui": {"position": {"x": 100, "y": 150}}
+          "ui": {
+            "position": {
+              "x": 100,
+              "y": 150
+            }
+          }
         }
       },
       {
         "name": "process",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.process"},
+        "factory_args": {
+          "func": "nodes.process"
+        },
         "extra": {
-          "ui": {"position": {"x": 400, "y": 150}}
+          "ui": {
+            "position": {
+              "x": 400,
+              "y": 150
+            }
+          }
         }
       },
       {
         "name": "format_report",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.format_report"},
+        "factory_args": {
+          "func": "nodes.format_report"
+        },
         "extra": {
-          "ui": {"position": {"x": 700, "y": 150}}
+          "ui": {
+            "position": {
+              "x": 700,
+              "y": 150
+            }
+          }
         }
       }
     ],
     "edges": [
-      {"source_str": "fetch_data.out", "target_str": "process.data"},
-      {"source_str": "process.out", "target_str": "format_report.stats"}
+      {
+        "source_node": "fetch_data",
+        "source_port": "out",
+        "target_node": "process",
+        "target_port": "data"
+      },
+      {
+        "source_node": "process",
+        "source_port": "out",
+        "target_node": "format_report",
+        "target_port": "stats"
+      }
     ]
   }
 }

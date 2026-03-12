@@ -4,16 +4,30 @@
   },
   "output_queues": {
     "results": {
-      "ports": [["process", "out"]]
+      "ports": [
+        [
+          "process",
+          "out"
+        ]
+      ]
     },
     "signals_log": {
-      "ports": [["monitor", "out"]]
+      "ports": [
+        [
+          "monitor",
+          "out"
+        ]
+      ]
     }
   },
   "graph": {
     "extra": {
       "ui": {
-        "viewport": {"x": 0, "y": 0, "zoom": 1},
+        "viewport": {
+          "x": 0,
+          "y": 0,
+          "zoom": 1
+        },
         "actions": [
           {
             "id": "action-run-project",
@@ -27,38 +41,88 @@
       {
         "name": "generate",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.generate"},
+        "factory_args": {
+          "func": "nodes.generate"
+        },
         "in_salvo_conditions": {},
         "execution_config": {
-          "pools": ["main"],
-          "controls": ["start_epoch"]
+          "pools": [
+            "main"
+          ],
+          "controls": [
+            "start_epoch"
+          ]
         },
-        "extra": {"ui": {"position": {"x": 100, "y": 150}}}
+        "extra": {
+          "ui": {
+            "position": {
+              "x": 100,
+              "y": 150
+            }
+          }
+        }
       },
       {
         "name": "process",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.process"},
-        "execution_config": {
-          "pools": ["main"],
-          "signals": ["epoch_finished"],
-          "controls": ["enable", "disable"]
+        "factory_args": {
+          "func": "nodes.process"
         },
-        "extra": {"ui": {"position": {"x": 400, "y": 150}}}
+        "execution_config": {
+          "pools": [
+            "main"
+          ],
+          "signals": [
+            "epoch_finished"
+          ],
+          "controls": [
+            "enable",
+            "disable"
+          ]
+        },
+        "extra": {
+          "ui": {
+            "position": {
+              "x": 400,
+              "y": 150
+            }
+          }
+        }
       },
       {
         "name": "monitor",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.monitor"},
-        "execution_config": {
-          "pools": ["main"]
+        "factory_args": {
+          "func": "nodes.monitor"
         },
-        "extra": {"ui": {"position": {"x": 700, "y": 300}}}
+        "execution_config": {
+          "pools": [
+            "main"
+          ]
+        },
+        "extra": {
+          "ui": {
+            "position": {
+              "x": 700,
+              "y": 300
+            }
+          }
+        }
       }
     ],
     "edges": [
-      {"source_str": "generate.out", "target_str": "process.data"},
-      {"source_str": "process.__signal_epoch_finished__", "target_str": "monitor.trigger"}
+      {
+        "source_node": "generate",
+        "source_port": "out",
+        "target_node": "process",
+        "target_port": "data"
+      },
+      {
+        "source_node": "process",
+        "source_port": "__signal_epoch_finished__",
+        "target_node": "monitor",
+        "target_port": "trigger"
+      }
     ]
   }
 }

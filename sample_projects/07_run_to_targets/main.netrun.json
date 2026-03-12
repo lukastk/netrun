@@ -4,7 +4,12 @@
   },
   "output_queues": {
     "results": {
-      "ports": [["format_output", "out"]]
+      "ports": [
+        [
+          "format_output",
+          "out"
+        ]
+      ]
     }
   },
   "graph": {
@@ -12,49 +17,104 @@
       {
         "name": "fetch_data",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.fetch_data"},
+        "factory_args": {
+          "func": "nodes.fetch_data"
+        },
         "extra": {
-          "ui": {"position": {"x": 100, "y": 150}}
+          "ui": {
+            "position": {
+              "x": 100,
+              "y": 150
+            }
+          }
         }
       },
       {
         "name": "validate",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.validate"},
+        "factory_args": {
+          "func": "nodes.validate"
+        },
         "extra": {
-          "ui": {"position": {"x": 300, "y": 150}}
+          "ui": {
+            "position": {
+              "x": 300,
+              "y": 150
+            }
+          }
         }
       },
       {
         "name": "transform",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.transform"},
+        "factory_args": {
+          "func": "nodes.transform"
+        },
         "extra": {
-          "ui": {"position": {"x": 500, "y": 150}}
+          "ui": {
+            "position": {
+              "x": 500,
+              "y": 150
+            }
+          }
         }
       },
       {
         "name": "enrich",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.enrich"},
+        "factory_args": {
+          "func": "nodes.enrich"
+        },
         "extra": {
-          "ui": {"position": {"x": 700, "y": 150}}
+          "ui": {
+            "position": {
+              "x": 700,
+              "y": 150
+            }
+          }
         }
       },
       {
         "name": "format_output",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.format_output"},
+        "factory_args": {
+          "func": "nodes.format_output"
+        },
         "extra": {
-          "ui": {"position": {"x": 900, "y": 150}}
+          "ui": {
+            "position": {
+              "x": 900,
+              "y": 150
+            }
+          }
         }
       }
     ],
     "edges": [
-      {"source_str": "fetch_data.out", "target_str": "validate.data"},
-      {"source_str": "validate.out", "target_str": "transform.data"},
-      {"source_str": "transform.out", "target_str": "enrich.data"},
-      {"source_str": "enrich.out", "target_str": "format_output.data"}
+      {
+        "source_node": "fetch_data",
+        "source_port": "out",
+        "target_node": "validate",
+        "target_port": "data"
+      },
+      {
+        "source_node": "validate",
+        "source_port": "out",
+        "target_node": "transform",
+        "target_port": "data"
+      },
+      {
+        "source_node": "transform",
+        "source_port": "out",
+        "target_node": "enrich",
+        "target_port": "data"
+      },
+      {
+        "source_node": "enrich",
+        "source_port": "out",
+        "target_node": "format_output",
+        "target_port": "data"
+      }
     ]
   }
 }

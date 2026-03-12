@@ -114,7 +114,7 @@ def add(a: int, b: int, print) -> int:
       }
     ],
     "edges": [
-      {"source_str": "double.out", "target_str": "add.a"}
+      {"source_node": "double", "source_port": "out", "target_node": "add", "target_port": "a"}
     ]
   }
 }
@@ -382,13 +382,13 @@ The `func` argument in `factory_args` supports two formats:
 
 ### Edges
 
-Edges connect output ports to input ports. Use the shorthand string format `"NodeName.port_name"`:
+Edges connect output ports to input ports using flat fields for source and target:
 
 ```json
 {
   "edges": [
-    {"source_str": "double.out", "target_str": "add.a"},
-    {"source_str": "add.out", "target_str": "format.value"}
+    {"source_node": "double", "source_port": "out", "target_node": "add", "target_port": "a"},
+    {"source_node": "add", "source_port": "out", "target_node": "format", "target_port": "value"}
   ]
 }
 ```
@@ -397,8 +397,10 @@ TOML equivalent:
 
 ```toml
 [[graph.edges]]
-source_str = "double.out"
-target_str = "add.a"
+source_node = "double"
+source_port = "out"
+target_node = "add"
+target_port = "a"
 ```
 
 ### Subgraphs
@@ -424,7 +426,7 @@ Subgraphs encapsulate a group of nodes and edges behind exposed ports. They are 
     }
   ],
   "edges": [
-    {"source_str": "normalize.out", "target_str": "validate.data"}
+    {"source_node": "normalize", "source_port": "out", "target_node": "validate", "target_port": "data"}
   ],
   "exposed_in_ports": {
     "in": {"internal_node": "normalize", "internal_port": "data"}
@@ -435,7 +437,7 @@ Subgraphs encapsulate a group of nodes and edges behind exposed ports. They are 
 }
 ```
 
-External edges connect to exposed ports: `"source_str": "source.out", "target_str": "preprocess.in"`.
+External edges connect to exposed ports: `"source_node": "source", "source_port": "out", "target_node": "preprocess", "target_port": "in"`.
 
 #### File-Referenced Subgraph
 
@@ -482,7 +484,7 @@ def get_node_config(_net_config=None, *, num_stages: int = 2):
         for i in range(num_stages)
     ]
     edges = [
-        EdgeConfig(source_str=f"stage_{i}.out", target_str=f"stage_{i+1}.data")
+        EdgeConfig(source_node=f"stage_{i}", source_port="out", target_node=f"stage_{i+1}", target_port="data")
         for i in range(num_stages - 1)
     ]
     return SubgraphConfig(
@@ -1732,7 +1734,7 @@ The table below maps every netrun concept and API to the sample project(s) that 
 
 | Concept / API | Sample Projects |
 |---------------|-----------------|
-| Edges (`source_str` / `target_str`) | 00, 03, 06, 07, 08 |
+| Edges (`source_node` / `source_port` / `target_node` / `target_port`) | 00, 03, 06, 07, 08 |
 | Inline subgraphs | 03 |
 | File-referenced subgraphs (`path`) | 03 |
 | Factory-generated subgraphs | 03 |

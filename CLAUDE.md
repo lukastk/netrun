@@ -277,7 +277,7 @@ The Net module provides flow-based network execution by integrating with netrun-
 - `NodeExecutionConfig` - Execution settings (pools, retries, rate limiting, type checking)
 - `GraphConfig` - Graph topology (nodes, edges, output queues)
 - `PortConfig` - Port definition with optional type annotation
-- `EdgeConfig` - Connection between ports (supports shorthand `"Node.port"` strings)
+- `EdgeConfig` - Connection between ports (`source_node`, `source_port`, `target_node`, `target_port`)
 - `SalvoConditionConfig` - Rules for triggering epochs or sending output
 - `OutputQueueConfig` - Collects packets from unconnected output ports
 - `NodeExecutionContext` - Context passed to node functions (consume/create packets, print, etc.)

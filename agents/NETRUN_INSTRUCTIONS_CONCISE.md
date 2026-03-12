@@ -66,7 +66,7 @@ asyncio.run(main())
 
 ## Graph
 
-**Edges**: `{"source_str": "nodeA.port", "target_str": "nodeB.port"}`
+**Edges**: `{"source_node": "nodeA", "source_port": "port", "target_node": "nodeB", "target_port": "port"}`
 
 **Subgraphs** (flattened at resolution, nodes prefixed with subgraph name):
 - **Inline**: `{"type": "subgraph", "name": "...", "nodes": [...], "edges": [...], "exposed_in_ports": {...}, "exposed_out_ports": {...}}`

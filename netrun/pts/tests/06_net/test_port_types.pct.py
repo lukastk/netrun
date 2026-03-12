@@ -484,7 +484,7 @@ class TestInputTypeValidationIntegration:
                         args={"func": consumer},
                     ),
                 ],
-                edges=[EdgeConfig(source_str="producer.out", target_str="consumer.data")],
+                edges=[EdgeConfig(source_node="producer", source_port="out", target_node="consumer", target_port="data")],
             ),
         )
 
@@ -521,7 +521,7 @@ class TestInputTypeValidationIntegration:
                         args={"func": consumer},
                     ),
                 ],
-                edges=[EdgeConfig(source_str="producer.out", target_str="consumer.data")],
+                edges=[EdgeConfig(source_node="producer", source_port="out", target_node="consumer", target_port="data")],
             ),
         )
 
@@ -557,7 +557,7 @@ class TestInputTypeValidationIntegration:
                         args={"func": consumer},
                     ),
                 ],
-                edges=[EdgeConfig(source_str="producer.out", target_str="consumer.data")],
+                edges=[EdgeConfig(source_node="producer", source_port="out", target_node="consumer", target_port="data")],
             ),
         )
 
@@ -590,7 +590,7 @@ class TestInputTypeValidationIntegration:
                         args={"func": consumer},
                     ),
                 ],
-                edges=[EdgeConfig(source_str="producer.out", target_str="consumer.data")],
+                edges=[EdgeConfig(source_node="producer", source_port="out", target_node="consumer", target_port="data")],
             ),
         )
 

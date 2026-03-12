@@ -4,19 +4,38 @@
   },
   "output_queues": {
     "results": {
-      "ports": [["format_result", "out"]]
+      "ports": [
+        [
+          "format_result",
+          "out"
+        ]
+      ]
     },
     "summaries": {
-      "ports": [["analyze", "summary"]]
+      "ports": [
+        [
+          "analyze",
+          "summary"
+        ]
+      ]
     },
     "breakdowns": {
-      "ports": [["analyze", "breakdown"]]
+      "ports": [
+        [
+          "analyze",
+          "breakdown"
+        ]
+      ]
     }
   },
   "graph": {
     "extra": {
       "ui": {
-        "viewport": {"x": 0, "y": 0, "zoom": 1},
+        "viewport": {
+          "x": 0,
+          "y": 0,
+          "zoom": 1
+        },
         "actions": [
           {
             "id": "action-show-info",
@@ -35,34 +54,60 @@
       {
         "name": "double",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.double"},
+        "factory_args": {
+          "func": "nodes.double"
+        },
         "extra": {
-          "ui": {"position": {"x": 300, "y": 100}}
+          "ui": {
+            "position": {
+              "x": 300,
+              "y": 100
+            }
+          }
         }
       },
       {
         "name": "add",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.add"},
+        "factory_args": {
+          "func": "nodes.add"
+        },
         "extra": {
-          "ui": {"position": {"x": 500, "y": 150}}
+          "ui": {
+            "position": {
+              "x": 500,
+              "y": 150
+            }
+          }
         }
       },
       {
         "name": "format_result",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.format_result"},
+        "factory_args": {
+          "func": "nodes.format_result"
+        },
         "extra": {
-          "ui": {"position": {"x": 700, "y": 100}}
+          "ui": {
+            "position": {
+              "x": 700,
+              "y": 100
+            }
+          }
         }
       },
       {
         "name": "analyze",
         "factory": "netrun.node_factories.from_function",
-        "factory_args": {"func": "nodes.analyze"},
+        "factory_args": {
+          "func": "nodes.analyze"
+        },
         "extra": {
           "ui": {
-            "position": {"x": 700, "y": 250},
+            "position": {
+              "x": 700,
+              "y": 250
+            },
             "actions": [
               {
                 "id": "action-show-analysis",
@@ -75,8 +120,18 @@
       }
     ],
     "edges": [
-      {"source_str": "double.out", "target_str": "add.a"},
-      {"source_str": "add.out", "target_str": "format_result.value"}
+      {
+        "source_node": "double",
+        "source_port": "out",
+        "target_node": "add",
+        "target_port": "a"
+      },
+      {
+        "source_node": "add",
+        "source_port": "out",
+        "target_node": "format_result",
+        "target_port": "value"
+      }
     ]
   }
 }

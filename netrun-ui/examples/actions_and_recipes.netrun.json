@@ -84,12 +84,16 @@
     ],
     "edges": [
       {
-        "source_str": "DataLoader.out",
-        "target_str": "Transformer.input"
+        "source_node": "DataLoader",
+        "source_port": "out",
+        "target_node": "Transformer",
+        "target_port": "input"
       },
       {
-        "source_str": "Transformer.output",
-        "target_str": "OutputSink.value"
+        "source_node": "Transformer",
+        "source_port": "output",
+        "target_node": "OutputSink",
+        "target_port": "value"
       }
     ],
     "extra": {

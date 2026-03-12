@@ -148,8 +148,8 @@ async def test_linear_pipeline():
             _make_sink_node("C"),
         ],
         edges=[
-            EdgeConfig(source_str="A.out", target_str="B.in"),
-            EdgeConfig(source_str="B.out", target_str="C.in"),
+            EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in"),
+            EdgeConfig(source_node="B", source_port="out", target_node="C", target_port="in"),
         ],
     )
 
@@ -221,10 +221,10 @@ async def test_diamond():
             _make_sink_node("D"),
         ],
         edges=[
-            EdgeConfig(source_str="A.out_b", target_str="B.in"),
-            EdgeConfig(source_str="A.out_c", target_str="C.in"),
-            EdgeConfig(source_str="B.out", target_str="D.in"),
-            EdgeConfig(source_str="C.out", target_str="D.in"),
+            EdgeConfig(source_node="A", source_port="out_b", target_node="B", target_port="in"),
+            EdgeConfig(source_node="A", source_port="out_c", target_node="C", target_port="in"),
+            EdgeConfig(source_node="B", source_port="out", target_node="D", target_port="in"),
+            EdgeConfig(source_node="C", source_port="out", target_node="D", target_port="in"),
         ],
     )
 
@@ -287,7 +287,7 @@ async def test_specific_salvo_condition():
             ),
         ],
         edges=[
-            EdgeConfig(source_str="A.out", target_str="B.in1"),
+            EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in1"),
         ],
     )
 
@@ -321,7 +321,7 @@ async def test_multiple_target_salvos():
             _make_sink_node("B"),
         ],
         edges=[
-            EdgeConfig(source_str="A.out", target_str="B.in"),
+            EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in"),
         ],
     )
 
@@ -427,9 +427,9 @@ async def test_irrelevant_nodes_not_executed():
             _make_sink_node("E"),
         ],
         edges=[
-            EdgeConfig(source_str="A.out", target_str="B.in"),
-            EdgeConfig(source_str="B.out", target_str="C.in"),
-            EdgeConfig(source_str="D.out", target_str="E.in"),
+            EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in"),
+            EdgeConfig(source_node="B", source_port="out", target_node="C", target_port="in"),
+            EdgeConfig(source_node="D", source_port="out", target_node="E", target_port="in"),
         ],
     )
 
@@ -505,8 +505,8 @@ async def test_cycle_handling():
             _make_sink_node("C"),
         ],
         edges=[
-            EdgeConfig(source_str="A.out", target_str="B.in"),
-            EdgeConfig(source_str="B.out", target_str="C.in"),
+            EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in"),
+            EdgeConfig(source_node="B", source_port="out", target_node="C", target_port="in"),
         ],
     )
 
@@ -536,7 +536,7 @@ async def test_empty_result():
             _make_sink_node("B"),
         ],
         edges=[
-            EdgeConfig(source_str="A.out", target_str="B.in"),
+            EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in"),
         ],
     )
 
@@ -558,7 +558,7 @@ async def test_invalid_target_node():
             _make_sink_node("B"),
         ],
         edges=[
-            EdgeConfig(source_str="A.out", target_str="B.in"),
+            EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in"),
         ],
     )
 
@@ -806,8 +806,8 @@ async def test_multiple_targets():
             _make_sink_node("C"),
         ],
         edges=[
-            EdgeConfig(source_str="A.out_b", target_str="B.in"),
-            EdgeConfig(source_str="A.out_c", target_str="C.in"),
+            EdgeConfig(source_node="A", source_port="out_b", target_node="B", target_port="in"),
+            EdgeConfig(source_node="A", source_port="out_c", target_node="C", target_port="in"),
         ],
     )
 
@@ -835,7 +835,7 @@ async def test_auto_start():
             _make_sink_node("B"),
         ],
         edges=[
-            EdgeConfig(source_str="A.out", target_str="B.in"),
+            EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in"),
         ],
     )
 
@@ -896,8 +896,8 @@ async def test_source_nodes_executed():
             _make_sink_node("Sink"),
         ],
         edges=[
-            EdgeConfig(source_str="Source.out", target_str="Middle.in"),
-            EdgeConfig(source_str="Middle.out", target_str="Sink.in"),
+            EdgeConfig(source_node="Source", source_port="out", target_node="Middle", target_port="in"),
+            EdgeConfig(source_node="Middle", source_port="out", target_node="Sink", target_port="in"),
         ],
     )
 
@@ -956,7 +956,7 @@ async def test_raises_on_disabled_source_node():
             _make_sink_node("Sink"),
         ],
         edges=[
-            EdgeConfig(source_str="Source.out", target_str="Sink.in"),
+            EdgeConfig(source_node="Source", source_port="out", target_node="Sink", target_port="in"),
         ],
     )
 
@@ -982,8 +982,8 @@ async def test_pre_start_inject():
             _make_sink_node("C"),
         ],
         edges=[
-            EdgeConfig(source_str="A.out", target_str="B.in"),
-            EdgeConfig(source_str="B.out", target_str="C.in"),
+            EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in"),
+            EdgeConfig(source_node="B", source_port="out", target_node="C", target_port="in"),
         ],
     )
 
@@ -1044,7 +1044,7 @@ async def test_no_double_source_execution():
             _make_sink_node("Sink"),
         ],
         edges=[
-            EdgeConfig(source_str="Source.out", target_str="Sink.in"),
+            EdgeConfig(source_node="Source", source_port="out", target_node="Sink", target_port="in"),
         ],
     )
 
@@ -1118,8 +1118,8 @@ async def test_irrelevant_source_nodes_not_executed():
             _make_sink_node("Sink2"),
         ],
         edges=[
-            EdgeConfig(source_str="SourceA.out", target_str="Sink1.in"),
-            EdgeConfig(source_str="SourceB.out", target_str="Sink2.in"),
+            EdgeConfig(source_node="SourceA", source_port="out", target_node="Sink1", target_port="in"),
+            EdgeConfig(source_node="SourceB", source_port="out", target_node="Sink2", target_port="in"),
         ],
     )
 
@@ -1219,8 +1219,8 @@ async def test_run_to_targets_control_triggered_target():
         ],
         edges=[
             EdgeConfig(
-                source_str="Source.__signal_epoch_finished__",
-                target_str="Target.__control_start_epoch__",
+                source_node="Source", source_port="__signal_epoch_finished__",
+                target_node="Target", target_port="__control_start_epoch__",
             ),
         ],
     )

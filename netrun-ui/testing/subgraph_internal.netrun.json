@@ -76,12 +76,16 @@
     ],
     "edges": [
       {
-        "source_str": "Validate.valid",
-        "target_str": "Transform.input"
+        "source_node": "Validate",
+        "source_port": "valid",
+        "target_node": "Transform",
+        "target_port": "input"
       },
       {
-        "source_str": "Validate.invalid",
-        "target_str": "ErrorLog.error"
+        "source_node": "Validate",
+        "source_port": "invalid",
+        "target_node": "ErrorLog",
+        "target_port": "error"
       }
     ]
   }

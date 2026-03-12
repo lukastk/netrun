@@ -37,8 +37,8 @@ def _create_net_with_edges() -> Net:
             ),
         ],
         edges=[
-            EdgeConfig(source_str="Source.out1", target_str="Middle.in"),
-            EdgeConfig(source_str="Middle.out", target_str="Sink.in"),
+            EdgeConfig(source_node="Source", source_port="out1", target_node="Middle", target_port="in"),
+            EdgeConfig(source_node="Middle", source_port="out", target_node="Sink", target_port="in"),
             # Source.out2 and Sink.dangling are unconnected
         ],
     )
@@ -139,8 +139,8 @@ def test_graph_with_multiple_edges_from_same_port():
             NodeConfig(name="SinkB", in_ports={"in": PortConfig()}),
         ],
         edges=[
-            EdgeConfig(source_str="Source.out_a", target_str="SinkA.in"),
-            EdgeConfig(source_str="Source.out_b", target_str="SinkB.in"),
+            EdgeConfig(source_node="Source", source_port="out_a", target_node="SinkA", target_port="in"),
+            EdgeConfig(source_node="Source", source_port="out_b", target_node="SinkB", target_port="in"),
         ],
     )
 

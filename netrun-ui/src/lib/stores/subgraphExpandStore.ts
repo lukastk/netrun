@@ -600,13 +600,10 @@ export function deleteExpandedChildren(
 
 		const updatedNodes = configNodes.filter(cn => !nodeIds.has(cn.name as string));
 		const updatedEdges = configEdges.filter(ce => {
-			const srcStr = ce.source_str as string | undefined;
-			const tgtStr = ce.target_str as string | undefined;
-			if (!srcStr || !tgtStr) return true;
-			// source_str format: "nodeName.portName"
-			const srcNode = srcStr.split('.')[0];
-			const tgtNode = tgtStr.split('.')[0];
-			// Remove if edge references deleted node or is in the edgeIds
+			const srcNode = ce.source_node as string | undefined;
+			const tgtNode = ce.target_node as string | undefined;
+			if (!srcNode || !tgtNode) return true;
+			// Remove if edge references deleted node
 			if (nodeIds.has(srcNode) || nodeIds.has(tgtNode)) return false;
 			// Check if edge itself is targeted for deletion
 			// Edge IDs in config don't have explicit IDs, so we skip this check
@@ -686,8 +683,10 @@ export function addExpandedChildEdge(connection: {
 			edges: [
 				...configEdges,
 				{
-					source_str: `${originalSource}.${connection.sourceHandle || 'out'}`,
-					target_str: `${originalTarget}.${connection.targetHandle || 'in'}`,
+					source_node: originalSource,
+					source_port: connection.sourceHandle || 'out',
+					target_node: originalTarget,
+					target_port: connection.targetHandle || 'in',
 				},
 			],
 		},
@@ -796,25 +795,17 @@ export function renameExpandedChildNode(oldChildNodeId: string, newName: string)
 		return { ...cn, name: trimmed };
 	});
 
-	// Update edges where source_str/target_str start with oldName.
+	// Update edges where source_node/target_node match oldName.
 	const updatedEdges = configEdges.map(ce => {
 		let changed = false;
 		const newCe = { ...ce };
-		const srcStr = ce.source_str as string | undefined;
-		const tgtStr = ce.target_str as string | undefined;
-		if (srcStr) {
-			const parts = srcStr.split('.');
-			if (parts[0] === originalId) {
-				newCe.source_str = [trimmed, ...parts.slice(1)].join('.');
-				changed = true;
-			}
+		if (ce.source_node === originalId) {
+			newCe.source_node = trimmed;
+			changed = true;
 		}
-		if (tgtStr) {
-			const parts = tgtStr.split('.');
-			if (parts[0] === originalId) {
-				newCe.target_str = [trimmed, ...parts.slice(1)].join('.');
-				changed = true;
-			}
+		if (ce.target_node === originalId) {
+			newCe.target_node = trimmed;
+			changed = true;
 		}
 		return changed ? newCe : ce;
 	});

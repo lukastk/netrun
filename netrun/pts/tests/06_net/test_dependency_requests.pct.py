@@ -90,21 +90,21 @@ def test_dependency_request_config_to_netrun_sim():
 #|export
 def test_edge_config_dependency_flag_default():
     """EdgeConfig.dependency defaults to False."""
-    edge = EdgeConfig(source_str="A.out", target_str="B.in")
+    edge = EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in")
     assert edge.dependency is False
 
 # %%
 #|export
 def test_edge_config_dependency_flag_true():
     """EdgeConfig.dependency can be set to True."""
-    edge = EdgeConfig(source_str="A.out", target_str="B.in", dependency=True)
+    edge = EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in", dependency=True)
     assert edge.dependency is True
 
 # %%
 #|export
 def test_edge_config_dependency_json_roundtrip():
     """EdgeConfig with dependency=True round-trips through JSON."""
-    edge = EdgeConfig(source_str="A.out", target_str="B.in", dependency=True)
+    edge = EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in", dependency=True)
     data = json.loads(edge.model_dump_json())
     assert data["dependency"] is True
     restored = EdgeConfig.model_validate(data)
@@ -220,7 +220,7 @@ def test_graph_config_passes_dependency_edges():
             ),
         ],
         edges=[
-            EdgeConfig(source_str="Source.out", target_str="Sink.in", dependency=True),
+            EdgeConfig(source_node="Source", source_port="out", target_node="Sink", target_port="in", dependency=True),
         ],
     )
     graph = graph_config.get_graph()
@@ -265,7 +265,7 @@ def test_graph_config_non_dependency_edge():
             ),
         ],
         edges=[
-            EdgeConfig(source_str="A.out", target_str="B.in"),
+            EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in"),
         ],
     )
     graph = graph_config.get_graph()
@@ -283,7 +283,7 @@ def test_subgraph_resolve_preserves_dependency_flag():
             NodeConfig(name="B", in_ports={"in": PortConfig()}),
         ],
         edges=[
-            EdgeConfig(source_str="A.out", target_str="B.in", dependency=True),
+            EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in", dependency=True),
         ],
     )
     # resolve() rewrites edges through subgraph mappings; with no subgraphs,
@@ -309,7 +309,7 @@ def test_auto_default_dependency_request_config():
             ),
         ],
         edges=[
-            EdgeConfig(source_str="Source.out", target_str="Sink.in", dependency=True),
+            EdgeConfig(source_node="Source", source_port="out", target_node="Sink", target_port="in", dependency=True),
         ],
     )
 
@@ -337,7 +337,7 @@ def test_explicit_dependency_request_not_overridden():
             ),
         ],
         edges=[
-            EdgeConfig(source_str="Source.out", target_str="Sink.in", dependency=True),
+            EdgeConfig(source_node="Source", source_port="out", target_node="Sink", target_port="in", dependency=True),
         ],
     )
 
@@ -357,7 +357,7 @@ def test_no_dependency_request_without_dependency_edges():
             NodeConfig(name="B", in_ports={"in": PortConfig()}),
         ],
         edges=[
-            EdgeConfig(source_str="A.out", target_str="B.in"),
+            EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in"),
         ],
     )
 
@@ -418,7 +418,7 @@ async def test_net_request_creates_pending_request():
             ),
         ],
         edges=[
-            EdgeConfig(source_str="Source.out", target_str="Sink.in", dependency=True),
+            EdgeConfig(source_node="Source", source_port="out", target_node="Sink", target_port="in", dependency=True),
         ],
     )
 
@@ -503,7 +503,7 @@ async def test_end_to_end_on_startup_dependency_request():
             ),
         ],
         edges=[
-            EdgeConfig(source_str="Source.out", target_str="Sink.in", dependency=True),
+            EdgeConfig(source_node="Source", source_port="out", target_node="Sink", target_port="in", dependency=True),
         ],
     )
 
@@ -595,7 +595,7 @@ async def test_manual_request_triggers_cascade_and_forward_flow():
             ),
         ],
         edges=[
-            EdgeConfig(source_str="Source.out", target_str="Sink.in", dependency=True),
+            EdgeConfig(source_node="Source", source_port="out", target_node="Sink", target_port="in", dependency=True),
         ],
     )
 
@@ -726,8 +726,8 @@ async def test_multi_hop_dependency_chain():
             ),
         ],
         edges=[
-            EdgeConfig(source_str="Source.out", target_str="Middle.in", dependency=True),
-            EdgeConfig(source_str="Middle.out", target_str="Sink.in", dependency=True),
+            EdgeConfig(source_node="Source", source_port="out", target_node="Middle", target_port="in", dependency=True),
+            EdgeConfig(source_node="Middle", source_port="out", target_node="Sink", target_port="in", dependency=True),
         ],
     )
 
@@ -829,10 +829,10 @@ async def test_diamond_graph_deduplication():
                   dep_req=DependencyRequestConfig(triggers=["on_startup"])),
         ],
         edges=[
-            EdgeConfig(source_str="Source.out_left", target_str="Left.in", dependency=True),
-            EdgeConfig(source_str="Source.out_right", target_str="Right.in", dependency=True),
-            EdgeConfig(source_str="Left.out", target_str="Sink.left", dependency=True),
-            EdgeConfig(source_str="Right.out", target_str="Sink.right", dependency=True),
+            EdgeConfig(source_node="Source", source_port="out_left", target_node="Left", target_port="in", dependency=True),
+            EdgeConfig(source_node="Source", source_port="out_right", target_node="Right", target_port="in", dependency=True),
+            EdgeConfig(source_node="Left", source_port="out", target_node="Sink", target_port="left", dependency=True),
+            EdgeConfig(source_node="Right", source_port="out", target_node="Sink", target_port="right", dependency=True),
         ],
     )
 
@@ -921,7 +921,7 @@ async def test_hybrid_push_pull():
             ),
         ],
         edges=[
-            EdgeConfig(source_str="DepSource.out", target_str="Sink.dep_in", dependency=True),
+            EdgeConfig(source_node="DepSource", source_port="out", target_node="Sink", target_port="dep_in", dependency=True),
         ],
     )
 
@@ -1013,7 +1013,7 @@ async def test_label_deduplication_same_label():
             ),
         ],
         edges=[
-            EdgeConfig(source_str="Source.out", target_str="Sink.in", dependency=True),
+            EdgeConfig(source_node="Source", source_port="out", target_node="Sink", target_port="in", dependency=True),
         ],
     )
 
@@ -1099,7 +1099,7 @@ async def test_label_deduplication_different_labels():
             ),
         ],
         edges=[
-            EdgeConfig(source_str="Source.out", target_str="Sink.in", dependency=True),
+            EdgeConfig(source_node="Source", source_port="out", target_node="Sink", target_port="in", dependency=True),
         ],
     )
 
@@ -1142,7 +1142,7 @@ def test_net_config_json_roundtrip_with_dependency_request():
                 ),
             ],
             edges=[
-                EdgeConfig(source_str="Source.out", target_str="Sink.in", dependency=True),
+                EdgeConfig(source_node="Source", source_port="out", target_node="Sink", target_port="in", dependency=True),
             ],
         ),
     )
