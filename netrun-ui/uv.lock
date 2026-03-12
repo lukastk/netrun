@@ -625,6 +625,7 @@ dev = [
     { name = "jupyterlab", specifier = ">=4.5.1" },
     { name = "mypy", specifier = ">=1.19.1" },
     { name = "nblite", specifier = ">=1.1.5" },
+    { name = "netrun", extras = ["cli"] },
     { name = "pytest", specifier = ">=9.0.2" },
     { name = "pytest-asyncio", specifier = ">=1.3.0" },
     { name = "ruff", specifier = ">=0.8.0" },

@@ -1,9 +1,9 @@
 <script lang="ts">
 	import { NetrunFlowViewer } from 'netrun-ui-vis/components';
 	import type { ContextMenuItem, GraphSettings } from 'netrun-ui-vis';
-	import { tick } from 'svelte';
+	import { tick, onMount, onDestroy } from 'svelte';
 	import { derived, get } from 'svelte/store';
-	import type { Edge, Node, Connection, NodeTypes, FitViewOptions } from '@xyflow/svelte';
+	import { useSvelteFlow, type Edge, type Node, type Connection, type NodeTypes, type FitViewOptions } from '@xyflow/svelte';
 	import { isValidConnection, activeTabId, panOnDrag, selectionOnDrag } from '$lib/stores/flowStore';
 	import { svelteFlowRef } from '$lib/stores/svelteFlowStore';
 
@@ -418,23 +418,26 @@
 		return '#3d3d3d';
 	}
 
+	// Get SvelteFlow instance for programmatic control (called inside SvelteFlowProvider)
+	const { fitView, getNodes } = useSvelteFlow();
+
+	onMount(() => {
+		svelteFlowRef.set({ fitView, getNodes });
+	});
+	onDestroy(() => {
+		svelteFlowRef.set(null);
+	});
+
 	// Track previous tab ID to detect tab switches
 	let previousTabId: string | null = null;
-	let flowApi: { fitView: (options?: FitViewOptions) => void; getNodes: () => Node[] } | null = null;
-
 	const fitViewOptions = { padding: 0.2, maxZoom: 1.5, minZoom: 0.1 };
-
-	function onInit(api: { fitView: (options?: FitViewOptions) => void; getNodes: () => Node[] }) {
-		flowApi = api;
-		svelteFlowRef.set({ fitView: api.fitView, getNodes: api.getNodes });
-	}
 
 	// Fit view when switching tabs
 	$effect(() => {
 		if ($activeTabId && $activeTabId !== previousTabId) {
 			previousTabId = $activeTabId;
 			tick().then(() => {
-				flowApi?.fitView(fitViewOptions);
+				fitView(fitViewOptions);
 			});
 		}
 	});
@@ -462,5 +465,4 @@
 	{onPaneContextMenu}
 	{onNodeContextAction}
 	{onEdgeContextAction}
-	{onInit}
 />
