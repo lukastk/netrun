@@ -310,6 +310,10 @@ class NetConfig(VarResolvableModel):
 
     storage: StorageConfig | None = Field(default=None, description="Storage configuration (caching, file storage, backend registry).")
 
+    retain_epoch_logs: bool | VarRef = Field(default=False, description="Keep EpochLog objects in memory, accessible via net.epoch_logs.")
+    retain_sim_action_logs: bool | VarRef = Field(default=False, description="Keep SimActionLog objects in memory, accessible via net.sim_action_log.")
+    epoch_log_echo_stdout: bool | VarRef = Field(default=False, description="Pretty-print epoch logs to stdout when epochs complete.")
+
     default_signals: list[str] | VarRef = Field(default_factory=list, description="Default signal types for all nodes. Nodes inherit this unless they set their own signals list. Valid types: 'epoch_started', 'epoch_finished', 'epoch_failed', 'epoch_cancelled', 'node_started', 'node_stopped'.")
 
     default_controls: list[str] | VarRef = Field(default_factory=list, description="Default control types for all nodes. Nodes inherit this unless they set their own controls list.")

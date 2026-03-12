@@ -1364,13 +1364,14 @@ async def test_net_run_step():
     config = create_simple_net_config()
 
     async with Net(config) as net:
-        # run_step returns (made_progress, events) tuple
+        # run_step returns (made_progress, sim_actions, epoch_logs) tuple
         result = await net.run_step()
         assert isinstance(result, tuple)
-        assert len(result) == 2
-        made_progress, events = result
+        assert len(result) == 3
+        made_progress, sim_actions, epoch_logs = result
         assert isinstance(made_progress, bool)
-        assert isinstance(events, list)
+        assert isinstance(sim_actions, list)
+        assert isinstance(epoch_logs, list)
 
 # %%
 #|export
@@ -1380,10 +1381,11 @@ async def test_net_run_until_blocked():
     config = create_simple_net_config()
 
     async with Net(config) as net:
-        # run_until_blocked should return (made_progress, events)
-        made_progress, events = await net.run_until_blocked()
+        # run_until_blocked should return (made_progress, sim_actions, epoch_logs)
+        made_progress, sim_actions, epoch_logs = await net.run_until_blocked()
         assert isinstance(made_progress, bool)
-        assert isinstance(events, list)
+        assert isinstance(sim_actions, list)
+        assert isinstance(epoch_logs, list)
 
 # %%
 #|export
@@ -6515,7 +6517,7 @@ async def test_on_epoch_end_callback():
         record = calls[0]["record"]
         assert record.ended_at is not None
         assert record.started_at is not None
-        assert record.was_cancelled is False
+        assert record.outcome == "success"
 
 # %%
 asyncio.get_event_loop().run_until_complete(test_on_epoch_end_callback())
@@ -6703,7 +6705,7 @@ async def test_epoch_end_on_cancelled():
     def on_end(node_name, epoch_id, record):
         end_calls.append({
             "node_name": node_name,
-            "was_cancelled": record.was_cancelled,
+            "outcome": record.outcome,
         })
 
     def cancelling_node(ctx, packets):
@@ -6734,7 +6736,7 @@ async def test_epoch_end_on_cancelled():
 
         assert len(end_calls) == 1
         assert end_calls[0]["node_name"] == "Canceller"
-        assert end_calls[0]["was_cancelled"] is True
+        assert end_calls[0]["outcome"] == "cancelled"
 
 # %%
 asyncio.get_event_loop().run_until_complete(test_epoch_end_on_cancelled())
