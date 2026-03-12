@@ -23,6 +23,7 @@
 	},
 	"dependencies": {
 		"@xyflow/svelte": "^1.5.0",
-		"elkjs": "^0.11.0"
+		"elkjs": "^0.11.0",
+		"netrun-ui-vis": "file:../netrun-ui-vis"
 	}
 }
