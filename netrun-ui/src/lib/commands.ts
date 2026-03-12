@@ -67,6 +67,7 @@ import {
 	type DecorationType,
 } from '$lib/stores/flowStore';
 import { showFactorySelector } from '$lib/stores/factorySelectorStore';
+import { api } from '$lib/api';
 import { get, derived } from 'svelte/store';
 import { resolveFilePath } from '$lib/stores/fileExplorerStore';
 import { showPrompt, showAlert, showConfirm } from '$lib/stores/modalStore';
@@ -320,6 +321,58 @@ const fileCommands: Command[] = [
 		keywords: ['close', 'tab'],
 		action: async () => {
 			await closeActiveTab();
+		},
+	},
+	{
+		id: 'file.exportHtml',
+		label: 'Export as HTML...',
+		category: 'file',
+		keywords: ['export', 'html', 'static', 'standalone', 'visualization'],
+		action: async () => {
+			const config = getCurrentConfig();
+			const configNodes = config.nodes as Record<string, unknown>[];
+			if (!configNodes || configNodes.length === 0) {
+				await showAlert({ title: 'Nothing to export', message: 'Add some nodes first.' });
+				return;
+			}
+
+			// Suggest a path based on the current file
+			const filePath = get(currentFilePath);
+			const defaultPath = filePath
+				? filePath.replace(/\.(netrun\.json|netrun\.toml)$/, '.netrun.html')
+				: 'graph.html';
+
+			const outputPath = await showPrompt({
+				title: 'Export as HTML',
+				message: 'Enter output file path',
+				placeholder: defaultPath,
+				defaultValue: defaultPath,
+				inputType: 'path',
+				confirmText: 'Export',
+			});
+			if (!outputPath) return;
+
+			const fullPath = resolveFilePath(outputPath);
+
+			try {
+				const result = await api.exportHtml(
+					configNodes,
+					config.edges as Record<string, unknown>[],
+					fullPath,
+					config.extra as Record<string, unknown>,
+					config.extraData as Record<string, unknown>,
+				);
+				toasts.success(`Exported to ${result.path}`);
+			} catch (e) {
+				await showAlert({
+					title: 'Export Failed',
+					message: (e as Error).message,
+				});
+			}
+		},
+		enabled: () => {
+			const n = get(nodes);
+			return n.length > 0;
 		},
 	},
 ];

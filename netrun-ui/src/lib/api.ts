@@ -613,6 +613,28 @@ class ApiClient {
 			method: 'GET',
 		});
 	}
+
+	/**
+	 * Export the current graph as a standalone HTML visualization
+	 */
+	async exportHtml(
+		nodes: Record<string, unknown>[],
+		edges: Record<string, unknown>[],
+		outputPath: string,
+		extra?: Record<string, unknown>,
+		extraData?: Record<string, unknown>,
+	): Promise<{ success: boolean; path: string }> {
+		return this.request<{ success: boolean; path: string }>('/files/export-html', {
+			method: 'POST',
+			body: JSON.stringify({
+				nodes,
+				edges,
+				extra,
+				extra_data: extraData,
+				output_path: outputPath,
+			}),
+		});
+	}
 }
 
 export const api = new ApiClient();

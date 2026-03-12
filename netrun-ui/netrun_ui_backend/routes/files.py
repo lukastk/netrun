@@ -182,6 +182,47 @@ async def save_file(request: FileSaveRequest) -> FileSaveResponse:
         raise HTTPException(status_code=500, detail=f"Error saving file: {e}")
 
 
+class ExportHtmlRequest(BaseModel):
+    """Request to export the current graph as a standalone HTML file."""
+    nodes: list[dict[str, Any]]
+    edges: list[dict[str, Any]]
+    extra: dict[str, Any] | None = None
+    extra_data: dict[str, Any] | None = None
+    output_path: str
+
+
+class ExportHtmlResponse(BaseModel):
+    """Response after exporting HTML."""
+    success: bool
+    path: str
+
+
+@router.post("/export-html", response_model=ExportHtmlResponse)
+async def export_html(request: ExportHtmlRequest) -> ExportHtmlResponse:
+    """Export the current UI state as a self-contained HTML visualization."""
+    from ..export_html import build_html, find_vis_assets_dir
+
+    try:
+        # Convert UI format → graph config dict (same pipeline as save)
+        graph = ui_to_graph_config(request.nodes, request.edges, request.extra)
+        graph_dict = dump_graph_config(graph)
+        config_data = merge_graph_with_extras(graph_dict, request.extra_data or {})
+
+        vis_assets_dir = find_vis_assets_dir()
+        html_content = build_html(config_data, vis_assets_dir)
+
+        output = Path(request.output_path).resolve()
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(html_content, encoding="utf-8")
+
+        return ExportHtmlResponse(success=True, path=str(output))
+
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=500, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Export failed: {e}")
+
+
 class ConvertRequest(BaseModel):
     """Request to convert between formats."""
     content: str

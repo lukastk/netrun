@@ -9,6 +9,7 @@ Usage:
     netrun-ui --dev                  # Development mode with Vite
     netrun-ui --port 8080            # Custom backend port
     netrun-ui -C /path/to/project    # Set working directory
+    netrun-ui export-html in.netrun.json -o out.html  # Export static HTML
 """
 
 import argparse
@@ -327,7 +328,57 @@ def run_dev_app(
     frontend_process.terminate()
 
 
+def run_export_html(argv: list[str]) -> None:
+    """Handle the ``export-html`` subcommand."""
+    parser = argparse.ArgumentParser(
+        prog="netrun-ui export-html",
+        description="Export a .netrun.json config as a standalone HTML visualization",
+    )
+    parser.add_argument("input", help="Input .netrun.json file")
+    parser.add_argument(
+        "-o", "--output",
+        default=None,
+        help="Output HTML file (default: <input>.html)",
+    )
+    parser.add_argument(
+        "--vis-assets-dir",
+        default=None,
+        help="Override path to built vis app assets directory",
+    )
+    args = parser.parse_args(argv)
+
+    from .export_html import export_html_from_file, find_vis_assets_dir
+
+    input_path = Path(args.input).resolve()
+    if not input_path.exists():
+        print(f"Error: File not found: {input_path}", file=sys.stderr)
+        sys.exit(1)
+
+    if args.output:
+        output_path = Path(args.output).resolve()
+    else:
+        # foo.netrun.json -> foo.netrun.html
+        output_path = input_path.with_suffix(".html")
+
+    vis_assets_dir = Path(args.vis_assets_dir).resolve() if args.vis_assets_dir else None
+
+    try:
+        export_html_from_file(input_path, output_path, vis_assets_dir)
+        print(f"Wrote {output_path}")
+    except FileNotFoundError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
+
+
 def main() -> None:
+    # Intercept subcommands before argparse
+    if len(sys.argv) > 1 and sys.argv[1] == "export-html":
+        run_export_html(sys.argv[2:])
+        return
+
     parser = argparse.ArgumentParser(
         description="netrun-ui - Visual editor for netrun flow configurations",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -341,6 +392,9 @@ Examples:
   netrun-ui --dev --server         Development server mode
   netrun-ui -C /path/to/project    Set working directory
   netrun-ui --port 8080            Use custom port
+
+Subcommands:
+  netrun-ui export-html <file> [-o output.html]  Export static HTML visualization
         """,
     )
 
