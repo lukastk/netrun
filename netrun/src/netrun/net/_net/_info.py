@@ -77,11 +77,19 @@ class NodeInfo:
 
     @property
     def epochs(self) -> list:
-        """All epochs for this node (including completed and cancelled).
+        """All epoch states for this node (including completed and cancelled).
 
-        Returns list of EpochRecord objects.
+        Returns list of _EpochState objects.
         """
         return [r for r in self._net._epochs.values() if r.node_name == self._name]
+
+    @property
+    def epoch_logs(self) -> list:
+        """All EpochLog objects for this node (requires retain_epoch_logs=True).
+
+        Returns list of EpochLog objects.
+        """
+        return [log for log in self._net._retained_epoch_logs.values() if log.node_name == self._name]
 
     @property
     def running_epochs(self) -> list:
@@ -336,7 +344,7 @@ class NodeInfo:
     def on_epoch_end(self, callback: Callable) -> Callable[[], None]:
         """Register a callback that fires when an epoch ends for this node.
 
-        The callback receives (node_name: str, epoch_id: str, record: EpochRecord).
+        The callback receives (node_name: str, epoch_id: str, epoch_log: EpochLog).
         Both sync and async callbacks are supported.
 
         Returns:

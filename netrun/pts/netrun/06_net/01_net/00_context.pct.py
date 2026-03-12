@@ -79,6 +79,249 @@ class NetProtocolKeys(Enum):
     """Send captured print output. Args: (epoch_id, buffer: list[str])"""
 
 # %% [markdown]
+# ## Structured Logging Data Models
+#
+# Data models for the three logging layers: node-level structured logs,
+# simulation-level action logs, and per-epoch canonical log lines.
+
+# %%
+#|export
+@dataclass
+class NodeLogEntry:
+    """A structured log entry from ctx.log() inside a node function."""
+    timestamp: datetime
+    fields: dict[str, Any]
+    message: str | None = None
+    level: str = "info"  # "info" or "error"
+
+
+@dataclass
+class SimEventLog:
+    """An individual NetEvent within a SimActionLog."""
+    timestamp: datetime
+    kind: str           # "PacketMoved", "PacketCreated", "InputSalvoTriggered", etc.
+    detail: dict        # event-specific fields
+
+
+@dataclass
+class SimActionLog:
+    """One per do_action() call, contains SimEventLogs."""
+    timestamp: datetime
+    action_kind: str          # "RunStep", "StartEpoch", "CreatePacket", etc.
+    action_detail: dict       # action args: epoch_id, packet_id, port_name, etc.
+    events: list[SimEventLog]
+    epoch_id: str | None = None
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to a plain dict."""
+        return {
+            "timestamp": self.timestamp.isoformat(),
+            "action_kind": self.action_kind,
+            "action_detail": self.action_detail,
+            "events": [
+                {
+                    "timestamp": e.timestamp.isoformat(),
+                    "kind": e.kind,
+                    "detail": e.detail,
+                }
+                for e in self.events
+            ],
+            "epoch_id": self.epoch_id,
+        }
+
+
+@dataclass
+class EpochLog:
+    """Per-epoch canonical log line — the wide event.
+
+    Assembled at epoch completion from _EpochState, containing all context
+    about what happened during the epoch.
+    """
+    # Identity
+    epoch_id: str
+    node_name: str
+    timestamp: datetime
+
+    # Timing
+    created_at: datetime
+    started_at: datetime | None
+    ended_at: datetime | None
+    duration_ms: float | None
+    queue_time_ms: float | None
+
+    # Outcome
+    outcome: str  # "success" | "error" | "cancelled" | "cache_hit" | "file_storage_hit"
+    error: str | None = None
+    error_type: str | None = None
+
+    # Execution context
+    pool_id: str | None = None
+    worker_id: int | None = None
+    retry_count: int = 0
+    was_cache_hit: bool = False
+    was_file_storage_hit: bool = False
+
+    # Flow context
+    in_salvo_ports: list[str] = field(default_factory=list)
+    in_salvo_packet_count: int = 0
+    out_salvo_count: int = 0
+    orphaned_packet_count: int = 0
+    destroyed_packet_count: int = 0
+
+    # Node context
+    factory: str | None = None
+
+    # User-provided structured logs
+    node_log_entries: list[NodeLogEntry] = field(default_factory=list)
+    user_fields: dict[str, Any] = field(default_factory=dict)
+
+    # Sim actions during this epoch
+    sim_actions: list[SimActionLog] = field(default_factory=list)
+
+    # Legacy print buffer
+    logs: list[tuple[datetime, str]] = field(default_factory=list)
+
+    def to_dict(self) -> dict[str, Any]:
+        """Serialize to a plain dict for JSONL/SQLite storage."""
+        d = {
+            "epoch_id": self.epoch_id,
+            "node_name": self.node_name,
+            "timestamp": self.timestamp.isoformat(),
+            "created_at": self.created_at.isoformat(),
+            "started_at": self.started_at.isoformat() if self.started_at else None,
+            "ended_at": self.ended_at.isoformat() if self.ended_at else None,
+            "duration_ms": self.duration_ms,
+            "queue_time_ms": self.queue_time_ms,
+            "outcome": self.outcome,
+            "error": self.error,
+            "error_type": self.error_type,
+            "pool_id": self.pool_id,
+            "worker_id": self.worker_id,
+            "retry_count": self.retry_count,
+            "was_cache_hit": self.was_cache_hit,
+            "was_file_storage_hit": self.was_file_storage_hit,
+            "in_salvo_ports": self.in_salvo_ports,
+            "in_salvo_packet_count": self.in_salvo_packet_count,
+            "out_salvo_count": self.out_salvo_count,
+            "orphaned_packet_count": self.orphaned_packet_count,
+            "destroyed_packet_count": self.destroyed_packet_count,
+            "factory": self.factory,
+            "node_log_entries": [
+                {
+                    "timestamp": e.timestamp.isoformat(),
+                    "fields": e.fields,
+                    "message": e.message,
+                    "level": e.level,
+                }
+                for e in self.node_log_entries
+            ],
+            "user_fields": self.user_fields,
+            "sim_actions": [a.to_dict() for a in self.sim_actions],
+            "logs": [
+                {"timestamp": ts.isoformat(), "message": msg}
+                for ts, msg in self.logs
+            ],
+        }
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> "EpochLog":
+        """Deserialize from a plain dict."""
+        return cls(
+            epoch_id=d["epoch_id"],
+            node_name=d["node_name"],
+            timestamp=datetime.fromisoformat(d["timestamp"]),
+            created_at=datetime.fromisoformat(d["created_at"]),
+            started_at=datetime.fromisoformat(d["started_at"]) if d.get("started_at") else None,
+            ended_at=datetime.fromisoformat(d["ended_at"]) if d.get("ended_at") else None,
+            duration_ms=d.get("duration_ms"),
+            queue_time_ms=d.get("queue_time_ms"),
+            outcome=d["outcome"],
+            error=d.get("error"),
+            error_type=d.get("error_type"),
+            pool_id=d.get("pool_id"),
+            worker_id=d.get("worker_id"),
+            retry_count=d.get("retry_count", 0),
+            was_cache_hit=d.get("was_cache_hit", False),
+            was_file_storage_hit=d.get("was_file_storage_hit", False),
+            in_salvo_ports=d.get("in_salvo_ports", []),
+            in_salvo_packet_count=d.get("in_salvo_packet_count", 0),
+            out_salvo_count=d.get("out_salvo_count", 0),
+            orphaned_packet_count=d.get("orphaned_packet_count", 0),
+            destroyed_packet_count=d.get("destroyed_packet_count", 0),
+            factory=d.get("factory"),
+            node_log_entries=[
+                NodeLogEntry(
+                    timestamp=datetime.fromisoformat(e["timestamp"]),
+                    fields=e["fields"],
+                    message=e.get("message"),
+                    level=e.get("level", "info"),
+                )
+                for e in d.get("node_log_entries", [])
+            ],
+            user_fields=d.get("user_fields", {}),
+            sim_actions=[
+                SimActionLog(
+                    timestamp=datetime.fromisoformat(a["timestamp"]),
+                    action_kind=a["action_kind"],
+                    action_detail=a["action_detail"],
+                    events=[
+                        SimEventLog(
+                            timestamp=datetime.fromisoformat(e["timestamp"]),
+                            kind=e["kind"],
+                            detail=e["detail"],
+                        )
+                        for e in a.get("events", [])
+                    ],
+                    epoch_id=a.get("epoch_id"),
+                )
+                for a in d.get("sim_actions", [])
+            ],
+            logs=[
+                (datetime.fromisoformat(l["timestamp"]), l["message"])
+                for l in d.get("logs", [])
+            ],
+        )
+
+# %% [markdown]
+# ## Format Helpers
+#
+# Helpers for pretty-printing structured log entries.
+
+# %%
+#|export
+def _format_value(v: Any) -> str:
+    """Format a value for log output."""
+    if isinstance(v, str):
+        return v
+    return repr(v)
+
+
+def _format_log_entry(node_name: str, entry: "NodeLogEntry") -> str:
+    """Format a NodeLogEntry for the print buffer."""
+    field_parts = " ".join(f"{k}={_format_value(v)}" for k, v in entry.fields.items())
+    parts = []
+    if entry.message:
+        parts.append(entry.message)
+    if field_parts:
+        parts.append(field_parts)
+    return " | ".join(parts) if parts else ""
+
+
+def _format_epoch_log(epoch_log: "EpochLog") -> str:
+    """Format an EpochLog for stdout echo."""
+    parts = [f"outcome={epoch_log.outcome}"]
+    if epoch_log.duration_ms is not None:
+        parts.append(f"duration={epoch_log.duration_ms:.0f}ms")
+    if epoch_log.pool_id is not None:
+        worker = f"/{epoch_log.worker_id}" if epoch_log.worker_id is not None else ""
+        parts.append(f"pool={epoch_log.pool_id}{worker}")
+    # Include user fields
+    for k, v in epoch_log.user_fields.items():
+        parts.append(f"{k}={_format_value(v)}")
+    return " ".join(parts)
+
+# %% [markdown]
 # ## NodeExecutionContext
 #
 # The context object passed to `exec_node_func(ctx, packets)`.
@@ -204,6 +447,9 @@ class NodeExecutionContext:
 
     # Type checking flag
     _type_checking_enabled: bool = field(default=True, repr=False)
+
+    # Structured log buffer for ctx.log()
+    _structured_log_buffer: list[NodeLogEntry] = field(default_factory=list, repr=False)
 
     def create_packet(self, value: Any) -> str:
         """Create a new packet with the given value.
@@ -500,6 +746,44 @@ class NodeExecutionContext:
         # Add to buffer with timestamp
         self._print_buffer.append((timestamp, message))
 
+    def log(self, message: str | None = None, *, level: str = "info", **fields) -> None:
+        """Emit a structured log entry.
+
+        Accepts an optional message and arbitrary keyword fields.
+        The entry is added to the structured log buffer and also formatted
+        into the print buffer for backward compatibility.
+
+        Args:
+            message: Optional human-readable message.
+            level: Log level ("info" or "error"). Default "info".
+            **fields: Arbitrary structured fields (key=value pairs).
+        """
+        timestamp = get_timestamp_utc()
+
+        entry = NodeLogEntry(
+            timestamp=timestamp,
+            fields=fields,
+            message=message,
+            level=level,
+        )
+        self._structured_log_buffer.append(entry)
+
+        # Format for print buffer (backward compat) and optional stdout echo
+        formatted = _format_log_entry(self.node_name, entry)
+        self._print_buffer.append((timestamp, formatted + "\n"))
+
+        # Optionally echo to stdout
+        if self._config is not None and self._config.print_echo_stdout:
+            import builtins
+            ts = timestamp.strftime("%H:%M:%S.%f")[:-3]
+            field_parts = " ".join(f"{k}={_format_value(v)}" for k, v in fields.items())
+            parts = []
+            if message:
+                parts.append(message)
+            if field_parts:
+                parts.append(field_parts)
+            builtins.print(f"[{ts}] [{self.node_name}] {' | '.join(parts)}", flush=True)
+
     @property
     def vars(self) -> dict[str, Any]:
         """Resolved node variables (net-level merged with node-level overrides).
@@ -521,6 +805,7 @@ class NodeExecutionContext:
             print_buffer=self._print_buffer.copy(),
             created_packets=self._created_packets.copy(),
             consumed_packets=self._consumed_packets.copy(),
+            structured_log_buffer=self._structured_log_buffer.copy(),
         )
 
 # %% [markdown]
@@ -551,6 +836,9 @@ class NodeExecutionResult:
 
     consumed_packets: list[str]
     """List of packet IDs that were consumed."""
+
+    structured_log_buffer: list[NodeLogEntry] = field(default_factory=list)
+    """Structured log entries from ctx.log() calls."""
 
     func_result: Any = None
     """The return value from the node function (if any)."""
@@ -632,15 +920,16 @@ class ConsumedOutputPacket:
     """The epoch that produced this packet."""
 
 # %% [markdown]
-# ## EpochRecord
+# ## _EpochState
 #
-# Wraps epoch data with lifecycle tracking (timestamps, cancellation, logs).
+# Internal mutable scratchpad during epoch lifecycle. At completion,
+# converted to immutable EpochLog via to_log().
 
 # %%
 #|export
 @dataclass
-class EpochRecord:
-    """Record of an epoch's full lifecycle."""
+class _EpochState:
+    """Internal mutable state for an epoch's lifecycle."""
     id: str
     node_name: str
     in_salvo: Any
@@ -659,11 +948,11 @@ class EpochRecord:
     was_file_storage_hit: bool = False
 
     @classmethod
-    def from_epoch(cls, epoch) -> "EpochRecord":
-        """Create an EpochRecord from a netrun_sim.Epoch object."""
+    def from_epoch(cls, epoch) -> "_EpochState":
+        """Create an _EpochState from a netrun_sim.Epoch object."""
         created_at = datetime.fromtimestamp(epoch.start_time() / 1000, tz=timezone.utc)
         return cls(
-            id=epoch.id, node_name=epoch.node_name,
+            id=str(epoch.id), node_name=epoch.node_name,
             in_salvo=epoch.in_salvo, out_salvos=list(epoch.out_salvos),
             state=epoch.state, orphaned_packets=list(epoch.orphaned_packets),
             created_at=created_at,
@@ -698,6 +987,88 @@ class EpochRecord:
                 print(f"[{timestamp.strftime('%H:%M:%S.%f')[:-3]}] {message.strip()}")
             else:
                 print(message.strip())
+
+    def to_log(
+        self,
+        *,
+        node_log_entries: list[NodeLogEntry] | None = None,
+        sim_actions: list[SimActionLog] | None = None,
+        factory: str | None = None,
+        retry_count: int = 0,
+        error: Exception | None = None,
+    ) -> EpochLog:
+        """Convert to an immutable EpochLog at epoch completion."""
+        # Determine outcome
+        if error is not None:
+            outcome = "error"
+        elif self.was_cache_hit:
+            outcome = "cache_hit"
+        elif self.was_file_storage_hit:
+            outcome = "file_storage_hit"
+        elif self.was_cancelled:
+            outcome = "cancelled"
+        else:
+            outcome = "success"
+
+        # Calculate timing
+        duration_ms = None
+        queue_time_ms = None
+        if self.started_at and self.ended_at:
+            duration_ms = (self.ended_at - self.started_at).total_seconds() * 1000
+        if self.started_at:
+            queue_time_ms = (self.started_at - self.created_at).total_seconds() * 1000
+
+        node_log_entries = node_log_entries or []
+        sim_actions = sim_actions or []
+
+        # Merge user fields from all log entries
+        user_fields: dict[str, Any] = {}
+        for entry in node_log_entries:
+            user_fields.update(entry.fields)
+
+        # In salvo info
+        in_salvo_ports: list[str] = []
+        in_salvo_packet_count = 0
+        if self.in_salvo:
+            seen: set[str] = set()
+            for port_name, _ in self.in_salvo.packets:
+                if port_name not in seen:
+                    in_salvo_ports.append(port_name)
+                    seen.add(port_name)
+                in_salvo_packet_count += 1
+
+        return EpochLog(
+            epoch_id=self.id,
+            node_name=self.node_name,
+            timestamp=self.ended_at or self.created_at,
+            created_at=self.created_at,
+            started_at=self.started_at,
+            ended_at=self.ended_at,
+            duration_ms=duration_ms,
+            queue_time_ms=queue_time_ms,
+            outcome=outcome,
+            error=str(error) if error else None,
+            error_type=type(error).__name__ if error else None,
+            pool_id=self.pool_id,
+            worker_id=self.worker_id,
+            retry_count=retry_count,
+            was_cache_hit=self.was_cache_hit,
+            was_file_storage_hit=self.was_file_storage_hit,
+            in_salvo_ports=in_salvo_ports,
+            in_salvo_packet_count=in_salvo_packet_count,
+            out_salvo_count=len(self.out_salvos),
+            orphaned_packet_count=len(self.orphaned_packets),
+            destroyed_packet_count=len(self.destroyed_packets),
+            factory=factory,
+            node_log_entries=node_log_entries,
+            user_fields=user_fields,
+            sim_actions=sim_actions,
+            logs=list(self.logs),
+        )
+
+
+# Backward compat alias
+EpochRecord = _EpochState
 
 # %% [markdown]
 # ## Deferred Action Queue

@@ -114,7 +114,7 @@ class PreCreatedPacket:
 _MISSING = object()
 
 # Special parameter names that are not treated as input ports
-_SPECIAL_PARAMS = {"ctx", "print"}
+_SPECIAL_PARAMS = {"ctx", "print", "log"}
 
 
 @dataclass
@@ -433,6 +433,8 @@ def _create_exec_func(func: Callable, parsed_sig: _ParsedSignature, manual_outpu
             kwargs["ctx"] = ctx
         if "print" in parsed_sig.special_params:
             kwargs["print"] = ctx.print
+        if "log" in parsed_sig.special_params:
+            kwargs["log"] = ctx.log
 
         return kwargs
 
