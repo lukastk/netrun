@@ -5,3 +5,4 @@ export * from './autoLayout.js';
 export * from './salvoParser.js';
 export * from './salvoSerializer.js';
 export * from './portTypeDetection.js';
+export * from './configConverter.js';
