@@ -5,7 +5,6 @@
 		Controls,
 		MiniMap,
 		MarkerType,
-		useSvelteFlow,
 		type Edge,
 		type Node,
 		type Connection,
@@ -16,7 +15,6 @@
 		type FitViewOptions,
 	} from '@xyflow/svelte';
 	import '@xyflow/svelte/dist/style.css';
-	import { onMount } from 'svelte';
 	import type { GraphSettings } from '../types/graph.js';
 	import type { CascadeHighlightState, ContextMenuItem } from '../types/events.js';
 	import type { NetrunEdgeData, NetrunEdge } from '../types/edges.js';
@@ -60,9 +58,6 @@
 		onPaneContextMenu?: (event: MouseEvent) => void;
 		onNodeContextAction?: (event: { node: Node; action: string }) => void;
 		onEdgeContextAction?: (event: { edge: Edge; action: string }) => void;
-
-		/** Called on mount with SvelteFlow API for programmatic control (fitView, getNodes). */
-		onInit?: (api: { fitView: (options?: FitViewOptions) => void; getNodes: () => Node[] }) => void;
 	}
 
 	let {
@@ -88,7 +83,6 @@
 		onPaneContextMenu,
 		onNodeContextAction,
 		onEdgeContextAction,
-		onInit,
 	}: Props = $props();
 
 	// Derive settings with defaults
@@ -219,12 +213,6 @@
 		minZoom: 0.1,
 	};
 
-	// Expose SvelteFlow API via onInit
-	const { fitView, getNodes } = useSvelteFlow();
-
-	onMount(() => {
-		onInit?.({ fitView, getNodes });
-	});
 </script>
 
 <div class="netrun-flow-viewer" style:--netrun-node-title-font-size="{nodeTitleFontSize}px" style:--netrun-node-desc-font-size="{nodeDescFontSize}px" style:--netrun-node-port-font-size="{nodePortFontSize}px">
