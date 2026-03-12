@@ -46,7 +46,9 @@ from nblite import nbl_export; nbl_export();
 # %%
 #|export
 import asyncio
+import atexit
 import queue
+import time
 import threading
 from typing import Any
 from concurrent.futures import ThreadPoolExecutor
@@ -57,6 +59,24 @@ from netrun.rpc.base import (
     RecvTimeout,
     RPC_KEY_SHUTDOWN,
 )
+
+# Sentinel timeout for blocking recv loops. Threads wake up this often
+# to check whether the channel has been closed or the interpreter is
+# shutting down, preventing indefinite blocks during Python exit.
+_RECV_SENTINEL_TIMEOUT = 1.0
+
+# Module-level shutdown event. Set by an atexit handler so that executor
+# threads stuck in blocking_recv can exit even if close() was never called.
+# Registered AFTER concurrent.futures.thread._python_exit (which is
+# registered at import time above), so atexit LIFO ordering ensures our
+# handler runs first, giving threads up to _RECV_SENTINEL_TIMEOUT seconds
+# to exit before _python_exit tries to join them.
+_module_shutdown = threading.Event()
+
+def _on_module_shutdown():
+    _module_shutdown.set()
+
+atexit.register(_on_module_shutdown)
 
 # %% [markdown]
 # ## SyncThreadChannel
@@ -204,14 +224,32 @@ class ThreadChannel:
         loop = asyncio.get_running_loop()
 
         def blocking_recv():
-            try:
-                return self._recv_queue.get(timeout=timeout)
-            except queue.Empty:
-                raise RecvTimeout(f"Receive timed out after {timeout}s")
+            if timeout is None:
+                # No caller timeout — loop with sentinel checks so the
+                # thread can exit when the channel closes or Python shuts down.
+                while not self._closed.is_set() and not _module_shutdown.is_set():
+                    try:
+                        return self._recv_queue.get(timeout=_RECV_SENTINEL_TIMEOUT)
+                    except queue.Empty:
+                        continue
+                raise ChannelClosed("Channel is closed")
+            else:
+                deadline = time.monotonic() + timeout
+                while not self._closed.is_set() and not _module_shutdown.is_set():
+                    remaining = deadline - time.monotonic()
+                    if remaining <= 0:
+                        raise RecvTimeout(f"Receive timed out after {timeout}s")
+                    try:
+                        return self._recv_queue.get(
+                            timeout=min(_RECV_SENTINEL_TIMEOUT, remaining),
+                        )
+                    except queue.Empty:
+                        continue
+                raise ChannelClosed("Channel is closed")
 
         try:
             result = await loop.run_in_executor(self._executor, blocking_recv)
-        except RecvTimeout:
+        except (RecvTimeout, ChannelClosed):
             raise
         except Exception as e:
             self._closed.set()
