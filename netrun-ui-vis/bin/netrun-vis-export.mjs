@@ -88,7 +88,8 @@ const extra = config.extra || {};
 const description = extra.description || 'Netrun Graph';
 
 // Build the single-file HTML
-const configJson = JSON.stringify(config);
+// Escape </script> and </style> sequences to prevent HTML parser breakout
+const configJson = JSON.stringify(config).replace(/<\//g, '<\\/');
 const html = `<!DOCTYPE html>
 <html lang="en">
 <head>

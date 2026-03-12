@@ -69,6 +69,8 @@ export interface SubgraphNodeData extends BaseNodeData {
 	// Subgraph-specific
 	source?: string; // "Inline" or file path
 	nodeCount?: number; // Number of nodes inside (for inline)
+	// Extra config data (mirrors NetrunNodeData._config)
+	_config?: Record<string, unknown>;
 	// Store full subgraph config for round-trip serialization
 	_subgraphConfig?: Record<string, unknown>;
 }

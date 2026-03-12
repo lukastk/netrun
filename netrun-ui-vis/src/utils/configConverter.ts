@@ -8,7 +8,7 @@
  * - Decoration nodes
  * - Graph-level settings (edge style, markers, zoom, fonts)
  */
-import type { FlowNode, AnyNodeData, NetrunNodeData, SubgraphNodeData, DecorationNodeData, PortConfig } from '../types/nodes.js';
+import type { FlowNode, AnyNodeData, NetrunNodeData, SubgraphNodeData, DecorationNodeData, DecorationType, PortConfig } from '../types/nodes.js';
 import type { NetrunEdge, NetrunEdgeData } from '../types/edges.js';
 import type { NetrunGraph, GraphSettings } from '../types/graph.js';
 
@@ -111,6 +111,14 @@ export function configToGraph(config: Record<string, unknown>): NetrunGraph {
 		}
 		return convertRegularNode(raw, position, uiExtra, i, inferredInPorts, inferredOutPorts);
 	});
+
+	// Extract decoration nodes from graph.extra.decorations
+	const decorations = (graphExtra as Record<string, unknown>).decorations;
+	if (Array.isArray(decorations)) {
+		for (const d of decorations as Record<string, unknown>[]) {
+			nodes.push(convertDecorationNode(d));
+		}
+	}
 
 	// Convert edges
 	const edges: NetrunEdge[] = rawEdges.map((raw, i) => {
@@ -245,6 +253,39 @@ function convertSubgraphNode(
 	}
 	const zIndex = uiExtra.zIndex as number | undefined;
 	if (zIndex != null) node.zIndex = zIndex;
+
+	return node;
+}
+
+function convertDecorationNode(d: Record<string, unknown>): FlowNode {
+	const data: DecorationNodeData = {
+		label: (d.label as string) || (d.id as string),
+		nodeType: 'decoration',
+		decorationType: (d.decorationType as DecorationType) || 'rectangle',
+		inPorts: [],
+		outPorts: [],
+		text: d.text as string | undefined,
+		imagePath: d.imagePath as string | undefined,
+		orientation: d.orientation as 'horizontal' | 'vertical' | undefined,
+		fillColor: d.fillColor as string | undefined,
+		strokeColor: d.strokeColor as string | undefined,
+		strokeWidth: d.strokeWidth as number | undefined,
+		fontSize: d.fontSize as number | undefined,
+		fontColor: d.fontColor as string | undefined,
+		opacity: (d.opacity as number) ?? 1,
+		locked: (d.locked as boolean) || undefined,
+	};
+
+	const node: FlowNode = {
+		id: d.id as string,
+		type: 'decorationNode',
+		position: (d.position as { x: number; y: number }) ?? { x: 0, y: 0 },
+		data: data as AnyNodeData,
+		zIndex: (d.zIndex as number) ?? -1,
+	};
+
+	if (d.width != null) node.width = d.width as number;
+	if (d.height != null) node.height = d.height as number;
 
 	return node;
 }

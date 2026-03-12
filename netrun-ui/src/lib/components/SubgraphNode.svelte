@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { SubgraphNode as VisSubgraphNode } from 'netrun-ui-vis/components';
 	import type { SubgraphNodeData } from '$lib/stores/flowStore';
-	import { updateNodeDimensions, pushHistory, toggleNodeDescExpanded, cascadeHighlight, toggleNodePortGroup } from '$lib/stores/flowStore';
+	import { updateNodeDimensions, pushHistory, toggleNodeDescExpanded, toggleNodePortGroup } from '$lib/stores/flowStore';
 	import { openSubgraphTab } from '$lib/stores/tabsStore';
 	import { toggleSubgraphExpansion } from '$lib/stores/subgraphExpandStore';
 	import { signalTypeInfo } from '$lib/stores/signalStore';
@@ -54,7 +54,6 @@
 	{id}
 	{data}
 	{selected}
-	cascadeHighlight={$cascadeHighlight}
 	{signalConfig}
 	{controlConfig}
 	onResize={handleResize}
