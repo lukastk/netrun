@@ -4,6 +4,7 @@ __all__ = ['AsyncWorkerFn', 'SingleWorkerPool']
 
 # %% pts/netrun/04_pool/04_aio.pct.py 3
 import asyncio
+import logging
 from typing import Any
 from collections.abc import Callable, Awaitable
 
@@ -191,8 +192,15 @@ class SingleWorkerPool:
                     await self._recv_queue.put(msg)
             except (ChannelClosed, asyncio.CancelledError):
                 pass
-            except Exception:
-                pass
+            except Exception as e:
+                logging.getLogger("netrun.pool").error(
+                    f"recv_loop for worker 0 crashed: {e}", exc_info=True
+                )
+                await self._recv_queue.put(WorkerMessage(
+                    worker_id=0,
+                    key=POOL_UP_ERROR_CRASHED,
+                    data={"reason": f"recv_loop exception: {e}"}
+                ))
 
         self._recv_task = asyncio.create_task(recv_loop())
 
