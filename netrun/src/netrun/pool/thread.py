@@ -4,6 +4,7 @@ __all__ = ['ThreadPool']
 
 # %% pts/netrun/04_pool/01_thread.pct.py 3
 import asyncio
+import logging
 import threading
 from typing import Any
 
@@ -192,8 +193,15 @@ class ThreadPool:
                     await self._recv_queue.put(msg)
             except (ChannelClosed, asyncio.CancelledError):
                 pass
-            except Exception:
-                pass
+            except Exception as e:
+                logging.getLogger("netrun.pool").error(
+                    f"recv_loop for worker {worker_id} crashed: {e}", exc_info=True
+                )
+                await self._recv_queue.put(WorkerMessage(
+                    worker_id=worker_id,
+                    key=POOL_UP_ERROR_CRASHED,
+                    data={"reason": f"recv_loop exception: {e}"}
+                ))
 
         for worker_id, channel in enumerate(self._channels):
             task = asyncio.create_task(recv_loop(worker_id, channel))

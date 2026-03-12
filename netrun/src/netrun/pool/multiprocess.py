@@ -5,6 +5,7 @@ __all__ = ['MP_DOWN_BROADCAST', 'MP_DOWN_DISPATCH', 'MP_DOWN_FLUSH_STDOUT', 'MP_
 # %% pts/netrun/04_pool/02_multiprocess.pct.py 3
 import asyncio
 import datetime
+import logging
 import queue
 import sys
 import threading
@@ -696,8 +697,20 @@ class MultiprocessPool:
                         break
             except (ChannelClosed, asyncio.CancelledError):
                 pass
-            except Exception:
-                pass
+            except Exception as e:
+                logging.getLogger("netrun.pool").error(
+                    f"recv_loop for process {process_idx} crashed: {e}", exc_info=True
+                )
+                # Notify for all workers in this process
+                for worker_id in range(
+                    process_idx * self._threads_per_process,
+                    (process_idx + 1) * self._threads_per_process,
+                ):
+                    await self._recv_queue.put(WorkerMessage(
+                        worker_id=worker_id,
+                        key=POOL_UP_ERROR_CRASHED,
+                        data={"reason": f"recv_loop exception: {e}"}
+                    ))
 
         for process_idx, channel in enumerate(self._channels):
             task = asyncio.create_task(recv_loop(process_idx, channel))
