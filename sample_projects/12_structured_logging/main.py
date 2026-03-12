@@ -12,7 +12,6 @@ Pipeline:  fetch_data -> process -> format_report -> [output queue]
 """
 
 import asyncio
-import tempfile
 from pathlib import Path
 
 from netrun.core import Net, NetConfig
@@ -161,40 +160,42 @@ async def main():
     print("Persist epoch logs and sim actions to JSONL files.")
     print()
 
-    with tempfile.TemporaryDirectory(prefix="netrun_jsonl_") as tmpdir:
-        epoch_path = Path(tmpdir) / "epochs.jsonl"
-        actions_path = Path(tmpdir) / "sim_actions.jsonl"
+    output_dir = Path(__file__).parent / "output"
+    output_dir.mkdir(exist_ok=True)
 
-        epoch_logger = JsonlEpochLogger(epoch_path)
-        action_logger = JsonlSimActionLogger(actions_path)
+    epoch_path = output_dir / "epochs.jsonl"
+    actions_path = output_dir / "sim_actions.jsonl"
 
-        config = NetConfig.from_file(config_path)
-        config.print_echo_stdout = False
+    epoch_logger = JsonlEpochLogger(epoch_path)
+    action_logger = JsonlSimActionLogger(actions_path)
 
-        async with Net(config) as net:
-            net.on_epoch_end(epoch_logger)
-            net.on_sim_actions(action_logger)
+    config = NetConfig.from_file(config_path)
+    config.print_echo_stdout = False
 
-            await run_pipeline(net, "https://example.com/alpha")
-            await run_pipeline(net, "https://example.com/beta")
+    async with Net(config) as net:
+        net.on_epoch_end(epoch_logger)
+        net.on_sim_actions(action_logger)
 
-        epoch_logger.close()
-        action_logger.close()
+        await run_pipeline(net, "https://example.com/alpha")
+        await run_pipeline(net, "https://example.com/beta")
 
-        # Load back and inspect
-        loaded_epochs = JsonlEpochLogger.load(epoch_path)
-        loaded_actions = JsonlSimActionLogger.load(actions_path)
+    epoch_logger.close()
+    action_logger.close()
 
-        print(f"Wrote {epoch_path.stat().st_size} bytes to {epoch_path.name}")
-        print(f"Wrote {actions_path.stat().st_size} bytes to {actions_path.name}")
-        print()
-        print(f"Loaded {len(loaded_epochs)} epoch logs back from JSONL:")
-        for el in loaded_epochs:
-            print(f"  [{el.node_name}] outcome={el.outcome}  "
-                  f"duration={el.duration_ms:.0f}ms  "
-                  f"fields={el.user_fields}")
-        print()
-        print(f"Loaded {len(loaded_actions)} sim action logs back from JSONL")
+    # Load back and inspect
+    loaded_epochs = JsonlEpochLogger.load(epoch_path)
+    loaded_actions = JsonlSimActionLogger.load(actions_path)
+
+    print(f"Wrote {epoch_path.stat().st_size} bytes to {epoch_path.name}")
+    print(f"Wrote {actions_path.stat().st_size} bytes to {actions_path.name}")
+    print()
+    print(f"Loaded {len(loaded_epochs)} epoch logs back from JSONL:")
+    for el in loaded_epochs:
+        print(f"  [{el.node_name}] outcome={el.outcome}  "
+              f"duration={el.duration_ms:.0f}ms  "
+              f"fields={el.user_fields}")
+    print()
+    print(f"Loaded {len(loaded_actions)} sim action logs back from JSONL")
 
     # ==================================================================
     # 6. SQLITE BACKEND
@@ -207,46 +208,45 @@ async def main():
     print("Persist both log types to a single SQLite database.")
     print()
 
-    with tempfile.TemporaryDirectory(prefix="netrun_sqlite_") as tmpdir:
-        db_path = Path(tmpdir) / "run.db"
-        logger = SqliteLogger(db_path)
+    db_path = output_dir / "run.db"
+    logger = SqliteLogger(db_path)
 
-        config = NetConfig.from_file(config_path)
-        config.print_echo_stdout = False
+    config = NetConfig.from_file(config_path)
+    config.print_echo_stdout = False
 
-        async with Net(config) as net:
-            net.on_epoch_end(logger.epoch_handler)
-            net.on_sim_actions(logger.sim_action_handler)
+    async with Net(config) as net:
+        net.on_epoch_end(logger.epoch_handler)
+        net.on_sim_actions(logger.sim_action_handler)
 
-            await run_pipeline(net, "https://example.com/alpha")
-            await run_pipeline(net, "https://example.com/beta")
+        await run_pipeline(net, "https://example.com/alpha")
+        await run_pipeline(net, "https://example.com/beta")
 
-        # Load back and inspect
-        epoch_logs = logger.load_epoch_logs()
-        sim_actions = logger.load_sim_action_logs()
-        logger.close()
+    # Load back and inspect
+    epoch_logs = logger.load_epoch_logs()
+    sim_actions = logger.load_sim_action_logs()
+    logger.close()
 
-        print(f"SQLite database: {db_path.name} ({db_path.stat().st_size} bytes)")
-        print()
-        print(f"Epoch logs table: {len(epoch_logs)} rows")
-        for el in epoch_logs:
-            print(f"  [{el.node_name}] outcome={el.outcome}  "
-                  f"duration={el.duration_ms:.0f}ms  "
-                  f"fields={el.user_fields}")
-        print()
-        print(f"Sim action logs table: {len(sim_actions)} rows")
+    print(f"SQLite database: {db_path.name} ({db_path.stat().st_size} bytes)")
+    print()
+    print(f"Epoch logs table: {len(epoch_logs)} rows")
+    for el in epoch_logs:
+        print(f"  [{el.node_name}] outcome={el.outcome}  "
+              f"duration={el.duration_ms:.0f}ms  "
+              f"fields={el.user_fields}")
+    print()
+    print(f"Sim action logs table: {len(sim_actions)} rows")
 
-        # Show how you could query the SQLite directly
-        import sqlite3
-        conn = sqlite3.connect(str(db_path))
-        cursor = conn.execute(
-            "SELECT node_name, outcome, duration_ms FROM epoch_logs ORDER BY timestamp"
-        )
-        print()
-        print("Direct SQL query (SELECT node_name, outcome, duration_ms):")
-        for row in cursor.fetchall():
-            print(f"  {row[0]:15s}  {row[1]:8s}  {row[2]:.0f}ms")
-        conn.close()
+    # Show how you could query the SQLite directly
+    import sqlite3
+    conn = sqlite3.connect(str(db_path))
+    cursor = conn.execute(
+        "SELECT node_name, outcome, duration_ms FROM epoch_logs ORDER BY timestamp"
+    )
+    print()
+    print("Direct SQL query (SELECT node_name, outcome, duration_ms):")
+    for row in cursor.fetchall():
+        print(f"  {row[0]:15s}  {row[1]:8s}  {row[2]:.0f}ms")
+    conn.close()
 
     # ==================================================================
     # 7. run_step() / run_until_blocked() RETURN VALUES
