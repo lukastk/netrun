@@ -11,9 +11,10 @@
 
 	interface Props {
 		graph: NetrunGraph;
+		showMinimap?: boolean;
 	}
 
-	let { graph }: Props = $props();
+	let { graph, showMinimap = false }: Props = $props();
 
 	const nodeTypes: NodeTypes = {
 		netrunNode: NetrunNodeComponent,
@@ -67,7 +68,8 @@
 		{nodeTypes}
 		settings={graph.settings}
 		{cascadeHighlight}
-		{minimapNodeColor}
+		{showMinimap}
+		minimapNodeColor={showMinimap ? minimapNodeColor : undefined}
 		{onNodeClick}
 		{onEdgeClick}
 		{onPaneContextMenu}

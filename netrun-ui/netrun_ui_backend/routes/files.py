@@ -189,6 +189,7 @@ class ExportHtmlRequest(BaseModel):
     extra: dict[str, Any] | None = None
     extra_data: dict[str, Any] | None = None
     output_path: str
+    minimap: bool = False
 
 
 class ExportHtmlResponse(BaseModel):
@@ -209,7 +210,7 @@ async def export_html(request: ExportHtmlRequest) -> ExportHtmlResponse:
         config_data = merge_graph_with_extras(graph_dict, request.extra_data or {})
 
         vis_assets_dir = find_vis_assets_dir()
-        html_content = build_html(config_data, vis_assets_dir)
+        html_content = build_html(config_data, vis_assets_dir, minimap=request.minimap)
 
         output = Path(request.output_path).resolve()
         output.parent.mkdir(parents=True, exist_ok=True)

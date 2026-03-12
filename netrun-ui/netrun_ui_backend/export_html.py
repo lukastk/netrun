@@ -40,7 +40,12 @@ def find_vis_assets_dir() -> Path:
     )
 
 
-def build_html(config_data: dict[str, Any], vis_assets_dir: Path) -> str:
+def build_html(
+    config_data: dict[str, Any],
+    vis_assets_dir: Path,
+    *,
+    minimap: bool = False,
+) -> str:
     """Assemble a self-contained HTML string from *config_data*.
 
     Parameters
@@ -49,6 +54,8 @@ def build_html(config_data: dict[str, Any], vis_assets_dir: Path) -> str:
         The raw netrun config dict (as it would appear in a ``.netrun.json``).
     vis_assets_dir:
         Directory containing the built ``index-*.js`` and ``index-*.css`` files.
+    minimap:
+        Whether to show the minimap overlay. Defaults to ``False``.
 
     Returns
     -------
@@ -78,6 +85,12 @@ def build_html(config_data: dict[str, Any], vis_assets_dir: Path) -> str:
     # Escape config JSON: prevent </script> breakout
     config_json = json.dumps(config_data, separators=(",", ":")).replace("</", "<\\/")
 
+    # Build options object
+    options: dict[str, Any] = {}
+    if minimap:
+        options["minimap"] = True
+    options_json = json.dumps(options, separators=(",", ":"))
+
     css_block = f"\t<style>{css_content}</style>\n" if css_content else ""
 
     return f"""\
@@ -104,7 +117,7 @@ def build_html(config_data: dict[str, Any], vis_assets_dir: Path) -> str:
 \t</style>
 {css_block}</head>
 <body>
-\t<script>window.__NETRUN_CONFIG__ = {config_json};</script>
+\t<script>window.__NETRUN_CONFIG__ = {config_json}; window.__NETRUN_OPTIONS__ = {options_json};</script>
 \t<div id="app"></div>
 \t<script type="module">{js_content}</script>
 </body>
@@ -115,6 +128,8 @@ def export_html_from_file(
     input_path: Path,
     output_path: Path,
     vis_assets_dir: Path | None = None,
+    *,
+    minimap: bool = False,
 ) -> None:
     """Read a ``.netrun.json`` file, build HTML, and write to *output_path*.
 
@@ -126,6 +141,8 @@ def export_html_from_file(
         Where to write the resulting HTML.
     vis_assets_dir:
         Override for built asset location (auto-detected if ``None``).
+    minimap:
+        Whether to show the minimap overlay.
     """
     if not input_path.exists():
         raise FileNotFoundError(f"Input file not found: {input_path}")
@@ -136,6 +153,6 @@ def export_html_from_file(
     if vis_assets_dir is None:
         vis_assets_dir = find_vis_assets_dir()
 
-    html_content = build_html(config_data, vis_assets_dir)
+    html_content = build_html(config_data, vis_assets_dir, minimap=minimap)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(html_content, encoding="utf-8")

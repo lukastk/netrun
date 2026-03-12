@@ -3,8 +3,9 @@ import { mount } from 'svelte';
 import App from './App.svelte';
 import { configToGraph } from '../src/utils/configConverter.js';
 
-// Read the embedded config data
+// Read the embedded config and options
 const rawConfig = (window as unknown as { __NETRUN_CONFIG__: unknown }).__NETRUN_CONFIG__;
+const options = (window as unknown as { __NETRUN_OPTIONS__?: Record<string, unknown> }).__NETRUN_OPTIONS__ ?? {};
 if (!rawConfig || typeof rawConfig === 'string') {
 	document.getElementById('app')!.innerHTML = `
 		<div style="color: #a0a0a0; padding: 40px; text-align: center;">
@@ -23,6 +24,6 @@ if (!rawConfig || typeof rawConfig === 'string') {
 
 	mount(App, {
 		target: document.getElementById('app')!,
-		props: { graph },
+		props: { graph, showMinimap: !!options.minimap },
 	});
 }

@@ -341,6 +341,11 @@ def run_export_html(argv: list[str]) -> None:
         help="Output HTML file (default: <input>.html)",
     )
     parser.add_argument(
+        "--minimap",
+        action="store_true",
+        help="Show the minimap overlay in the exported HTML",
+    )
+    parser.add_argument(
         "--vis-assets-dir",
         default=None,
         help="Override path to built vis app assets directory",
@@ -363,7 +368,7 @@ def run_export_html(argv: list[str]) -> None:
     vis_assets_dir = Path(args.vis_assets_dir).resolve() if args.vis_assets_dir else None
 
     try:
-        export_html_from_file(input_path, output_path, vis_assets_dir)
+        export_html_from_file(input_path, output_path, vis_assets_dir, minimap=args.minimap)
         print(f"Wrote {output_path}")
     except FileNotFoundError as e:
         print(f"Error: {e}", file=sys.stderr)

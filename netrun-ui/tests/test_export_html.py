@@ -103,6 +103,17 @@ class TestBuildHtml:
         html = build_html(SAMPLE_CONFIG, assets_dir)
         assert '<script type="module">' in html
 
+    def test_minimap_off_by_default(self, assets_dir):
+        """By default, __NETRUN_OPTIONS__ should not include minimap."""
+        html = build_html(SAMPLE_CONFIG, assets_dir)
+        assert '"minimap"' not in html
+        assert "__NETRUN_OPTIONS__" in html
+
+    def test_minimap_on(self, assets_dir):
+        """With minimap=True, options should include minimap:true."""
+        html = build_html(SAMPLE_CONFIG, assets_dir, minimap=True)
+        assert '"minimap":true' in html
+
     def test_missing_js_raises(self, tmp_path):
         """Should raise if no JS bundle is found in the assets dir."""
         with pytest.raises(FileNotFoundError, match="No JS bundle"):

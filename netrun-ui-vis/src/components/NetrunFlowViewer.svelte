@@ -43,6 +43,8 @@
 		nodeContextMenuItems?: (node: Node) => ContextMenuItem[];
 		/** Returns context menu items for an edge (return empty array to suppress menu). */
 		edgeContextMenuItems?: (edge: Edge) => ContextMenuItem[];
+		/** Whether to show the minimap. Defaults to true. */
+		showMinimap?: boolean;
 		/** Custom minimap node coloring. */
 		minimapNodeColor?: (node: Node) => string;
 
@@ -71,6 +73,7 @@
 		isValidConnection,
 		nodeContextMenuItems,
 		edgeContextMenuItems,
+		showMinimap = true,
 		minimapNodeColor,
 		onNodeClick,
 		onEdgeClick,
@@ -250,12 +253,14 @@
 	>
 		<Background variant={BackgroundVariant.Dots} gap={20} size={1} />
 		<Controls />
-		<MiniMap
-			nodeColor={minimapNodeColor ?? (() => '#3d3d3d')}
-			maskColor="rgba(0, 0, 0, 0.7)"
-			pannable
-			zoomable
-		/>
+		{#if showMinimap}
+			<MiniMap
+				nodeColor={minimapNodeColor ?? (() => '#3d3d3d')}
+				maskColor="rgba(0, 0, 0, 0.7)"
+				pannable
+				zoomable
+			/>
+		{/if}
 	</SvelteFlow>
 
 	{#if edgeContextMenu && edgeContextMenuItems}
