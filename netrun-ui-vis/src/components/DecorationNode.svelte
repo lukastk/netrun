@@ -221,7 +221,7 @@
 
 	.placeholder {
 		font-size: 12px;
-		color: var(--text-secondary, #a0a0a0);
+		color: var(--netrun-text-secondary, #a0a0a0);
 		font-style: italic;
 		user-select: none;
 	}
@@ -237,7 +237,7 @@
 
 	/* Selection highlight */
 	.selected {
-		box-shadow: 0 0 0 2px var(--accent-color, #3b82f6);
+		box-shadow: 0 0 0 2px var(--netrun-accent-color, #3b82f6);
 	}
 
 	.type-triangle.selected {

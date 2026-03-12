@@ -26,6 +26,11 @@
 	/* Subgraph */
 	--netrun-subgraph-border: #22c55e;
 
+	/* Font sizes */
+	--netrun-node-title-font-size: 12px;
+	--netrun-node-desc-font-size: 10px;
+	--netrun-node-port-font-size: 11px;
+
 	/* Dependency edges */
 	--netrun-dependency-color: #a78bfa;
 	--netrun-dependency-selected: #c4b5fd;

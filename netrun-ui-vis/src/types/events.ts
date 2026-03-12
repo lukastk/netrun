@@ -26,6 +26,8 @@ export interface ContextMenuItem {
 	label: string;
 	action: string;
 	danger?: boolean;
+	/** Show a separator line before this item. */
+	separator?: boolean;
 }
 
 /** Event callbacks for the flow viewer component. */
