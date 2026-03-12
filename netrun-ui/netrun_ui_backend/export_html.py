@@ -16,20 +16,27 @@ def find_vis_assets_dir() -> Path:
     """Locate the built app assets from netrun-ui-vis.
 
     Resolution order:
-    1. ``<netrun_ui_backend>/../node_modules/netrun-ui-vis/dist/app/assets``
-       (follows the ``file:../netrun-ui-vis`` npm link)
+    1. Bundled inside the package: ``<netrun_ui_backend>/vis_assets/``
+    2. Dev layout: ``<netrun_ui_backend>/../node_modules/netrun-ui-vis/dist/app/assets``
     """
     backend_dir = Path(__file__).parent.resolve()
-    project_dir = backend_dir.parent  # netrun-ui/
 
-    assets = project_dir / "node_modules" / "netrun-ui-vis" / "dist" / "app" / "assets"
-    if assets.is_dir():
-        return assets
+    # 1. Bundled assets (installed package)
+    bundled = backend_dir / "vis_assets"
+    if bundled.is_dir():
+        return bundled
+
+    # 2. Dev layout via node_modules symlink
+    project_dir = backend_dir.parent
+    dev = project_dir / "node_modules" / "netrun-ui-vis" / "dist" / "app" / "assets"
+    if dev.is_dir():
+        return dev
 
     raise FileNotFoundError(
         "Built vis app assets not found. "
         "Run 'npm run build:app' in netrun-ui-vis first.\n"
-        f"  Expected: {assets}"
+        f"  Checked: {bundled}\n"
+        f"  Checked: {dev}"
     )
 
 

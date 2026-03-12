@@ -65,3 +65,24 @@ class FrontendBuildHook(BuildHookInterface):
             print("Frontend built successfully.")
         else:
             print("Warning: Build directory not found after npm build", file=sys.stderr)
+
+        # Bundle vis app assets for export-html
+        self._bundle_vis_assets(root)
+
+    def _bundle_vis_assets(self, root: Path) -> None:
+        """Copy netrun-ui-vis app assets into the package for export-html."""
+        vis_assets_dir = root / "netrun_ui_backend" / "vis_assets"
+
+        # Try node_modules symlink first (normal dev layout)
+        src = root / "node_modules" / "netrun-ui-vis" / "dist" / "app" / "assets"
+        if not src.is_dir():
+            # Try sibling directory
+            src = root.parent / "netrun-ui-vis" / "dist" / "app" / "assets"
+        if not src.is_dir():
+            print("Warning: vis app assets not found, export-html will not work in installed packages", file=sys.stderr)
+            return
+
+        if vis_assets_dir.exists():
+            shutil.rmtree(vis_assets_dir)
+        shutil.copytree(src, vis_assets_dir)
+        print("Vis app assets bundled for export-html.")
