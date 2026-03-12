@@ -1,0 +1,37 @@
+/**
+ * Default dark theme for netrun-ui-vis components.
+ *
+ * Import this file to get sensible dark-mode defaults.
+ * Override any variable on a parent element to customize.
+ */
+:root {
+	--netrun-bg-primary: #1a1a1a;
+	--netrun-bg-secondary: #242424;
+	--netrun-bg-tertiary: #2d2d2d;
+	--netrun-border-color: #404040;
+	--netrun-text-primary: #fff;
+	--netrun-text-secondary: #a0a0a0;
+	--netrun-accent-color: #3b82f6;
+	--netrun-error-color: #ef4444;
+
+	/* Node styling */
+	--netrun-node-bg: #2d2d2d;
+	--netrun-node-border: #404040;
+	--netrun-node-selected: #3b82f6;
+
+	/* Port colors */
+	--netrun-port-input: #22c55e;
+	--netrun-port-output: #f59e0b;
+
+	/* Subgraph */
+	--netrun-subgraph-border: #22c55e;
+
+	/* Font sizes */
+	--netrun-node-title-font-size: 12px;
+	--netrun-node-desc-font-size: 10px;
+	--netrun-node-port-font-size: 11px;
+
+	/* Dependency edges */
+	--netrun-dependency-color: #a78bfa;
+	--netrun-dependency-selected: #c4b5fd;
+}

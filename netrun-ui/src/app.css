@@ -23,6 +23,22 @@
   --node-selected: #3b82f6;
   --port-input: #22c55e;
   --port-output: #f59e0b;
+
+  /* Map to netrun-ui-vis namespaced variables */
+  --netrun-bg-primary: var(--bg-primary);
+  --netrun-bg-secondary: var(--bg-secondary);
+  --netrun-bg-tertiary: var(--bg-tertiary);
+  --netrun-border-color: var(--border-color);
+  --netrun-text-primary: var(--text-primary);
+  --netrun-text-secondary: var(--text-secondary);
+  --netrun-accent-color: var(--accent-color);
+  --netrun-error-color: var(--error-color);
+  --netrun-node-bg: var(--node-bg);
+  --netrun-node-border: var(--node-border);
+  --netrun-node-selected: var(--node-selected);
+  --netrun-port-input: var(--port-input);
+  --netrun-port-output: var(--port-output);
+  --netrun-subgraph-border: var(--success-color);
 }
 
 * {

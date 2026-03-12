@@ -4,15 +4,13 @@
 		buildPortTree,
 		makeGroupHandleId,
 		ROOT_GROUP_PATH,
-		type PortDisplayItem,
 		type PortGroupTree,
 		type PortLeaf,
-	} from '$lib/utils/portGroups';
-	import { isPortGroupCollapsed } from '$lib/stores/portGroupStore';
-	import { toggleNodePortGroup } from '$lib/stores/flowStore';
-	import type { PortConfig } from '$lib/stores/flowStore';
-	import { signalTypeFromPort } from '$lib/stores/signalStore';
-	import { controlTypeFromPort } from '$lib/stores/controlStore';
+	} from '../utils/portGroups.js';
+	import { isPortGroupCollapsed } from '../utils/portGroupCollapse.js';
+	import { extractPortTypeName } from '../utils/portTypeDetection.js';
+	import type { PortConfig } from '../types/nodes.js';
+	import type { PortTypeConfig } from '../types/events.js';
 
 	interface Props {
 		nodeId: string;
@@ -22,9 +20,18 @@
 		hidePortNames?: boolean;
 		/** Port names that need inner handles for exposed port edges (expanded subgraphs) */
 		exposedPortNames?: string[];
+		/** Signal port configuration (prefix, suffix, types) */
+		signalConfig?: PortTypeConfig;
+		/** Control port configuration (prefix, suffix, types) */
+		controlConfig?: PortTypeConfig;
+		/** Called when a port group is toggled */
+		onPortGroupToggle?: (event: { nodeId: string; side: 'in' | 'out'; groupPath: string; portCount: number }) => void;
 	}
 
-	let { nodeId, ports, side, portGroupStates, hidePortNames = false, exposedPortNames }: Props = $props();
+	let {
+		nodeId, ports, side, portGroupStates, hidePortNames = false,
+		exposedPortNames, signalConfig, controlConfig, onPortGroupToggle,
+	}: Props = $props();
 
 	// Build the port tree reactively
 	let portTree = $derived(buildPortTree(ports));
@@ -40,6 +47,10 @@
 
 	function rootCollapsed(): boolean {
 		return isPortGroupCollapsed(portGroupStates, side, ROOT_GROUP_PATH, totalPortCount);
+	}
+
+	function handleToggleGroup(groupPath: string, portCount: number) {
+		onPortGroupToggle?.({ nodeId, side, groupPath, portCount });
 	}
 
 	const HIDDEN_STYLE = 'opacity:0;width:0;height:0;pointer-events:none;';
@@ -59,8 +70,8 @@
 			class="hidden-handle"
 		/>
 	{:else}
-		{@const signalType = item.port.isSignal ? signalTypeFromPort(item.port.name) : null}
-		{@const controlType = item.port.isControl ? controlTypeFromPort(item.port.name) : null}
+		{@const signalType = item.port.isSignal ? extractPortTypeName(item.port.name, signalConfig) : null}
+		{@const controlType = item.port.isControl ? extractPortTypeName(item.port.name, controlConfig) : null}
 		<div class="port-row" class:port-indented={item.depth > 0} class:signal-port={!!signalType} class:control-port={!!controlType} style:padding-left="{item.depth * 12}px">
 			{#if side === 'in'}
 				<Handle
@@ -114,7 +125,7 @@
 		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div
 			class="group-header"
-			onclick={() => toggleNodePortGroup(nodeId, side, item.fullPath, item.portCount)}
+			onclick={() => handleToggleGroup(item.fullPath, item.portCount)}
 			title={isCollapsed ? 'Expand group' : 'Collapse group'}
 		>
 			{#if side === 'in'}
@@ -193,7 +204,7 @@
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div
 				class="root-group-header"
-				onclick={() => toggleNodePortGroup(nodeId, side, ROOT_GROUP_PATH, totalPortCount)}
+				onclick={() => handleToggleGroup(ROOT_GROUP_PATH, totalPortCount)}
 				title={isRootCollapsed ? 'Expand all ports' : 'Collapse all ports'}
 			>
 				{#if side === 'in'}
@@ -304,13 +315,13 @@
 	}
 
 	.port-label {
-		color: var(--text-secondary, #a0a0a0);
-		font-size: var(--node-port-font-size, 11px);
+		color: var(--netrun-text-secondary, #a0a0a0);
+		font-size: var(--netrun-node-port-font-size, 11px);
 	}
 
 	.port-type {
-		color: var(--text-secondary, #666);
-		font-size: var(--node-port-font-size, 11px);
+		color: var(--netrun-text-secondary, #666);
+		font-size: var(--netrun-node-port-font-size, 11px);
 		opacity: 0.7;
 	}
 
@@ -340,7 +351,7 @@
 	.chevron {
 		display: inline-block;
 		font-size: 8px;
-		color: var(--text-secondary, #a0a0a0);
+		color: var(--netrun-text-secondary, #a0a0a0);
 		transition: transform 0.15s;
 	}
 
@@ -349,13 +360,13 @@
 	}
 
 	.group-name {
-		color: var(--text-primary, #fff);
-		font-size: var(--node-port-font-size, 11px);
+		color: var(--netrun-text-primary, #fff);
+		font-size: var(--netrun-node-port-font-size, 11px);
 		font-weight: 500;
 	}
 
 	.group-count {
-		color: var(--text-secondary, #666);
+		color: var(--netrun-text-secondary, #666);
 		font-size: 10px;
 	}
 
@@ -401,7 +412,7 @@
 	.signal-label {
 		font-style: italic;
 		color: #d97706 !important;
-		font-size: calc(var(--node-port-font-size, 11px) - 1px);
+		font-size: calc(var(--netrun-node-port-font-size, 11px) - 1px);
 	}
 
 	:global(.signal-handle) {
@@ -418,7 +429,7 @@
 	.control-label {
 		font-style: italic;
 		color: #7c3aed !important;
-		font-size: calc(var(--node-port-font-size, 11px) - 1px);
+		font-size: calc(var(--netrun-node-port-font-size, 11px) - 1px);
 	}
 
 	:global(.control-handle) {
