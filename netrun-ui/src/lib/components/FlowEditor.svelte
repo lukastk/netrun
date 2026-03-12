@@ -608,7 +608,6 @@
 				const headerColor = ui?.headerColor as string | undefined;
 				if (headerColor) return headerColor;
 				if (node.data?.nodeType === 'subgraph') return '#22c55e';
-				if (node.data?.nodeType === 'factory') return '#4f46e5';
 				return '#3d3d3d';
 			}}
 			maskColor="rgba(0, 0, 0, 0.7)"

@@ -449,10 +449,6 @@
 		top: 50% !important;
 	}
 
-	.netrun-node.factory .node-header {
-		background: linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%);
-	}
-
 	.node-header {
 		background: var(--bg-tertiary, #3d3d3d);
 		padding: 8px 12px;
