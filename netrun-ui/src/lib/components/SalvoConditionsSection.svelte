@@ -43,17 +43,17 @@
 
 	// Default conditions to show read-only when "Use defaults" is checked
 	let defaultInCondition = $derived(
-		inUseDefaults ? createDefaultSalvoCondition('default', inPortNames, 'all_ports_ready') : null
+		inUseDefaults ? createDefaultSalvoCondition(inPortNames, 'all_ports_ready') : null
 	);
 	let defaultOutCondition = $derived(
-		outUseDefaults ? createDefaultSalvoCondition('default', outPortNames, 'always') : null
+		outUseDefaults ? createDefaultSalvoCondition(outPortNames, 'always') : null
 	);
 
 	function toggleInputDefaults() {
 		if (inUseDefaults) {
 			// Switch to explicit: create a default condition
 			onUpdateIn({
-				default: createDefaultSalvoCondition('default', inPortNames, 'all_ports_ready'),
+				default: createDefaultSalvoCondition(inPortNames, 'all_ports_ready'),
 			});
 		} else {
 			// Switch to defaults
@@ -65,7 +65,7 @@
 		if (outUseDefaults) {
 			// Switch to explicit: create a default condition
 			onUpdateOut({
-				default: createDefaultSalvoCondition('default', outPortNames, 'always'),
+				default: createDefaultSalvoCondition(outPortNames, 'always'),
 			});
 		} else {
 			// Switch to defaults
@@ -78,7 +78,7 @@
 		const name = generateUniqueName(current, 'condition');
 		onUpdateIn({
 			...current,
-			[name]: createDefaultSalvoCondition(name, inPortNames, 'all_ports_ready'),
+			[name]: createDefaultSalvoCondition(inPortNames, 'all_ports_ready'),
 		});
 	}
 
@@ -87,7 +87,7 @@
 		const name = generateUniqueName(current, 'condition');
 		onUpdateOut({
 			...current,
-			[name]: createDefaultSalvoCondition(name, outPortNames, 'always'),
+			[name]: createDefaultSalvoCondition(outPortNames, 'always'),
 		});
 	}
 

@@ -4,7 +4,6 @@
 		buildPortTree,
 		makeGroupHandleId,
 		ROOT_GROUP_PATH,
-		type PortDisplayItem,
 		type PortGroupTree,
 		type PortLeaf,
 	} from '../utils/portGroups.js';

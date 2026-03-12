@@ -16,5 +16,6 @@ import type { PortTypeConfig } from '../types/events.js';
 export function extractPortTypeName(portName: string, config: PortTypeConfig | undefined): string | null {
 	if (!config) return null;
 	if (!portName.startsWith(config.prefix) || !portName.endsWith(config.suffix)) return null;
-	return portName.slice(config.prefix.length, -config.suffix.length);
+	const end = config.suffix.length > 0 ? -config.suffix.length : undefined;
+	return portName.slice(config.prefix.length, end);
 }

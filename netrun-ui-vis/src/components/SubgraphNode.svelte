@@ -1,7 +1,7 @@
 <script lang="ts">
 	import { NodeResizer } from '@xyflow/svelte';
 	import type { SubgraphNodeData } from '../types/nodes.js';
-	import type { CascadeHighlightState, PortTypeConfig } from '../types/events.js';
+	import type { PortTypeConfig } from '../types/events.js';
 	import { PORT_ROW_HEIGHT, NODE_BORDER_WIDTH } from '../constants.js';
 	import PortList from './PortList.svelte';
 
@@ -9,8 +9,6 @@
 		id: string;
 		data: SubgraphNodeData;
 		selected?: boolean;
-		/** Cascade highlight state for dependency visualization */
-		cascadeHighlight?: CascadeHighlightState | null;
 		/** Signal port configuration */
 		signalConfig?: PortTypeConfig;
 		/** Control port configuration */
@@ -28,7 +26,7 @@
 	}
 
 	let {
-		id, data, selected = false, cascadeHighlight,
+		id, data, selected = false,
 		signalConfig, controlConfig,
 		onResize, onDescriptionToggle, onSubgraphOpen, onSubgraphToggleExpand, onPortGroupToggle,
 	}: Props = $props();

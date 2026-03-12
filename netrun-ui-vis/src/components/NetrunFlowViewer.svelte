@@ -12,7 +12,6 @@
 		type IsValidConnection,
 		BackgroundVariant,
 		ConnectionLineType,
-		type FitViewOptions,
 	} from '@xyflow/svelte';
 	import '@xyflow/svelte/dist/style.css';
 	import type { GraphSettings } from '../types/graph.js';
@@ -151,7 +150,8 @@
 		switch (style) {
 			case 'straight': return ConnectionLineType.Straight;
 			case 'step': return ConnectionLineType.Step;
-			case 'default': return ConnectionLineType.Bezier;
+			case 'bezier': return ConnectionLineType.Bezier;
+			case 'simplebezier': return ConnectionLineType.SimpleBezier;
 			default: return ConnectionLineType.SmoothStep;
 		}
 	}

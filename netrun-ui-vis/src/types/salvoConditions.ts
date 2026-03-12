@@ -239,7 +239,6 @@ export function createAllPortsReadyTerm(portNames: string[]): SalvoConditionTerm
  * Create a default salvo condition for the given ports
  */
 export function createDefaultSalvoCondition(
-  name: string,
   portNames: string[],
   preset: SalvoConditionPreset = 'all_ports_ready'
 ): SalvoConditionConfig {

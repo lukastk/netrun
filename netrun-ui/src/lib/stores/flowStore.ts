@@ -257,12 +257,9 @@ export const dependencyLabels = derived(nodes, ($nodes) => {
 	return labels;
 });
 
-// Cascade highlight state (set when user clicks a dependency edge)
-export interface CascadeHighlightState {
-	sourceNodes: Set<string>;
-	visitedNodes: Set<string>;
-	visitedEdges: Set<string>;
-}
+// Re-export CascadeHighlightState from vis package
+export type { CascadeHighlightState } from 'netrun-ui-vis';
+import type { CascadeHighlightState } from 'netrun-ui-vis';
 export const cascadeHighlight = writable<CascadeHighlightState | null>(null);
 
 /**
