@@ -367,7 +367,7 @@ class GraphConfig(VarResolvableModel):
                 for idx in edge_indices:
                     errors.append(ConfigValidationError(
                         loc=["edges", idx],
-                        msg=f"Fan-out: output port '{src_key}' is connected by multiple edges (indices {edge_indices})",
+                        msg=f"Fan-out: output port '{src_key}' is connected by multiple edges (indices {edge_indices}). Use 'netrun.node_factories.broadcast' to replicate output to multiple targets.",
                         type="fan_out",
                     ))
 

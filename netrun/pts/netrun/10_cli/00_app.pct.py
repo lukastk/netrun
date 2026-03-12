@@ -58,6 +58,16 @@ app.command("download-agents")(download_agents)
 
 # %%
 #|export
+from netrun.cli._graph import add_node, remove_node, edit_node, add_edge, remove_edge
+
+app.command("add-node")(add_node)
+app.command("remove-node")(remove_node)
+app.command("edit-node")(edit_node)
+app.command("add-edge")(add_edge)
+app.command("remove-edge")(remove_edge)
+
+# %%
+#|export
 from netrun.cli._actions import actions_app
 from netrun.cli._recipes import recipes_app
 
