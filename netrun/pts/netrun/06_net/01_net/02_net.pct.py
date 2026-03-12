@@ -2085,7 +2085,7 @@ class Net:
             record.was_cancelled = True
             record.ended_at = get_timestamp_utc()
             record.destroyed_packets = list(response.destroyed_packets)
-            await self._fire_epoch_end(node_name, epoch_id)
+            await self._fire_epoch_end(node_name, epoch_id, retry_count=retry_count)
             return execution_result
 
         # Success - commit deferred actions
@@ -2115,7 +2115,7 @@ class Net:
         self._do_action(netrun_sim.NetAction.finish_epoch(epoch_id), epoch_id=epoch_id)
         self._epochs[epoch_id].ended_at = get_timestamp_utc()
         self._epochs[epoch_id].state = netrun_sim.EpochState.Finished
-        await self._fire_epoch_end(node_name, epoch_id)
+        await self._fire_epoch_end(node_name, epoch_id, retry_count=retry_count)
 
         return execution_result
 

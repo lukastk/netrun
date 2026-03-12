@@ -1237,6 +1237,68 @@ async def test_epoch_log_retry_count():
     assert epoch_log.retry_count == 2
     assert epoch_log.error == "always fails"
 
+
+@pytest.mark.asyncio
+async def test_epoch_log_retry_count_on_success():
+    """EpochLog should reflect retry_count when the node succeeds on a retry attempt."""
+    call_count = 0
+
+    def exec_func(ctx, packets):
+        nonlocal call_count
+        call_count += 1
+        for pids in packets.values():
+            for pid in pids:
+                ctx.consume_packet(pid)
+        if call_count <= 1:
+            raise ValueError("fail first attempt")
+        pid = ctx.create_packet("ok")
+        ctx.load_output_port("out", pid)
+        ctx.send_output_salvo("send")
+
+    config = NetConfig(
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="A",
+                    in_ports={"in": PortConfig()},
+                    out_ports={"out": PortConfig()},
+                    in_salvo_conditions={
+                        "trigger": SalvoConditionConfig(
+                            max_salvos=MaxSalvosFiniteConfig(max=1),
+                            ports={"in": PacketCountNConfig(count=1)},
+                            term=SalvoConditionTermTrueConfig(),
+                        )
+                    },
+                    out_salvo_conditions={
+                        "send": SalvoConditionConfig(
+                            max_salvos=MaxSalvosFiniteConfig(max=1),
+                            ports={"out": PacketCountNConfig(count=1)},
+                            term=SalvoConditionTermTrueConfig(),
+                        )
+                    },
+                    execution_config=NodeExecutionConfig(
+                        exec_node_func=exec_func,
+                        pools=["main"],
+                        retries=2,
+                        retry_wait=0,
+                    ),
+                ),
+            ],
+            edges=[],
+        ),
+        retain_epoch_logs=True,
+        print_echo_stdout=False,
+    )
+
+    async with Net(config) as net:
+        net.inject_data("A", "in", ["data"])
+        await net.run_until_blocked()
+
+    assert call_count == 2  # 1 initial fail + 1 retry success
+    epoch_log = list(net.epoch_logs.values())[0]
+    assert epoch_log.outcome == "success"
+    assert epoch_log.retry_count == 1  # succeeded on first retry
+
 # %% [markdown]
 # ## ctx.log() with overlapping field names (last-write-wins)
 
