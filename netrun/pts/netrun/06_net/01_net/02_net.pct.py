@@ -258,6 +258,7 @@ class Net:
             self._node_factories,
             net_node_vars=self._config_resolved.node_vars,
             net_type_checking_enabled=self._config_resolved.type_checking_enabled,
+            net_print_echo_stdout=self._config_resolved.print_echo_stdout,
             net_config_data=self._config.model_dump(),
         )
         # Validate RemotePoolConfig fields are set before constructing pools
@@ -413,6 +414,7 @@ class Net:
             node_factories,
             net_node_vars=config_resolved.node_vars,
             net_type_checking_enabled=config_resolved.type_checking_enabled,
+            net_print_echo_stdout=config_resolved.print_echo_stdout,
             net_config_data=config_resolved.model_dump(),
         )
 

@@ -333,6 +333,8 @@ class NetConfig(VarResolvableModel):
 
     error_on_undeclared_output: bool | VarRef = Field(default=False, description="Raise an error when a packet is sent from an unconnected output port with no queue.")
 
+    print_echo_stdout: bool | VarRef = Field(default=True, description="Echo ctx.print() output to real stdout. Can be overridden per-node.")
+
     type_checking_enabled: bool | VarRef = Field(default=True, description="Enable runtime type checking for packet values. Can be overridden per-node.")
 
     propagate_exceptions: bool | VarRef = Field(default=True, description="Propagate epoch exceptions immediately from run_step/run_until_blocked. Can be overridden per-node.")
