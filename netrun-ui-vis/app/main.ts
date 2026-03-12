@@ -14,6 +14,18 @@ if (!rawConfig || typeof rawConfig === 'string') {
 		</div>
 	`;
 } else {
+	// Strip descriptionExpanded from all nodes unless explicitly requested
+	if (!options.expandDescriptions) {
+		const configObj = rawConfig as Record<string, unknown>;
+		const graph = (configObj.graph ?? configObj) as Record<string, unknown>;
+		const nodes = (graph.nodes ?? []) as Record<string, unknown>[];
+		for (const node of nodes) {
+			const extra = node.extra as Record<string, unknown> | undefined;
+			const ui = extra?.ui as Record<string, unknown> | undefined;
+			if (ui) delete ui.descriptionExpanded;
+		}
+	}
+
 	const graph = configToGraph(rawConfig as Record<string, unknown>);
 
 	// Update page title from config

@@ -147,6 +147,21 @@ class TestExportHtmlFromFile:
         export_html_from_file(input_file, output_file)
         assert output_file.exists()
 
+    def test_resolves_factory_descriptions(self, tmp_path):
+        """Factory node descriptions should be resolved from docstrings."""
+        from netrun_ui_backend.export_html import export_html_from_file
+
+        sample = Path(__file__).parent.parent.parent / "sample_projects" / "00_basic_net_project" / "main.netrun.json"
+        if not sample.exists():
+            pytest.skip("Sample project not available")
+
+        output_file = tmp_path / "resolved.html"
+        export_html_from_file(sample, output_file)
+
+        content = output_file.read_text()
+        # "Double the input value." is the docstring of the `double` function
+        assert "Double the input value." in content
+
     def test_missing_input_raises(self, tmp_path):
         from netrun_ui_backend.export_html import export_html_from_file
 

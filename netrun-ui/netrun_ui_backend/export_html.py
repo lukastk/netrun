@@ -8,8 +8,11 @@ page with the config embedded as ``window.__NETRUN_CONFIG__``.
 
 import html
 import json
+import logging
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 def find_vis_assets_dir() -> Path:
@@ -45,6 +48,7 @@ def build_html(
     vis_assets_dir: Path,
     *,
     minimap: bool = False,
+    expand_descriptions: bool = False,
 ) -> str:
     """Assemble a self-contained HTML string from *config_data*.
 
@@ -56,6 +60,9 @@ def build_html(
         Directory containing the built ``index-*.js`` and ``index-*.css`` files.
     minimap:
         Whether to show the minimap overlay. Defaults to ``False``.
+    expand_descriptions:
+        Whether to keep node descriptions expanded. Defaults to ``False``
+        (descriptions are collapsed regardless of config state).
 
     Returns
     -------
@@ -89,6 +96,8 @@ def build_html(
     options: dict[str, Any] = {}
     if minimap:
         options["minimap"] = True
+    if expand_descriptions:
+        options["expandDescriptions"] = True
     options_json = json.dumps(options, separators=(",", ":"))
 
     css_block = f"\t<style>{css_content}</style>\n" if css_content else ""
@@ -124,12 +133,53 @@ def build_html(
 </html>"""
 
 
+def _resolve_factories_in_config(config_data: dict[str, Any], working_dir: str) -> None:
+    """Resolve factory nodes in-place, baking descriptions and ports into the config.
+
+    This calls ``resolve_factory_ports`` for each factory node so that the
+    standalone JS converter (which can't call Python factories) sees the
+    resolved descriptions and ports.
+    """
+    from .converter import resolve_factory_ports
+
+    graph = config_data.get("graph", config_data)
+    nodes = graph.get("nodes", [])
+
+    for node in nodes:
+        factory = node.get("factory")
+        if not factory:
+            continue
+
+        resolved = resolve_factory_ports(
+            factory,
+            node.get("factory_args", {}),
+            working_dir=working_dir,
+        )
+        if resolved is None:
+            continue
+
+        in_ports, out_ports, description, factory_extra = resolved
+
+        # Bake description into config (factory default, don't override explicit)
+        if description and not node.get("description"):
+            node["description"] = description
+
+        # Bake resolved ports if node doesn't have explicit ones
+        if in_ports and not node.get("in_ports"):
+            node["in_ports"] = in_ports
+        if out_ports and not node.get("out_ports"):
+            node["out_ports"] = out_ports
+
+        logger.debug("Resolved factory %s for node %s", factory, node.get("name"))
+
+
 def export_html_from_file(
     input_path: Path,
     output_path: Path,
     vis_assets_dir: Path | None = None,
     *,
     minimap: bool = False,
+    expand_descriptions: bool = False,
 ) -> None:
     """Read a ``.netrun.json`` file, build HTML, and write to *output_path*.
 
@@ -143,6 +193,8 @@ def export_html_from_file(
         Override for built asset location (auto-detected if ``None``).
     minimap:
         Whether to show the minimap overlay.
+    expand_descriptions:
+        Whether to keep node descriptions expanded.
     """
     if not input_path.exists():
         raise FileNotFoundError(f"Input file not found: {input_path}")
@@ -150,9 +202,12 @@ def export_html_from_file(
     raw = input_path.read_text(encoding="utf-8")
     config_data = json.loads(raw)
 
+    # Resolve factory descriptions and ports before embedding
+    _resolve_factories_in_config(config_data, working_dir=str(input_path.parent))
+
     if vis_assets_dir is None:
         vis_assets_dir = find_vis_assets_dir()
 
-    html_content = build_html(config_data, vis_assets_dir, minimap=minimap)
+    html_content = build_html(config_data, vis_assets_dir, minimap=minimap, expand_descriptions=expand_descriptions)
     output_path.parent.mkdir(parents=True, exist_ok=True)
     output_path.write_text(html_content, encoding="utf-8")
