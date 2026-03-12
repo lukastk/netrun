@@ -29,7 +29,7 @@ import pytest
 from netrun.net.config import (
     NetConfig, NodeConfig, NodeExecutionConfig, PortConfig, GraphConfig,
     EdgeConfig, SalvoConditionConfig, SalvoConditionTermTrueConfig,
-    MaxSalvosFiniteConfig, PacketCountNConfig,
+    MaxSalvosFiniteConfig, PacketCountNConfig, OutputQueueConfig,
 )
 from netrun.net._net._context import (
     _EpochState, EpochLog, NodeLogEntry, SimActionLog, SimEventLog,
@@ -615,3 +615,560 @@ def test_format_epoch_log():
     assert "duration=1248ms" in result
     assert "pool=main/0" in result
     assert "tokens_used=1523" in result
+
+# %% [markdown]
+# ## ctx.log() stdout echo
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_ctx_log_stdout_echo(capsys):
+    """ctx.log() should echo to stdout when print_echo_stdout=True."""
+    def exec_func(ctx, packets):
+        for pids in packets.values():
+            for pid in pids:
+                ctx.consume_packet(pid)
+        ctx.log("Fetched data", user_id="u123")
+        pid = ctx.create_packet("ok")
+        ctx.load_output_port("out", pid)
+        ctx.send_output_salvo("send")
+
+    config = _simple_config(exec_func)
+    config = config.model_copy(update={"print_echo_stdout": True})
+    async with Net(config) as net:
+        net.inject_data("A", "in", ["data"])
+        await net.run_until_blocked()
+
+    captured = capsys.readouterr()
+    assert "[A]" in captured.out
+    assert "Fetched data" in captured.out
+    assert "user_id=u123" in captured.out
+
+# %% [markdown]
+# ## epoch_log_echo_stdout
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_epoch_log_echo_stdout(capsys):
+    """epoch_log_echo_stdout=True should print epoch summary to stdout."""
+    def exec_func(ctx, packets):
+        for pids in packets.values():
+            for pid in pids:
+                ctx.consume_packet(pid)
+        pid = ctx.create_packet("ok")
+        ctx.load_output_port("out", pid)
+        ctx.send_output_salvo("send")
+
+    config = _simple_config(exec_func, epoch_log_echo_stdout=True)
+    async with Net(config) as net:
+        net.inject_data("A", "in", ["data"])
+        await net.run_until_blocked()
+
+    captured = capsys.readouterr()
+    assert "[A]" in captured.out
+    assert "outcome=success" in captured.out
+
+# %% [markdown]
+# ## Multi-node flow with SimActionLog epoch attribution
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_multi_node_sim_action_epoch_attribution():
+    """SimActionLogs should be attributed to the correct epoch across nodes."""
+    def node_a_func(ctx, packets):
+        for pids in packets.values():
+            for pid in pids:
+                ctx.consume_packet(pid)
+        pid = ctx.create_packet("from_a")
+        ctx.load_output_port("out", pid)
+        ctx.send_output_salvo("send")
+
+    def node_b_func(ctx, packets):
+        for pids in packets.values():
+            for pid in pids:
+                ctx.consume_packet(pid)
+
+    config = NetConfig(
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="A",
+                    in_ports={"in": PortConfig()},
+                    out_ports={"out": PortConfig()},
+                    in_salvo_conditions={
+                        "trigger": SalvoConditionConfig(
+                            max_salvos=MaxSalvosFiniteConfig(max=1),
+                            ports={"in": PacketCountNConfig(count=1)},
+                            term=SalvoConditionTermTrueConfig(),
+                        )
+                    },
+                    out_salvo_conditions={
+                        "send": SalvoConditionConfig(
+                            max_salvos=MaxSalvosFiniteConfig(max=1),
+                            ports={"out": PacketCountNConfig(count=1)},
+                            term=SalvoConditionTermTrueConfig(),
+                        )
+                    },
+                    execution_config=NodeExecutionConfig(
+                        exec_node_func=node_a_func, pools=["main"],
+                    ),
+                ),
+                NodeConfig(
+                    name="B",
+                    in_ports={"in": PortConfig()},
+                    in_salvo_conditions={
+                        "trigger": SalvoConditionConfig(
+                            max_salvos=MaxSalvosFiniteConfig(max=1),
+                            ports={"in": PacketCountNConfig(count=1)},
+                            term=SalvoConditionTermTrueConfig(),
+                        )
+                    },
+                    execution_config=NodeExecutionConfig(
+                        exec_node_func=node_b_func, pools=["main"],
+                    ),
+                ),
+            ],
+            edges=[
+                EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in"),
+            ],
+        ),
+        retain_epoch_logs=True,
+        print_echo_stdout=False,
+    )
+
+    async with Net(config) as net:
+        net.inject_data("A", "in", ["hello"])
+        await net.run_until_blocked()
+
+    assert len(net.epoch_logs) == 2
+    epoch_logs_by_node = {el.node_name: el for el in net.epoch_logs.values()}
+    assert "A" in epoch_logs_by_node
+    assert "B" in epoch_logs_by_node
+
+    # Each epoch's sim_actions should be attributed to the correct epoch_id
+    for el in epoch_logs_by_node.values():
+        for sa in el.sim_actions:
+            assert sa.epoch_id == el.epoch_id
+
+# %% [markdown]
+# ## on_sim_actions deregistration
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_on_sim_actions_deregistration():
+    """Calling remove() from on_sim_actions should stop firing the callback."""
+    def exec_func(ctx, packets):
+        for pids in packets.values():
+            for pid in pids:
+                ctx.consume_packet(pid)
+        pid = ctx.create_packet("ok")
+        ctx.load_output_port("out", pid)
+        ctx.send_output_salvo("send")
+
+    call_count = 0
+
+    def on_actions(actions):
+        nonlocal call_count
+        call_count += 1
+
+    config = _simple_config(exec_func)
+    async with Net(config) as net:
+        remove = net.on_sim_actions(on_actions)
+        net.inject_data("A", "in", ["v1"])
+        await net.run_until_blocked()
+        assert call_count >= 1
+
+        # Deregister
+        remove()
+        old_count = call_count
+
+        net.inject_data("A", "in", ["v2"])
+        await net.run_until_blocked()
+        assert call_count == old_count  # Should not have incremented
+
+# %% [markdown]
+# ## Cache hit outcome in EpochLog
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_epoch_log_cache_hit():
+    """EpochLog should report outcome='cache_hit' on cache replay."""
+    from netrun.storage.config import CacheConfig, NodeCacheConfig, StorageConfig, NodeStorageConfig
+
+    call_count = 0
+
+    def exec_func(ctx, packets):
+        nonlocal call_count
+        call_count += 1
+        for pids in packets.values():
+            for pid in pids:
+                ctx.consume_packet(pid)
+        pid = ctx.create_packet(100)
+        ctx.load_output_port("out", pid)
+        ctx.send_output_salvo("send")
+
+    cache = CacheConfig(enabled=True, include_all_nodes=True)
+    node_storage = NodeStorageConfig(cache=NodeCacheConfig())
+
+    config = NetConfig(
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="A",
+                    in_ports={"in": PortConfig()},
+                    out_ports={"out": PortConfig()},
+                    in_salvo_conditions={
+                        "trigger": SalvoConditionConfig(
+                            max_salvos=MaxSalvosFiniteConfig(max=1),
+                            ports={"in": PacketCountNConfig(count=1)},
+                            term=SalvoConditionTermTrueConfig(),
+                        )
+                    },
+                    out_salvo_conditions={
+                        "send": SalvoConditionConfig(
+                            max_salvos=MaxSalvosFiniteConfig(max=1),
+                            ports={"out": PacketCountNConfig(count=1)},
+                            term=SalvoConditionTermTrueConfig(),
+                        )
+                    },
+                    execution_config=NodeExecutionConfig(
+                        exec_node_func=exec_func,
+                        pools=["main"],
+                        storage=node_storage,
+                    ),
+                ),
+            ],
+            edges=[],
+            output_queues={"results": OutputQueueConfig(ports=[("A", "out")])},
+        ),
+        storage=StorageConfig(cache=cache),
+        retain_epoch_logs=True,
+        print_echo_stdout=False,
+    )
+
+    async with Net(config) as net:
+        # First run: actual execution
+        net.inject_data("A", "in", [42])
+        await net.run_until_blocked()
+
+        # Second run: cache hit
+        net.inject_data("A", "in", [42])
+        await net.run_until_blocked()
+
+    assert call_count == 1  # Only executed once
+
+    epoch_logs = list(net.epoch_logs.values())
+    assert len(epoch_logs) == 2
+    outcomes = [el.outcome for el in epoch_logs]
+    assert "success" in outcomes
+    assert "cache_hit" in outcomes
+
+    cache_hit_log = [el for el in epoch_logs if el.outcome == "cache_hit"][0]
+    assert cache_hit_log.was_cache_hit is True
+
+# %% [markdown]
+# ## File storage hit outcome in EpochLog
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_epoch_log_file_storage_hit():
+    """EpochLog should report outcome='file_storage_hit' on file storage replay."""
+    import tempfile
+    from netrun.storage.config import StorageConfig, NodeStorageConfig, NodeFileStorageConfig, LocalBackendConfig
+
+    call_count = 0
+
+    def exec_func(ctx, packets):
+        nonlocal call_count
+        call_count += 1
+        for pids in packets.values():
+            for pid in pids:
+                value = ctx.consume_packet(pid)
+                pid_out = ctx.create_packet(value * 2)
+                ctx.load_output_port("out", pid_out)
+        ctx.send_output_salvo("send")
+
+    with tempfile.TemporaryDirectory() as tmpdir:
+        fs_config = NodeFileStorageConfig(
+            backend=LocalBackendConfig(base_path=tmpdir + "/data"),
+            serialization="pickle",
+        )
+        storage = StorageConfig(file_storage_metadata_path=tmpdir + "/meta")
+        node_storage = NodeStorageConfig(file_storage=fs_config)
+
+        node_cfg = NodeConfig(
+            name="A",
+            in_ports={"in": PortConfig()},
+            out_ports={"out": PortConfig()},
+            in_salvo_conditions={
+                "trigger": SalvoConditionConfig(
+                    max_salvos=MaxSalvosFiniteConfig(max=1),
+                    ports={"in": PacketCountNConfig(count=1)},
+                    term=SalvoConditionTermTrueConfig(),
+                )
+            },
+            out_salvo_conditions={
+                "send": SalvoConditionConfig(
+                    max_salvos=MaxSalvosFiniteConfig(max=1),
+                    ports={"out": PacketCountNConfig(count=1)},
+                    term=SalvoConditionTermTrueConfig(),
+                )
+            },
+            execution_config=NodeExecutionConfig(
+                exec_node_func=exec_func,
+                pools=["main"],
+                storage=node_storage,
+            ),
+        )
+
+        config1 = NetConfig(
+            graph=GraphConfig(
+                nodes=[node_cfg],
+                edges=[],
+                output_queues={"results": OutputQueueConfig(ports=[("A", "out")])},
+            ),
+            storage=storage,
+            retain_epoch_logs=True,
+            print_echo_stdout=False,
+        )
+
+        # First run: executes
+        async with Net(config1) as net1:
+            net1.inject_data("A", "in", [5])
+            await net1.run_until_blocked()
+        assert call_count == 1
+
+        # Second run: file storage hit
+        call_count = 0
+        node_cfg2 = node_cfg.model_copy(deep=True)
+        config2 = NetConfig(
+            graph=GraphConfig(
+                nodes=[node_cfg2],
+                edges=[],
+                output_queues={"results": OutputQueueConfig(ports=[("A", "out")])},
+            ),
+            storage=storage,
+            retain_epoch_logs=True,
+            print_echo_stdout=False,
+        )
+
+        async with Net(config2) as net2:
+            net2.inject_data("A", "in", [5])
+            await net2.run_until_blocked()
+
+        assert call_count == 0  # Not called — replayed
+        epoch_log = list(net2.epoch_logs.values())[0]
+        assert epoch_log.outcome == "file_storage_hit"
+        assert epoch_log.was_file_storage_hit is True
+
+# %% [markdown]
+# ## NodeInfo.epoch_logs property
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_node_info_epoch_logs():
+    """NodeInfo.epoch_logs should return filtered EpochLogs for that node."""
+    def node_a_func(ctx, packets):
+        for pids in packets.values():
+            for pid in pids:
+                ctx.consume_packet(pid)
+        pid = ctx.create_packet("from_a")
+        ctx.load_output_port("out", pid)
+        ctx.send_output_salvo("send")
+
+    def node_b_func(ctx, packets):
+        for pids in packets.values():
+            for pid in pids:
+                ctx.consume_packet(pid)
+
+    config = NetConfig(
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="A",
+                    in_ports={"in": PortConfig()},
+                    out_ports={"out": PortConfig()},
+                    in_salvo_conditions={
+                        "trigger": SalvoConditionConfig(
+                            max_salvos=MaxSalvosFiniteConfig(max=1),
+                            ports={"in": PacketCountNConfig(count=1)},
+                            term=SalvoConditionTermTrueConfig(),
+                        )
+                    },
+                    out_salvo_conditions={
+                        "send": SalvoConditionConfig(
+                            max_salvos=MaxSalvosFiniteConfig(max=1),
+                            ports={"out": PacketCountNConfig(count=1)},
+                            term=SalvoConditionTermTrueConfig(),
+                        )
+                    },
+                    execution_config=NodeExecutionConfig(
+                        exec_node_func=node_a_func, pools=["main"],
+                    ),
+                ),
+                NodeConfig(
+                    name="B",
+                    in_ports={"in": PortConfig()},
+                    in_salvo_conditions={
+                        "trigger": SalvoConditionConfig(
+                            max_salvos=MaxSalvosFiniteConfig(max=1),
+                            ports={"in": PacketCountNConfig(count=1)},
+                            term=SalvoConditionTermTrueConfig(),
+                        )
+                    },
+                    execution_config=NodeExecutionConfig(
+                        exec_node_func=node_b_func, pools=["main"],
+                    ),
+                ),
+            ],
+            edges=[
+                EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in"),
+            ],
+        ),
+        retain_epoch_logs=True,
+        print_echo_stdout=False,
+    )
+
+    async with Net(config) as net:
+        net.inject_data("A", "in", ["hello"])
+        await net.run_until_blocked()
+
+        # NodeInfo should filter epoch logs to its own node
+        a_logs = net.nodes["A"].epoch_logs
+        b_logs = net.nodes["B"].epoch_logs
+
+    assert len(a_logs) == 1
+    assert a_logs[0].node_name == "A"
+    assert len(b_logs) == 1
+    assert b_logs[0].node_name == "B"
+
+# %% [markdown]
+# ## SimActionLog action_kind verification
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_sim_action_log_action_kinds():
+    """SimActionLogs should have correct action_kind values for specific actions."""
+    def exec_func(ctx, packets):
+        for pids in packets.values():
+            for pid in pids:
+                ctx.consume_packet(pid)
+        pid = ctx.create_packet("result")
+        ctx.load_output_port("out", pid)
+        ctx.send_output_salvo("send")
+
+    config = _simple_config(exec_func, retain_epoch_logs=True)
+    async with Net(config) as net:
+        net.inject_data("A", "in", ["data"])
+        made_progress, sim_actions, epoch_logs = await net.run_until_blocked()
+
+    # Collect all action_kinds from the step
+    action_kinds = [sa.action_kind for sa in sim_actions]
+
+    # Should include RunStep (the automatic flow step)
+    assert "RunStep" in action_kinds
+    # Should include start_epoch
+    assert any("start_epoch" in ak for ak in action_kinds)
+    # Should include finish_epoch
+    assert any("finish_epoch" in ak for ak in action_kinds)
+
+    # Epoch-attributed actions should have matching epoch_id
+    epoch_log = epoch_logs[0]
+    epoch_actions = [sa for sa in sim_actions if sa.epoch_id == epoch_log.epoch_id]
+    epoch_action_kinds = [sa.action_kind for sa in epoch_actions]
+    assert any("start_epoch" in ak for ak in epoch_action_kinds)
+    assert any("finish_epoch" in ak for ak in epoch_action_kinds)
+
+# %% [markdown]
+# ## SimEventLog detail fields
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_sim_event_log_detail_fields():
+    """SimEventLog detail dicts should contain event-specific string fields."""
+    def exec_func(ctx, packets):
+        for pids in packets.values():
+            for pid in pids:
+                ctx.consume_packet(pid)
+        pid = ctx.create_packet("result")
+        ctx.load_output_port("out", pid)
+        ctx.send_output_salvo("send")
+
+    config = _simple_config(exec_func)
+    async with Net(config) as net:
+        net.inject_data("A", "in", ["data"])
+        _, sim_actions, _ = await net.run_until_blocked()
+
+    # Find a RunStep action — it should produce events with detail fields
+    run_step_actions = [sa for sa in sim_actions if sa.action_kind == "RunStep"]
+    assert len(run_step_actions) > 0
+
+    # At least some events should have detail fields (e.g. packet_id, node_name)
+    all_events = [ev for sa in sim_actions for ev in sa.events]
+    events_with_details = [ev for ev in all_events if ev.detail]
+    assert len(events_with_details) > 0
+
+    # All detail values should be strings (ULID conversion)
+    for ev in all_events:
+        for key, val in ev.detail.items():
+            assert isinstance(val, str), f"detail[{key!r}] = {val!r} is not a string"
+
+# %% [markdown]
+# ## ctx.log() with level="error"
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_ctx_log_error_level():
+    """ctx.log() with level='error' should set the level field correctly."""
+    def exec_func(ctx, packets):
+        for pids in packets.values():
+            for pid in pids:
+                ctx.consume_packet(pid)
+        ctx.log("Something went wrong", level="error", code=500)
+        pid = ctx.create_packet("ok")
+        ctx.load_output_port("out", pid)
+        ctx.send_output_salvo("send")
+
+    config = _simple_config(exec_func, retain_epoch_logs=True)
+    async with Net(config) as net:
+        net.inject_data("A", "in", ["data"])
+        await net.run_until_blocked()
+
+    epoch_log = list(net.epoch_logs.values())[0]
+    assert len(epoch_log.node_log_entries) == 1
+    entry = epoch_log.node_log_entries[0]
+    assert entry.level == "error"
+    assert entry.message == "Something went wrong"
+    assert entry.fields == {"code": 500}
+
+# %% [markdown]
+# ## sim_action_log retention negative test
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_retain_sim_action_logs_false():
+    """retain_sim_action_logs=False should not accumulate SimActionLogs."""
+    def exec_func(ctx, packets):
+        for pids in packets.values():
+            for pid in pids:
+                ctx.consume_packet(pid)
+        pid = ctx.create_packet("ok")
+        ctx.load_output_port("out", pid)
+        ctx.send_output_salvo("send")
+
+    config = _simple_config(exec_func, retain_sim_action_logs=False)
+    async with Net(config) as net:
+        net.inject_data("A", "in", ["data"])
+        await net.run_until_blocked()
+
+    assert len(net.sim_action_log) == 0
