@@ -405,7 +405,7 @@ These wrappers are thin (~10-20 lines each) and registered as node types in Svel
 
 **Verification:** Full app works identically. Visual diff: zero.
 
-### Phase 4: Extract FlowViewer Component [TODO - next step]
+### Phase 4: Extract FlowViewer Component [DONE]
 
 Create `NetrunFlowViewer.svelte` in the vis package. This wraps SvelteFlow with all netrun-specific configuration (dark theme, edge styling, markers, context menus, connection validation).
 
@@ -428,7 +428,7 @@ Create `NetrunFlowViewer.svelte` in the vis package. This wraps SvelteFlow with 
 
 **Verification:** Full app works identically.
 
-### Phase 5: Theme CSS
+### Phase 5: Theme CSS [DONE]
 
 Extract the default dark theme as a standalone CSS file that consumers can import:
 

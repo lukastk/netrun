@@ -180,14 +180,14 @@
 	class:node-disabled={isDisabled}
 	class:single-tip-port={singleTipPort}
 	ondblclick={handleDoubleClick}
-	style:background={headerColor ? `color-mix(in srgb, ${headerColor} 13%, var(--node-bg, #2d2d2d))` : undefined}
+	style:background={headerColor ? `color-mix(in srgb, ${headerColor} 13%, var(--netrun-node-bg, #2d2d2d))` : undefined}
 >
 	{#if isDisabled}<div class="disabled-overlay"></div>{/if}
 	<NodeResizer
 		minWidth={isExpanded ? 400 : 160}
 		minHeight={isExpanded ? 300 : 80}
 		isVisible={selected}
-		color="var(--node-selected, #3b82f6)"
+		color="var(--netrun-node-selected, #3b82f6)"
 		onResizeEnd={handleResizeEnd}
 	/>
 	<!-- Pre-ports area (measured for port alignment) -->
@@ -266,11 +266,11 @@
 <style>
 	.subgraph-node {
 		position: relative;
-		background: var(--node-bg, #2d2d2d);
-		border: 2px solid var(--subgraph-border, #22c55e);
+		background: var(--netrun-node-bg, #2d2d2d);
+		border: 2px solid var(--netrun-subgraph-border, #22c55e);
 		border-radius: 8px;
 		min-width: 160px;
-		font-size: var(--node-title-font-size, 12px);
+		font-size: var(--netrun-node-title-font-size, 12px);
 		width: 100%;
 		height: 100%;
 		box-sizing: border-box;
@@ -284,12 +284,12 @@
 	}
 
 	.subgraph-node.selected {
-		border-color: var(--node-selected, #3b82f6);
+		border-color: var(--netrun-node-selected, #3b82f6);
 		box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
 	}
 
 	.subgraph-node.invalid {
-		border-color: var(--error-color, #ef4444);
+		border-color: var(--netrun-error-color, #ef4444);
 	}
 
 	.subgraph-node.node-disabled {
@@ -315,13 +315,13 @@
 	.subgraph-node.expanded {
 		border-style: dashed;
 		border-width: 2px;
-		background: var(--bg-primary, #1a1a1a);
+		background: var(--netrun-bg-primary, #1a1a1a);
 		min-width: 400px;
 		min-height: 300px;
 	}
 
 	.subgraph-node.expanded.selected {
-		border-color: var(--node-selected, #3b82f6);
+		border-color: var(--netrun-node-selected, #3b82f6);
 	}
 
 	.expand-toggle {
@@ -391,7 +391,7 @@
 		position: absolute;
 		inset: -2px;
 		clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
-		background: var(--subgraph-border, #22c55e);
+		background: var(--netrun-subgraph-border, #22c55e);
 		z-index: -2;
 	}
 	.subgraph-node.shape-diamond::after {
@@ -399,14 +399,14 @@
 		position: absolute;
 		inset: 0;
 		clip-path: polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%);
-		background: var(--node-bg, #2d2d2d);
+		background: var(--netrun-node-bg, #2d2d2d);
 		z-index: -1;
 	}
 	.subgraph-node.shape-diamond.selected::before {
-		background: var(--node-selected, #3b82f6);
+		background: var(--netrun-node-selected, #3b82f6);
 	}
 	.subgraph-node.shape-diamond.invalid::before {
-		background: var(--error-color, #ef4444);
+		background: var(--netrun-error-color, #ef4444);
 	}
 	.subgraph-node.shape-diamond .node-header {
 		background: transparent;
@@ -430,7 +430,7 @@
 		position: absolute;
 		inset: -2px;
 		clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
-		background: var(--subgraph-border, #22c55e);
+		background: var(--netrun-subgraph-border, #22c55e);
 		z-index: -2;
 	}
 	.subgraph-node.shape-hexagon::after {
@@ -438,14 +438,14 @@
 		position: absolute;
 		inset: 0;
 		clip-path: polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%);
-		background: var(--node-bg, #2d2d2d);
+		background: var(--netrun-node-bg, #2d2d2d);
 		z-index: -1;
 	}
 	.subgraph-node.shape-hexagon.selected::before {
-		background: var(--node-selected, #3b82f6);
+		background: var(--netrun-node-selected, #3b82f6);
 	}
 	.subgraph-node.shape-hexagon.invalid::before {
-		background: var(--error-color, #ef4444);
+		background: var(--netrun-error-color, #ef4444);
 	}
 	.subgraph-node.shape-hexagon .node-header {
 		background: transparent;
@@ -474,15 +474,15 @@
 		right: -2px;
 		height: 16px;
 		border-radius: 0 0 50% 50% / 0 0 100% 100%;
-		border: 2px solid var(--subgraph-border, #22c55e);
+		border: 2px solid var(--netrun-subgraph-border, #22c55e);
 		border-top: none;
-		background: var(--node-bg, #2d2d2d);
+		background: var(--netrun-node-bg, #2d2d2d);
 	}
 	.subgraph-node.shape-cylinder.selected::after {
-		border-color: var(--node-selected, #3b82f6);
+		border-color: var(--netrun-node-selected, #3b82f6);
 	}
 	.subgraph-node.shape-cylinder.invalid::after {
-		border-color: var(--error-color, #ef4444);
+		border-color: var(--netrun-error-color, #ef4444);
 	}
 
 	/* Shape: triangle-right */
@@ -497,7 +497,7 @@
 		position: absolute;
 		inset: -2px;
 		clip-path: polygon(0% 0%, 100% 50%, 0% 100%);
-		background: var(--subgraph-border, #22c55e);
+		background: var(--netrun-subgraph-border, #22c55e);
 		z-index: -2;
 	}
 	.subgraph-node.shape-triangle-right::after {
@@ -505,14 +505,14 @@
 		position: absolute;
 		inset: 0;
 		clip-path: polygon(0% 0%, 100% 50%, 0% 100%);
-		background: var(--node-bg, #2d2d2d);
+		background: var(--netrun-node-bg, #2d2d2d);
 		z-index: -1;
 	}
 	.subgraph-node.shape-triangle-right.selected::before {
-		background: var(--node-selected, #3b82f6);
+		background: var(--netrun-node-selected, #3b82f6);
 	}
 	.subgraph-node.shape-triangle-right.invalid::before {
-		background: var(--error-color, #ef4444);
+		background: var(--netrun-error-color, #ef4444);
 	}
 	.subgraph-node.shape-triangle-right .node-header {
 		background: transparent;
@@ -541,7 +541,7 @@
 		position: absolute;
 		inset: -2px;
 		clip-path: polygon(100% 0%, 0% 50%, 100% 100%);
-		background: var(--subgraph-border, #22c55e);
+		background: var(--netrun-subgraph-border, #22c55e);
 		z-index: -2;
 	}
 	.subgraph-node.shape-triangle-left::after {
@@ -549,14 +549,14 @@
 		position: absolute;
 		inset: 0;
 		clip-path: polygon(100% 0%, 0% 50%, 100% 100%);
-		background: var(--node-bg, #2d2d2d);
+		background: var(--netrun-node-bg, #2d2d2d);
 		z-index: -1;
 	}
 	.subgraph-node.shape-triangle-left.selected::before {
-		background: var(--node-selected, #3b82f6);
+		background: var(--netrun-node-selected, #3b82f6);
 	}
 	.subgraph-node.shape-triangle-left.invalid::before {
-		background: var(--error-color, #ef4444);
+		background: var(--netrun-error-color, #ef4444);
 	}
 	.subgraph-node.shape-triangle-left .node-header {
 		background: transparent;
@@ -580,7 +580,7 @@
 		display: flex;
 		align-items: center;
 		gap: 6px;
-		border-bottom: 1px solid var(--border-color, #404040);
+		border-bottom: 1px solid var(--netrun-border-color, #404040);
 	}
 
 	.subgraph-badge {
@@ -594,7 +594,7 @@
 
 	.node-label {
 		font-weight: 500;
-		color: var(--text-primary, #fff);
+		color: var(--netrun-text-primary, #fff);
 		white-space: nowrap;
 		overflow: hidden;
 		text-overflow: ellipsis;
@@ -609,12 +609,12 @@
 
 	.node-description {
 		padding: 4px 10px;
-		border-bottom: 1px solid var(--border-color, #404040);
+		border-bottom: 1px solid var(--netrun-border-color, #404040);
 		display: flex;
 		align-items: flex-start;
 		gap: 4px;
-		font-size: var(--node-desc-font-size, 10px);
-		color: var(--text-secondary, #a0a0a0);
+		font-size: var(--netrun-node-desc-font-size, 10px);
+		color: var(--netrun-text-secondary, #a0a0a0);
 		overflow: hidden;
 		width: 0;
 		min-width: 100%;
@@ -660,17 +660,17 @@
 		display: flex;
 		justify-content: space-between;
 		padding: 4px 12px;
-		border-top: 1px solid var(--border-color, #404040);
+		border-top: 1px solid var(--netrun-border-color, #404040);
 		background: rgba(34, 197, 94, 0.1);
 		font-size: 10px;
 	}
 
 	.node-count {
-		color: var(--text-secondary, #a0a0a0);
+		color: var(--netrun-text-secondary, #a0a0a0);
 	}
 
 	.source-info {
-		color: var(--text-secondary, #666);
+		color: var(--netrun-text-secondary, #666);
 		opacity: 0.7;
 		max-width: 100px;
 		overflow: hidden;
@@ -681,21 +681,21 @@
 	.edit-hint {
 		padding: 4px 12px;
 		text-align: center;
-		color: var(--text-secondary, #666);
+		color: var(--netrun-text-secondary, #666);
 		font-size: 9px;
 		font-style: italic;
 		opacity: 0.6;
-		border-top: 1px solid var(--border-color, #404040);
+		border-top: 1px solid var(--netrun-border-color, #404040);
 	}
 
 	.validation-errors {
 		padding: 6px 12px;
-		border-top: 1px solid var(--border-color, #404040);
+		border-top: 1px solid var(--netrun-border-color, #404040);
 		background: rgba(239, 68, 68, 0.1);
 	}
 
 	.error {
-		color: var(--error-color, #ef4444);
+		color: var(--netrun-error-color, #ef4444);
 		font-size: 10px;
 	}
 
@@ -703,19 +703,19 @@
 	:global(.subgraph-node .svelte-flow__handle) {
 		width: 10px;
 		height: 10px;
-		border: 2px solid var(--bg-secondary, #242424);
+		border: 2px solid var(--netrun-bg-secondary, #242424);
 	}
 
 	:global(.subgraph-node .svelte-flow__handle-left) {
-		background: var(--port-input, #22c55e);
+		background: var(--netrun-port-input, #22c55e);
 	}
 
 	:global(.subgraph-node .svelte-flow__handle-right) {
-		background: var(--port-output, #f59e0b);
+		background: var(--netrun-port-output, #f59e0b);
 	}
 
 	:global(.subgraph-node .svelte-flow__handle.connecting) {
-		background: var(--accent-color, #3b82f6);
+		background: var(--netrun-accent-color, #3b82f6);
 	}
 
 	:global(.subgraph-node .svelte-flow__handle.group-handle) {

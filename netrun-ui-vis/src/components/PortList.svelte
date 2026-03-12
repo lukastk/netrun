@@ -316,13 +316,13 @@
 	}
 
 	.port-label {
-		color: var(--text-secondary, #a0a0a0);
-		font-size: var(--node-port-font-size, 11px);
+		color: var(--netrun-text-secondary, #a0a0a0);
+		font-size: var(--netrun-node-port-font-size, 11px);
 	}
 
 	.port-type {
-		color: var(--text-secondary, #666);
-		font-size: var(--node-port-font-size, 11px);
+		color: var(--netrun-text-secondary, #666);
+		font-size: var(--netrun-node-port-font-size, 11px);
 		opacity: 0.7;
 	}
 
@@ -352,7 +352,7 @@
 	.chevron {
 		display: inline-block;
 		font-size: 8px;
-		color: var(--text-secondary, #a0a0a0);
+		color: var(--netrun-text-secondary, #a0a0a0);
 		transition: transform 0.15s;
 	}
 
@@ -361,13 +361,13 @@
 	}
 
 	.group-name {
-		color: var(--text-primary, #fff);
-		font-size: var(--node-port-font-size, 11px);
+		color: var(--netrun-text-primary, #fff);
+		font-size: var(--netrun-node-port-font-size, 11px);
 		font-weight: 500;
 	}
 
 	.group-count {
-		color: var(--text-secondary, #666);
+		color: var(--netrun-text-secondary, #666);
 		font-size: 10px;
 	}
 
@@ -413,7 +413,7 @@
 	.signal-label {
 		font-style: italic;
 		color: #d97706 !important;
-		font-size: calc(var(--node-port-font-size, 11px) - 1px);
+		font-size: calc(var(--netrun-node-port-font-size, 11px) - 1px);
 	}
 
 	:global(.signal-handle) {
@@ -430,7 +430,7 @@
 	.control-label {
 		font-style: italic;
 		color: #7c3aed !important;
-		font-size: calc(var(--node-port-font-size, 11px) - 1px);
+		font-size: calc(var(--netrun-node-port-font-size, 11px) - 1px);
 	}
 
 	:global(.control-handle) {

@@ -1,3 +1,4 @@
+export { default as NetrunFlowViewer } from './NetrunFlowViewer.svelte';
 export { default as NetrunNode } from './NetrunNode.svelte';
 export { default as SubgraphNode } from './SubgraphNode.svelte';
 export { default as DecorationNode } from './DecorationNode.svelte';
