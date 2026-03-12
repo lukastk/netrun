@@ -244,7 +244,7 @@ class NodeExecutionConfig(VarResolvableModel):
 
     print_buffer_max_size: int | VarRef | None = Field(default=None, description="Max print buffer size before forced flush. None = unlimited.")
 
-    print_echo_stdout: bool | VarRef = Field(default=False, description="Also print to actual stdout when ctx.print() is called.")
+    print_echo_stdout: bool | VarRef | None = Field(default=None, description="Also print to actual stdout when ctx.print() is called. None inherits from NetConfig.")
 
     pool_allocation_method: RunAllocationMethod | VarRef | None = Field(default=None, description="Worker selection method when node has multiple pools. None inherits Net default.")
 

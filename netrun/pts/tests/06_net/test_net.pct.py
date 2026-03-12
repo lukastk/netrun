@@ -310,11 +310,15 @@ def test_context_print_echo_stdout(capsys):
 
     ctx.print("Echo this message")
 
-    # Check stdout
+    # Check stdout includes node name prefix, timestamp, and message
     captured = capsys.readouterr()
+    assert "[EchoNode]" in captured.out
     assert "Echo this message" in captured.out
+    # Timestamp format: HH:MM:SS.mmm
+    import re
+    assert re.search(r"\[\d{2}:\d{2}:\d{2}\.\d{3}\]", captured.out)
 
-    # Also check buffer contains the timestamped message
+    # Also check buffer contains the raw (unprefixed) timestamped message
     assert len(ctx._print_buffer) == 1
     timestamp, message = ctx._print_buffer[0]
     assert message == "Echo this message\n"
@@ -1647,7 +1651,7 @@ def test_node_execution_config_defaults():
 
     assert config.print_flush_interval == 0.1
     assert config.print_buffer_max_size is None
-    assert config.print_echo_stdout is False
+    assert config.print_echo_stdout is None
     assert config.pool_allocation_method is None
 
 # %%
