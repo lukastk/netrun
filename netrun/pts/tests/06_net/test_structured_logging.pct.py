@@ -1,0 +1,617 @@
+# ---
+# jupyter:
+#   kernelspec:
+#     display_name: .venv
+#     language: python
+#     name: python3
+# ---
+
+# %%
+#|default_exp net.test_structured_logging
+
+# %%
+#|hide
+from nblite import nbl_export; nbl_export();
+
+# %% [markdown]
+# # Structured Logging Tests
+
+# %%
+#|export
+import asyncio
+import json
+import tempfile
+from pathlib import Path
+from datetime import datetime
+
+import pytest
+
+from netrun.net.config import (
+    NetConfig, NodeConfig, NodeExecutionConfig, PortConfig, GraphConfig,
+    EdgeConfig, SalvoConditionConfig, SalvoConditionTermTrueConfig,
+    MaxSalvosFiniteConfig, PacketCountNConfig,
+)
+from netrun.net._net._context import (
+    _EpochState, EpochLog, NodeLogEntry, SimActionLog, SimEventLog,
+    NodeExecutionContext, _format_log_entry, _format_epoch_log,
+)
+from netrun.net._net._net import Net
+
+
+def _simple_config(
+    exec_func=None,
+    *,
+    retain_epoch_logs: bool = False,
+    retain_sim_action_logs: bool = False,
+    epoch_log_echo_stdout: bool = False,
+    factory: str | None = None,
+    factory_args: dict | None = None,
+) -> NetConfig:
+    """Create a minimal A -> B net config for testing."""
+    node_a = NodeConfig(
+        name="A",
+        in_ports={"in": PortConfig()},
+        out_ports={"out": PortConfig()},
+        in_salvo_conditions={
+            "trigger": SalvoConditionConfig(
+                max_salvos=MaxSalvosFiniteConfig(max=1),
+                ports={"in": PacketCountNConfig(count=1)},
+                term=SalvoConditionTermTrueConfig(),
+            )
+        },
+        out_salvo_conditions={
+            "send": SalvoConditionConfig(
+                max_salvos=MaxSalvosFiniteConfig(max=1),
+                ports={"out": PacketCountNConfig(count=1)},
+                term=SalvoConditionTermTrueConfig(),
+            )
+        },
+        execution_config=NodeExecutionConfig(
+            exec_node_func=exec_func,
+            pools=["main"],
+        ) if exec_func else None,
+        factory=factory,
+        factory_args=factory_args or {},
+    )
+
+    return NetConfig(
+        graph=GraphConfig(
+            nodes=[node_a],
+            edges=[],
+        ),
+        retain_epoch_logs=retain_epoch_logs,
+        retain_sim_action_logs=retain_sim_action_logs,
+        epoch_log_echo_stdout=epoch_log_echo_stdout,
+        print_echo_stdout=False,
+    )
+
+# %% [markdown]
+# ## ctx.log() tests
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_ctx_log_basic():
+    """ctx.log() should add entries to structured_log_buffer."""
+    def exec_func(ctx, packets):
+        for port_name, pids in packets.items():
+            for pid in pids:
+                ctx.consume_packet(pid)
+        ctx.log("Fetched data", user_id="u123", subscription="premium")
+        ctx.log("Done", tokens_used=1523)
+        pid = ctx.create_packet("result")
+        ctx.load_output_port("out", pid)
+        ctx.send_output_salvo("send")
+
+    config = _simple_config(exec_func, retain_epoch_logs=True)
+    async with Net(config) as net:
+        net.inject_data("A", "in", ["hello"])
+        await net.run_until_blocked()
+
+    # Check retained epoch logs
+    assert len(net.epoch_logs) == 1
+    epoch_log = list(net.epoch_logs.values())[0]
+    assert epoch_log.node_name == "A"
+    assert epoch_log.outcome == "success"
+    assert len(epoch_log.node_log_entries) == 2
+    assert epoch_log.node_log_entries[0].message == "Fetched data"
+    assert epoch_log.node_log_entries[0].fields == {"user_id": "u123", "subscription": "premium"}
+    assert epoch_log.node_log_entries[1].message == "Done"
+    assert epoch_log.node_log_entries[1].fields == {"tokens_used": 1523}
+
+    # User fields should be merged
+    assert epoch_log.user_fields == {"user_id": "u123", "subscription": "premium", "tokens_used": 1523}
+
+
+@pytest.mark.asyncio
+async def test_ctx_log_backward_compat():
+    """ctx.log() should also add to print buffer for backward compat."""
+    def exec_func(ctx, packets):
+        for port_name, pids in packets.items():
+            for pid in pids:
+                ctx.consume_packet(pid)
+        ctx.log("Hello world", key="val")
+        pid = ctx.create_packet("ok")
+        ctx.load_output_port("out", pid)
+        ctx.send_output_salvo("send")
+
+    config = _simple_config(exec_func)
+    async with Net(config) as net:
+        net.inject_data("A", "in", ["data"])
+        await net.run_until_blocked()
+
+    # Check that print buffer captured the log entry
+    epoch_id = list(net.epochs.keys())[0]
+    logs = net.get_epoch_log(epoch_id)
+    assert len(logs) == 1
+    ts, msg = logs[0]
+    assert "Hello world" in msg
+    assert "key=val" in msg
+
+# %% [markdown]
+# ## run_step() return value tests
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_run_step_returns_sim_actions_and_epoch_logs():
+    """run_step() should return (bool, sim_actions, epoch_logs)."""
+    def exec_func(ctx, packets):
+        for port_name, pids in packets.items():
+            for pid in pids:
+                ctx.consume_packet(pid)
+        pid = ctx.create_packet("result")
+        ctx.load_output_port("out", pid)
+        ctx.send_output_salvo("send")
+
+    config = _simple_config(exec_func)
+    async with Net(config) as net:
+        net.inject_data("A", "in", ["hello"])
+        made_progress, sim_actions, epoch_logs = await net.run_step()
+
+    assert made_progress is True
+    assert isinstance(sim_actions, list)
+    assert isinstance(epoch_logs, list)
+    assert len(epoch_logs) == 1
+    assert epoch_logs[0].node_name == "A"
+    assert epoch_logs[0].outcome == "success"
+
+
+@pytest.mark.asyncio
+async def test_run_until_blocked_returns_sim_actions_and_epoch_logs():
+    """run_until_blocked() should accumulate sim_actions and epoch_logs."""
+    def exec_func(ctx, packets):
+        for port_name, pids in packets.items():
+            for pid in pids:
+                ctx.consume_packet(pid)
+        pid = ctx.create_packet("result")
+        ctx.load_output_port("out", pid)
+        ctx.send_output_salvo("send")
+
+    config = _simple_config(exec_func)
+    async with Net(config) as net:
+        net.inject_data("A", "in", ["hello"])
+        made_progress, sim_actions, epoch_logs = await net.run_until_blocked()
+
+    assert made_progress is True
+    assert len(epoch_logs) == 1
+
+# %% [markdown]
+# ## EpochLog tests
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_epoch_log_success():
+    """EpochLog should have correct fields for successful execution."""
+    def exec_func(ctx, packets):
+        for port_name, pids in packets.items():
+            for pid in pids:
+                ctx.consume_packet(pid)
+        ctx.print("hello")
+        pid = ctx.create_packet("result")
+        ctx.load_output_port("out", pid)
+        ctx.send_output_salvo("send")
+
+    config = _simple_config(exec_func, retain_epoch_logs=True)
+    async with Net(config) as net:
+        net.inject_data("A", "in", ["input_val"])
+        await net.run_until_blocked()
+
+    epoch_log = list(net.epoch_logs.values())[0]
+    assert epoch_log.outcome == "success"
+    assert epoch_log.node_name == "A"
+    assert epoch_log.started_at is not None
+    assert epoch_log.ended_at is not None
+    assert epoch_log.duration_ms is not None
+    assert epoch_log.duration_ms >= 0
+    assert epoch_log.in_salvo_ports == ["in"]
+    assert epoch_log.in_salvo_packet_count == 1
+    assert len(epoch_log.logs) == 1  # from ctx.print()
+
+
+@pytest.mark.asyncio
+async def test_epoch_log_cancelled():
+    """EpochLog should reflect cancellation outcome."""
+    def exec_func(ctx, packets):
+        for port_name, pids in packets.items():
+            for pid in pids:
+                ctx.consume_packet(pid)
+        ctx.cancel_epoch()
+
+    config = _simple_config(exec_func, retain_epoch_logs=True)
+    async with Net(config) as net:
+        net.inject_data("A", "in", ["data"])
+        await net.run_until_blocked()
+
+    epoch_log = list(net.epoch_logs.values())[0]
+    assert epoch_log.outcome == "cancelled"
+
+
+@pytest.mark.asyncio
+async def test_epoch_log_error():
+    """EpochLog should capture error information."""
+    def exec_func(ctx, packets):
+        for port_name, pids in packets.items():
+            for pid in pids:
+                ctx.consume_packet(pid)
+        raise ValueError("test error")
+
+    config = _simple_config(exec_func, retain_epoch_logs=True)
+    config = config.model_copy(update={"propagate_exceptions": False})
+    async with Net(config) as net:
+        net.inject_data("A", "in", ["data"])
+        await net.run_until_blocked()
+
+    epoch_log = list(net.epoch_logs.values())[0]
+    assert epoch_log.outcome == "error"
+    assert epoch_log.error == "test error"
+    assert epoch_log.error_type == "ValueError"
+
+# %% [markdown]
+# ## on_epoch_end callback receives EpochLog
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_on_epoch_end_receives_epoch_log():
+    """on_epoch_end callback should receive EpochLog."""
+    def exec_func(ctx, packets):
+        for port_name, pids in packets.items():
+            for pid in pids:
+                ctx.consume_packet(pid)
+        pid = ctx.create_packet("result")
+        ctx.load_output_port("out", pid)
+        ctx.send_output_salvo("send")
+
+    received = []
+
+    config = _simple_config(exec_func)
+    async with Net(config) as net:
+        net.on_epoch_end(lambda name, eid, epoch_log: received.append(epoch_log))
+        net.inject_data("A", "in", ["data"])
+        await net.run_until_blocked()
+
+    assert len(received) == 1
+    assert isinstance(received[0], EpochLog)
+    assert received[0].node_name == "A"
+    assert received[0].outcome == "success"
+
+# %% [markdown]
+# ## on_sim_actions callback tests
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_on_sim_actions_callback():
+    """on_sim_actions callback should fire with SimActionLog list."""
+    def exec_func(ctx, packets):
+        for port_name, pids in packets.items():
+            for pid in pids:
+                ctx.consume_packet(pid)
+        pid = ctx.create_packet("result")
+        ctx.load_output_port("out", pid)
+        ctx.send_output_salvo("send")
+
+    received = []
+
+    config = _simple_config(exec_func)
+    async with Net(config) as net:
+        net.on_sim_actions(lambda actions: received.append(actions))
+        net.inject_data("A", "in", ["data"])
+        await net.run_step()
+
+    assert len(received) == 1
+    assert isinstance(received[0], list)
+    assert all(isinstance(a, SimActionLog) for a in received[0])
+
+# %% [markdown]
+# ## Retention tests
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_retain_epoch_logs():
+    """retain_epoch_logs=True should accumulate EpochLogs."""
+    def exec_func(ctx, packets):
+        for port_name, pids in packets.items():
+            for pid in pids:
+                ctx.consume_packet(pid)
+        pid = ctx.create_packet("result")
+        ctx.load_output_port("out", pid)
+        ctx.send_output_salvo("send")
+
+    config = _simple_config(exec_func, retain_epoch_logs=True)
+    async with Net(config) as net:
+        net.inject_data("A", "in", ["v1"])
+        await net.run_until_blocked()
+        net.inject_data("A", "in", ["v2"])
+        await net.run_until_blocked()
+
+    assert len(net.epoch_logs) == 2
+
+
+@pytest.mark.asyncio
+async def test_retain_epoch_logs_false():
+    """retain_epoch_logs=False should not accumulate EpochLogs."""
+    def exec_func(ctx, packets):
+        for port_name, pids in packets.items():
+            for pid in pids:
+                ctx.consume_packet(pid)
+        pid = ctx.create_packet("result")
+        ctx.load_output_port("out", pid)
+        ctx.send_output_salvo("send")
+
+    config = _simple_config(exec_func, retain_epoch_logs=False)
+    async with Net(config) as net:
+        net.inject_data("A", "in", ["v1"])
+        await net.run_until_blocked()
+
+    assert len(net.epoch_logs) == 0
+
+
+@pytest.mark.asyncio
+async def test_retain_sim_action_logs():
+    """retain_sim_action_logs=True should accumulate SimActionLogs."""
+    def exec_func(ctx, packets):
+        for port_name, pids in packets.items():
+            for pid in pids:
+                ctx.consume_packet(pid)
+        pid = ctx.create_packet("result")
+        ctx.load_output_port("out", pid)
+        ctx.send_output_salvo("send")
+
+    config = _simple_config(exec_func, retain_sim_action_logs=True)
+    async with Net(config) as net:
+        net.inject_data("A", "in", ["v1"])
+        await net.run_until_blocked()
+
+    assert len(net.sim_action_log) > 0
+    assert all(isinstance(a, SimActionLog) for a in net.sim_action_log)
+
+# %% [markdown]
+# ## EpochLog serialization tests
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_epoch_log_to_dict_round_trip():
+    """EpochLog.to_dict() and from_dict() should round-trip."""
+    def exec_func(ctx, packets):
+        for port_name, pids in packets.items():
+            for pid in pids:
+                ctx.consume_packet(pid)
+        ctx.log("hello", key="val")
+        ctx.print("printed msg")
+        pid = ctx.create_packet("result")
+        ctx.load_output_port("out", pid)
+        ctx.send_output_salvo("send")
+
+    config = _simple_config(exec_func, retain_epoch_logs=True)
+    async with Net(config) as net:
+        net.inject_data("A", "in", ["data"])
+        await net.run_until_blocked()
+
+    original = list(net.epoch_logs.values())[0]
+    d = original.to_dict()
+    restored = EpochLog.from_dict(d)
+
+    assert restored.epoch_id == original.epoch_id
+    assert restored.node_name == original.node_name
+    assert restored.outcome == original.outcome
+    assert restored.duration_ms == original.duration_ms
+    assert len(restored.node_log_entries) == len(original.node_log_entries)
+    assert len(restored.logs) == len(original.logs)
+    assert restored.user_fields == original.user_fields
+
+# %% [markdown]
+# ## JSONL backend tests
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_jsonl_epoch_logger_round_trip():
+    """JsonlEpochLogger should write and load EpochLogs."""
+    from netrun.logging._backends import JsonlEpochLogger
+
+    def exec_func(ctx, packets):
+        for port_name, pids in packets.items():
+            for pid in pids:
+                ctx.consume_packet(pid)
+        ctx.log("test", val=42)
+        pid = ctx.create_packet("result")
+        ctx.load_output_port("out", pid)
+        ctx.send_output_salvo("send")
+
+    with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as f:
+        path = f.name
+
+    try:
+        logger = JsonlEpochLogger(path)
+        config = _simple_config(exec_func)
+        async with Net(config) as net:
+            net.on_epoch_end(logger)
+            net.inject_data("A", "in", ["data"])
+            await net.run_until_blocked()
+        logger.close()
+
+        loaded = JsonlEpochLogger.load(path)
+        assert len(loaded) == 1
+        assert loaded[0].node_name == "A"
+        assert loaded[0].outcome == "success"
+        assert loaded[0].user_fields.get("val") == 42
+    finally:
+        Path(path).unlink(missing_ok=True)
+
+
+@pytest.mark.asyncio
+async def test_jsonl_sim_action_logger_round_trip():
+    """JsonlSimActionLogger should write and load SimActionLogs."""
+    from netrun.logging._backends import JsonlSimActionLogger
+
+    def exec_func(ctx, packets):
+        for port_name, pids in packets.items():
+            for pid in pids:
+                ctx.consume_packet(pid)
+        pid = ctx.create_packet("result")
+        ctx.load_output_port("out", pid)
+        ctx.send_output_salvo("send")
+
+    with tempfile.NamedTemporaryFile(suffix=".jsonl", delete=False) as f:
+        path = f.name
+
+    try:
+        logger = JsonlSimActionLogger(path)
+        config = _simple_config(exec_func)
+        async with Net(config) as net:
+            net.on_sim_actions(logger)
+            net.inject_data("A", "in", ["data"])
+            await net.run_until_blocked()
+        logger.close()
+
+        loaded = JsonlSimActionLogger.load(path)
+        assert len(loaded) > 0
+        assert all(isinstance(a, SimActionLog) for a in loaded)
+    finally:
+        Path(path).unlink(missing_ok=True)
+
+# %% [markdown]
+# ## SQLite backend tests
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_sqlite_logger_round_trip():
+    """SqliteLogger should write and load both log types."""
+    from netrun.logging._backends import SqliteLogger
+
+    def exec_func(ctx, packets):
+        for port_name, pids in packets.items():
+            for pid in pids:
+                ctx.consume_packet(pid)
+        ctx.log("processed", count=5)
+        pid = ctx.create_packet("result")
+        ctx.load_output_port("out", pid)
+        ctx.send_output_salvo("send")
+
+    with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
+        path = f.name
+
+    try:
+        logger = SqliteLogger(path)
+        config = _simple_config(exec_func)
+        async with Net(config) as net:
+            net.on_epoch_end(logger.epoch_handler)
+            net.on_sim_actions(logger.sim_action_handler)
+            net.inject_data("A", "in", ["data"])
+            await net.run_until_blocked()
+
+        epoch_logs = logger.load_epoch_logs()
+        assert len(epoch_logs) == 1
+        assert epoch_logs[0].node_name == "A"
+        assert epoch_logs[0].user_fields.get("count") == 5
+
+        sim_actions = logger.load_sim_action_logs()
+        assert len(sim_actions) > 0
+
+        logger.close()
+    finally:
+        Path(path).unlink(missing_ok=True)
+
+# %% [markdown]
+# ## Function factory "log" parameter test
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_function_factory_log_param():
+    """Function factory should inject ctx.log as 'log' special param."""
+    def my_node(data: str, log) -> str:
+        log("Processing", input_len=len(data))
+        return data.upper()
+
+    config = NetConfig(
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="my_node",
+                    factory="netrun.node_factories.from_function",
+                    factory_args={"func": my_node},
+                    execution_config=NodeExecutionConfig(pools=["main"]),
+                ),
+            ],
+            edges=[],
+        ),
+        retain_epoch_logs=True,
+        print_echo_stdout=False,
+    )
+
+    async with Net(config) as net:
+        net.inject_data("my_node", "data", ["hello"])
+        await net.run_until_blocked()
+
+    epoch_log = list(net.epoch_logs.values())[0]
+    assert epoch_log.outcome == "success"
+    assert len(epoch_log.node_log_entries) == 1
+    assert epoch_log.node_log_entries[0].message == "Processing"
+    assert epoch_log.node_log_entries[0].fields == {"input_len": 5}
+
+# %% [markdown]
+# ## Format helper tests
+
+# %%
+#|export
+def test_format_log_entry():
+    """_format_log_entry should produce readable output."""
+    entry = NodeLogEntry(
+        timestamp=datetime.now(),
+        fields={"user_id": "u123", "count": 42},
+        message="Fetched data",
+    )
+    result = _format_log_entry("MyNode", entry)
+    assert "Fetched data" in result
+    assert "user_id=u123" in result
+    assert "count=42" in result
+
+
+def test_format_epoch_log():
+    """_format_epoch_log should produce readable output."""
+    epoch_log = EpochLog(
+        epoch_id="test",
+        node_name="MyNode",
+        timestamp=datetime.now(),
+        created_at=datetime.now(),
+        started_at=datetime.now(),
+        ended_at=datetime.now(),
+        duration_ms=1247.5,
+        queue_time_ms=0.5,
+        outcome="success",
+        pool_id="main",
+        worker_id=0,
+        user_fields={"tokens_used": 1523},
+    )
+    result = _format_epoch_log(epoch_log)
+    assert "outcome=success" in result
+    assert "duration=1248ms" in result
+    assert "pool=main/0" in result
+    assert "tokens_used=1523" in result
