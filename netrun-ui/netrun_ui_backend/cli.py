@@ -58,6 +58,66 @@ def has_static_files() -> bool:
     return static_dir.exists() and (static_dir / "index.html").exists()
 
 
+def _is_source_tree() -> bool:
+    """Check if we're running from a source tree (has package.json)."""
+    return (get_frontend_dir() / "package.json").exists()
+
+
+def _build_frontend() -> bool:
+    """Build the frontend from source. Returns True on success."""
+    frontend_dir = get_frontend_dir()
+    print("Building frontend from source...", file=sys.stderr)
+
+    # Install npm dependencies if needed
+    if not (frontend_dir / "node_modules").exists():
+        print("Installing npm dependencies...", file=sys.stderr)
+        result = subprocess.run(
+            ["npm", "install"], cwd=str(frontend_dir),
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            print(f"npm install failed: {result.stderr}", file=sys.stderr)
+            return False
+
+    # Build
+    result = subprocess.run(
+        ["npm", "run", "build"], cwd=str(frontend_dir),
+        capture_output=True, text=True,
+    )
+    if result.returncode != 0:
+        print(f"Frontend build failed: {result.stderr}", file=sys.stderr)
+        return False
+
+    # Copy build output to static/
+    import shutil
+    build_dir = frontend_dir / "build"
+    static_dir = get_package_dir() / "static"
+    if build_dir.exists():
+        if static_dir.exists():
+            shutil.rmtree(static_dir)
+        shutil.copytree(build_dir, static_dir)
+        print("Frontend built successfully.", file=sys.stderr)
+        return True
+
+    print("Build directory not found after npm build.", file=sys.stderr)
+    return False
+
+
+def ensure_static_files() -> None:
+    """Ensure static files exist, auto-building from source if needed."""
+    if has_static_files():
+        return
+    if _is_source_tree():
+        if not _build_frontend():
+            sys.exit(1)
+    else:
+        print("Error: No built frontend found.", file=sys.stderr)
+        print("Either:", file=sys.stderr)
+        print("  1. Run 'netrun-ui --dev' for development mode", file=sys.stderr)
+        print("  2. Build the frontend first with the build script", file=sys.stderr)
+        sys.exit(1)
+
+
 def has_frontend_source() -> bool:
     """Check if frontend source exists (for development)."""
     frontend_dir = get_frontend_dir()
@@ -121,12 +181,7 @@ def run_production_server(
     initial_path: Optional[str] = None,
 ) -> None:
     """Run in production server mode: backend serves static files."""
-    if not has_static_files():
-        print("Error: No built frontend found.", file=sys.stderr)
-        print("Either:", file=sys.stderr)
-        print("  1. Run 'netrun-ui --dev' for development mode", file=sys.stderr)
-        print("  2. Build the frontend first with the build script", file=sys.stderr)
-        sys.exit(1)
+    ensure_static_files()
 
     print("Starting netrun-ui server...")
     print()
@@ -152,12 +207,7 @@ def run_production_app(
     """Run in production app mode: native window with built frontend."""
     import webview
 
-    if not has_static_files():
-        print("Error: No built frontend found.", file=sys.stderr)
-        print("Either:", file=sys.stderr)
-        print("  1. Run 'netrun-ui --dev' for development mode", file=sys.stderr)
-        print("  2. Build the frontend first with the build script", file=sys.stderr)
-        sys.exit(1)
+    ensure_static_files()
 
     print("Starting netrun-ui...")
 
