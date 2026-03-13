@@ -588,7 +588,7 @@ def test_format_log_entry():
         fields={"user_id": "u123", "count": 42},
         message="Fetched data",
     )
-    result = _format_log_entry("MyNode", entry)
+    result = _format_log_entry(entry)
     assert "Fetched data" in result
     assert "user_id=u123" in result
     assert "count=42" in result
@@ -1672,3 +1672,85 @@ async def test_run_until_blocked_multi_step_accumulation():
     assert node_names == {"A", "B"}
     # Should have sim_actions from multiple steps
     assert len(sim_actions) > 0
+
+# %% [markdown]
+# ## Buggy callbacks should not break execution
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_buggy_on_epoch_end_callback_does_not_break_net():
+    """A callback that raises should warn but not break execution."""
+    def exec_func(ctx, packets):
+        for pids in packets.values():
+            for pid in pids:
+                ctx.consume_packet(pid)
+        pid = ctx.create_packet("ok")
+        ctx.load_output_port("out", pid)
+        ctx.send_output_salvo("send")
+
+    def bad_callback(node_name, epoch_id, epoch_log):
+        raise RuntimeError("callback boom")
+
+    config = _simple_config(exec_func)
+    async with Net(config) as net:
+        net.on_epoch_end(bad_callback)
+        net.inject_data("A", "in", ["data"])
+        with pytest.warns(UserWarning, match="callback boom"):
+            _, _, epoch_logs = await net.run_until_blocked()
+
+    # Execution should have completed despite the buggy callback
+    assert len(epoch_logs) == 1
+    assert epoch_logs[0].outcome == "success"
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_buggy_on_epoch_start_callback_does_not_break_net():
+    """A start callback that raises should warn but not break execution."""
+    def exec_func(ctx, packets):
+        for pids in packets.values():
+            for pid in pids:
+                ctx.consume_packet(pid)
+        pid = ctx.create_packet("ok")
+        ctx.load_output_port("out", pid)
+        ctx.send_output_salvo("send")
+
+    def bad_callback(node_name, epoch_id):
+        raise RuntimeError("start callback boom")
+
+    config = _simple_config(exec_func)
+    async with Net(config) as net:
+        net.on_epoch_start(bad_callback)
+        net.inject_data("A", "in", ["data"])
+        with pytest.warns(UserWarning, match="start callback boom"):
+            _, _, epoch_logs = await net.run_until_blocked()
+
+    assert len(epoch_logs) == 1
+    assert epoch_logs[0].outcome == "success"
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_buggy_on_sim_actions_callback_does_not_break_net():
+    """An on_sim_actions callback that raises should warn but not break execution."""
+    def exec_func(ctx, packets):
+        for pids in packets.values():
+            for pid in pids:
+                ctx.consume_packet(pid)
+        pid = ctx.create_packet("ok")
+        ctx.load_output_port("out", pid)
+        ctx.send_output_salvo("send")
+
+    def bad_callback(actions):
+        raise RuntimeError("sim actions boom")
+
+    config = _simple_config(exec_func)
+    async with Net(config) as net:
+        net.on_sim_actions(bad_callback)
+        net.inject_data("A", "in", ["data"])
+        with pytest.warns(UserWarning, match="sim actions boom"):
+            _, _, epoch_logs = await net.run_until_blocked()
+
+    assert len(epoch_logs) == 1
+    assert epoch_logs[0].outcome == "success"

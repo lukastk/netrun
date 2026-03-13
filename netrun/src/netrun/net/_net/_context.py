@@ -265,7 +265,7 @@ def _format_value(v: Any) -> str:
     return repr(v)
 
 
-def _format_log_entry(node_name: str, entry: "NodeLogEntry") -> str:
+def _format_log_entry(entry: "NodeLogEntry") -> str:
     """Format a NodeLogEntry for the print buffer."""
     field_parts = " ".join(f"{k}={_format_value(v)}" for k, v in entry.fields.items())
     parts = []
@@ -731,7 +731,7 @@ class NodeExecutionContext:
         self._structured_log_buffer.append(entry)
 
         # Format for print buffer (backward compat) and optional stdout echo
-        formatted = _format_log_entry(self.node_name, entry)
+        formatted = _format_log_entry(entry)
         self._print_buffer.append((timestamp, formatted + "\n"))
 
         # Optionally echo to stdout

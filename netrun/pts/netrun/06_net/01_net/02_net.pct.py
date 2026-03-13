@@ -1576,10 +1576,14 @@ class Net:
         # Fire on_sim_actions callbacks
         if self._step_sim_actions:
             for cb in self._on_sim_actions_callbacks:
-                if asyncio.iscoroutinefunction(cb):
-                    await cb(self._step_sim_actions)
-                else:
-                    cb(self._step_sim_actions)
+                try:
+                    if asyncio.iscoroutinefunction(cb):
+                        await cb(self._step_sim_actions)
+                    else:
+                        cb(self._step_sim_actions)
+                except Exception as e:
+                    import warnings
+                    warnings.warn(f"on_sim_actions callback {cb!r} raised: {e}", stacklevel=2)
 
         return (made_progress, self._step_sim_actions, self._step_epoch_logs)
 
@@ -3858,10 +3862,14 @@ class Net:
         for filter_name, cb in self._on_epoch_start_callbacks:
             if filter_name is not None and filter_name != node_name:
                 continue
-            if asyncio.iscoroutinefunction(cb):
-                await cb(node_name, epoch_id)
-            else:
-                cb(node_name, epoch_id)
+            try:
+                if asyncio.iscoroutinefunction(cb):
+                    await cb(node_name, epoch_id)
+                else:
+                    cb(node_name, epoch_id)
+            except Exception as e:
+                import warnings
+                warnings.warn(f"on_epoch_start callback {cb!r} raised: {e}", stacklevel=2)
 
     async def _fire_epoch_end(self, node_name: str, epoch_id: str, *, error: Exception | None = None, retry_count: int = 0) -> None:
         """Assemble EpochLog and fire all registered on_epoch_end callbacks."""
@@ -3907,10 +3915,14 @@ class Net:
         for filter_name, cb in self._on_epoch_end_callbacks:
             if filter_name is not None and filter_name != node_name:
                 continue
-            if asyncio.iscoroutinefunction(cb):
-                await cb(node_name, epoch_id, epoch_log)
-            else:
-                cb(node_name, epoch_id, epoch_log)
+            try:
+                if asyncio.iscoroutinefunction(cb):
+                    await cb(node_name, epoch_id, epoch_log)
+                else:
+                    cb(node_name, epoch_id, epoch_log)
+            except Exception as e:
+                import warnings
+                warnings.warn(f"on_epoch_end callback {cb!r} raised: {e}", stacklevel=2)
 
     async def run_to_targets(
         self,
