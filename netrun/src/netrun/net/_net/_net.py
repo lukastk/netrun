@@ -3874,6 +3874,10 @@ class Net:
         self._epoch_log_buffers.pop(epoch_id, None)
         self._epoch_sim_actions.pop(epoch_id, None)
 
+        # Clean up epoch state when not retaining logs
+        if not self._config_resolved.retain_epoch_logs:
+            self._epochs.pop(epoch_id, None)
+
         # Fire callbacks with EpochLog
         for filter_name, cb in self._on_epoch_end_callbacks:
             if filter_name is not None and filter_name != node_name:

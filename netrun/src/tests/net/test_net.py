@@ -1801,6 +1801,7 @@ async def test_epoch_record_out_salvos_populated():
     config = NetConfig(
         pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
+        retain_epoch_logs=True,
     )
 
     async with Net(config) as net:
@@ -1842,6 +1843,7 @@ async def test_epoch_record_lifecycle_timestamps():
     config = NetConfig(
         pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
+        retain_epoch_logs=True,
     )
 
     async with Net(config) as net:
@@ -1884,6 +1886,7 @@ async def test_epoch_record_cancellation_lifecycle():
     config = NetConfig(
         pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
+        retain_epoch_logs=True,
     )
 
     async with Net(config) as net:
@@ -4092,6 +4095,7 @@ async def test_factory_node_exec_func_override():
     config = NetConfig(
         pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
+        retain_epoch_logs=True,
     )
 
     async with Net(config) as net:
@@ -4863,6 +4867,7 @@ async def test_execute_node_inside_net_basic():
     config = NetConfig(
         pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
+        retain_epoch_logs=True,
     )
 
     async with Net(config) as net:
@@ -4915,6 +4920,7 @@ async def test_execute_node_inside_net_source_node():
     config = NetConfig(
         pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
+        retain_epoch_logs=True,
     )
 
     async with Net(config) as net:
@@ -5169,6 +5175,7 @@ async def test_run_on_startup_basic():
     config = NetConfig(
         pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=graph_config,
+        retain_epoch_logs=True,
     )
 
     async with Net(config) as net:

@@ -82,7 +82,7 @@ def _make_node(name, in_ports, out_ports, exec_func, *, pools=None, cache=None):
     )
 
 
-def _make_net(*nodes, edges=None, cache=None, output_queues=None):
+def _make_net(*nodes, edges=None, cache=None, output_queues=None, retain_epoch_logs=False):
     """Helper to create a Net."""
     storage = StorageConfig(cache=cache) if cache is not None else None
     config = NetConfig(
@@ -93,6 +93,7 @@ def _make_net(*nodes, edges=None, cache=None, output_queues=None):
         ),
         storage=storage,
         output_queues=output_queues,
+        retain_epoch_logs=retain_epoch_logs,
     )
     return Net(config)
 
@@ -941,7 +942,7 @@ async def test_epoch_record_cache_hit_flag():
 
     node = _make_node("A", ["in"], [], exec_fn)
     cache = CacheConfig(enabled=True, include_all_nodes=True)
-    net = _make_net(node, cache=cache)
+    net = _make_net(node, cache=cache, retain_epoch_logs=True)
 
     async with net:
         net.inject_data("A", "in", [1])

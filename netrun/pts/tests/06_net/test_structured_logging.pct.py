@@ -138,15 +138,15 @@ async def test_ctx_log_backward_compat():
     config = _simple_config(exec_func)
     async with Net(config) as net:
         net.inject_data("A", "in", ["data"])
-        await net.run_until_blocked()
+        _, _, epoch_logs = await net.run_until_blocked()
 
-    # Check that print buffer captured the log entry
-    epoch_id = list(net.epochs.keys())[0]
-    logs = net.get_epoch_log(epoch_id)
-    assert len(logs) == 1
-    ts, msg = logs[0]
-    assert "Hello world" in msg
-    assert "key=val" in msg
+    # Check that the ctx.log() call was captured in the EpochLog's node_log_entries
+    assert len(epoch_logs) == 1
+    elog = epoch_logs[0]
+    assert len(elog.node_log_entries) == 1
+    entry = elog.node_log_entries[0]
+    assert entry.message == "Hello world"
+    assert entry.fields == {"key": "val"}
 
 # %% [markdown]
 # ## run_step() return value tests
@@ -1378,6 +1378,47 @@ async def test_node_info_epoch_logs_no_retention():
         net.inject_data("A", "in", ["data"])
         await net.run_until_blocked()
         assert net.nodes["A"].epoch_logs == []
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_epochs_dict_cleaned_up_when_no_retention():
+    """net.epochs should be empty after completion when retain_epoch_logs=False."""
+    def exec_func(ctx, packets):
+        for pids in packets.values():
+            for pid in pids:
+                ctx.consume_packet(pid)
+        pid = ctx.create_packet("ok")
+        ctx.load_output_port("out", pid)
+        ctx.send_output_salvo("send")
+
+    config = _simple_config(exec_func, retain_epoch_logs=False)
+    async with Net(config) as net:
+        net.inject_data("A", "in", ["data"])
+        _, _, epoch_logs = await net.run_until_blocked()
+        # EpochLog was still produced and returned
+        assert len(epoch_logs) == 1
+        # But _epochs dict is cleaned up
+        assert len(net.epochs) == 0
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_epochs_dict_retained_when_retention_enabled():
+    """net.epochs should retain entries when retain_epoch_logs=True."""
+    def exec_func(ctx, packets):
+        for pids in packets.values():
+            for pid in pids:
+                ctx.consume_packet(pid)
+        pid = ctx.create_packet("ok")
+        ctx.load_output_port("out", pid)
+        ctx.send_output_salvo("send")
+
+    config = _simple_config(exec_func, retain_epoch_logs=True)
+    async with Net(config) as net:
+        net.inject_data("A", "in", ["data"])
+        await net.run_until_blocked()
+        assert len(net.epochs) == 1
 
 # %% [markdown]
 # ## SimActionLog.from_dict round-trip
