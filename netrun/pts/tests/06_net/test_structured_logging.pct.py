@@ -1086,6 +1086,12 @@ async def test_sim_action_log_action_kinds():
     assert any("start_epoch" in ak for ak in epoch_action_kinds)
     assert any("finish_epoch" in ak for ak in epoch_action_kinds)
 
+    # Epoch-attributed actions should have node_name in action_detail
+    for sa in epoch_actions:
+        assert sa.action_detail.get("node_name") == "A", (
+            f"action_kind={sa.action_kind} missing node_name in action_detail: {sa.action_detail}"
+        )
+
 # %% [markdown]
 # ## SimEventLog detail fields
 
@@ -1093,7 +1099,7 @@ async def test_sim_action_log_action_kinds():
 #|export
 @pytest.mark.asyncio
 async def test_sim_event_log_detail_fields():
-    """SimEventLog detail dicts should contain event-specific string fields."""
+    """SimEventLog detail dicts should contain event-specific fields from PyO3 properties."""
     def exec_func(ctx, packets):
         for pids in packets.values():
             for pid in pids:
@@ -1116,10 +1122,160 @@ async def test_sim_event_log_detail_fields():
     events_with_details = [ev for ev in all_events if ev.detail]
     assert len(events_with_details) > 0
 
-    # All detail values should be strings (ULID conversion)
+    # Check that events use event.kind (not string-parsed) — e.g. "PacketMoved", "EpochCreated"
+    event_kinds = {ev.kind for ev in all_events}
+    assert any(k in event_kinds for k in ("PacketMoved", "EpochCreated", "EpochStarted", "InputSalvoTriggered"))
+
+    # PacketMoved events should have from_location and to_location dicts
+    moved_events = [ev for ev in all_events if ev.kind == "PacketMoved"]
+    if moved_events:
+        ev = moved_events[0]
+        assert "from_location" in ev.detail or "to_location" in ev.detail
+        for loc_key in ("from_location", "to_location"):
+            if loc_key in ev.detail:
+                loc = ev.detail[loc_key]
+                assert isinstance(loc, dict)
+                assert "kind" in loc
+
+    # Scalar detail values should be strings; location/source_nodes are dicts/lists
     for ev in all_events:
         for key, val in ev.detail.items():
-            assert isinstance(val, str), f"detail[{key!r}] = {val!r} is not a string"
+            if key in ("from_location", "to_location", "location"):
+                assert isinstance(val, dict), f"detail[{key!r}] should be a dict"
+            elif key == "source_nodes":
+                assert isinstance(val, list), f"detail[{key!r}] should be a list"
+            else:
+                assert isinstance(val, str), f"detail[{key!r}] = {val!r} is not a string"
+
+# %% [markdown]
+# ## _location_to_dict edge serialization
+
+# %%
+#|export
+def test_location_to_dict_with_edge():
+    """_location_to_dict should serialize edge locations with source/target info."""
+    from netrun.net._net._net import _location_to_dict
+    import netrun_sim
+
+    # Build a minimal edge to get an Edge-type PacketLocation
+    edge = netrun_sim.Edge(
+        source=netrun_sim.PortRef("A", netrun_sim.PortType.Output, "out"),
+        target=netrun_sim.PortRef("B", netrun_sim.PortType.Input, "in"),
+    )
+
+    loc = netrun_sim.PacketLocation.edge(edge)
+    d = _location_to_dict(loc)
+    assert d["kind"] == "Edge"
+    assert d["source_node"] == "A"
+    assert d["source_port"] == "out"
+    assert d["target_node"] == "B"
+    assert d["target_port"] == "in"
+
+
+def test_location_to_dict_node():
+    """_location_to_dict should serialize node (epoch) locations."""
+    from netrun.net._net._net import _location_to_dict
+    import netrun_sim
+
+    loc = netrun_sim.PacketLocation.input_port("MyNode", "in")
+    d = _location_to_dict(loc)
+    assert d["kind"] == "InputPort"
+    assert d["node_name"] == "MyNode"
+    assert d["port_name"] == "in"
+
+# %% [markdown]
+# ## Multi-node flow with edge location in event detail
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_multi_node_event_detail_has_edge_locations():
+    """PacketMoved events in a multi-node flow should contain edge location details."""
+    def node_a_func(ctx, packets):
+        for pids in packets.values():
+            for pid in pids:
+                ctx.consume_packet(pid)
+        pid = ctx.create_packet("from_a")
+        ctx.load_output_port("out", pid)
+        ctx.send_output_salvo("send")
+
+    def node_b_func(ctx, packets):
+        for pids in packets.values():
+            for pid in pids:
+                ctx.consume_packet(pid)
+
+    config = NetConfig(
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="A",
+                    in_ports={"in": PortConfig()},
+                    out_ports={"out": PortConfig()},
+                    in_salvo_conditions={
+                        "trigger": SalvoConditionConfig(
+                            max_salvos=MaxSalvosFiniteConfig(max=1),
+                            ports={"in": PacketCountNConfig(count=1)},
+                            term=SalvoConditionTermTrueConfig(),
+                        )
+                    },
+                    out_salvo_conditions={
+                        "send": SalvoConditionConfig(
+                            max_salvos=MaxSalvosFiniteConfig(max=1),
+                            ports={"out": PacketCountNConfig(count=1)},
+                            term=SalvoConditionTermTrueConfig(),
+                        )
+                    },
+                    execution_config=NodeExecutionConfig(
+                        exec_node_func=node_a_func, pools=["main"],
+                    ),
+                ),
+                NodeConfig(
+                    name="B",
+                    in_ports={"in": PortConfig()},
+                    in_salvo_conditions={
+                        "trigger": SalvoConditionConfig(
+                            max_salvos=MaxSalvosFiniteConfig(max=1),
+                            ports={"in": PacketCountNConfig(count=1)},
+                            term=SalvoConditionTermTrueConfig(),
+                        )
+                    },
+                    execution_config=NodeExecutionConfig(
+                        exec_node_func=node_b_func, pools=["main"],
+                    ),
+                ),
+            ],
+            edges=[
+                EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in"),
+            ],
+        ),
+        print_echo_stdout=False,
+    )
+
+    async with Net(config) as net:
+        net.inject_data("A", "in", ["hello"])
+        _, sim_actions, _ = await net.run_until_blocked()
+
+    # Collect all events across all actions
+    all_events = [ev for sa in sim_actions for ev in sa.events]
+
+    # Should have PacketMoved events with edge locations
+    moved_events = [ev for ev in all_events if ev.kind == "PacketMoved"]
+    assert len(moved_events) > 0
+
+    # At least one moved event should have edge info in from_location or to_location
+    edge_details = []
+    for ev in moved_events:
+        for loc_key in ("from_location", "to_location"):
+            loc = ev.detail.get(loc_key)
+            if loc and loc.get("kind") == "Edge":
+                edge_details.append(loc)
+
+    assert len(edge_details) > 0, "Expected at least one PacketMoved event with Edge location"
+    edge_loc = edge_details[0]
+    assert edge_loc["source_node"] == "A"
+    assert edge_loc["source_port"] == "out"
+    assert edge_loc["target_node"] == "B"
+    assert edge_loc["target_port"] == "in"
 
 # %% [markdown]
 # ## ctx.log() with level="error"

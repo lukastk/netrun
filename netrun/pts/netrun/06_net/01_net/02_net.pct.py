@@ -82,10 +82,22 @@ def _action_kind(action) -> str:
     return s[:paren] if paren != -1 else s
 
 
-def _action_detail(action) -> dict:
-    """Extract action detail fields from a netrun_sim.NetAction."""
-    # Best-effort extraction from the string representation
-    return {}
+def _location_to_dict(loc) -> dict:
+    """Serialize a netrun_sim PacketLocation to a dict."""
+    d: dict[str, Any] = {"kind": loc.kind}
+    if loc.node_name is not None:
+        d["node_name"] = loc.node_name
+    if loc.port_name is not None:
+        d["port_name"] = loc.port_name
+    if loc.epoch_id is not None:
+        d["epoch_id"] = str(loc.epoch_id)
+    edge = loc.get_edge()
+    if edge is not None:
+        d["source_node"] = edge.source.node_name
+        d["source_port"] = edge.source.port_name
+        d["target_node"] = edge.target.node_name
+        d["target_port"] = edge.target.port_name
+    return d
 
 
 def _event_to_sim_event_log(event, timestamp: datetime) -> SimEventLog:
@@ -96,19 +108,27 @@ def _event_to_sim_event_log(event, timestamp: datetime) -> SimEventLog:
         timestamp: The timestamp of the parent action (shared across all
             events within a single do_action call for consistency).
     """
-    kind = str(event)
-    paren = kind.find("(")
-    if paren != -1:
-        kind = kind[:paren]
     detail: dict[str, Any] = {}
-    for attr in ("packet_id", "epoch_id", "node_name", "port_name"):
-        if hasattr(event, attr):
-            val = getattr(event, attr)
-            if val is not None:
-                detail[attr] = str(val)
+    # Extract all available scalar properties
+    for attr in ("packet_id", "epoch_id", "node_name", "salvo_condition",
+                 "label", "orphaned_port_name", "request_source"):
+        val = getattr(event, attr, None)
+        if val is not None:
+            detail[attr] = str(val)
+    # Extract list properties
+    if getattr(event, "source_nodes", None) is not None:
+        detail["source_nodes"] = event.source_nodes
+    # Extract location properties
+    if getattr(event, "from_location", None) is not None:
+        detail["from_location"] = _location_to_dict(event.from_location)
+    if getattr(event, "to_location", None) is not None:
+        detail["to_location"] = _location_to_dict(event.to_location)
+    # PacketConsumed/PacketDestroyed have a "location" property (previous location)
+    if getattr(event, "location", None) is not None:
+        detail["location"] = _location_to_dict(event.location)
     return SimEventLog(
         timestamp=timestamp,
-        kind=kind,
+        kind=event.kind,
         detail=detail,
     )
 
@@ -1470,12 +1490,13 @@ class Net:
             raise KeyError(f"Node '{node_name}' not found in graph")
         return node_name not in self._disabled_nodes
 
-    def _do_action(self, action, *, epoch_id: str | None = None) -> tuple:
+    def _do_action(self, action, *, epoch_id: str | None = None, detail: dict | None = None) -> tuple:
         """Wrapper around netsim.do_action that captures SimActionLog.
 
         Args:
             action: The netrun_sim.NetAction to execute.
             epoch_id: Optional epoch ID to attribute this action to.
+            detail: Optional action detail dict (context from the call site).
 
         Returns:
             The (response, events) tuple from netsim.do_action().
@@ -1488,7 +1509,7 @@ class Net:
         sim_action = SimActionLog(
             timestamp=timestamp,
             action_kind=_action_kind(action),
-            action_detail=_action_detail(action),
+            action_detail=detail or {},
             events=[_event_to_sim_event_log(e, timestamp) for e in events_list],
             epoch_id=str(epoch_id) if epoch_id is not None else None,
         )
@@ -1734,6 +1755,7 @@ class Net:
             Mapping of deferred packet IDs to real packet IDs.
         """
         deferred_to_real: dict[str, str] = {}
+        node_name = self._epochs[epoch_id].node_name
 
         # Process each deferred action in order
         for action_type, args in result.deferred_actions.actions:
@@ -1741,7 +1763,10 @@ class Net:
                 deferred_id, value = args
 
                 # Create packet in netsim (inside the epoch) - netsim assigns the real ID
-                response, _ = self._do_action(netrun_sim.NetAction.create_packet(epoch_id), epoch_id=epoch_id)
+                response, _ = self._do_action(
+                    netrun_sim.NetAction.create_packet(epoch_id), epoch_id=epoch_id,
+                    detail={"node_name": node_name},
+                )
                 real_id = str(response.packet_id)
                 deferred_to_real[deferred_id] = real_id
 
@@ -1757,7 +1782,10 @@ class Net:
                 self._packet_store.consume(real_packet_id)
 
                 # Consume in netsim
-                self._do_action(netrun_sim.NetAction.consume_packet(real_packet_id), epoch_id=epoch_id)
+                self._do_action(
+                    netrun_sim.NetAction.consume_packet(real_packet_id), epoch_id=epoch_id,
+                    detail={"node_name": node_name, "packet_id": real_packet_id},
+                )
 
             elif action_type == "load_output_port":
                 port_name, packet_id = args
@@ -1768,6 +1796,7 @@ class Net:
                 self._do_action(
                     netrun_sim.NetAction.load_packet_into_output_port(real_packet_id, port_name),
                     epoch_id=epoch_id,
+                    detail={"node_name": node_name, "packet_id": real_packet_id, "port_name": port_name},
                 )
 
             elif action_type == "send_output_salvo":
@@ -1777,6 +1806,7 @@ class Net:
                 self._do_action(
                     netrun_sim.NetAction.send_output_salvo(epoch_id, salvo_condition_name),
                     epoch_id=epoch_id,
+                    detail={"node_name": node_name, "salvo_condition": salvo_condition_name},
                 )
 
                 # Check for orphaned packets (sent to unconnected output ports)
@@ -1849,13 +1879,13 @@ class Net:
         )
         if not has_exec_func:
             # No execution function - just mark as running and finish immediately
-            self._do_action(netrun_sim.NetAction.start_epoch(epoch_id), epoch_id=epoch_id)
+            self._do_action(netrun_sim.NetAction.start_epoch(epoch_id), epoch_id=epoch_id, detail={"node_name": node_name})
             self._epochs[epoch_id].started_at = get_timestamp_utc()
             self._emit_epoch_signal(epoch_id, node_name, "epoch_started")
             await self._fire_epoch_start(node_name, epoch_id)
             # Emit epoch_finished signal even for no-exec-func nodes
             self._emit_epoch_signal(epoch_id, node_name, "epoch_finished")
-            self._do_action(netrun_sim.NetAction.finish_epoch(epoch_id), epoch_id=epoch_id)
+            self._do_action(netrun_sim.NetAction.finish_epoch(epoch_id), epoch_id=epoch_id, detail={"node_name": node_name})
             self._epochs[epoch_id].ended_at = get_timestamp_utc()
             self._epochs[epoch_id].state = netrun_sim.EpochState.Finished
             await self._fire_epoch_end(node_name, epoch_id)
@@ -1880,7 +1910,7 @@ class Net:
                 # Epoch is still Startable (not yet Running), so use out-of-epoch emission
                 self._emit_out_of_epoch_signal(node_name, "epoch_cancelled", epoch_id=epoch_id)
                 # Cancel the epoch and raise
-                response, _ = self._do_action(netrun_sim.NetAction.cancel_epoch(epoch_id), epoch_id=epoch_id)
+                response, _ = self._do_action(netrun_sim.NetAction.cancel_epoch(epoch_id), epoch_id=epoch_id, detail={"node_name": node_name})
                 record = self._epochs[epoch_id]
                 record.was_cancelled = True
                 record.ended_at = get_timestamp_utc()
@@ -1948,7 +1978,7 @@ class Net:
                     # on_hash_change == "overwrite": fall through to execution
 
         # Transition epoch to Running
-        self._do_action(netrun_sim.NetAction.start_epoch(epoch_id), epoch_id=epoch_id)
+        self._do_action(netrun_sim.NetAction.start_epoch(epoch_id), epoch_id=epoch_id, detail={"node_name": node_name})
         self._epochs[epoch_id].started_at = get_timestamp_utc()
         self._epochs[epoch_id].state = netrun_sim.EpochState.Running
         self._running_epochs.add(epoch_id)
@@ -2084,7 +2114,7 @@ class Net:
         if execution_result.cancelled:
             # Epoch was cancelled via ctx.cancel_epoch()
             self._emit_epoch_signal(epoch_id, node_name, "epoch_cancelled")
-            response, _ = self._do_action(netrun_sim.NetAction.cancel_epoch(epoch_id), epoch_id=epoch_id)
+            response, _ = self._do_action(netrun_sim.NetAction.cancel_epoch(epoch_id), epoch_id=epoch_id, detail={"node_name": node_name})
             record = self._epochs[epoch_id]
             record.was_cancelled = True
             record.ended_at = get_timestamp_utc()
@@ -2116,7 +2146,7 @@ class Net:
         self._emit_epoch_signal(epoch_id, node_name, "epoch_finished")
 
         # Finish the epoch
-        self._do_action(netrun_sim.NetAction.finish_epoch(epoch_id), epoch_id=epoch_id)
+        self._do_action(netrun_sim.NetAction.finish_epoch(epoch_id), epoch_id=epoch_id, detail={"node_name": node_name})
         self._epochs[epoch_id].ended_at = get_timestamp_utc()
         self._epochs[epoch_id].state = netrun_sim.EpochState.Finished
         await self._fire_epoch_end(node_name, epoch_id, retry_count=retry_count)
@@ -2142,7 +2172,7 @@ class Net:
             A synthetic NodeExecutionResult representing the replayed epoch.
         """
         # Start epoch in netsim
-        self._do_action(netrun_sim.NetAction.start_epoch(epoch_id), epoch_id=epoch_id)
+        self._do_action(netrun_sim.NetAction.start_epoch(epoch_id), epoch_id=epoch_id, detail={"node_name": node_name})
         self._epochs[epoch_id].started_at = get_timestamp_utc()
         self._epochs[epoch_id].state = netrun_sim.EpochState.Running
         self._emit_epoch_signal(epoch_id, node_name, "epoch_started")
@@ -2153,17 +2183,24 @@ class Net:
             if port_name in packets:
                 for packet_id in packets[port_name]:
                     self._packet_store.consume(packet_id)
-                    self._do_action(netrun_sim.NetAction.consume_packet(packet_id), epoch_id=epoch_id)
+                    self._do_action(
+                        netrun_sim.NetAction.consume_packet(packet_id), epoch_id=epoch_id,
+                        detail={"node_name": node_name, "packet_id": packet_id},
+                    )
 
         # Create output packets and load into output ports
         for port_name, values in cached.output_port_values.items():
             for value in values:
-                response, _ = self._do_action(netrun_sim.NetAction.create_packet(epoch_id), epoch_id=epoch_id)
+                response, _ = self._do_action(
+                    netrun_sim.NetAction.create_packet(epoch_id), epoch_id=epoch_id,
+                    detail={"node_name": node_name},
+                )
                 real_id = str(response.packet_id)
                 self._packet_store.register(real_id, value)
                 self._do_action(
                     netrun_sim.NetAction.load_packet_into_output_port(real_id, port_name),
                     epoch_id=epoch_id,
+                    detail={"node_name": node_name, "packet_id": real_id, "port_name": port_name},
                 )
 
         # Send output salvos
@@ -2171,6 +2208,7 @@ class Net:
             self._do_action(
                 netrun_sim.NetAction.send_output_salvo(epoch_id, salvo_name),
                 epoch_id=epoch_id,
+                detail={"node_name": node_name, "salvo_condition": salvo_name},
             )
             # Handle orphaned packets
             epoch = self._netsim.get_epoch(epoch_id)
@@ -2192,7 +2230,7 @@ class Net:
         # Emit epoch_finished signal (cache replay counts as successful completion)
         self._emit_epoch_signal(epoch_id, node_name, "epoch_finished")
 
-        self._do_action(netrun_sim.NetAction.finish_epoch(epoch_id), epoch_id=epoch_id)
+        self._do_action(netrun_sim.NetAction.finish_epoch(epoch_id), epoch_id=epoch_id, detail={"node_name": node_name})
         self._epochs[epoch_id].ended_at = get_timestamp_utc()
         self._epochs[epoch_id].state = netrun_sim.EpochState.Finished
         await self._fire_epoch_end(node_name, epoch_id)
@@ -2343,7 +2381,7 @@ class Net:
         backend_config_json = backend_config.model_dump_json()
 
         # Start epoch in netsim
-        self._do_action(netrun_sim.NetAction.start_epoch(epoch_id), epoch_id=epoch_id)
+        self._do_action(netrun_sim.NetAction.start_epoch(epoch_id), epoch_id=epoch_id, detail={"node_name": node_name})
         self._epochs[epoch_id].started_at = get_timestamp_utc()
         self._epochs[epoch_id].state = netrun_sim.EpochState.Running
         self._emit_epoch_signal(epoch_id, node_name, "epoch_started")
@@ -2354,7 +2392,10 @@ class Net:
             if port_name in packets:
                 for packet_id in packets[port_name]:
                     self._packet_store.consume(packet_id)
-                    self._do_action(netrun_sim.NetAction.consume_packet(packet_id), epoch_id=epoch_id)
+                    self._do_action(
+                        netrun_sim.NetAction.consume_packet(packet_id), epoch_id=epoch_id,
+                        detail={"node_name": node_name, "packet_id": packet_id},
+                    )
 
         # Build common serialization kwargs JSON
         ser_kwargs_json = _json_module.dumps({
@@ -2395,18 +2436,21 @@ class Net:
                             value = deserialize(data, ser_method, pickling_method=pickling_method, **pickling_args)
                             response, _ = self._do_action(
                                 netrun_sim.NetAction.create_packet(epoch_id), epoch_id=epoch_id,
+                                detail={"node_name": node_name},
                             )
                             real_id = str(response.packet_id)
                             self._packet_store.register(real_id, value)
                             self._do_action(
                                 netrun_sim.NetAction.load_packet_into_output_port(real_id, port_name),
                                 epoch_id=epoch_id,
+                                detail={"node_name": node_name, "packet_id": real_id, "port_name": port_name},
                             )
 
                     # Send the output salvo
                     self._do_action(
                         netrun_sim.NetAction.send_output_salvo(epoch_id, salvo_name),
                         epoch_id=epoch_id,
+                        detail={"node_name": node_name, "salvo_condition": salvo_name},
                     )
                     epoch = self._netsim.get_epoch(epoch_id)
                     if epoch.orphaned_packets:
@@ -2437,18 +2481,21 @@ class Net:
                         )
                         response, _ = self._do_action(
                             netrun_sim.NetAction.create_packet(epoch_id), epoch_id=epoch_id,
+                            detail={"node_name": node_name},
                         )
                         real_id = str(response.packet_id)
                         self._packet_store.register(real_id, lazy_spec)
                         self._do_action(
                             netrun_sim.NetAction.load_packet_into_output_port(real_id, port_name),
                             epoch_id=epoch_id,
+                            detail={"node_name": node_name, "packet_id": real_id, "port_name": port_name},
                         )
 
                 # Send the output salvo
                 self._do_action(
                     netrun_sim.NetAction.send_output_salvo(epoch_id, salvo_name),
                     epoch_id=epoch_id,
+                    detail={"node_name": node_name, "salvo_condition": salvo_name},
                 )
                 epoch = self._netsim.get_epoch(epoch_id)
                 if epoch.orphaned_packets:
@@ -2469,7 +2516,7 @@ class Net:
         # Emit epoch_finished signal (file storage replay counts as successful completion)
         self._emit_epoch_signal(epoch_id, node_name, "epoch_finished")
 
-        self._do_action(netrun_sim.NetAction.finish_epoch(epoch_id), epoch_id=epoch_id)
+        self._do_action(netrun_sim.NetAction.finish_epoch(epoch_id), epoch_id=epoch_id, detail={"node_name": node_name})
         self._epochs[epoch_id].ended_at = get_timestamp_utc()
         self._epochs[epoch_id].state = netrun_sim.EpochState.Finished
         await self._fire_epoch_end(node_name, epoch_id)
@@ -2740,7 +2787,7 @@ class Net:
             self._emit_epoch_signal(epoch_id, node_name, "epoch_failed", error=str(error))
 
             # Max retries exceeded - cancel the epoch
-            response, _ = self._do_action(netrun_sim.NetAction.cancel_epoch(epoch_id), epoch_id=epoch_id)
+            response, _ = self._do_action(netrun_sim.NetAction.cancel_epoch(epoch_id), epoch_id=epoch_id, detail={"node_name": node_name})
             record = self._epochs[epoch_id]
             record.was_cancelled = True
             record.ended_at = get_timestamp_utc()
@@ -2995,7 +3042,8 @@ class Net:
             packets=injected_packets,
         )
         response, _ = self._do_action(
-            netrun_sim.NetAction.create_epoch(node_name, salvo)
+            netrun_sim.NetAction.create_epoch(node_name, salvo),
+            detail={"node_name": node_name},
         )
         epoch_id = response.epoch.id
 
@@ -3268,7 +3316,7 @@ class Net:
         config = self._get_node_execution_config(node_name)
 
         # Start epoch in netsim
-        self._do_action(netrun_sim.NetAction.start_epoch(epoch_id), epoch_id=epoch_id)
+        self._do_action(netrun_sim.NetAction.start_epoch(epoch_id), epoch_id=epoch_id, detail={"node_name": node_name})
         self._epochs[epoch_id].started_at = get_timestamp_utc()
         self._epochs[epoch_id].state = netrun_sim.EpochState.Running
 
@@ -3277,14 +3325,17 @@ class Net:
         for port_name, pkt_ids in packets.items():
             for pid in pkt_ids:
                 self._packet_store.consume(pid)
-                self._do_action(netrun_sim.NetAction.consume_packet(pid), epoch_id=epoch_id)
+                self._do_action(
+                    netrun_sim.NetAction.consume_packet(pid), epoch_id=epoch_id,
+                    detail={"node_name": node_name, "packet_id": pid},
+                )
 
         # Execute control action (with error handling)
         try:
             await self._execute_control_action(control_type, node_name, packet_values)
         except Exception as error:
             # Finish epoch, then handle error same as MaxEpochsExceeded
-            self._do_action(netrun_sim.NetAction.finish_epoch(epoch_id), epoch_id=epoch_id)
+            self._do_action(netrun_sim.NetAction.finish_epoch(epoch_id), epoch_id=epoch_id, detail={"node_name": node_name})
             self._epochs[epoch_id].ended_at = get_timestamp_utc()
             self._epochs[epoch_id].state = netrun_sim.EpochState.Finished
 
@@ -3306,7 +3357,7 @@ class Net:
                 return None
 
         # Finish control epoch
-        self._do_action(netrun_sim.NetAction.finish_epoch(epoch_id), epoch_id=epoch_id)
+        self._do_action(netrun_sim.NetAction.finish_epoch(epoch_id), epoch_id=epoch_id, detail={"node_name": node_name})
         self._epochs[epoch_id].ended_at = get_timestamp_utc()
         self._epochs[epoch_id].state = netrun_sim.EpochState.Finished
         return None
@@ -3421,7 +3472,7 @@ class Net:
             salvo_name = next(iter(non_control_salvos)) if non_control_salvos else "__started_by_control"
             # Create epoch with empty salvo
             salvo = netrun_sim.Salvo(salvo_condition=salvo_name, packets=[])
-            self._do_action(netrun_sim.NetAction.create_epoch(node_name, salvo))
+            self._do_action(netrun_sim.NetAction.create_epoch(node_name, salvo), detail={"node_name": node_name})
         else:
             raise RuntimeError(
                 f"Control 'start_epoch' on node '{node_name}': "
@@ -3455,7 +3506,7 @@ class Net:
                 f"epoch '{epoch_id}' is not running"
             )
 
-        response, _ = self._do_action(netrun_sim.NetAction.cancel_epoch(epoch_id), epoch_id=epoch_id)
+        response, _ = self._do_action(netrun_sim.NetAction.cancel_epoch(epoch_id), epoch_id=epoch_id, detail={"node_name": node_name})
         record.was_cancelled = True
         record.ended_at = get_timestamp_utc()
         record.destroyed_packets = list(response.destroyed_packets)
@@ -3541,7 +3592,10 @@ class Net:
         port_name = signal_port_name(signal_type)
 
         # Create signal packet inside the running epoch
-        response, _ = self._do_action(netrun_sim.NetAction.create_packet(epoch_id), epoch_id=epoch_id)
+        response, _ = self._do_action(
+            netrun_sim.NetAction.create_packet(epoch_id), epoch_id=epoch_id,
+            detail={"node_name": node_name},
+        )
         packet_id = str(response.packet_id)
 
         # Store signal value with appropriate subclass
@@ -3562,12 +3616,14 @@ class Net:
         self._do_action(
             netrun_sim.NetAction.load_packet_into_output_port(packet_id, port_name),
             epoch_id=epoch_id,
+            detail={"node_name": node_name, "packet_id": packet_id, "port_name": port_name},
         )
 
         # Send signal salvo (salvo condition name = port name)
         self._do_action(
             netrun_sim.NetAction.send_output_salvo(epoch_id, port_name),
             epoch_id=epoch_id,
+            detail={"node_name": node_name, "salvo_condition": port_name},
         )
 
         # Handle orphaned packets (if signal port is unconnected)
@@ -3578,7 +3634,10 @@ class Net:
                     # Silently consume orphaned signal packets
                     orphaned_id = str(orphaned_info.packet_id)
                     self._packet_store.consume(orphaned_id)
-                    self._do_action(netrun_sim.NetAction.consume_packet(orphaned_id), epoch_id=epoch_id)
+                    self._do_action(
+                        netrun_sim.NetAction.consume_packet(orphaned_id), epoch_id=epoch_id,
+                        detail={"node_name": node_name, "packet_id": orphaned_id},
+                    )
 
     def _emit_out_of_epoch_signal(self, node_name: str, signal_type: str, epoch_id: str | None = None):
         """Emit a signal outside any epoch.
@@ -3599,7 +3658,10 @@ class Net:
         port_name = signal_port_name(signal_type)
 
         # Create packet outside net
-        response, _ = self._do_action(netrun_sim.NetAction.create_packet(None), epoch_id=epoch_id)
+        response, _ = self._do_action(
+            netrun_sim.NetAction.create_packet(None), epoch_id=epoch_id,
+            detail={"node_name": node_name},
+        )
         packet_id = str(response.packet_id)
 
         # Store signal value with appropriate subclass
@@ -3623,11 +3685,15 @@ class Net:
                     packet_id, netrun_sim.PacketLocation.edge(edges[0])
                 ),
                 epoch_id=epoch_id,
+                detail={"packet_id": packet_id},
             )
         else:
             # No connected edge - silently consume
             self._packet_store.consume(packet_id)
-            self._do_action(netrun_sim.NetAction.consume_packet(packet_id), epoch_id=epoch_id)
+            self._do_action(
+                netrun_sim.NetAction.consume_packet(packet_id), epoch_id=epoch_id,
+                detail={"node_name": node_name, "packet_id": packet_id},
+            )
 
     async def _start_node(self, node_name: str) -> None:
         """Call start_node_func for a node if configured and not yet started.
