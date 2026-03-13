@@ -14,17 +14,13 @@ class FrontendBuildHook(BuildHookInterface):
     PLUGIN_NAME = "frontend-build"
 
     def initialize(self, version: str, build_data: dict) -> None:
-        """Build the frontend if static files don't exist."""
+        """Build the frontend before packaging."""
         root = Path(self.root)
         static_dir = root / "netrun_ui_backend" / "static"
 
-        # Skip if static files already exist
-        if static_dir.exists() and (static_dir / "index.html").exists():
-            return
-
         # Check if we have frontend source
         if not (root / "package.json").exists():
-            # No source, no static - this will fail at runtime
+            # No source - this will fail at runtime
             # but we can't build without source
             return
 
