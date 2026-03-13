@@ -219,6 +219,10 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-cargo-registry-
 
+      - name: Install netrun-ui-vis npm dependencies
+        run: npm ci
+        working-directory: netrun-ui-vis
+
       - name: Install npm dependencies
         run: npm ci
 
