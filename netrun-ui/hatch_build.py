@@ -26,6 +26,20 @@ class FrontendBuildHook(BuildHookInterface):
 
         print("Building frontend...")
 
+        # Install npm dependencies for netrun-ui-vis (local file dep) if needed
+        vis_dir = root.parent / "netrun-ui-vis"
+        if vis_dir.exists() and not (vis_dir / "node_modules").exists():
+            print("Installing netrun-ui-vis dependencies...")
+            result = subprocess.run(
+                ["npm", "install"],
+                cwd=str(vis_dir),
+                capture_output=True,
+                text=True,
+            )
+            if result.returncode != 0:
+                print(f"Warning: netrun-ui-vis npm install failed: {result.stderr}", file=sys.stderr)
+                return
+
         # Install npm dependencies if needed
         if not (root / "node_modules").exists():
             print("Installing npm dependencies...")

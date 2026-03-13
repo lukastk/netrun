@@ -68,6 +68,18 @@ def _build_frontend() -> bool:
     frontend_dir = get_frontend_dir()
     print("Building frontend from source...", file=sys.stderr)
 
+    # Install npm dependencies for netrun-ui-vis (local file dep) if needed
+    vis_dir = frontend_dir.parent / "netrun-ui-vis"
+    if vis_dir.exists() and not (vis_dir / "node_modules").exists():
+        print("Installing netrun-ui-vis dependencies...", file=sys.stderr)
+        result = subprocess.run(
+            ["npm", "install"], cwd=str(vis_dir),
+            capture_output=True, text=True,
+        )
+        if result.returncode != 0:
+            print(f"netrun-ui-vis npm install failed: {result.stderr}", file=sys.stderr)
+            return False
+
     # Install npm dependencies if needed
     if not (frontend_dir / "node_modules").exists():
         print("Installing npm dependencies...", file=sys.stderr)
