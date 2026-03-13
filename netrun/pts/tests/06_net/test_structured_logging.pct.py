@@ -32,7 +32,7 @@ from netrun.net.config import (
     MaxSalvosFiniteConfig, PacketCountNConfig, OutputQueueConfig,
 )
 from netrun.net._net._context import (
-    _EpochState, EpochLog, NodeLogEntry, SimActionLog, SimEventLog,
+    _EpochState, EpochLog, NodeLogEntry, NetActionLog, NetEventLog,
     NodeExecutionContext, _format_log_entry, _format_epoch_log,
 )
 from netrun.net._net._net import Net
@@ -42,7 +42,7 @@ def _simple_config(
     exec_func=None,
     *,
     retain_epoch_logs: bool = False,
-    retain_sim_action_logs: bool = False,
+    retain_net_action_logs: bool = False,
     epoch_log_echo_stdout: bool = False,
     factory: str | None = None,
     factory_args: dict | None = None,
@@ -80,7 +80,7 @@ def _simple_config(
             edges=[],
         ),
         retain_epoch_logs=retain_epoch_logs,
-        retain_sim_action_logs=retain_sim_action_logs,
+        retain_net_action_logs=retain_net_action_logs,
         epoch_log_echo_stdout=epoch_log_echo_stdout,
         print_echo_stdout=False,
     )
@@ -154,8 +154,8 @@ async def test_ctx_log_backward_compat():
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_run_step_returns_sim_actions_and_epoch_logs():
-    """run_step() should return (bool, sim_actions, epoch_logs)."""
+async def test_run_step_returns_net_actions_and_epoch_logs():
+    """run_step() should return (bool, net_actions, epoch_logs)."""
     def exec_func(ctx, packets):
         for port_name, pids in packets.items():
             for pid in pids:
@@ -167,10 +167,10 @@ async def test_run_step_returns_sim_actions_and_epoch_logs():
     config = _simple_config(exec_func)
     async with Net(config) as net:
         net.inject_data("A", "in", ["hello"])
-        made_progress, sim_actions, epoch_logs = await net.run_step()
+        made_progress, net_actions, epoch_logs = await net.run_step()
 
     assert made_progress is True
-    assert isinstance(sim_actions, list)
+    assert isinstance(net_actions, list)
     assert isinstance(epoch_logs, list)
     assert len(epoch_logs) == 1
     assert epoch_logs[0].node_name == "A"
@@ -178,8 +178,8 @@ async def test_run_step_returns_sim_actions_and_epoch_logs():
 
 
 @pytest.mark.asyncio
-async def test_run_until_blocked_returns_sim_actions_and_epoch_logs():
-    """run_until_blocked() should accumulate sim_actions and epoch_logs."""
+async def test_run_until_blocked_returns_net_actions_and_epoch_logs():
+    """run_until_blocked() should accumulate net_actions and epoch_logs."""
     def exec_func(ctx, packets):
         for port_name, pids in packets.items():
             for pid in pids:
@@ -191,7 +191,7 @@ async def test_run_until_blocked_returns_sim_actions_and_epoch_logs():
     config = _simple_config(exec_func)
     async with Net(config) as net:
         net.inject_data("A", "in", ["hello"])
-        made_progress, sim_actions, epoch_logs = await net.run_until_blocked()
+        made_progress, net_actions, epoch_logs = await net.run_until_blocked()
 
     assert made_progress is True
     assert len(epoch_logs) == 1
@@ -298,13 +298,13 @@ async def test_on_epoch_end_receives_epoch_log():
     assert received[0].outcome == "success"
 
 # %% [markdown]
-# ## on_sim_actions callback tests
+# ## on_net_actions callback tests
 
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_on_sim_actions_callback():
-    """on_sim_actions callback should fire with SimActionLog list."""
+async def test_on_net_actions_callback():
+    """on_net_actions callback should fire with NetActionLog list."""
     def exec_func(ctx, packets):
         for port_name, pids in packets.items():
             for pid in pids:
@@ -317,13 +317,13 @@ async def test_on_sim_actions_callback():
 
     config = _simple_config(exec_func)
     async with Net(config) as net:
-        net.on_sim_actions(lambda actions: received.append(actions))
+        net.on_net_actions(lambda actions: received.append(actions))
         net.inject_data("A", "in", ["data"])
         await net.run_step()
 
     assert len(received) == 1
     assert isinstance(received[0], list)
-    assert all(isinstance(a, SimActionLog) for a in received[0])
+    assert all(isinstance(a, NetActionLog) for a in received[0])
 
 # %% [markdown]
 # ## Retention tests
@@ -371,8 +371,8 @@ async def test_retain_epoch_logs_false():
 
 
 @pytest.mark.asyncio
-async def test_retain_sim_action_logs():
-    """retain_sim_action_logs=True should accumulate SimActionLogs."""
+async def test_retain_net_action_logs():
+    """retain_net_action_logs=True should accumulate NetActionLogs."""
     def exec_func(ctx, packets):
         for port_name, pids in packets.items():
             for pid in pids:
@@ -381,13 +381,13 @@ async def test_retain_sim_action_logs():
         ctx.load_output_port("out", pid)
         ctx.send_output_salvo("send")
 
-    config = _simple_config(exec_func, retain_sim_action_logs=True)
+    config = _simple_config(exec_func, retain_net_action_logs=True)
     async with Net(config) as net:
         net.inject_data("A", "in", ["v1"])
         await net.run_until_blocked()
 
-    assert len(net.sim_action_log) > 0
-    assert all(isinstance(a, SimActionLog) for a in net.sim_action_log)
+    assert len(net.net_action_log) > 0
+    assert all(isinstance(a, NetActionLog) for a in net.net_action_log)
 
 # %% [markdown]
 # ## EpochLog serialization tests
@@ -465,9 +465,9 @@ async def test_jsonl_epoch_logger_round_trip():
 
 
 @pytest.mark.asyncio
-async def test_jsonl_sim_action_logger_round_trip():
-    """JsonlSimActionLogger should write and load SimActionLogs."""
-    from netrun.logging._backends import JsonlSimActionLogger
+async def test_jsonl_net_action_logger_round_trip():
+    """JsonlNetActionLogger should write and load NetActionLogs."""
+    from netrun.logging._backends import JsonlNetActionLogger
 
     def exec_func(ctx, packets):
         for port_name, pids in packets.items():
@@ -481,17 +481,17 @@ async def test_jsonl_sim_action_logger_round_trip():
         path = f.name
 
     try:
-        logger = JsonlSimActionLogger(path)
+        logger = JsonlNetActionLogger(path)
         config = _simple_config(exec_func)
         async with Net(config) as net:
-            net.on_sim_actions(logger)
+            net.on_net_actions(logger)
             net.inject_data("A", "in", ["data"])
             await net.run_until_blocked()
         logger.close()
 
-        loaded = JsonlSimActionLogger.load(path)
+        loaded = JsonlNetActionLogger.load(path)
         assert len(loaded) > 0
-        assert all(isinstance(a, SimActionLog) for a in loaded)
+        assert all(isinstance(a, NetActionLog) for a in loaded)
     finally:
         Path(path).unlink(missing_ok=True)
 
@@ -522,7 +522,7 @@ async def test_sqlite_logger_round_trip():
         config = _simple_config(exec_func)
         async with Net(config) as net:
             net.on_epoch_end(logger.epoch_handler)
-            net.on_sim_actions(logger.sim_action_handler)
+            net.on_net_actions(logger.net_action_handler)
             net.inject_data("A", "in", ["data"])
             await net.run_until_blocked()
 
@@ -531,8 +531,8 @@ async def test_sqlite_logger_round_trip():
         assert epoch_logs[0].node_name == "A"
         assert epoch_logs[0].user_fields.get("count") == 5
 
-        sim_actions = logger.load_sim_action_logs()
-        assert len(sim_actions) > 0
+        net_actions = logger.load_net_action_logs()
+        assert len(net_actions) > 0
 
         logger.close()
     finally:
@@ -670,13 +670,13 @@ async def test_epoch_log_echo_stdout(capsys):
     assert "outcome=success" in captured.out
 
 # %% [markdown]
-# ## Multi-node flow with SimActionLog epoch attribution
+# ## Multi-node flow with NetActionLog epoch attribution
 
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_multi_node_sim_action_epoch_attribution():
-    """SimActionLogs should be attributed to the correct epoch across nodes."""
+async def test_multi_node_net_action_epoch_attribution():
+    """NetActionLogs should be attributed to the correct epoch across nodes."""
     def node_a_func(ctx, packets):
         for pids in packets.values():
             for pid in pids:
@@ -747,19 +747,19 @@ async def test_multi_node_sim_action_epoch_attribution():
     assert "A" in epoch_logs_by_node
     assert "B" in epoch_logs_by_node
 
-    # Each epoch's sim_actions should be attributed to the correct epoch_id
+    # Each epoch's net_actions should be attributed to the correct epoch_id
     for el in epoch_logs_by_node.values():
-        for sa in el.sim_actions:
+        for sa in el.net_actions:
             assert sa.epoch_id == el.epoch_id
 
 # %% [markdown]
-# ## on_sim_actions deregistration
+# ## on_net_actions deregistration
 
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_on_sim_actions_deregistration():
-    """Calling remove() from on_sim_actions should stop firing the callback."""
+async def test_on_net_actions_deregistration():
+    """Calling remove() from on_net_actions should stop firing the callback."""
     def exec_func(ctx, packets):
         for pids in packets.values():
             for pid in pids:
@@ -776,7 +776,7 @@ async def test_on_sim_actions_deregistration():
 
     config = _simple_config(exec_func)
     async with Net(config) as net:
-        remove = net.on_sim_actions(on_actions)
+        remove = net.on_net_actions(on_actions)
         net.inject_data("A", "in", ["v1"])
         await net.run_until_blocked()
         assert call_count >= 1
@@ -1049,13 +1049,13 @@ async def test_node_info_epoch_logs():
     assert b_logs[0].node_name == "B"
 
 # %% [markdown]
-# ## SimActionLog action_kind verification
+# ## NetActionLog action_kind verification
 
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_sim_action_log_action_kinds():
-    """SimActionLogs should have correct action_kind values for specific actions."""
+async def test_net_action_log_action_kinds():
+    """NetActionLogs should have correct action_kind values for specific actions."""
     def exec_func(ctx, packets):
         for pids in packets.values():
             for pid in pids:
@@ -1067,10 +1067,10 @@ async def test_sim_action_log_action_kinds():
     config = _simple_config(exec_func, retain_epoch_logs=True)
     async with Net(config) as net:
         net.inject_data("A", "in", ["data"])
-        made_progress, sim_actions, epoch_logs = await net.run_until_blocked()
+        made_progress, net_actions, epoch_logs = await net.run_until_blocked()
 
     # Collect all action_kinds from the step
-    action_kinds = [sa.action_kind for sa in sim_actions]
+    action_kinds = [sa.action_kind for sa in net_actions]
 
     # Should include RunStep (the automatic flow step)
     assert "RunStep" in action_kinds
@@ -1081,7 +1081,7 @@ async def test_sim_action_log_action_kinds():
 
     # Epoch-attributed actions should have matching epoch_id
     epoch_log = epoch_logs[0]
-    epoch_actions = [sa for sa in sim_actions if sa.epoch_id == epoch_log.epoch_id]
+    epoch_actions = [sa for sa in net_actions if sa.epoch_id == epoch_log.epoch_id]
     epoch_action_kinds = [sa.action_kind for sa in epoch_actions]
     assert any("start_epoch" in ak for ak in epoch_action_kinds)
     assert any("finish_epoch" in ak for ak in epoch_action_kinds)
@@ -1093,13 +1093,13 @@ async def test_sim_action_log_action_kinds():
         )
 
 # %% [markdown]
-# ## SimEventLog detail fields
+# ## NetEventLog detail fields
 
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_sim_event_log_detail_fields():
-    """SimEventLog detail dicts should contain event-specific fields from PyO3 properties."""
+async def test_net_event_log_detail_fields():
+    """NetEventLog detail dicts should contain event-specific fields from PyO3 properties."""
     def exec_func(ctx, packets):
         for pids in packets.values():
             for pid in pids:
@@ -1111,14 +1111,14 @@ async def test_sim_event_log_detail_fields():
     config = _simple_config(exec_func)
     async with Net(config) as net:
         net.inject_data("A", "in", ["data"])
-        _, sim_actions, _ = await net.run_until_blocked()
+        _, net_actions, _ = await net.run_until_blocked()
 
     # Find a RunStep action — it should produce events with detail fields
-    run_step_actions = [sa for sa in sim_actions if sa.action_kind == "RunStep"]
+    run_step_actions = [sa for sa in net_actions if sa.action_kind == "RunStep"]
     assert len(run_step_actions) > 0
 
     # At least some events should have detail fields (e.g. packet_id, node_name)
-    all_events = [ev for sa in sim_actions for ev in sa.events]
+    all_events = [ev for sa in net_actions for ev in sa.events]
     events_with_details = [ev for ev in all_events if ev.detail]
     assert len(events_with_details) > 0
 
@@ -1253,10 +1253,10 @@ async def test_multi_node_event_detail_has_edge_locations():
 
     async with Net(config) as net:
         net.inject_data("A", "in", ["hello"])
-        _, sim_actions, _ = await net.run_until_blocked()
+        _, net_actions, _ = await net.run_until_blocked()
 
     # Collect all events across all actions
-    all_events = [ev for sa in sim_actions for ev in sa.events]
+    all_events = [ev for sa in net_actions for ev in sa.events]
 
     # Should have PacketMoved events with edge locations
     moved_events = [ev for ev in all_events if ev.kind == "PacketMoved"]
@@ -1307,13 +1307,13 @@ async def test_ctx_log_error_level():
     assert entry.fields == {"code": 500}
 
 # %% [markdown]
-# ## sim_action_log retention negative test
+# ## net_action_log retention negative test
 
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_retain_sim_action_logs_false():
-    """retain_sim_action_logs=False should not accumulate SimActionLogs."""
+async def test_retain_net_action_logs_false():
+    """retain_net_action_logs=False should not accumulate NetActionLogs."""
     def exec_func(ctx, packets):
         for pids in packets.values():
             for pid in pids:
@@ -1322,12 +1322,12 @@ async def test_retain_sim_action_logs_false():
         ctx.load_output_port("out", pid)
         ctx.send_output_salvo("send")
 
-    config = _simple_config(exec_func, retain_sim_action_logs=False)
+    config = _simple_config(exec_func, retain_net_action_logs=False)
     async with Net(config) as net:
         net.inject_data("A", "in", ["data"])
         await net.run_until_blocked()
 
-    assert len(net.sim_action_log) == 0
+    assert len(net.net_action_log) == 0
 
 # %% [markdown]
 # ## retry_count in EpochLog
@@ -1577,20 +1577,20 @@ async def test_epochs_dict_retained_when_retention_enabled():
         assert len(net.epochs) == 1
 
 # %% [markdown]
-# ## SimActionLog.from_dict round-trip
+# ## NetActionLog.from_dict round-trip
 
 # %%
 #|export
-def test_sim_action_log_from_dict_round_trip():
-    """SimActionLog.from_dict should correctly deserialize from to_dict."""
-    from netrun.net._net._context import SimEventLog
+def test_net_action_log_from_dict_round_trip():
+    """NetActionLog.from_dict should correctly deserialize from to_dict."""
+    from netrun.net._net._context import NetEventLog
 
-    original = SimActionLog(
+    original = NetActionLog(
         timestamp=datetime.now(),
         action_kind="StartEpoch",
         action_detail={},
         events=[
-            SimEventLog(
+            NetEventLog(
                 timestamp=datetime.now(),
                 kind="EpochStarted",
                 detail={"epoch_id": "test-123", "node_name": "A"},
@@ -1600,7 +1600,7 @@ def test_sim_action_log_from_dict_round_trip():
     )
 
     d = original.to_dict()
-    restored = SimActionLog.from_dict(d)
+    restored = NetActionLog.from_dict(d)
 
     assert restored.action_kind == original.action_kind
     assert restored.epoch_id == original.epoch_id
@@ -1615,7 +1615,7 @@ def test_sim_action_log_from_dict_round_trip():
 #|export
 @pytest.mark.asyncio
 async def test_event_timestamps_match_parent_action():
-    """All SimEventLogs within a SimActionLog should share the parent action's timestamp."""
+    """All NetEventLogs within a NetActionLog should share the parent action's timestamp."""
     def exec_func(ctx, packets):
         for pids in packets.values():
             for pid in pids:
@@ -1627,10 +1627,10 @@ async def test_event_timestamps_match_parent_action():
     config = _simple_config(exec_func)
     async with Net(config) as net:
         net.inject_data("A", "in", ["data"])
-        _, sim_actions, _ = await net.run_until_blocked()
+        _, net_actions, _ = await net.run_until_blocked()
 
     # For each action, all events should have the same timestamp as the action
-    for action in sim_actions:
+    for action in net_actions:
         for event in action.events:
             assert event.timestamp == action.timestamp, (
                 f"Event {event.kind} timestamp {event.timestamp} "
@@ -1638,13 +1638,13 @@ async def test_event_timestamps_match_parent_action():
             )
 
 # %% [markdown]
-# ## EpochLog round-trip preserves sim_actions
+# ## EpochLog round-trip preserves net_actions
 
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_epoch_log_round_trip_preserves_sim_actions():
-    """EpochLog.to_dict/from_dict should preserve sim_actions."""
+async def test_epoch_log_round_trip_preserves_net_actions():
+    """EpochLog.to_dict/from_dict should preserve net_actions."""
     def exec_func(ctx, packets):
         for pids in packets.values():
             for pid in pids:
@@ -1659,13 +1659,13 @@ async def test_epoch_log_round_trip_preserves_sim_actions():
         await net.run_until_blocked()
 
     original = list(net.epoch_logs.values())[0]
-    assert len(original.sim_actions) > 0  # Should have some actions
+    assert len(original.net_actions) > 0  # Should have some actions
 
     d = original.to_dict()
     restored = EpochLog.from_dict(d)
 
-    assert len(restored.sim_actions) == len(original.sim_actions)
-    for orig_a, rest_a in zip(original.sim_actions, restored.sim_actions):
+    assert len(restored.net_actions) == len(original.net_actions)
+    for orig_a, rest_a in zip(original.net_actions, restored.net_actions):
         assert rest_a.action_kind == orig_a.action_kind
         assert rest_a.epoch_id == orig_a.epoch_id
         assert len(rest_a.events) == len(orig_a.events)
@@ -1727,7 +1727,7 @@ async def test_sqlite_logger_context_manager():
             config = _simple_config(exec_func)
             async with Net(config) as net:
                 net.on_epoch_end(logger.epoch_handler)
-                net.on_sim_actions(logger.sim_action_handler)
+                net.on_net_actions(logger.net_action_handler)
                 net.inject_data("A", "in", ["data"])
                 await net.run_until_blocked()
 
@@ -1746,7 +1746,7 @@ async def test_sqlite_logger_context_manager():
 #|export
 @pytest.mark.asyncio
 async def test_run_until_blocked_multi_step_accumulation():
-    """run_until_blocked should accumulate sim_actions and epoch_logs across multiple steps."""
+    """run_until_blocked should accumulate net_actions and epoch_logs across multiple steps."""
     def node_a_func(ctx, packets):
         for pids in packets.values():
             for pid in pids:
@@ -1820,14 +1820,14 @@ async def test_run_until_blocked_multi_step_accumulation():
 
     async with Net(config) as net:
         net.inject_data("A", "in", ["hello"])
-        _, sim_actions, epoch_logs = await net.run_until_blocked()
+        _, net_actions, epoch_logs = await net.run_until_blocked()
 
     # Both A and B should have completed
     assert len(epoch_logs) == 2
     node_names = {el.node_name for el in epoch_logs}
     assert node_names == {"A", "B"}
-    # Should have sim_actions from multiple steps
-    assert len(sim_actions) > 0
+    # Should have net_actions from multiple steps
+    assert len(net_actions) > 0
 
 # %% [markdown]
 # ## Buggy callbacks should not break execution
@@ -1888,8 +1888,8 @@ async def test_buggy_on_epoch_start_callback_does_not_break_net():
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_buggy_on_sim_actions_callback_does_not_break_net():
-    """An on_sim_actions callback that raises should warn but not break execution."""
+async def test_buggy_on_net_actions_callback_does_not_break_net():
+    """An on_net_actions callback that raises should warn but not break execution."""
     def exec_func(ctx, packets):
         for pids in packets.values():
             for pid in pids:
@@ -1899,13 +1899,13 @@ async def test_buggy_on_sim_actions_callback_does_not_break_net():
         ctx.send_output_salvo("send")
 
     def bad_callback(actions):
-        raise RuntimeError("sim actions boom")
+        raise RuntimeError("net actions boom")
 
     config = _simple_config(exec_func)
     async with Net(config) as net:
-        net.on_sim_actions(bad_callback)
+        net.on_net_actions(bad_callback)
         net.inject_data("A", "in", ["data"])
-        with pytest.warns(UserWarning, match="sim actions boom"):
+        with pytest.warns(UserWarning, match="net actions boom"):
             _, _, epoch_logs = await net.run_until_blocked()
 
     assert len(epoch_logs) == 1

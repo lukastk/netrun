@@ -1372,13 +1372,13 @@ async def test_net_run_step():
     config = create_simple_net_config()
 
     async with Net(config) as net:
-        # run_step returns (made_progress, sim_actions, epoch_logs) tuple
+        # run_step returns (made_progress, net_actions, epoch_logs) tuple
         result = await net.run_step()
         assert isinstance(result, tuple)
         assert len(result) == 3
-        made_progress, sim_actions, epoch_logs = result
+        made_progress, net_actions, epoch_logs = result
         assert isinstance(made_progress, bool)
-        assert isinstance(sim_actions, list)
+        assert isinstance(net_actions, list)
         assert isinstance(epoch_logs, list)
 
 # %%
@@ -1389,10 +1389,10 @@ async def test_net_run_until_blocked():
     config = create_simple_net_config()
 
     async with Net(config) as net:
-        # run_until_blocked should return (made_progress, sim_actions, epoch_logs)
-        made_progress, sim_actions, epoch_logs = await net.run_until_blocked()
+        # run_until_blocked should return (made_progress, net_actions, epoch_logs)
+        made_progress, net_actions, epoch_logs = await net.run_until_blocked()
         assert isinstance(made_progress, bool)
-        assert isinstance(sim_actions, list)
+        assert isinstance(net_actions, list)
         assert isinstance(epoch_logs, list)
 
 # %%

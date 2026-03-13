@@ -40,7 +40,7 @@ registerField('NetConfig', 'retries', 'auto');
 registerField('NetConfig', 'retry_wait', 'auto');
 registerField('NetConfig', 'timeout', 'auto');
 registerField('NetConfig', 'retain_epoch_logs', 'auto');
-registerField('NetConfig', 'retain_sim_action_logs', 'auto');
+registerField('NetConfig', 'retain_net_action_logs', 'auto');
 registerField('NetConfig', 'epoch_log_echo_stdout', 'auto');
 
 // ==========================================================================

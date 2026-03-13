@@ -16,7 +16,7 @@ from nblite import nbl_export; nbl_export();
 # %% [markdown]
 # # Logging Backends
 #
-# Storage backends for EpochLog and SimActionLog persistence:
+# Storage backends for EpochLog and NetActionLog persistence:
 # JSONL files and SQLite.
 
 # %%
@@ -24,7 +24,7 @@ from nblite import nbl_export; nbl_export();
 import json
 from pathlib import Path
 
-from netrun.net._net._context import EpochLog, SimActionLog
+from netrun.net._net._context import EpochLog, NetActionLog
 
 # %% [markdown]
 # ## JSONL Backends
@@ -73,20 +73,20 @@ class JsonlEpochLogger:
         return logs
 
 
-class JsonlSimActionLogger:
-    """Append SimActionLog entries to a JSONL file.
+class JsonlNetActionLogger:
+    """Append NetActionLog entries to a JSONL file.
 
-    Use as an on_sim_actions callback::
+    Use as an on_net_actions callback::
 
-        logger = JsonlSimActionLogger("sim_actions.jsonl")
-        net.on_sim_actions(logger)
+        logger = JsonlNetActionLogger("net_actions.jsonl")
+        net.on_net_actions(logger)
     """
 
     def __init__(self, path: str | Path):
         self._path = Path(path)
         self._fh = None
 
-    def __call__(self, actions: list[SimActionLog]) -> None:
+    def __call__(self, actions: list[NetActionLog]) -> None:
         if self._fh is None:
             self._fh = open(self._path, "a")
         for action in actions:
@@ -98,21 +98,21 @@ class JsonlSimActionLogger:
             self._fh.close()
             self._fh = None
 
-    def __enter__(self) -> "JsonlSimActionLogger":
+    def __enter__(self) -> "JsonlNetActionLogger":
         return self
 
     def __exit__(self, *exc_info) -> None:
         self.close()
 
     @staticmethod
-    def load(path: str | Path) -> list[SimActionLog]:
-        """Load all SimActionLog entries from a JSONL file."""
+    def load(path: str | Path) -> list[NetActionLog]:
+        """Load all NetActionLog entries from a JSONL file."""
         actions = []
         with open(path) as f:
             for line in f:
                 line = line.strip()
                 if line:
-                    actions.append(SimActionLog.from_dict(json.loads(line)))
+                    actions.append(NetActionLog.from_dict(json.loads(line)))
         return actions
 
 # %% [markdown]
@@ -121,15 +121,15 @@ class JsonlSimActionLogger:
 # %%
 #|export
 class SqliteLogger:
-    """Write EpochLog and SimActionLog entries to a SQLite database.
+    """Write EpochLog and NetActionLog entries to a SQLite database.
 
-    Creates two tables: ``epoch_logs`` and ``sim_action_logs``.
+    Creates two tables: ``epoch_logs`` and ``net_action_logs``.
 
     Usage::
 
         logger = SqliteLogger("run.db")
         net.on_epoch_end(logger.epoch_handler)
-        net.on_sim_actions(logger.sim_action_handler)
+        net.on_net_actions(logger.net_action_handler)
     """
 
     def __init__(self, path: str | Path):
@@ -147,7 +147,7 @@ class SqliteLogger:
             )
         """)
         self._conn.execute("""
-            CREATE TABLE IF NOT EXISTS sim_action_logs (
+            CREATE TABLE IF NOT EXISTS net_action_logs (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 timestamp TEXT NOT NULL,
                 action_kind TEXT NOT NULL,
@@ -172,11 +172,11 @@ class SqliteLogger:
         )
         self._conn.commit()
 
-    def sim_action_handler(self, actions: list[SimActionLog]) -> None:
-        """on_sim_actions callback handler."""
+    def net_action_handler(self, actions: list[NetActionLog]) -> None:
+        """on_net_actions callback handler."""
         for action in actions:
             self._conn.execute(
-                "INSERT INTO sim_action_logs (timestamp, action_kind, epoch_id, data) VALUES (?, ?, ?, ?)",
+                "INSERT INTO net_action_logs (timestamp, action_kind, epoch_id, data) VALUES (?, ?, ?, ?)",
                 (
                     action.timestamp.isoformat(),
                     action.action_kind,
@@ -191,10 +191,10 @@ class SqliteLogger:
         cursor = self._conn.execute("SELECT data FROM epoch_logs ORDER BY timestamp")
         return [EpochLog.from_dict(json.loads(row[0])) for row in cursor.fetchall()]
 
-    def load_sim_action_logs(self) -> list[SimActionLog]:
-        """Load all SimActionLog entries from the database."""
-        cursor = self._conn.execute("SELECT data FROM sim_action_logs ORDER BY id")
-        return [SimActionLog.from_dict(json.loads(row[0])) for row in cursor.fetchall()]
+    def load_net_action_logs(self) -> list[NetActionLog]:
+        """Load all NetActionLog entries from the database."""
+        cursor = self._conn.execute("SELECT data FROM net_action_logs ORDER BY id")
+        return [NetActionLog.from_dict(json.loads(row[0])) for row in cursor.fetchall()]
 
     def close(self) -> None:
         if self._conn is not None:

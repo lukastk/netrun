@@ -96,20 +96,20 @@ class NodeLogEntry:
 
 
 @dataclass
-class SimEventLog:
-    """An individual NetEvent within a SimActionLog."""
+class NetEventLog:
+    """An individual NetEvent within a NetActionLog."""
     timestamp: datetime
     kind: str           # "PacketMoved", "PacketCreated", "InputSalvoTriggered", etc.
     detail: dict        # event-specific fields
 
 
 @dataclass
-class SimActionLog:
-    """One per do_action() call, contains SimEventLogs."""
+class NetActionLog:
+    """One per do_action() call, contains NetEventLogs."""
     timestamp: datetime
     action_kind: str          # "RunStep", "StartEpoch", "CreatePacket", etc.
     action_detail: dict       # action args: epoch_id, packet_id, port_name, etc.
-    events: list[SimEventLog]
+    events: list[NetEventLog]
     epoch_id: str | None = None
 
     def to_dict(self) -> dict[str, Any]:
@@ -130,14 +130,14 @@ class SimActionLog:
         }
 
     @classmethod
-    def from_dict(cls, d: dict[str, Any]) -> "SimActionLog":
+    def from_dict(cls, d: dict[str, Any]) -> "NetActionLog":
         """Deserialize from a plain dict."""
         return cls(
             timestamp=datetime.fromisoformat(d["timestamp"]),
             action_kind=d["action_kind"],
             action_detail=d.get("action_detail", {}),
             events=[
-                SimEventLog(
+                NetEventLog(
                     timestamp=datetime.fromisoformat(e["timestamp"]),
                     kind=e["kind"],
                     detail=e["detail"],
@@ -193,8 +193,8 @@ class EpochLog:
     node_log_entries: list[NodeLogEntry] = field(default_factory=list)
     user_fields: dict[str, Any] = field(default_factory=dict)
 
-    # Sim actions during this epoch
-    sim_actions: list[SimActionLog] = field(default_factory=list)
+    # Net actions during this epoch
+    net_actions: list[NetActionLog] = field(default_factory=list)
 
     # Legacy print buffer
     logs: list[tuple[datetime, str]] = field(default_factory=list)
@@ -234,7 +234,7 @@ class EpochLog:
                 for e in self.node_log_entries
             ],
             "user_fields": self.user_fields,
-            "sim_actions": [a.to_dict() for a in self.sim_actions],
+            "net_actions": [a.to_dict() for a in self.net_actions],
             "logs": [
                 {"timestamp": ts.isoformat(), "message": msg}
                 for ts, msg in self.logs
@@ -278,9 +278,9 @@ class EpochLog:
                 for e in d.get("node_log_entries", [])
             ],
             user_fields=d.get("user_fields", {}),
-            sim_actions=[
-                SimActionLog.from_dict(a)
-                for a in d.get("sim_actions", [])
+            net_actions=[
+                NetActionLog.from_dict(a)
+                for a in d.get("net_actions", [])
             ],
             logs=[
                 (datetime.fromisoformat(l["timestamp"]), l["message"])
@@ -991,7 +991,7 @@ class _EpochState:
         self,
         *,
         node_log_entries: list[NodeLogEntry] | None = None,
-        sim_actions: list[SimActionLog] | None = None,
+        net_actions: list[NetActionLog] | None = None,
         factory: str | None = None,
         retry_count: int = 0,
         error: Exception | None = None,
@@ -1018,7 +1018,7 @@ class _EpochState:
             queue_time_ms = (self.started_at - self.created_at).total_seconds() * 1000
 
         node_log_entries = node_log_entries or []
-        sim_actions = sim_actions or []
+        net_actions = net_actions or []
 
         # Merge user fields from all log entries
         user_fields: dict[str, Any] = {}
@@ -1061,7 +1061,7 @@ class _EpochState:
             factory=factory,
             node_log_entries=node_log_entries,
             user_fields=user_fields,
-            sim_actions=sim_actions,
+            net_actions=net_actions,
             logs=list(self.logs),
         )
 
