@@ -93,10 +93,10 @@ class TestSchemaClassification:
         field = next(f for f in schema.fields if f.name == "max_parallel_epochs")
         assert field.category == FieldCategory.INT_OR_NULL
 
-    def test_float_field(self):
+    def test_float_or_null_field(self):
         schema = get_model_schema(NodeExecutionConfig, "NodeExecutionConfig")
         field = next(f for f in schema.fields if f.name == "retry_wait")
-        assert field.category == FieldCategory.FLOAT
+        assert field.category == FieldCategory.FLOAT_OR_NULL
 
     def test_complex_field(self):
         schema = get_model_schema(NetConfig, "NetConfig")
@@ -143,11 +143,11 @@ class TestEnvVarStripping:
         field = next(f for f in schema.fields if f.name == "default_pool_allocation_method")
         assert field.category == FieldCategory.ENUM
 
-    def test_float_with_envvar(self):
-        """float | EnvVar should classify as FLOAT."""
+    def test_float_or_null_with_envvar(self):
+        """float | None | EnvVar should classify as FLOAT_OR_NULL."""
         schema = get_model_schema(NodeExecutionConfig, "NodeExecutionConfig")
         field = next(f for f in schema.fields if f.name == "retry_wait")
-        assert field.category == FieldCategory.FLOAT
+        assert field.category == FieldCategory.FLOAT_OR_NULL
 
     def test_env_var_supported_flag_true(self):
         """Fields with | EnvVar should have env_var_supported=True."""

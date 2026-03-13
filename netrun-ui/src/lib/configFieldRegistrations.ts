@@ -35,6 +35,13 @@ registerField('NetConfig', 'max_epochs', 'auto');
 registerField('NetConfig', 'storage', 'custom', 'StorageSection.svelte');
 registerField('NetConfig', 'default_signals', 'custom', 'NetSettingsSection.svelte');
 registerField('NetConfig', 'default_controls', 'custom', 'NetSettingsSection.svelte');
+registerField('NetConfig', 'print_echo_stdout', 'auto');
+registerField('NetConfig', 'retries', 'auto');
+registerField('NetConfig', 'retry_wait', 'auto');
+registerField('NetConfig', 'timeout', 'auto');
+registerField('NetConfig', 'retain_epoch_logs', 'auto');
+registerField('NetConfig', 'retain_sim_action_logs', 'auto');
+registerField('NetConfig', 'epoch_log_echo_stdout', 'auto');
 
 // ==========================================================================
 // NodeConfig
