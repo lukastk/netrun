@@ -22,6 +22,7 @@ from nblite import nbl_export; nbl_export();
 # %%
 #|export
 import asyncio
+import traceback
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -171,6 +172,7 @@ class EpochLog:
     outcome: str  # "success" | "error" | "cancelled" | "cache_hit" | "file_storage_hit"
     error: str | None = None
     error_type: str | None = None
+    error_traceback: str | None = None
 
     # Execution context
     pool_id: str | None = None
@@ -213,6 +215,7 @@ class EpochLog:
             "outcome": self.outcome,
             "error": self.error,
             "error_type": self.error_type,
+            "error_traceback": self.error_traceback,
             "pool_id": self.pool_id,
             "worker_id": self.worker_id,
             "retry_count": self.retry_count,
@@ -257,6 +260,7 @@ class EpochLog:
             outcome=d["outcome"],
             error=d.get("error"),
             error_type=d.get("error_type"),
+            error_traceback=d.get("error_traceback"),
             pool_id=d.get("pool_id"),
             worker_id=d.get("worker_id"),
             retry_count=d.get("retry_count", 0),
@@ -1048,6 +1052,7 @@ class _EpochState:
             outcome=outcome,
             error=str(error) if error else None,
             error_type=type(error).__name__ if error else None,
+            error_traceback="".join(traceback.format_exception(error)) if error else None,
             pool_id=self.pool_id,
             worker_id=self.worker_id,
             retry_count=retry_count,

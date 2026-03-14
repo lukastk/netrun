@@ -267,6 +267,9 @@ async def test_epoch_log_error():
     assert epoch_log.outcome == "error"
     assert epoch_log.error == "test error"
     assert epoch_log.error_type == "ValueError"
+    assert epoch_log.error_traceback is not None
+    assert "ValueError: test error" in epoch_log.error_traceback
+    assert "raise ValueError" in epoch_log.error_traceback
 
 # %% [markdown]
 # ## on_epoch_end callback receives EpochLog
