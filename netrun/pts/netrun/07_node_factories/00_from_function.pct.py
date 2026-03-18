@@ -530,32 +530,12 @@ def _create_exec_func(func: Callable, parsed_sig: _ParsedSignature, manual_outpu
             _route_result(ctx, result)
 
     if is_async:
-        # Async user function - need to handle event loop
-        def exec_node_func(ctx, packets):
+        async def exec_node_func(ctx, packets):
             """Wrapper for async user function."""
             kwargs = _prepare_kwargs(ctx, packets)
-
-            async def _run_async():
-                result = await func(**kwargs)
-                _handle_result(ctx, result)
-                return result
-
-            # Check if we're already in a running event loop
-            try:
-                loop = asyncio.get_running_loop()
-                # We're in a running loop - can't use run_until_complete
-                # This happens when running in the main pool (SingleWorkerPool)
-                # We need to run the coroutine synchronously using asyncio.run()
-                # But that also fails in a running loop, so we need nest_asyncio
-                # or a different approach.
-                # For now, create a new event loop in a way that works
-                import concurrent.futures
-                with concurrent.futures.ThreadPoolExecutor() as executor:
-                    future = executor.submit(asyncio.run, _run_async())
-                    return future.result()
-            except RuntimeError:
-                # No running loop - create a new one
-                return asyncio.run(_run_async())
+            result = await func(**kwargs)
+            _handle_result(ctx, result)
+            return result
     else:
         # Sync user function - no event loop needed
         def exec_node_func(ctx, packets):

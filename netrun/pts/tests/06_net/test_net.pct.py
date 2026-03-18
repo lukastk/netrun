@@ -988,7 +988,8 @@ test_deferred_queue_multiple_creates()
 
 # %%
 #|export
-def test_create_net_func_preprocessor_basic():
+@pytest.mark.asyncio
+async def test_create_net_func_preprocessor_basic():
     """Test func_preprocessor transforms function correctly."""
     node_configs = {
         "TestNode": NodeExecutionConfig(
@@ -1007,7 +1008,7 @@ def test_create_net_func_preprocessor_basic():
     wrapped = preprocessor(test_func)
 
     # Call wrapped function with packet values
-    result = wrapped(
+    result = await wrapped(
         epoch_id="epoch_test",
         node_name="TestNode",
         packets={"in": ["p1", "p2"]},
@@ -1026,11 +1027,12 @@ def test_create_net_func_preprocessor_basic():
     assert call_log[0][2] == {"in": ["p1", "p2"]}
 
 # %%
-test_create_net_func_preprocessor_basic()
+await test_create_net_func_preprocessor_basic()
 
 # %%
 #|export
-def test_create_net_func_preprocessor_with_retry_info():
+@pytest.mark.asyncio
+async def test_create_net_func_preprocessor_with_retry_info():
     """Test func_preprocessor passes retry information."""
     node_configs = {}
     preprocessor = create_net_func_preprocessor(node_configs)
@@ -1047,7 +1049,7 @@ def test_create_net_func_preprocessor_with_retry_info():
     retry_ts = [datetime.now()]
     retry_exc = [ValueError("retry error")]
 
-    result = wrapped(
+    result = await wrapped(
         epoch_id="epoch_retry",
         node_name="RetryNode",
         packets={},
@@ -1063,11 +1065,12 @@ def test_create_net_func_preprocessor_with_retry_info():
     assert result.func_result == "ok"
 
 # %%
-test_create_net_func_preprocessor_with_retry_info()
+await test_create_net_func_preprocessor_with_retry_info()
 
 # %%
 #|export
-def test_create_net_func_preprocessor_captures_prints():
+@pytest.mark.asyncio
+async def test_create_net_func_preprocessor_captures_prints():
     """Test func_preprocessor captures print buffer in result."""
     node_configs = {
         "PrintNode": NodeExecutionConfig(
@@ -1083,7 +1086,7 @@ def test_create_net_func_preprocessor_captures_prints():
 
     wrapped = preprocessor(test_func)
 
-    result = wrapped(
+    result = await wrapped(
         epoch_id="epoch_print",
         node_name="PrintNode",
         packets={},
@@ -1099,11 +1102,12 @@ def test_create_net_func_preprocessor_captures_prints():
     assert result.func_result == "done"
 
 # %%
-test_create_net_func_preprocessor_captures_prints()
+await test_create_net_func_preprocessor_captures_prints()
 
 # %%
 #|export
-def test_create_net_func_preprocessor_captures_exception():
+@pytest.mark.asyncio
+async def test_create_net_func_preprocessor_captures_exception():
     """Test func_preprocessor captures exception in result."""
     node_configs = {
         "ExcNode": NodeExecutionConfig(
@@ -1119,7 +1123,7 @@ def test_create_net_func_preprocessor_captures_exception():
     wrapped = preprocessor(test_func)
 
     # Should NOT raise - exception is captured in result
-    result = wrapped(
+    result = await wrapped(
         epoch_id="epoch_exc",
         node_name="ExcNode",
         packets={},
@@ -1138,7 +1142,7 @@ def test_create_net_func_preprocessor_captures_exception():
     assert message == "Before error\n"
 
 # %%
-test_create_net_func_preprocessor_captures_exception()
+await test_create_net_func_preprocessor_captures_exception()
 
 # %% [markdown]
 # ## Net Class Tests
@@ -2468,7 +2472,8 @@ test_node_execution_result_with_func_result()
 
 # %%
 #|export
-def test_preprocessor_handles_cancel_epoch():
+@pytest.mark.asyncio
+async def test_preprocessor_handles_cancel_epoch():
     """Test preprocessor handles EpochCancelled correctly."""
     node_configs = {
         "CancelNode": NodeExecutionConfig()
@@ -2482,7 +2487,7 @@ def test_preprocessor_handles_cancel_epoch():
 
     wrapped = preprocessor(cancelling_func)
 
-    result = wrapped(
+    result = await wrapped(
         epoch_id="cancel_test",
         node_name="CancelNode",
         packets={},
@@ -2495,11 +2500,12 @@ def test_preprocessor_handles_cancel_epoch():
     assert "Before cancel" in result.print_buffer[0][1]
 
 # %%
-test_preprocessor_handles_cancel_epoch()
+await test_preprocessor_handles_cancel_epoch()
 
 # %%
 #|export
-def test_deferred_actions_preserved_in_result():
+@pytest.mark.asyncio
+async def test_deferred_actions_preserved_in_result():
     """Test that deferred actions are preserved in execution result."""
     node_configs = {
         "ActionNode": NodeExecutionConfig()
@@ -2517,7 +2523,7 @@ def test_deferred_actions_preserved_in_result():
 
     wrapped = preprocessor(action_func)
 
-    result = wrapped(
+    result = await wrapped(
         epoch_id="action_test",
         node_name="ActionNode",
         packets={},
@@ -2574,7 +2580,8 @@ test_ctx_vars_empty()
 
 # %%
 #|export
-def test_ctx_vars_merging():
+@pytest.mark.asyncio
+async def test_ctx_vars_merging():
     """Test that node-level vars override net-level vars via preprocessor."""
     node_configs = {
         "MergeNode": NodeExecutionConfig(
@@ -2604,7 +2611,7 @@ def test_ctx_vars_merging():
 
     wrapped = preprocessor(test_func)
 
-    result = wrapped(
+    result = await wrapped(
         epoch_id="merge_test",
         node_name="MergeNode",
         packets={},
@@ -2621,11 +2628,12 @@ def test_ctx_vars_merging():
     assert v["net_only"] is True
 
 # %%
-test_ctx_vars_merging()
+await test_ctx_vars_merging()
 
 # %%
 #|export
-def test_ctx_vars_merging_with_inherit():
+@pytest.mark.asyncio
+async def test_ctx_vars_merging_with_inherit():
     """Test inherit=True vars use global type/options in preprocessor merge."""
     node_configs = {
         "InheritNode": NodeExecutionConfig(
@@ -2657,7 +2665,7 @@ def test_ctx_vars_merging_with_inherit():
 
     wrapped = preprocessor(test_func)
 
-    result = wrapped(
+    result = await wrapped(
         epoch_id="inherit_test",
         node_name="InheritNode",
         packets={},
@@ -2676,7 +2684,7 @@ def test_ctx_vars_merging_with_inherit():
     assert v["global_only"] is True
 
 # %%
-test_ctx_vars_merging_with_inherit()
+await test_ctx_vars_merging_with_inherit()
 
 # %%
 #|export
@@ -5743,6 +5751,346 @@ async def test_execute_node_outside_net_async_func():
     result = await net.execute_node("AsyncNode", inputs={"in": [7]}, outside_net=True)
     assert isinstance(result, dict)
     assert result["out"] == [21]
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_async_exec_func_on_thread_pool():
+    """Test that an async exec_node_func works on a thread pool worker."""
+    async def async_doubler(ctx, packets):
+        await asyncio.sleep(0)  # Ensure we go async
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                value = ctx.consume_packet(pid)
+                out_id = ctx.create_packet(value * 2)
+                ctx.load_output_port("out", out_id)
+        ctx.send_output_salvo("send")
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="AsyncDoubler",
+                in_ports={"in": PortConfig()},
+                out_ports={"out": PortConfig()},
+                in_salvo_conditions={
+                    "default": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"in": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                out_salvo_conditions={
+                    "send": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"out": PacketCountAllConfig()},
+                        term=SalvoConditionTermTrueConfig(),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="AsyncDoubler",
+                    pools=["thread"],
+                    exec_node_func=async_doubler,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"thread": PoolConfig(spec=ThreadPoolConfig(num_workers=1))},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        net.inject_data("AsyncDoubler", "in", [5])
+        await net.run_until_blocked()
+        outputs = net.flush_all_output_queues()
+        values = []
+        for queue_vals in outputs.values():
+            values.extend(queue_vals)
+        assert 10 in values
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_async_exec_func_on_main_pool():
+    """Test that an async exec_node_func works on the main pool."""
+    async def async_tripler(ctx, packets):
+        await asyncio.sleep(0)
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                value = ctx.consume_packet(pid)
+                out_id = ctx.create_packet(value * 3)
+                ctx.load_output_port("out", out_id)
+        ctx.send_output_salvo("send")
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="AsyncTripler",
+                in_ports={"in": PortConfig()},
+                out_ports={"out": PortConfig()},
+                in_salvo_conditions={
+                    "default": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"in": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                out_salvo_conditions={
+                    "send": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"out": PacketCountAllConfig()},
+                        term=SalvoConditionTermTrueConfig(),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="AsyncTripler",
+                    pools=["main"],
+                    exec_node_func=async_tripler,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        net.inject_data("AsyncTripler", "in", [4])
+        await net.run_until_blocked()
+        outputs = net.flush_all_output_queues()
+        values = []
+        for queue_vals in outputs.values():
+            values.extend(queue_vals)
+        assert 12 in values
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_async_subprocess_on_thread_pool():
+    """Test that asyncio.create_subprocess_exec works on thread pool (issue #32)."""
+    import sys as _sys
+
+    async def subprocess_node(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+        proc = await asyncio.create_subprocess_exec(
+            _sys.executable, "-c", "print('hello from subprocess')",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await proc.communicate()
+        out_id = ctx.create_packet(stdout.decode().strip())
+        ctx.load_output_port("out", out_id)
+        ctx.send_output_salvo("send")
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="SubprocessNode",
+                in_ports={"trigger": PortConfig()},
+                out_ports={"out": PortConfig()},
+                in_salvo_conditions={
+                    "default": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"trigger": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="trigger",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                out_salvo_conditions={
+                    "send": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"out": PacketCountAllConfig()},
+                        term=SalvoConditionTermTrueConfig(),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="SubprocessNode",
+                    pools=["thread"],
+                    exec_node_func=subprocess_node,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"thread": PoolConfig(spec=ThreadPoolConfig(num_workers=1))},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        net.inject_data("SubprocessNode", "trigger", ["go"])
+        await net.run_until_blocked()
+        outputs = net.flush_all_output_queues()
+        values = []
+        for queue_vals in outputs.values():
+            values.extend(queue_vals)
+        assert "hello from subprocess" in values
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_async_from_function_factory_on_thread_pool():
+    """Test async function via from_function factory on thread pool."""
+    async def async_double(x: int) -> int:
+        await asyncio.sleep(0)
+        return x * 2
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=ThreadPoolConfig(num_workers=1))},
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig.from_factory(
+                    factory="netrun.node_factories.from_function",
+                    args={"func": async_double},
+                ),
+            ],
+            edges=[],
+        ),
+    )
+
+    async with Net(config) as net:
+        net.inject_data("async_double", "x", [5])
+        await net.run_until_blocked()
+        outputs = net.flush_all_output_queues()
+        values = []
+        for queue_vals in outputs.values():
+            values.extend(queue_vals)
+        assert 10 in values
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_async_error_on_thread_pool():
+    """Test async function error propagation on thread pool."""
+    async def async_failing(ctx, packets):
+        for pkt_ids in packets.values():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+        await asyncio.sleep(0)
+        raise ValueError("async error")
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="AsyncFailing",
+                in_ports={"in": PortConfig()},
+                in_salvo_conditions={
+                    "default": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"in": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="AsyncFailing",
+                    pools=["thread"],
+                    exec_node_func=async_failing,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"thread": PoolConfig(spec=ThreadPoolConfig(num_workers=1))},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        net.inject_data("AsyncFailing", "in", [1])
+        with pytest.raises(EpochError) as exc_info:
+            await net.run_until_blocked()
+        assert isinstance(exc_info.value.__cause__, ValueError)
+        assert "async error" in str(exc_info.value.__cause__)
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_async_retry_on_thread_pool():
+    """Test async function retries on thread pool."""
+    call_count = 0
+
+    async def async_retry_func(ctx, packets):
+        nonlocal call_count
+        for pkt_ids in packets.values():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+        call_count += 1
+        await asyncio.sleep(0)
+        if ctx.retry_count < 2:
+            raise ValueError(f"fail attempt {call_count}")
+        out_id = ctx.create_packet(f"success on attempt {call_count}")
+        ctx.load_output_port("out", out_id)
+        ctx.send_output_salvo("send")
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="AsyncRetry",
+                in_ports={"in": PortConfig()},
+                out_ports={"out": PortConfig()},
+                in_salvo_conditions={
+                    "default": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"in": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                out_salvo_conditions={
+                    "send": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"out": PacketCountAllConfig()},
+                        term=SalvoConditionTermTrueConfig(),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="AsyncRetry",
+                    pools=["thread"],
+                    exec_node_func=async_retry_func,
+                    retries=3,
+                    retry_wait=0.0,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+
+    config = NetConfig(
+        pools={"thread": PoolConfig(spec=ThreadPoolConfig(num_workers=1))},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        net.inject_data("AsyncRetry", "in", [1])
+        await net.run_until_blocked()
+        outputs = net.flush_all_output_queues()
+        values = []
+        for queue_vals in outputs.values():
+            values.extend(queue_vals)
+        assert any("success" in str(v) for v in values)
+        assert call_count == 3  # 2 failures + 1 success
 
 # %%
 #|export

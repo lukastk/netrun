@@ -127,55 +127,60 @@ def _worker_func(
     """
 
     event_loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(event_loop)
     registered_functions: dict[str, Callable[..., Awaitable] | Callable[..., None]] = {}
 
-    while True:
-        key, data = channel.recv()
-        # RUN
-        if key == ExecutionManagerProtocolKeys.RUN.value:
-            msg_id, func_import_path_or_key, run_id, send_channel, args, kwargs = data
-            if func_import_path_or_key in registered_functions:
-                func = registered_functions[func_import_path_or_key]
-            else:
-                module_path, func_name = func_import_path_or_key.rsplit(".", 1)
-                module = importlib.import_module(module_path)
-                func = getattr(module, func_name)
-
-            if func_preprocessor is not None:
-                func = func_preprocessor(func)
-
-            timestamp_utc_started = get_timestamp_utc()
-            channel.send(ExecutionManagerProtocolKeys.UP_RUN_STARTED.value, (msg_id, timestamp_utc_started))
-            res = _func_runner(
-                channel=channel,
-                func=func,
-                send_channel=send_channel,
-                args=args,
-                kwargs=kwargs,
-                event_loop=event_loop,
-            )
-
-            # Call done callback if provided
-            if func_done_callback is not None:
-                if send_channel:
-                    func_done_callback(channel, *args, **kwargs, result=res)
+    try:
+        while True:
+            key, data = channel.recv()
+            # RUN
+            if key == ExecutionManagerProtocolKeys.RUN.value:
+                msg_id, func_import_path_or_key, run_id, send_channel, args, kwargs = data
+                if func_import_path_or_key in registered_functions:
+                    func = registered_functions[func_import_path_or_key]
                 else:
-                    func_done_callback(*args, **kwargs, result=res)
+                    module_path, func_name = func_import_path_or_key.rsplit(".", 1)
+                    module = importlib.import_module(module_path)
+                    func = getattr(module, func_name)
 
-            timestamp_utc_completed = get_timestamp_utc()
-            if is_in_main_process:
-                converted_to_str, _res = False, res
+                if func_preprocessor is not None:
+                    func = func_preprocessor(func)
+
+                timestamp_utc_started = get_timestamp_utc()
+                channel.send(ExecutionManagerProtocolKeys.UP_RUN_STARTED.value, (msg_id, timestamp_utc_started))
+                res = _func_runner(
+                    channel=channel,
+                    func=func,
+                    send_channel=send_channel,
+                    args=args,
+                    kwargs=kwargs,
+                    event_loop=event_loop,
+                )
+
+                # Call done callback if provided
+                if func_done_callback is not None:
+                    if send_channel:
+                        func_done_callback(channel, *args, **kwargs, result=res)
+                    else:
+                        func_done_callback(*args, **kwargs, result=res)
+
+                timestamp_utc_completed = get_timestamp_utc()
+                if is_in_main_process:
+                    converted_to_str, _res = False, res
+                else:
+                    converted_to_str, _res = _convert_to_str_if_not_serializable(res)
+
+                channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res))
+            # SEND_FUNCTION
+            elif key == ExecutionManagerProtocolKeys.SEND_FUNCTION.value:
+                msg_id, func_key, func = data
+                registered_functions[func_key] = func
+                channel.send(ExecutionManagerProtocolKeys.UP_SEND_FUNCTION_RESPONSE.value, (msg_id,))
             else:
-                converted_to_str, _res = _convert_to_str_if_not_serializable(res)
-
-            channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res))
-        # SEND_FUNCTION
-        elif key == ExecutionManagerProtocolKeys.SEND_FUNCTION.value:
-            msg_id, func_key, func = data
-            registered_functions[func_key] = func
-            channel.send(ExecutionManagerProtocolKeys.UP_SEND_FUNCTION_RESPONSE.value, (msg_id,))
-        else:
-            raise ValueError(f"Unknown execution manager protocol key: '{key}'.")
+                raise ValueError(f"Unknown execution manager protocol key: '{key}'.")
+    finally:
+        event_loop.close()
+        asyncio.set_event_loop(None)
 
 def _thread_worker_func(channel, worker_id, func_preprocessor: Callable | None = None, func_done_callback: Callable | None = None):
     return _worker_func(is_in_main_process=True, channel=channel, worker_id=worker_id, func_preprocessor=func_preprocessor, func_done_callback=func_done_callback)

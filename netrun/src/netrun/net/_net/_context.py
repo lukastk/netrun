@@ -1170,7 +1170,7 @@ class NetFuncPreprocessor:
         """
         preprocessor_self = self  # Capture for inner function
 
-        def wrapped(
+        async def wrapped(
             epoch_id: str,
             node_name: str,
             packets: dict[str, list[str]],
@@ -1247,7 +1247,10 @@ class NetFuncPreprocessor:
             try:
                 # Validate input packet types before executing the node function
                 ctx._validate_input_packets(packets)
-                func_result = actual_func(ctx, packets)
+                if asyncio.iscoroutinefunction(actual_func):
+                    func_result = await actual_func(ctx, packets)
+                else:
+                    func_result = actual_func(ctx, packets)
             except EpochCancelled:
                 # Expected when ctx.cancel_epoch() is called
                 pass
