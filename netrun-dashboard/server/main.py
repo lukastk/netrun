@@ -25,7 +25,7 @@ BUILD_DIR = PACKAGE_DIR / "build"
 
 def _ensure_static() -> None:
     """Build the frontend and copy to server/static/ if missing."""
-    if STATIC_DIR.is_dir():
+    if (STATIC_DIR / "index.html").is_file():
         return
 
     if not (PACKAGE_DIR / "package.json").is_file():
