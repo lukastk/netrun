@@ -1,0 +1,73 @@
+{
+  "extra": {
+    "description": "Demo pipeline for netrun-utils (observe + dev modules)"
+  },
+  "node_vars": {
+    "text_source": {
+      "value": "greeting",
+      "type": "str",
+      "options": ["greeting", "lorem", "default"]
+    },
+    "transform_mode": {
+      "value": "upper",
+      "type": "str",
+      "options": ["upper", "reverse", "title"]
+    }
+  },
+  "output_queues": {
+    "summaries": {
+      "ports": [["summarize", "summary"]]
+    },
+    "stats": {
+      "ports": [["summarize", "stats"]]
+    }
+  },
+  "retain_epoch_logs": true,
+  "graph": {
+    "nodes": [
+      {
+        "name": "fetch_text",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {
+          "func": "nodes.fetch_text.main"
+        },
+        "execution_config": {
+          "run_on_startup": true
+        }
+      },
+      {
+        "name": "transform",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {
+          "func": "nodes.transform.main"
+        },
+        "execution_config": {
+          "node_vars": {
+            "transform_mode": { "inherit": true }
+          }
+        }
+      },
+      {
+        "name": "summarize",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {
+          "func": "nodes.summarize.main"
+        }
+      }
+    ],
+    "edges": [
+      {
+        "source_node": "fetch_text",
+        "source_port": "out",
+        "target_node": "transform",
+        "target_port": "text"
+      },
+      {
+        "source_node": "transform",
+        "source_port": "out",
+        "target_node": "summarize",
+        "target_port": "text"
+      }
+    ]
+  }
+}

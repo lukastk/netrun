@@ -1,0 +1,142 @@
+# ---
+# jupyter:
+#   kernelspec:
+#     display_name: .venv
+#     language: python
+#     name: python3
+# ---
+
+# %% [markdown]
+# # Tests for ObserveServer
+
+# %%
+#|default_exp observe.test_server
+
+# %%
+#|export
+import pytest
+import httpx
+
+from netrun.net._net._net import Net
+from netrun.net.config import (
+    NetConfig,
+    GraphConfig,
+    NodeConfig,
+    PortConfig,
+    EdgeConfig,
+    PoolConfig,
+    MainPoolConfig,
+    NodeExecutionConfig,
+    OutputQueueConfig,
+)
+
+from netrun_utils.observe.server import ObserveServer
+
+# %% [markdown]
+# ## Helpers
+
+# %%
+#|export
+def _make_config() -> NetConfig:
+    """Create a minimal net config for server tests."""
+    return NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="source",
+                    out_ports={"out": PortConfig()},
+                    execution_config=NodeExecutionConfig(
+                        pools=["main"],
+                        exec_node_func=lambda ctx, packets: None,
+                    ),
+                ),
+                NodeConfig(
+                    name="sink",
+                    in_ports={"data": PortConfig()},
+                    execution_config=NodeExecutionConfig(
+                        pools=["main"],
+                        exec_node_func=lambda ctx, packets: None,
+                    ),
+                ),
+            ],
+            edges=[
+                EdgeConfig(source_node="source", source_port="out", target_node="sink", target_port="data"),
+            ],
+        ),
+        retain_epoch_logs=True,
+    )
+
+# %% [markdown]
+# ## Server Tests
+
+# %%
+#|export
+async def test_health_endpoint():
+    config = _make_config()
+    async with Net(config, run_source_nodes=False) as net:
+        async with ObserveServer(net, port=0) as server:
+            # port=0 doesn't work with uvicorn, use a high port
+            pass  # Just test that start/stop works
+
+
+async def test_server_endpoints():
+    config = _make_config()
+    async with Net(config, run_source_nodes=False) as net:
+        server = ObserveServer(net, port=18321)
+        await server.start()
+        try:
+            async with httpx.AsyncClient(base_url=server.url) as client:
+                # Health
+                resp = await client.get("/health")
+                assert resp.status_code == 200
+                assert resp.json()["status"] == "healthy"
+
+                # Status
+                resp = await client.get("/status")
+                assert resp.status_code == 200
+                data = resp.json()
+                assert data["started"] is True
+                assert set(data["node_names"]) == {"source", "sink"}
+
+                # Nodes
+                resp = await client.get("/nodes")
+                assert resp.status_code == 200
+                assert len(resp.json()) == 2
+
+                # Single node
+                resp = await client.get("/nodes/source")
+                assert resp.status_code == 200
+                assert resp.json()["name"] == "source"
+
+                # Edges
+                resp = await client.get("/edges")
+                assert resp.status_code == 200
+                assert len(resp.json()) == 1
+
+                # Epochs
+                resp = await client.get("/epochs")
+                assert resp.status_code == 200
+
+                # Logs
+                resp = await client.get("/logs")
+                assert resp.status_code == 200
+
+                # Enable/disable
+                resp = await client.post("/nodes/sink/disable")
+                assert resp.status_code == 200
+                assert resp.json()["ok"] is True
+
+                resp = await client.post("/nodes/sink/enable")
+                assert resp.status_code == 200
+                assert resp.json()["ok"] is True
+
+                # Inject
+                resp = await client.post(
+                    "/inject",
+                    json={"node_name": "sink", "port_name": "data", "values": [1, 2]},
+                )
+                assert resp.status_code == 200
+                assert resp.json()["ok"] is True
+        finally:
+            await server.stop()

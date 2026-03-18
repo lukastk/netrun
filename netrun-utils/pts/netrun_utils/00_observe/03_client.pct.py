@@ -1,0 +1,145 @@
+# ---
+# jupyter:
+#   kernelspec:
+#     display_name: .venv
+#     language: python
+#     name: python3
+# ---
+
+# %% [markdown]
+# # ObserveClient
+#
+# Async HTTP client that mirrors the `NetObserver` API for remote access.
+
+# %%
+#|default_exp observe.client
+
+# %%
+#|export
+from typing import Any
+
+import httpx
+
+from netrun_utils.observe.models import (
+    NetStatus,
+    NodeStatus,
+    EdgeStatus,
+    EpochInfo,
+    LogEntry,
+    ControlResponse,
+)
+
+# %%
+#|export
+class ObserveClient:
+    """Async HTTP client for the ObserveServer.
+
+    Mirrors the NetObserver API, making requests to the REST endpoints.
+
+    Usage::
+
+        async with ObserveClient("http://localhost:8000") as client:
+            status = await client.get_status()
+            nodes = await client.get_nodes()
+            await client.disable_node("my_node")
+    """
+
+    def __init__(self, base_url: str = "http://127.0.0.1:8000"):
+        self._base_url = base_url.rstrip("/")
+        self._client: httpx.AsyncClient | None = None
+
+    def _ensure_client(self) -> httpx.AsyncClient:
+        if self._client is None:
+            self._client = httpx.AsyncClient(base_url=self._base_url)
+        return self._client
+
+    # --- Query methods ---
+
+    async def get_status(self) -> NetStatus:
+        """Get overall net status."""
+        resp = await self._ensure_client().get("/status")
+        resp.raise_for_status()
+        return NetStatus.model_validate(resp.json())
+
+    async def get_nodes(self) -> list[NodeStatus]:
+        """Get status of all nodes."""
+        resp = await self._ensure_client().get("/nodes")
+        resp.raise_for_status()
+        return [NodeStatus.model_validate(n) for n in resp.json()]
+
+    async def get_node(self, name: str) -> NodeStatus:
+        """Get status of a single node."""
+        resp = await self._ensure_client().get(f"/nodes/{name}")
+        resp.raise_for_status()
+        return NodeStatus.model_validate(resp.json())
+
+    async def get_edges(self) -> list[EdgeStatus]:
+        """Get status of all edges."""
+        resp = await self._ensure_client().get("/edges")
+        resp.raise_for_status()
+        return [EdgeStatus.model_validate(e) for e in resp.json()]
+
+    async def get_epoch_logs(self) -> list[EpochInfo]:
+        """Get all epoch information."""
+        resp = await self._ensure_client().get("/epochs")
+        resp.raise_for_status()
+        return [EpochInfo.model_validate(e) for e in resp.json()]
+
+    async def get_all_logs(self) -> list[LogEntry]:
+        """Get all logs in chronological order."""
+        resp = await self._ensure_client().get("/logs")
+        resp.raise_for_status()
+        return [LogEntry.model_validate(e) for e in resp.json()]
+
+    async def get_node_logs(self, node_name: str) -> list[LogEntry]:
+        """Get logs for a specific node."""
+        resp = await self._ensure_client().get(f"/nodes/{node_name}/logs")
+        resp.raise_for_status()
+        return [LogEntry.model_validate(e) for e in resp.json()]
+
+    # --- Control methods ---
+
+    async def enable_node(self, name: str) -> ControlResponse:
+        """Enable a node."""
+        resp = await self._ensure_client().post(f"/nodes/{name}/enable")
+        resp.raise_for_status()
+        return ControlResponse.model_validate(resp.json())
+
+    async def disable_node(self, name: str) -> ControlResponse:
+        """Disable a node."""
+        resp = await self._ensure_client().post(f"/nodes/{name}/disable")
+        resp.raise_for_status()
+        return ControlResponse.model_validate(resp.json())
+
+    async def send_control(self, node_name: str, control_type: str, value: Any = None) -> ControlResponse:
+        """Send a control signal to a node."""
+        resp = await self._ensure_client().post(
+            "/control",
+            json={"node_name": node_name, "control_type": control_type, "value": value},
+        )
+        resp.raise_for_status()
+        return ControlResponse.model_validate(resp.json())
+
+    async def inject_data(self, node_name: str, port_name: str, values: list[Any]) -> ControlResponse:
+        """Inject data into a node's input port."""
+        resp = await self._ensure_client().post(
+            "/inject",
+            json={"node_name": node_name, "port_name": port_name, "values": values},
+        )
+        resp.raise_for_status()
+        return ControlResponse.model_validate(resp.json())
+
+    # --- Lifecycle ---
+
+    async def close(self) -> None:
+        """Close the HTTP client."""
+        if self._client is not None:
+            await self._client.aclose()
+            self._client = None
+
+    async def __aenter__(self) -> "ObserveClient":
+        self._ensure_client()
+        return self
+
+    async def __aexit__(self, *exc) -> None:
+        await self.close()

@@ -1,0 +1,278 @@
+# ---
+# jupyter:
+#   kernelspec:
+#     display_name: .venv
+#     language: python
+#     name: python3
+# ---
+
+# %% [markdown]
+# # Dev Helpers
+#
+# Internal helper functions for the dev module.
+
+# %%
+#|default_exp dev._helpers
+
+# %%
+#|export
+import asyncio
+import importlib
+from pathlib import Path
+from typing import Any
+from collections.abc import Callable
+
+from netrun.net.config import NetConfig, NodeVariable
+
+# %% [markdown]
+# ## Config Loading
+
+# %%
+#|export
+def _load_config(
+    config_path: str | Path,
+    *,
+    global_node_vars: dict | None = None,
+    node_vars: dict | None = None,
+) -> NetConfig:
+    """Load a NetConfig from file with optional variable overrides."""
+    kwargs: dict[str, Any] = {}
+    if global_node_vars is not None:
+        kwargs["global_node_vars"] = global_node_vars
+    if node_vars is not None:
+        kwargs["node_vars"] = node_vars
+    return NetConfig.from_file(str(config_path), **kwargs)
+
+# %% [markdown]
+# ## Node Name Resolution
+
+# %%
+#|export
+def _resolve_node_name(config: NetConfig, bare_name: str) -> str:
+    """Resolve a bare node name to a full (possibly subgraph-prefixed) name.
+
+    Tries exact match first, then searches for nodes ending with the bare name
+    after a '.' separator (subgraph prefix convention).
+
+    Raises ValueError if the name is ambiguous or not found.
+    """
+    all_names = [n.name for n in config.graph.nodes]
+
+    # Exact match
+    if bare_name in all_names:
+        return bare_name
+
+    # Suffix match (subgraph prefixes)
+    suffix = f".{bare_name}"
+    matches = [name for name in all_names if name.endswith(suffix)]
+
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        raise ValueError(
+            f"Ambiguous node name '{bare_name}'. Matches: {matches}"
+        )
+
+    raise ValueError(
+        f"Node '{bare_name}' not found. Available nodes: {all_names}"
+    )
+
+# %% [markdown]
+# ## Node Function Resolution
+
+# %%
+#|export
+def _get_node_func(config: NetConfig, node_name: str) -> tuple[Callable, set[str]]:
+    """Import the node's user function and detect special parameters.
+
+    Currently only supports the `netrun.node_factories.from_function` factory.
+
+    Returns (func, special_params) where special_params is a subset of
+    {'ctx', 'print', 'log'} that the function's signature includes.
+    """
+    from netrun.node_factories.from_function import _parse_function_signature
+
+    # Find the node config
+    node_cfg = None
+    for n in config.graph.nodes:
+        if n.name == node_name:
+            node_cfg = n
+            break
+    if node_cfg is None:
+        raise ValueError(f"Node '{node_name}' not found in config")
+
+    factory = node_cfg.factory
+    if factory is None:
+        raise ValueError(f"Node '{node_name}' has no factory")
+
+    factory_str = factory if isinstance(factory, str) else getattr(factory, "__name__", str(factory))
+
+    # Only support the function factory
+    if "from_function" not in factory_str:
+        raise NotImplementedError(
+            f"dev module only supports 'netrun.node_factories.from_function' factory, "
+            f"got '{factory_str}' for node '{node_name}'"
+        )
+
+    func_path = node_cfg.factory_args.get("func")
+    if func_path is None:
+        raise ValueError(f"Node '{node_name}' factory_args missing 'func'")
+
+    # Import the function
+    if callable(func_path):
+        func = func_path
+    else:
+        func = _import_func(func_path, project_root=config.project_root_path)
+
+    # Parse signature to detect special params
+    parsed = _parse_function_signature(func)
+    return func, parsed.special_params
+
+
+def _import_func(func_path: str, project_root: Path | None = None) -> Callable:
+    """Import a function from a dotted import path."""
+    module_path, _, func_name = func_path.rpartition(".")
+    if not module_path:
+        raise ValueError(f"Invalid import path: {func_path}")
+    module = importlib.import_module(module_path)
+    return getattr(module, func_name)
+
+# %% [markdown]
+# ## Node Variable Merging
+
+# %%
+#|export
+def _get_merged_node_vars(
+    config: NetConfig, node_name: str,
+) -> dict[str, tuple[NodeVariable, str]]:
+    """Get merged node variables with source annotations.
+
+    Merges net-level and node-level variables following the inheritance model.
+
+    Returns dict of name -> (NodeVariable, source) where source is one of:
+    "global", "inherited", "inherited (overridden)", or "node-level".
+    """
+    net_vars = dict(config.node_vars) if config.node_vars else {}
+    result: dict[str, tuple[NodeVariable, str]] = {}
+
+    # Start with net-level vars
+    for name, var in net_vars.items():
+        result[name] = (var, "global")
+
+    # Find node's execution config
+    node_cfg = None
+    for n in config.graph.nodes:
+        if n.name == node_name:
+            node_cfg = n
+            break
+
+    if node_cfg is None or node_cfg.execution_config is None:
+        return result
+
+    node_vars = node_cfg.execution_config.node_vars
+    if not node_vars:
+        return result
+
+    # Apply node-level overrides
+    for name, var in node_vars.items():
+        if var.inherit:
+            if name in net_vars:
+                global_var = net_vars[name]
+                if var.value is not None:
+                    # Inherit type/options from global but override value
+                    merged = NodeVariable(
+                        value=var.value,
+                        type=global_var.type,
+                        options=global_var.options,
+                        optional=global_var.optional,
+                    )
+                    result[name] = (merged, "inherited (overridden)")
+                else:
+                    result[name] = (global_var, "inherited")
+            else:
+                raise ValueError(
+                    f"Node '{node_name}' variable '{name}' has inherit=True "
+                    f"but no net-level variable with that name exists"
+                )
+        else:
+            result[name] = (var, "node-level")
+
+    return result
+
+# %% [markdown]
+# ## Input Salvo Retrieval
+
+# %%
+#|export
+async def _get_input_salvo(
+    net, node_name: str, *, verbose: bool = True,
+) -> dict[str, Any]:
+    """Get input data for a node from cache or by running upstream.
+
+    Returns dict mapping parameter names to values. Single-packet ports
+    are unwrapped to scalar values.
+    """
+    # Check if the node has input ports
+    node_info = net.nodes[node_name]
+    if not node_info.in_port_names:
+        if verbose:
+            print(f"Node '{node_name}' is a source node (no input ports)")
+        return {}
+
+    # Try cached input salvos first (only if caching is enabled for this node)
+    cached = []
+    if node_info.is_cache_enabled:
+        cached = net.get_cached_input_salvos(node_name)
+    if cached:
+        if verbose:
+            print(f"Using cached input salvo (entry 0 of {len(cached)})")
+        return _flatten_salvo(cached[0])
+
+    # Fall back to running upstream
+    if verbose:
+        print(f"No cached data. Running upstream to get inputs for '{node_name}'...")
+        remove_start = net.on_epoch_start(
+            lambda n, eid: print(f"  [epoch start] {n}")
+        )
+        remove_end = net.on_epoch_end(
+            lambda n, eid, log: print(f"  [epoch end]   {n} ({log.outcome}, {log.duration_ms:.0f}ms)" if log.duration_ms else f"  [epoch end]   {n} ({log.outcome})")
+        )
+
+    try:
+        salvos = await net.run_to_targets(node_name)
+    finally:
+        if verbose:
+            remove_start()
+            remove_end()
+
+    if not salvos:
+        raise RuntimeError(f"No input salvos triggered for '{node_name}'")
+
+    return _flatten_salvo(salvos[0].packets)
+
+
+def _flatten_salvo(salvo: dict[str, list]) -> dict[str, Any]:
+    """Flatten a salvo dict: unwrap single-element lists to scalars."""
+    result = {}
+    for port_name, values in salvo.items():
+        result[port_name] = values[0] if len(values) == 1 else values
+    return result
+
+# %% [markdown]
+# ## Async Runner
+
+# %%
+#|export
+def _run_async(coro):
+    """Run an async coroutine, handling Jupyter's running event loop."""
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        # No running event loop — use asyncio.run
+        return asyncio.run(coro)
+
+    # Inside a running event loop (Jupyter, etc.) — use nest_asyncio
+    import nest_asyncio
+    nest_asyncio.apply()
+    loop = asyncio.get_event_loop()
+    return loop.run_until_complete(coro)

@@ -1,0 +1,31 @@
+export_pipeline = """
+nbs -> pts
+pts -> lib
+
+nbs_tests -> pts_tests
+pts_tests -> lib_tests
+"""
+
+[cl.lib]
+path="src/netrun_utils"
+format="module"
+
+[cl.nbs]
+path="nbs/netrun_utils"
+format="ipynb"
+
+[cl.pts]
+path="pts/netrun_utils"
+format="percent"
+
+[cl.lib_tests]
+path="src/tests"
+format="module"
+
+[cl.nbs_tests]
+path="nbs/tests"
+format="ipynb"
+
+[cl.pts_tests]
+path="pts/tests"
+format="percent"

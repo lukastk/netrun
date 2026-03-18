@@ -1,0 +1,16 @@
+export_pipeline = """
+nbs -> pts
+pts -> lib
+"""
+
+[cl.lib]
+path="src/nodes"
+format="module"
+
+[cl.nbs]
+path="nbs/nodes"
+format="ipynb"
+
+[cl.pts]
+path="pts/nodes"
+format="percent"
