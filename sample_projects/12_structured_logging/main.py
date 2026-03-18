@@ -2,7 +2,7 @@
 
 This example showcases:
 1. ctx.log() — structured key=value logging inside node functions
-2. In-memory retention — accessing EpochLogs and SimActionLogs after execution
+2. In-memory retention — accessing EpochLogs and NetActionLogs after execution
 3. Epoch log stdout echo — real-time epoch summaries printed to terminal
 4. JSONL backend — persisting logs to JSONL files
 5. SQLite backend — persisting logs to a SQLite database
@@ -15,7 +15,7 @@ import asyncio
 from pathlib import Path
 
 from netrun.core import Net, NetConfig
-from netrun.logging._backends import JsonlEpochLogger, JsonlSimActionLogger, SqliteLogger
+from netrun.logging._backends import JsonlEpochLogger, JsonlNetActionLogger, SqliteLogger
 
 
 async def run_pipeline(net: Net, url: str):
@@ -79,36 +79,36 @@ async def main():
                   f"log_entries={len(el.node_log_entries)}")
 
     # ==================================================================
-    # 3. IN-MEMORY RETENTION — SIM ACTION LOGS
+    # 3. IN-MEMORY RETENTION — NET ACTION LOGS
     # ==================================================================
     print()
     print("=" * 60)
-    print("3. IN-MEMORY SIM ACTION LOGS")
+    print("3. IN-MEMORY NET ACTION LOGS")
     print("=" * 60)
     print()
-    print("With retain_sim_action_logs=True, every netsim action is tracked.")
+    print("With retain_net_action_logs=True, every netsim action is tracked.")
     print()
 
     config = NetConfig.from_file(config_path)
-    config.retain_sim_action_logs = True
+    config.retain_net_action_logs = True
     config.print_echo_stdout = False
 
     async with Net(config) as net:
         await run_pipeline(net, "https://example.com/data")
 
-        print(f"Total sim actions recorded: {len(net.sim_action_log)}")
+        print(f"Total net actions recorded: {len(net.net_action_log)}")
         print()
 
         # Group by action_kind
         from collections import Counter
-        kinds = Counter(a.action_kind for a in net.sim_action_log)
+        kinds = Counter(a.action_kind for a in net.net_action_log)
         print("Action kinds:")
         for kind, count in kinds.most_common():
             print(f"  {kind}: {count}")
 
         # Show event counts per action
         print()
-        actions_with_events = [a for a in net.sim_action_log if a.events]
+        actions_with_events = [a for a in net.net_action_log if a.events]
         print(f"Actions that produced events: {len(actions_with_events)}")
         for a in actions_with_events[:5]:
             event_kinds = [e.kind for e in a.events]
@@ -151,24 +151,24 @@ async def main():
     print("5. JSONL BACKEND")
     print("=" * 60)
     print()
-    print("Persist epoch logs and sim actions to JSONL files.")
+    print("Persist epoch logs and net actions to JSONL files.")
     print()
 
     output_dir = Path(__file__).parent / "output"
     output_dir.mkdir(exist_ok=True)
 
     epoch_path = output_dir / "epochs.jsonl"
-    actions_path = output_dir / "sim_actions.jsonl"
+    actions_path = output_dir / "net_actions.jsonl"
 
     epoch_logger = JsonlEpochLogger(epoch_path)
-    action_logger = JsonlSimActionLogger(actions_path)
+    action_logger = JsonlNetActionLogger(actions_path)
 
     config = NetConfig.from_file(config_path)
     config.print_echo_stdout = False
 
     async with Net(config) as net:
         net.on_epoch_end(epoch_logger)
-        net.on_sim_actions(action_logger)
+        net.on_net_actions(action_logger)
 
         await run_pipeline(net, "https://example.com/alpha")
         await run_pipeline(net, "https://example.com/beta")
@@ -178,7 +178,7 @@ async def main():
 
     # Load back and inspect
     loaded_epochs = JsonlEpochLogger.load(epoch_path)
-    loaded_actions = JsonlSimActionLogger.load(actions_path)
+    loaded_actions = JsonlNetActionLogger.load(actions_path)
 
     print(f"Wrote {epoch_path.stat().st_size} bytes to {epoch_path.name}")
     print(f"Wrote {actions_path.stat().st_size} bytes to {actions_path.name}")
@@ -189,7 +189,7 @@ async def main():
               f"duration={el.duration_ms:.0f}ms  "
               f"fields={el.user_fields}")
     print()
-    print(f"Loaded {len(loaded_actions)} sim action logs back from JSONL")
+    print(f"Loaded {len(loaded_actions)} net action logs back from JSONL")
 
     # ==================================================================
     # 6. SQLITE BACKEND
@@ -210,14 +210,14 @@ async def main():
 
     async with Net(config) as net:
         net.on_epoch_end(logger.epoch_handler)
-        net.on_sim_actions(logger.sim_action_handler)
+        net.on_net_actions(logger.net_action_handler)
 
         await run_pipeline(net, "https://example.com/alpha")
         await run_pipeline(net, "https://example.com/beta")
 
     # Load back and inspect
     epoch_logs = logger.load_epoch_logs()
-    sim_actions = logger.load_sim_action_logs()
+    net_actions = logger.load_net_action_logs()
     logger.close()
 
     print(f"SQLite database: {db_path.name} ({db_path.stat().st_size} bytes)")
@@ -228,7 +228,7 @@ async def main():
               f"duration={el.duration_ms:.0f}ms  "
               f"fields={el.user_fields}")
     print()
-    print(f"Sim action logs table: {len(sim_actions)} rows")
+    print(f"Net action logs table: {len(net_actions)} rows")
 
     # Show how you could query the SQLite directly
     import sqlite3
@@ -250,7 +250,7 @@ async def main():
     print("7. run_step() RETURN VALUES")
     print("=" * 60)
     print()
-    print("run_step() and run_until_blocked() return sim_actions and epoch_logs")
+    print("run_step() and run_until_blocked() return net_actions and epoch_logs")
     print("directly, so you can process them inline without callbacks.")
     print()
 
@@ -260,13 +260,13 @@ async def main():
     async with Net(config) as net:
         net.inject_data("fetch_data", "url", ["https://example.com/inline"])
         while True:
-            made_progress, sim_actions, epoch_logs = await net.run_step()
+            made_progress, net_actions, epoch_logs = await net.run_step()
 
             if epoch_logs:
                 for el in epoch_logs:
                     print(f"  Epoch completed: [{el.node_name}] "
                           f"outcome={el.outcome}  "
-                          f"sim_actions={len(el.sim_actions)}")
+                          f"net_actions={len(el.net_actions)}")
 
             if not made_progress:
                 break
