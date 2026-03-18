@@ -67,9 +67,10 @@
 			const el = document.querySelector(`[data-id="${node.id}"]`);
 			if (!el) continue;
 
-			el.classList.remove('node-disabled', 'node-busy', 'node-idle');
+			el.classList.remove('node-disabled', 'node-busy', 'node-startable', 'node-idle');
 			if (!status.enabled) el.classList.add('node-disabled');
 			else if (status.is_busy) el.classList.add('node-busy');
+			else if (status.startable_epoch_ids.length > 0) el.classList.add('node-startable');
 			else el.classList.add('node-idle');
 		}
 
@@ -116,6 +117,12 @@
 
 	:global(.node-busy) {
 		outline: 2px solid var(--success-color, #22c55e);
+		outline-offset: 2px;
+		border-radius: 6px;
+	}
+
+	:global(.node-startable) {
+		outline: 2px solid var(--warning-color, #f59e0b);
 		outline-offset: 2px;
 		border-radius: 6px;
 	}

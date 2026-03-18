@@ -39,7 +39,6 @@ from netrun_utils.observe import ObserveServer
 async def main():
     config = NetConfig.from_file(Path('main.netrun.json'))
     async with Net(config, run_source_nodes=False) as net:
-        await asyncio.sleep(1)
         async with ObserveServer(net, port=8000, name='demo-pipeline') as server:
             print(f'ObserveServer running at {server.url}')
             print()
