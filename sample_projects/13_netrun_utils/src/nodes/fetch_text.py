@@ -7,7 +7,7 @@ def main(ctx, print) -> str:
     source = ctx.vars.get("text_source", "default")
     print(f"Fetching text from source: {source}")
     ctx.log("Fetching text", source=source)
-    time.sleep(0.05)  # Simulate I/O
+    time.sleep(2)  # Simulate I/O
     
     texts = {
         "greeting": "Hello world! This is a sample text for processing.",

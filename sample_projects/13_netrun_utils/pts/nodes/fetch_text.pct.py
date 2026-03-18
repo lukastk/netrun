@@ -52,7 +52,7 @@ ctx.log("Fetching text", source=source)
 
 # %%
 #|export
-time.sleep(0.05)  # Simulate I/O
+time.sleep(2)  # Simulate I/O
 
 texts = {
     "greeting": "Hello world! This is a sample text for processing.",

@@ -48,9 +48,12 @@ text  # Inspect the input we received from upstream
 
 # %%
 #|export
+import time
+
 mode = ctx.vars.get("transform_mode", "upper")
 print(f"Transforming with mode={mode}")
 ctx.log("Transforming", mode=mode, input_length=len(text))
+time.sleep(2)  # Simulate processing
 
 # %%
 #|export

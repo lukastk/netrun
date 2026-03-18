@@ -2,8 +2,11 @@
 
 def main(text: str, ctx, print) -> {"summary": str, "stats": str}:
     """Produce a summary and statistics for the text."""
+    import time
+    
     print(f"Summarizing text of length {len(text)}")
     ctx.log("Summarizing", input_length=len(text))
+    time.sleep(2)  # Simulate processing
     word_count = len(text.split())
     char_count = len(text)
     summary = f"[{word_count} words] {text[:60]}..."
