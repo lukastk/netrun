@@ -7154,3 +7154,505 @@ async def test_multiple_epoch_callbacks():
 
 # %%
 asyncio.get_event_loop().run_until_complete(test_multiple_epoch_callbacks())
+
+# %% [markdown]
+# ## Streaming Epoch Scheduling Tests
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_streaming_downstream_starts_before_slow_sibling():
+    """Verify streaming scheduling: downstream of a fast node starts before a slow sibling completes.
+
+    Network: [SlowNode, FastNode] -> FastNode -> Downstream
+
+    With streaming, Downstream should execute before SlowNode finishes.
+    """
+    timestamps: dict[str, float] = {}
+
+    def slow_func(ctx, packets):
+        for pid in packets.get("in", []):
+            ctx.consume_packet(pid)
+        timestamps["slow_start"] = time.monotonic()
+        time.sleep(0.5)
+        timestamps["slow_end"] = time.monotonic()
+        out_id = ctx.create_packet("slow_result")
+        ctx.load_output_port("out", out_id)
+        ctx.send_output_salvo("send")
+
+    def fast_func(ctx, packets):
+        for pid in packets.get("in", []):
+            ctx.consume_packet(pid)
+        timestamps["fast_start"] = time.monotonic()
+        time.sleep(0.01)
+        timestamps["fast_end"] = time.monotonic()
+        out_id = ctx.create_packet("fast_result")
+        ctx.load_output_port("out", out_id)
+        ctx.send_output_salvo("send")
+
+    def downstream_func(ctx, packets):
+        for pid in packets.get("in", []):
+            ctx.consume_packet(pid)
+        timestamps["downstream_start"] = time.monotonic()
+
+    out_salvo = {
+        "send": SalvoConditionConfig(
+            max_salvos=MaxSalvosFiniteConfig(max=1),
+            ports={"out": PacketCountAllConfig()},
+            term=SalvoConditionTermPortConfig(
+                port_name="out",
+                state=PortStateNonEmptyConfig(),
+            ),
+        ),
+    }
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=ThreadPoolConfig(num_workers=3))},
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="SlowNode",
+                    in_ports={"in": PortConfig()},
+                    out_ports={"out": PortConfig()},
+                    in_salvo_conditions={
+                        "trigger": SalvoConditionConfig(
+                            max_salvos=MaxSalvosFiniteConfig(max=1),
+                            ports={"in": PacketCountAllConfig()},
+                            term=SalvoConditionTermPortConfig(
+                                port_name="in",
+                                state=PortStateNonEmptyConfig(),
+                            ),
+                        ),
+                    },
+                    out_salvo_conditions=out_salvo,
+                    execution_config=NodeExecutionConfig(
+                        node_name="SlowNode",
+                        pools=["main"],
+                        exec_node_func=slow_func,
+                    ),
+                ),
+                NodeConfig(
+                    name="FastNode",
+                    in_ports={"in": PortConfig()},
+                    out_ports={"out": PortConfig()},
+                    in_salvo_conditions={
+                        "trigger": SalvoConditionConfig(
+                            max_salvos=MaxSalvosFiniteConfig(max=1),
+                            ports={"in": PacketCountAllConfig()},
+                            term=SalvoConditionTermPortConfig(
+                                port_name="in",
+                                state=PortStateNonEmptyConfig(),
+                            ),
+                        ),
+                    },
+                    out_salvo_conditions=out_salvo,
+                    execution_config=NodeExecutionConfig(
+                        node_name="FastNode",
+                        pools=["main"],
+                        exec_node_func=fast_func,
+                    ),
+                ),
+                NodeConfig(
+                    name="Downstream",
+                    in_ports={"in": PortConfig()},
+                    in_salvo_conditions={
+                        "trigger": SalvoConditionConfig(
+                            max_salvos=MaxSalvosFiniteConfig(max=1),
+                            ports={"in": PacketCountAllConfig()},
+                            term=SalvoConditionTermPortConfig(
+                                port_name="in",
+                                state=PortStateNonEmptyConfig(),
+                            ),
+                        ),
+                    },
+                    execution_config=NodeExecutionConfig(
+                        node_name="Downstream",
+                        pools=["main"],
+                        exec_node_func=downstream_func,
+                    ),
+                ),
+            ],
+            edges=[
+                EdgeConfig(source_node="FastNode", source_port="out", target_node="Downstream", target_port="in"),
+            ],
+        ),
+    )
+
+    async with Net(config) as net:
+        # Inject data directly into both sibling nodes
+        net.inject_data("SlowNode", "in", ["data"])
+        net.inject_data("FastNode", "in", ["data"])
+        await net.run_until_blocked()
+
+    # Downstream should start before SlowNode finishes
+    assert "downstream_start" in timestamps, "Downstream never executed"
+    assert "slow_end" in timestamps, "SlowNode never completed"
+    assert timestamps["downstream_start"] < timestamps["slow_end"], (
+        f"Downstream started at {timestamps['downstream_start']:.4f} but slow ended at {timestamps['slow_end']:.4f}. "
+        "Streaming scheduling should have allowed downstream to start before slow sibling completed."
+    )
+
+# %%
+asyncio.get_event_loop().run_until_complete(test_streaming_downstream_starts_before_slow_sibling())
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_streaming_error_propagates():
+    """Verify that when one epoch raises with propagate_exceptions=True, the error propagates."""
+    async def error_func(ctx, packets):
+        for pid in packets.get("in", []):
+            ctx.consume_packet(pid)
+        await asyncio.sleep(0.01)
+        raise ValueError("test error")
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="ErrorNode",
+                    in_ports={"in": PortConfig()},
+                    in_salvo_conditions={
+                        "trigger": SalvoConditionConfig(
+                            max_salvos=MaxSalvosFiniteConfig(max=1),
+                            ports={"in": PacketCountAllConfig()},
+                            term=SalvoConditionTermPortConfig(
+                                port_name="in",
+                                state=PortStateNonEmptyConfig(),
+                            ),
+                        ),
+                    },
+                    execution_config=NodeExecutionConfig(
+                        node_name="ErrorNode",
+                        pools=["main"],
+                        exec_node_func=error_func,
+                        propagate_exceptions=True,
+                    ),
+                ),
+            ],
+            edges=[],
+        ),
+    )
+
+    async with Net(config) as net:
+        net.inject_data("ErrorNode", "in", [1])
+        await net.run_step(auto_start_epochs=False)
+
+        with pytest.raises(EpochError, match="test error"):
+            await net.run_until_blocked()
+
+# %%
+asyncio.get_event_loop().run_until_complete(test_streaming_error_propagates())
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_streaming_max_parallel_epochs_across_rounds():
+    """Verify max_parallel_epochs is respected across streaming rounds."""
+    concurrency_log: list[int] = []
+    active_count = 0
+
+    async def tracked_func(ctx, packets):
+        nonlocal active_count
+        for pid in packets.get("in", []):
+            ctx.consume_packet(pid)
+        active_count += 1
+        concurrency_log.append(active_count)
+        await asyncio.sleep(0.05)
+        active_count -= 1
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="Worker",
+                    in_ports={"in": PortConfig()},
+                    in_salvo_conditions={
+                        "trigger": SalvoConditionConfig(
+                            max_salvos=MaxSalvosFiniteConfig(max=1),
+                            ports={"in": PacketCountNConfig(count=1)},
+                            term=SalvoConditionTermPortConfig(
+                                port_name="in",
+                                state=PortStateNonEmptyConfig(),
+                            ),
+                        ),
+                    },
+                    execution_config=NodeExecutionConfig(
+                        node_name="Worker",
+                        pools=["main"],
+                        exec_node_func=tracked_func,
+                        max_parallel_epochs=2,
+                    ),
+                ),
+            ],
+            edges=[],
+        ),
+    )
+
+    async with Net(config) as net:
+        net.inject_data("Worker", "in", [1, 2, 3, 4, 5])
+        # Create all startable epochs
+        for _ in range(5):
+            await net.run_step(auto_start_epochs=False)
+
+        await net.run_until_blocked()
+
+    # Concurrency should never exceed 2
+    assert max(concurrency_log) <= 2, f"max_parallel_epochs=2 violated: observed max concurrency {max(concurrency_log)}"
+    # All 5 epochs should have executed
+    assert len(concurrency_log) == 5
+
+# %%
+asyncio.get_event_loop().run_until_complete(test_streaming_max_parallel_epochs_across_rounds())
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_streaming_linear_pipeline():
+    """Verify A -> B -> C pipeline: B starts as soon as A finishes, C as soon as B finishes."""
+    timestamps: dict[str, float] = {}
+
+    async def node_a(ctx, packets):
+        out_id = ctx.create_packet("from_a")
+        ctx.load_output_port("out", out_id)
+        ctx.send_output_salvo("send")
+        timestamps["a_end"] = time.monotonic()
+
+    async def node_b(ctx, packets):
+        timestamps["b_start"] = time.monotonic()
+        for pid in packets.get("in", []):
+            val = ctx.consume_packet(pid)
+            out_id = ctx.create_packet(f"from_b({val})")
+            ctx.load_output_port("out", out_id)
+        ctx.send_output_salvo("send")
+        timestamps["b_end"] = time.monotonic()
+
+    async def node_c(ctx, packets):
+        timestamps["c_start"] = time.monotonic()
+        for pid in packets.get("in", []):
+            ctx.consume_packet(pid)
+
+    out_salvo = {
+        "send": SalvoConditionConfig(
+            max_salvos=MaxSalvosFiniteConfig(max=1),
+            ports={"out": PacketCountAllConfig()},
+            term=SalvoConditionTermPortConfig(
+                port_name="out",
+                state=PortStateNonEmptyConfig(),
+            ),
+        ),
+    }
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="A",
+                    out_ports={"out": PortConfig()},
+                    in_salvo_conditions={
+                        "trigger": SalvoConditionConfig(
+                            max_salvos=MaxSalvosFiniteConfig(max=1),
+                            ports={},
+                            term=SalvoConditionTermTrueConfig(),
+                        ),
+                    },
+                    out_salvo_conditions=out_salvo,
+                    execution_config=NodeExecutionConfig(
+                        node_name="A",
+                        pools=["main"],
+                        run_on_startup=True,
+                        exec_node_func=node_a,
+                    ),
+                ),
+                NodeConfig(
+                    name="B",
+                    in_ports={"in": PortConfig()},
+                    out_ports={"out": PortConfig()},
+                    in_salvo_conditions={
+                        "trigger": SalvoConditionConfig(
+                            max_salvos=MaxSalvosFiniteConfig(max=1),
+                            ports={"in": PacketCountAllConfig()},
+                            term=SalvoConditionTermPortConfig(
+                                port_name="in",
+                                state=PortStateNonEmptyConfig(),
+                            ),
+                        ),
+                    },
+                    out_salvo_conditions=out_salvo,
+                    execution_config=NodeExecutionConfig(
+                        node_name="B",
+                        pools=["main"],
+                        exec_node_func=node_b,
+                    ),
+                ),
+                NodeConfig(
+                    name="C",
+                    in_ports={"in": PortConfig()},
+                    in_salvo_conditions={
+                        "trigger": SalvoConditionConfig(
+                            max_salvos=MaxSalvosFiniteConfig(max=1),
+                            ports={"in": PacketCountAllConfig()},
+                            term=SalvoConditionTermPortConfig(
+                                port_name="in",
+                                state=PortStateNonEmptyConfig(),
+                            ),
+                        ),
+                    },
+                    execution_config=NodeExecutionConfig(
+                        node_name="C",
+                        pools=["main"],
+                        exec_node_func=node_c,
+                    ),
+                ),
+            ],
+            edges=[
+                EdgeConfig(source_node="A", source_port="out", target_node="B", target_port="in"),
+                EdgeConfig(source_node="B", source_port="out", target_node="C", target_port="in"),
+            ],
+        ),
+    )
+
+    async with Net(config) as net:
+        await net.run_until_blocked()
+
+    # B should have started, C should have started
+    assert "b_start" in timestamps, "B never executed"
+    assert "c_start" in timestamps, "C never executed"
+    # B starts after A ends, C starts after B ends
+    assert timestamps["b_start"] >= timestamps["a_end"]
+    assert timestamps["c_start"] >= timestamps["b_end"]
+
+# %%
+asyncio.get_event_loop().run_until_complete(test_streaming_linear_pipeline())
+
+# %% [markdown]
+# ## Concurrent Async Execution on MainPoolConfig
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_concurrent_async_siblings_on_main_pool():
+    """Verify that sibling async nodes on MainPoolConfig execute concurrently.
+
+    Three sibling nodes each sleep for 0.2s. If serialized, total >= 0.6s.
+    With concurrent execution on the event loop, total ~= 0.2s.
+    """
+    timestamps: dict[str, float] = {}
+
+    async def node_a(ctx, packets):
+        for pid in packets.get("in", []):
+            ctx.consume_packet(pid)
+        timestamps["a_start"] = time.monotonic()
+        await asyncio.sleep(0.2)
+        timestamps["a_end"] = time.monotonic()
+
+    async def node_b(ctx, packets):
+        for pid in packets.get("in", []):
+            ctx.consume_packet(pid)
+        timestamps["b_start"] = time.monotonic()
+        await asyncio.sleep(0.2)
+        timestamps["b_end"] = time.monotonic()
+
+    async def node_c(ctx, packets):
+        for pid in packets.get("in", []):
+            ctx.consume_packet(pid)
+        timestamps["c_start"] = time.monotonic()
+        await asyncio.sleep(0.2)
+        timestamps["c_end"] = time.monotonic()
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="A",
+                    in_ports={"in": PortConfig()},
+                    in_salvo_conditions={
+                        "trigger": SalvoConditionConfig(
+                            max_salvos=MaxSalvosFiniteConfig(max=1),
+                            ports={"in": PacketCountAllConfig()},
+                            term=SalvoConditionTermPortConfig(
+                                port_name="in",
+                                state=PortStateNonEmptyConfig(),
+                            ),
+                        ),
+                    },
+                    execution_config=NodeExecutionConfig(
+                        node_name="A",
+                        pools=["main"],
+                        exec_node_func=node_a,
+                    ),
+                ),
+                NodeConfig(
+                    name="B",
+                    in_ports={"in": PortConfig()},
+                    in_salvo_conditions={
+                        "trigger": SalvoConditionConfig(
+                            max_salvos=MaxSalvosFiniteConfig(max=1),
+                            ports={"in": PacketCountAllConfig()},
+                            term=SalvoConditionTermPortConfig(
+                                port_name="in",
+                                state=PortStateNonEmptyConfig(),
+                            ),
+                        ),
+                    },
+                    execution_config=NodeExecutionConfig(
+                        node_name="B",
+                        pools=["main"],
+                        exec_node_func=node_b,
+                    ),
+                ),
+                NodeConfig(
+                    name="C",
+                    in_ports={"in": PortConfig()},
+                    in_salvo_conditions={
+                        "trigger": SalvoConditionConfig(
+                            max_salvos=MaxSalvosFiniteConfig(max=1),
+                            ports={"in": PacketCountAllConfig()},
+                            term=SalvoConditionTermPortConfig(
+                                port_name="in",
+                                state=PortStateNonEmptyConfig(),
+                            ),
+                        ),
+                    },
+                    execution_config=NodeExecutionConfig(
+                        node_name="C",
+                        pools=["main"],
+                        exec_node_func=node_c,
+                    ),
+                ),
+            ],
+            edges=[],
+        ),
+    )
+
+    async with Net(config) as net:
+        net.inject_data("A", "in", ["data"])
+        net.inject_data("B", "in", ["data"])
+        net.inject_data("C", "in", ["data"])
+        start = time.monotonic()
+        await net.run_until_blocked()
+        elapsed = time.monotonic() - start
+
+    # All nodes should have executed
+    assert "a_end" in timestamps, "Node A never completed"
+    assert "b_end" in timestamps, "Node B never completed"
+    assert "c_end" in timestamps, "Node C never completed"
+
+    # If serialized: >= 0.6s. With concurrency: ~0.2s.
+    assert elapsed < 0.5, (
+        f"Took {elapsed:.2f}s — expected < 0.5s for concurrent execution of 3x0.2s async nodes on MainPoolConfig"
+    )
+
+    # All three should have overlapping execution windows
+    latest_start = max(timestamps["a_start"], timestamps["b_start"], timestamps["c_start"])
+    earliest_end = min(timestamps["a_end"], timestamps["b_end"], timestamps["c_end"])
+    assert latest_start < earliest_end, (
+        "Nodes should have overlapping execution windows (concurrent), but they don't"
+    )
+
+# %%
+asyncio.get_event_loop().run_until_complete(test_concurrent_async_siblings_on_main_pool())

@@ -236,6 +236,9 @@ async def _async_worker_func(
 ):
     """Async worker function that handles execution manager protocol messages.
 
+    Spawns each RUN request as a concurrent asyncio.Task so multiple async
+    functions execute concurrently on the event loop (instead of serializing).
+
     Args:
         channel: Async RPC channel for communication.
         worker_id: ID of this worker.
@@ -245,52 +248,69 @@ async def _async_worker_func(
     """
     registered_functions: dict[str, Callable[..., Awaitable] | Callable[..., None]] = {}
 
-    while True:
-        key, data = await channel.recv()
-        # RUN
-        if key == ExecutionManagerProtocolKeys.RUN.value:
-            msg_id, func_import_path_or_key, run_id, send_channel, args, kwargs = data
-            if func_import_path_or_key in registered_functions:
-                func = registered_functions[func_import_path_or_key]
+    async def _handle_run(msg_id, func, send_channel, args, kwargs):
+        """Execute a single RUN request and send the response."""
+        timestamp_utc_started = get_timestamp_utc()
+        await channel.send(ExecutionManagerProtocolKeys.UP_RUN_STARTED.value, (msg_id, timestamp_utc_started))
+
+        res = await _async_func_runner(
+            channel=channel,
+            func=func,
+            send_channel=send_channel,
+            args=args,
+            kwargs=kwargs,
+        )
+
+        # Call done callback if provided
+        if func_done_callback is not None:
+            if send_channel:
+                callback_result = func_done_callback(channel, *args, **kwargs, result=res)
             else:
-                module_path, func_name = func_import_path_or_key.rsplit(".", 1)
-                module = importlib.import_module(module_path)
-                func = getattr(module, func_name)
+                callback_result = func_done_callback(*args, **kwargs, result=res)
+            # Await if the callback is async
+            if asyncio.iscoroutine(callback_result):
+                await callback_result
 
-            if func_preprocessor is not None:
-                func = func_preprocessor(func)
+        timestamp_utc_completed = get_timestamp_utc()
+        converted_to_str, _res = False, res
 
-            timestamp_utc_started = get_timestamp_utc()
-            await channel.send(ExecutionManagerProtocolKeys.UP_RUN_STARTED.value, (msg_id, timestamp_utc_started))
-            res = await _async_func_runner(
-                channel=channel,
-                func=func,
-                send_channel=send_channel,
-                args=args,
-                kwargs=kwargs,
-            )
+        await channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res))
 
-            # Call done callback if provided
-            if func_done_callback is not None:
-                if send_channel:
-                    callback_result = func_done_callback(channel, *args, **kwargs, result=res)
+    pending_tasks: set[asyncio.Task] = set()
+
+    try:
+        while True:
+            key, data = await channel.recv()
+            # RUN
+            if key == ExecutionManagerProtocolKeys.RUN.value:
+                msg_id, func_import_path_or_key, run_id, send_channel, args, kwargs = data
+                if func_import_path_or_key in registered_functions:
+                    func = registered_functions[func_import_path_or_key]
                 else:
-                    callback_result = func_done_callback(*args, **kwargs, result=res)
-                # Await if the callback is async
-                if asyncio.iscoroutine(callback_result):
-                    await callback_result
+                    module_path, func_name = func_import_path_or_key.rsplit(".", 1)
+                    module = importlib.import_module(module_path)
+                    func = getattr(module, func_name)
 
-            timestamp_utc_completed = get_timestamp_utc()
-            converted_to_str, _res = False, res
+                if func_preprocessor is not None:
+                    func = func_preprocessor(func)
 
-            await channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res))
-        # SEND_FUNCTION
-        elif key == ExecutionManagerProtocolKeys.SEND_FUNCTION.value:
-            msg_id, func_key, func = data
-            registered_functions[func_key] = func
-            await channel.send(ExecutionManagerProtocolKeys.UP_SEND_FUNCTION_RESPONSE.value, (msg_id,))
-        else:
-            raise ValueError(f"Unknown execution manager protocol key: '{key}'.")
+                # Spawn as concurrent task instead of awaiting inline
+                task = asyncio.create_task(_handle_run(msg_id, func, send_channel, args, kwargs))
+                pending_tasks.add(task)
+                task.add_done_callback(pending_tasks.discard)
+            # SEND_FUNCTION
+            elif key == ExecutionManagerProtocolKeys.SEND_FUNCTION.value:
+                msg_id, func_key, func = data
+                registered_functions[func_key] = func
+                await channel.send(ExecutionManagerProtocolKeys.UP_SEND_FUNCTION_RESPONSE.value, (msg_id,))
+            else:
+                raise ValueError(f"Unknown execution manager protocol key: '{key}'.")
+    finally:
+        # Cancel any still-running tasks on shutdown
+        for task in pending_tasks:
+            task.cancel()
+        if pending_tasks:
+            await asyncio.gather(*pending_tasks, return_exceptions=True)
 
 # %% [markdown]
 # ### Remote Worker Function

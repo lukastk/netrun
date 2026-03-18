@@ -18,6 +18,7 @@
 # %%
 #|export
 import pytest
+import asyncio
 
 from netrun.pool.aio import SingleWorkerPool
 
@@ -493,3 +494,61 @@ async def test_pool_class_directly():
 
 # %%
 await test_pool_class_directly();
+
+# %% [markdown]
+# ## Test Concurrent Async Execution
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_concurrent_async_execution():
+    """Test that multiple async RUN requests execute concurrently on SingleWorkerPool.
+
+    Dispatches 3 async functions with asyncio.sleep(0.2) each to the same
+    SingleWorkerPool. With serialization, total time >= 0.6s. With concurrency,
+    total time ~= 0.2s.
+    """
+    import time
+
+    async def slow_async_func(delay: float) -> str:
+        await asyncio.sleep(delay)
+        return "done"
+
+    manager = ExecutionManager({
+        "pool": (SingleWorkerPool, {}),
+    })
+
+    async with manager:
+        await manager.send_function_to_pool("pool", "slow", slow_async_func)
+
+        start = time.monotonic()
+
+        # Dispatch 3 concurrent runs
+        tasks = [
+            asyncio.create_task(
+                manager.run(
+                    pool_id="pool",
+                    worker_id=0,
+                    func_import_path_or_key="slow",
+                    send_channel=False,
+                    func_args=(0.2,),
+                    func_kwargs={},
+                )
+            )
+            for _ in range(3)
+        ]
+
+        results = await asyncio.gather(*tasks)
+        elapsed = time.monotonic() - start
+
+        # All should succeed
+        for r in results:
+            assert r.result == "done"
+
+        # If serialized, would take >= 0.6s. With concurrency, should be ~0.2s.
+        assert elapsed < 0.5, (
+            f"Took {elapsed:.2f}s — expected < 0.5s for concurrent execution of 3x0.2s tasks"
+        )
+
+# %%
+await test_concurrent_async_execution();
