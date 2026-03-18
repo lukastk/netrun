@@ -1,6 +1,6 @@
 import * as vscode from 'vscode';
 import { NetrunEditorProvider } from './editorProvider';
-import { ChildProcess, spawn } from 'child_process';
+import { ChildProcess, spawn, execFileSync } from 'child_process';
 import * as fs from 'fs';
 import * as http from 'http';
 import * as net from 'net';
@@ -34,6 +34,14 @@ export async function activate(context: vscode.ExtensionContext) {
 			'netrun-ui.flowEditor',
 			provider,
 			{ supportsMultipleEditorsPerDocument: false }
+		)
+	);
+
+	// Register the select-environment command
+	context.subscriptions.push(
+		vscode.commands.registerCommand(
+			'netrun-ui.selectPythonEnvironment',
+			() => selectPythonEnvironment(context),
 		)
 	);
 }
@@ -140,7 +148,6 @@ async function resolvePythonPath(): Promise<string> {
 		if (fs.existsSync(venvPython)) {
 			// Check if the venv has netrun_ui_backend installed
 			try {
-				const { execFileSync } = require('child_process');
 				execFileSync(venvPython, ['-c', 'import netrun_ui_backend'], {
 					timeout: 5000,
 					stdio: 'ignore',
@@ -284,4 +291,171 @@ async function startBackend(context: vscode.ExtensionContext): Promise<number> {
 	await waitForServer(`http://127.0.0.1:${port}/health`, processExited);
 
 	return port;
+}
+
+/**
+ * Check if a Python binary has netrun_ui_backend installed.
+ */
+function hasBackend(pythonPath: string): boolean {
+	try {
+		execFileSync(pythonPath, ['-c', 'import netrun_ui_backend'], {
+			timeout: 5000,
+			stdio: 'ignore',
+		});
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+/**
+ * Discover candidate Python environments for the quick pick.
+ */
+function discoverEnvironments(): Array<{ label: string; description: string; pythonPath: string }> {
+	const candidates: Array<{ label: string; description: string; pythonPath: string }> = [];
+	const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+
+	if (workspaceFolder) {
+		// Check .venv in workspace
+		const venvPython = path.join(workspaceFolder, '.venv', 'bin', 'python');
+		if (fs.existsSync(venvPython)) {
+			const has = hasBackend(venvPython);
+			candidates.push({
+				label: '.venv (workspace)',
+				description: has ? venvPython : `${venvPython} (missing netrun_ui_backend)`,
+				pythonPath: venvPython,
+			});
+		}
+
+		// Check venv in workspace
+		const venvPython2 = path.join(workspaceFolder, 'venv', 'bin', 'python');
+		if (fs.existsSync(venvPython2)) {
+			const has = hasBackend(venvPython2);
+			candidates.push({
+				label: 'venv (workspace)',
+				description: has ? venvPython2 : `${venvPython2} (missing netrun_ui_backend)`,
+				pythonPath: venvPython2,
+			});
+		}
+	}
+
+	return candidates;
+}
+
+/**
+ * Stop the running backend process (if any).
+ */
+async function stopBackend(): Promise<void> {
+	if (backendProcess) {
+		backendProcess.kill();
+		// Wait for process to exit
+		await new Promise<void>((resolve) => {
+			if (!backendProcess) {
+				resolve();
+				return;
+			}
+			backendProcess.on('exit', () => resolve());
+			setTimeout(resolve, 3000); // Timeout after 3s
+		});
+		backendProcess = null;
+	}
+}
+
+/**
+ * Command: Select Python Environment.
+ * Shows a quick pick with discovered venvs and a "Browse..." option,
+ * saves the choice to workspace settings, and restarts the backend.
+ */
+async function selectPythonEnvironment(context: vscode.ExtensionContext): Promise<void> {
+	const discovered = discoverEnvironments();
+
+	interface EnvItem extends vscode.QuickPickItem {
+		pythonPath?: string;
+		action?: 'browse' | 'auto';
+	}
+
+	const items: EnvItem[] = [];
+
+	// "Auto-detect" option to clear the explicit setting
+	items.push({
+		label: '$(search) Auto-detect',
+		description: 'Use automatic Python resolution (default)',
+		action: 'auto',
+	});
+
+	// Discovered environments
+	for (const env of discovered) {
+		items.push({
+			label: env.label,
+			description: env.description,
+			pythonPath: env.pythonPath,
+		});
+	}
+
+	// Browse option
+	items.push({
+		label: '$(folder-opened) Browse...',
+		description: 'Select a Python binary manually',
+		action: 'browse',
+	});
+
+	const selected = await vscode.window.showQuickPick(items, {
+		placeHolder: 'Select Python environment for netrun-ui backend',
+	});
+
+	if (!selected) {
+		return; // Cancelled
+	}
+
+	const config = vscode.workspace.getConfiguration('netrun-ui');
+	let chosenPath: string | undefined;
+
+	if (selected.action === 'auto') {
+		// Clear the explicit setting so auto-detection kicks in
+		await config.update('pythonPath', undefined, vscode.ConfigurationTarget.Workspace);
+		outputChannel.appendLine('Python path reset to auto-detect');
+	} else if (selected.action === 'browse') {
+		const result = await vscode.window.showOpenDialog({
+			canSelectFiles: true,
+			canSelectFolders: false,
+			canSelectMany: false,
+			title: 'Select Python binary',
+			openLabel: 'Select',
+		});
+		if (!result || result.length === 0) {
+			return; // Cancelled
+		}
+		chosenPath = result[0].fsPath;
+	} else if (selected.pythonPath) {
+		chosenPath = selected.pythonPath;
+	}
+
+	if (chosenPath) {
+		// Validate the chosen Python has the backend
+		if (!hasBackend(chosenPath)) {
+			const install = await vscode.window.showWarningMessage(
+				`The selected Python (${chosenPath}) does not have netrun_ui_backend installed. Use it anyway?`,
+				'Use anyway', 'Cancel',
+			);
+			if (install !== 'Use anyway') {
+				return;
+			}
+		}
+		await config.update('pythonPath', chosenPath, vscode.ConfigurationTarget.Workspace);
+		outputChannel.appendLine(`Python path set to: ${chosenPath}`);
+	}
+
+	// Restart the backend with the new Python
+	outputChannel.appendLine('Restarting backend...');
+	await stopBackend();
+	try {
+		backendPort = await startBackend(context);
+		outputChannel.appendLine(`Backend restarted on port ${backendPort}`);
+		vscode.window.showInformationMessage('netrun-ui: Backend restarted with new Python environment');
+	} catch (err) {
+		const msg = err instanceof Error ? err.message : String(err);
+		vscode.window.showErrorMessage(`netrun-ui: Failed to restart backend. ${msg}`);
+		outputChannel.appendLine(`Backend restart failed: ${msg}`);
+		outputChannel.show();
+	}
 }

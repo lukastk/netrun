@@ -54,6 +54,11 @@
 				"command": "netrun-ui.openConfig",
 				"title": "Open Netrun Config",
 				"category": "netrun-ui"
+			},
+			{
+				"command": "netrun-ui.selectPythonEnvironment",
+				"title": "Select Python Environment",
+				"category": "netrun-ui"
 			}
 		],
 		"keybindings": [
