@@ -29,16 +29,41 @@
 	);
 
 	let activeTab = $state<'epochs' | 'logs'>('epochs');
+
+	// Resizable bottom panel
+	let panelHeight = $state(260);
+	let dragging = $state(false);
+	let mainAreaEl: HTMLDivElement | undefined = $state();
+
+	function onPointerDown(e: PointerEvent) {
+		dragging = true;
+		e.preventDefault();
+	}
+
+	function onPointerMove(e: PointerEvent) {
+		if (!dragging || !mainAreaEl) return;
+		const rect = mainAreaEl.getBoundingClientRect();
+		const newHeight = rect.bottom - e.clientY;
+		panelHeight = Math.max(60, Math.min(newHeight, rect.height - 100));
+	}
+
+	function onPointerUp() {
+		dragging = false;
+	}
 </script>
+
+<svelte:window onpointermove={onPointerMove} onpointerup={onPointerUp} />
 
 {#if registry.selectedUrl}
 	<StatusBar name={selectedName} state={netState.liveState} connected={netState.connected} />
 	{#if netState.config}
-		<div class="main-area">
+		<div class="main-area" bind:this={mainAreaEl}>
 			<div class="graph-pane">
 				<NetGraphView config={netState.config} liveState={netState.liveState} />
 			</div>
-			<div class="bottom-panel">
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div class="resize-handle" onpointerdown={onPointerDown}></div>
+			<div class="bottom-panel" style:height="{panelHeight}px">
 				<div class="tab-bar">
 					<button class="tab" class:active={activeTab === 'epochs'} onclick={() => (activeTab = 'epochs')}>
 						Epochs
@@ -86,12 +111,21 @@
 		position: relative;
 	}
 
+	.resize-handle {
+		height: 5px;
+		cursor: ns-resize;
+		background: var(--border-color);
+		flex-shrink: 0;
+	}
+
+	.resize-handle:hover {
+		background: var(--accent-color);
+	}
+
 	.bottom-panel {
-		height: 260px;
-		min-height: 100px;
+		min-height: 60px;
 		display: flex;
 		flex-direction: column;
-		border-top: 1px solid var(--border-color);
 		background: var(--bg-secondary);
 	}
 

@@ -14,18 +14,37 @@
     "text_source": {
       "value": "greeting",
       "type": "str",
-      "options": ["greeting", "lorem", "default"]
+      "options": [
+        "greeting",
+        "lorem",
+        "default"
+      ]
     }
   },
   "output_queues": {
     "summaries": {
-      "ports": [["summarize", "out"]]
+      "ports": [
+        [
+          "summarize",
+          "out"
+        ]
+      ]
     },
     "reversed": {
-      "ports": [["reverse", "out"]]
+      "ports": [
+        [
+          "reverse",
+          "out"
+        ]
+      ]
     },
     "analysis": {
-      "ports": [["analyze", "out"]]
+      "ports": [
+        [
+          "analyze",
+          "out"
+        ]
+      ]
     }
   },
   "retain_epoch_logs": true,
@@ -33,34 +52,111 @@
     "nodes": [
       {
         "name": "fetch_text",
+        "execution_config": {
+          "run_on_startup": true
+        },
+        "extra": {
+          "source_path": "/Users/lukas/dev/20260318_a9uv81__netrun2__feat-netrun-utils/sample_projects/13_netrun_utils/src/nodes/fetch_text.py",
+          "ui": {
+            "position": {
+              "x": 20,
+              "y": 20
+            }
+          }
+        },
         "factory": "netrun.node_factories.from_function",
-        "factory_args": { "func": "nodes.fetch_text.main" },
-        "execution_config": { "run_on_startup": true }
+        "factory_args": {
+          "func": "nodes.fetch_text.main"
+        },
+        "type": "node"
       },
       {
         "name": "fanout",
+        "extra": {
+          "ui": {
+            "shape": "triangle-left",
+            "hideLabel": true,
+            "hideDescription": true,
+            "hidePortNames": true,
+            "position": {
+              "x": 320,
+              "y": 20
+            }
+          }
+        },
         "factory": "netrun.node_factories.broadcast",
-        "factory_args": { "num_outputs": 3 }
+        "factory_args": {
+          "num_outputs": 3
+        },
+        "type": "node"
       },
       {
         "name": "transform",
+        "extra": {
+          "source_path": "/Users/lukas/dev/20260318_a9uv81__netrun2__feat-netrun-utils/sample_projects/13_netrun_utils/src/nodes/transform.py",
+          "ui": {
+            "position": {
+              "x": 640,
+              "y": -160
+            }
+          }
+        },
         "factory": "netrun.node_factories.from_function",
-        "factory_args": { "func": "nodes.transform.main" }
+        "factory_args": {
+          "func": "nodes.transform.main"
+        },
+        "type": "node"
       },
       {
         "name": "reverse",
+        "extra": {
+          "source_path": "/Users/lukas/dev/20260318_a9uv81__netrun2__feat-netrun-utils/sample_projects/13_netrun_utils/src/nodes/reverse.py",
+          "ui": {
+            "position": {
+              "x": 640,
+              "y": 0
+            }
+          }
+        },
         "factory": "netrun.node_factories.from_function",
-        "factory_args": { "func": "nodes.reverse.main" }
+        "factory_args": {
+          "func": "nodes.reverse.main"
+        },
+        "type": "node"
       },
       {
         "name": "analyze",
+        "extra": {
+          "source_path": "/Users/lukas/dev/20260318_a9uv81__netrun2__feat-netrun-utils/sample_projects/13_netrun_utils/src/nodes/analyze.py",
+          "ui": {
+            "position": {
+              "x": 640,
+              "y": 200
+            }
+          }
+        },
         "factory": "netrun.node_factories.from_function",
-        "factory_args": { "func": "nodes.analyze.main" }
+        "factory_args": {
+          "func": "nodes.analyze.main"
+        },
+        "type": "node"
       },
       {
         "name": "summarize",
+        "extra": {
+          "source_path": "/Users/lukas/dev/20260318_a9uv81__netrun2__feat-netrun-utils/sample_projects/13_netrun_utils/src/nodes/summarize.py",
+          "ui": {
+            "position": {
+              "x": 880,
+              "y": -160
+            }
+          }
+        },
         "factory": "netrun.node_factories.from_function",
-        "factory_args": { "func": "nodes.summarize.main" }
+        "factory_args": {
+          "func": "nodes.summarize.main"
+        },
+        "type": "node"
       }
     ],
     "edges": [
@@ -68,31 +164,36 @@
         "source_node": "fetch_text",
         "source_port": "out",
         "target_node": "fanout",
-        "target_port": "in_0"
+        "target_port": "in_0",
+        "dependency": false
       },
       {
         "source_node": "fanout",
         "source_port": "out_0",
         "target_node": "transform",
-        "target_port": "text"
+        "target_port": "text",
+        "dependency": false
       },
       {
         "source_node": "fanout",
         "source_port": "out_1",
         "target_node": "reverse",
-        "target_port": "text"
+        "target_port": "text",
+        "dependency": false
       },
       {
         "source_node": "fanout",
         "source_port": "out_2",
         "target_node": "analyze",
-        "target_port": "text"
+        "target_port": "text",
+        "dependency": false
       },
       {
         "source_node": "transform",
         "source_port": "out",
         "target_node": "summarize",
-        "target_port": "text"
+        "target_port": "text",
+        "dependency": false
       }
     ]
   }

@@ -4,6 +4,9 @@ Provides a registry API for ObserveServers to register/deregister,
 and serves the built SvelteKit SPA as static files.
 """
 
+import logging
+import subprocess
+import shutil
 import time
 from pathlib import Path
 
@@ -13,7 +16,39 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+logger = logging.getLogger(__name__)
+
+PACKAGE_DIR = Path(__file__).parent.parent
 STATIC_DIR = Path(__file__).parent / "static"
+BUILD_DIR = PACKAGE_DIR / "build"
+
+
+def _ensure_static() -> None:
+    """Build the frontend and copy to server/static/ if missing."""
+    if STATIC_DIR.is_dir():
+        return
+
+    if not (PACKAGE_DIR / "package.json").is_file():
+        logger.warning("No package.json found — cannot build frontend")
+        return
+
+    logger.info("Building frontend (npm run build)...")
+    try:
+        subprocess.run(
+            ["npm", "run", "build"],
+            cwd=str(PACKAGE_DIR),
+            check=True,
+            capture_output=True,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError) as e:
+        logger.warning("Frontend build failed: %s", e)
+        return
+
+    if BUILD_DIR.is_dir():
+        shutil.copytree(BUILD_DIR, STATIC_DIR)
+        logger.info("Frontend built and copied to server/static/")
+    else:
+        logger.warning("Build directory not found after npm run build")
 
 # Heartbeat thresholds (seconds)
 UNHEALTHY_TIMEOUT = 30
@@ -56,6 +91,9 @@ class _NetEntry:
 
 # In-memory registry keyed by URL
 _registry: dict[str, _NetEntry] = {}
+
+
+_ensure_static()
 
 
 def create_app() -> FastAPI:
