@@ -1404,7 +1404,7 @@ class Net:
 
         This loop:
         1. Checks if we should stop or pause
-        2. Runs simulation steps (which moves packets and executes epochs)
+        2. Uses streaming scheduling to execute epochs as soon as possible
         3. Yields to allow other tasks to run
         """
         try:
@@ -1414,8 +1414,10 @@ class Net:
                     await asyncio.sleep(0.01)
                     continue
 
-                # Run simulation step (auto-starts epochs by default)
-                made_progress, _, _ = await self.run_step()
+                # Use streaming scheduler with stop-check callback
+                made_progress, _, _ = await self._run_streaming(
+                    check_should_stop=lambda: self._paused or self._stopping or self._sigint_received,
+                )
 
                 # Small yield to allow other tasks
                 if not made_progress:
@@ -1611,6 +1613,10 @@ class Net:
     async def run_until_blocked(self, *, auto_start_epochs: bool = True) -> tuple[bool, list[NetActionLog], list[EpochLog]]:
         """Run the simulation until no more progress can be made.
 
+        When auto_start_epochs=True, uses streaming scheduling: after any epoch
+        completes, its output packets are immediately propagated and downstream
+        epochs are launched without waiting for sibling epochs to finish.
+
         Args:
             auto_start_epochs: If True (default), automatically execute any
                 startable epochs after moving packets. Set to False to only
@@ -1622,17 +1628,169 @@ class Net:
             - net_actions: All NetActionLogs that occurred
             - epoch_logs: All EpochLogs for completed epochs
         """
+        if auto_start_epochs:
+            return await self._run_streaming()
+        else:
+            # Simple loop: just move packets without executing epochs
+            all_net_actions: list[NetActionLog] = []
+            all_epoch_logs: list[EpochLog] = []
+            any_progress = False
+            while True:
+                made_progress, net_actions, epoch_logs = await self.run_step(auto_start_epochs=False)
+                all_net_actions.extend(net_actions)
+                all_epoch_logs.extend(epoch_logs)
+                if made_progress:
+                    any_progress = True
+                if not made_progress:
+                    break
+            return (any_progress, all_net_actions, all_epoch_logs)
+
+    async def _run_streaming(
+        self,
+        check_should_stop: Callable[[], bool] | None = None,
+    ) -> tuple[bool, list[NetActionLog], list[EpochLog]]:
+        """Core streaming scheduler: propagate and launch as soon as any epoch completes.
+
+        After any epoch completes, immediately runs netsim.run_step() to propagate
+        its output packets, discovers newly-startable epochs, and launches them —
+        all while other epochs are still running.
+
+        Args:
+            check_should_stop: Optional callback checked at the top of each
+                propagation round. If it returns True, the scheduler stops
+                launching new work and breaks out of the loop.
+
+        Returns:
+            Tuple of (made_progress, all_net_actions, all_epoch_logs).
+        """
         all_net_actions: list[NetActionLog] = []
         all_epoch_logs: list[EpochLog] = []
         any_progress = False
+
+        # Track in-flight epoch tasks
+        pending_tasks: dict[asyncio.Task, str] = {}  # task -> epoch_id
+        task_node_names: dict[asyncio.Task, str] = {}  # task -> node_name (for cleanup after _epochs deleted)
+        launched_epochs: set[str] = set()  # epoch_ids with tasks created
+        in_flight_per_node: dict[str, int] = {}  # node_name -> count of launched-but-not-running
+
         while True:
-            made_progress, net_actions, epoch_logs = await self.run_step(auto_start_epochs=auto_start_epochs)
-            all_net_actions.extend(net_actions)
-            all_epoch_logs.extend(epoch_logs)
-            if made_progress:
-                any_progress = True
-            if not made_progress:
+            if check_should_stop and check_should_stop():
                 break
+
+            # --- Per-round buffers ---
+            # Clear buffers at start of round. _execute_epoch tasks append to
+            # these during asyncio.wait via _do_action and _fire_epoch_end.
+            self._step_net_actions = []
+            self._step_epoch_logs = []
+
+            # --- Propagate: move packets from edges to input ports ---
+            result = self._netsim.run_step()
+            if isinstance(result, tuple):
+                sim_progress, events = result
+                events = list(events) if not isinstance(events, list) else events
+            else:
+                events = list(result) if not isinstance(result, list) else result
+                sim_progress = len(events) > 0
+
+            if events:
+                run_step_timestamp = get_timestamp_utc()
+                run_step_action = NetActionLog(
+                    timestamp=run_step_timestamp,
+                    action_kind="RunStep",
+                    action_detail={},
+                    events=[_event_to_net_event_log(e, run_step_timestamp) for e in events],
+                )
+                self._step_net_actions.append(run_step_action)
+                if self._config_resolved.retain_net_action_logs:
+                    self._retained_net_actions.append(run_step_action)
+
+            if sim_progress:
+                any_progress = True
+
+            # --- Discover and launch new epochs ---
+            launched_this_round = False
+            startable = self.get_startable_epochs()
+            # Filter out epochs we've already launched tasks for
+            startable = [eid for eid in startable if eid not in launched_epochs]
+            if startable:
+                startable = self._filter_startable_epochs(
+                    startable,
+                    extra_in_flight_per_node=in_flight_per_node if in_flight_per_node else None,
+                )
+            if startable:
+                any_progress = True
+                launched_this_round = True
+                for epoch_id in startable:
+                    task = asyncio.create_task(self._execute_epoch(epoch_id))
+                    pending_tasks[task] = epoch_id
+                    launched_epochs.add(epoch_id)
+                    # Track in-flight per node for accurate max_parallel_epochs
+                    epoch = self._netsim.get_epoch(epoch_id)
+                    node_name = epoch.node_name
+                    task_node_names[task] = node_name
+                    in_flight_per_node[node_name] = in_flight_per_node.get(node_name, 0) + 1
+
+            # --- Fire on_net_actions callbacks for propagation actions ---
+            # Snapshot the propagation-phase actions before awaiting tasks
+            propagation_actions = list(self._step_net_actions)
+            if propagation_actions:
+                for cb in self._on_net_actions_callbacks:
+                    try:
+                        if asyncio.iscoroutinefunction(cb):
+                            await cb(propagation_actions)
+                        else:
+                            cb(propagation_actions)
+                    except Exception as e:
+                        import warnings
+                        warnings.warn(f"on_net_actions callback {cb!r} raised: {e}", stacklevel=2)
+
+            # --- Check termination: no in-flight tasks and no sim progress ---
+            if not pending_tasks:
+                # Collect final round's actions/logs
+                all_net_actions.extend(self._step_net_actions)
+                all_epoch_logs.extend(self._step_epoch_logs)
+                if not sim_progress and not launched_this_round:
+                    break
+                # Sim made progress or launched tasks that completed synchronously;
+                # loop to propagate again
+                continue
+
+            # --- Wait for at least one epoch to complete ---
+            done, _ = await asyncio.wait(pending_tasks.keys(), return_when=asyncio.FIRST_COMPLETED)
+
+            # Collect all actions/logs from this round (propagation + task execution)
+            all_net_actions.extend(self._step_net_actions)
+            all_epoch_logs.extend(self._step_epoch_logs)
+
+            # Process completed tasks
+            first_error: Exception | None = None
+            for task in done:
+                epoch_id = pending_tasks.pop(task)
+                launched_epochs.discard(epoch_id)
+                # Decrement in-flight count (use task_node_names since _epochs
+                # may have been cleaned up by _fire_epoch_end)
+                node_name = task_node_names.pop(task, None)
+                if node_name and node_name in in_flight_per_node:
+                    in_flight_per_node[node_name] -= 1
+                    if in_flight_per_node[node_name] <= 0:
+                        del in_flight_per_node[node_name]
+
+                exc = task.exception()
+                if exc is not None and first_error is None:
+                    first_error = exc
+
+            if first_error is not None:
+                # Cancel all remaining in-flight tasks
+                for remaining_task in pending_tasks:
+                    remaining_task.cancel()
+                if pending_tasks:
+                    # Wait for cancellation to complete (so CancelledError handlers run)
+                    await asyncio.wait(pending_tasks.keys())
+                raise first_error
+
+            any_progress = True
+            # Loop back to propagate output packets from completed epochs
+
         return (any_progress, all_net_actions, all_epoch_logs)
 
     def get_startable_epochs(self) -> list[str]:
@@ -1644,7 +1802,11 @@ class Net:
         """Get list of currently running epoch IDs."""
         return list(self._running_epochs)
 
-    def _filter_startable_epochs(self, epoch_ids: list[str]) -> list[str]:
+    def _filter_startable_epochs(
+        self,
+        epoch_ids: list[str],
+        extra_in_flight_per_node: dict[str, int] | None = None,
+    ) -> list[str]:
         """Filter startable epochs based on enabled state and max_parallel_epochs limits.
 
         Skips epochs for disabled nodes and enforces max_parallel_epochs limits.
@@ -1652,6 +1814,9 @@ class Net:
 
         Args:
             epoch_ids: List of startable epoch IDs.
+            extra_in_flight_per_node: Optional dict of node_name -> count of
+                launched-but-not-yet-started epochs (used by streaming scheduler
+                to avoid over-admitting epochs).
 
         Returns:
             Filtered list of epoch IDs that are allowed to start.
@@ -1662,6 +1827,11 @@ class Net:
             record = self._epochs.get(eid)
             if record:
                 running_per_node[record.node_name] = running_per_node.get(record.node_name, 0) + 1
+
+        # Add extra in-flight counts (launched but not yet started)
+        if extra_in_flight_per_node:
+            for node_name, count in extra_in_flight_per_node.items():
+                running_per_node[node_name] = running_per_node.get(node_name, 0) + count
 
         allowed = []
         # Track how many new epochs we're allowing per node (within this batch)
@@ -1998,6 +2168,21 @@ class Net:
                 input_hash=input_hash,
                 fs_input_hash=fs_input_hash,
             )
+        except asyncio.CancelledError:
+            record = self._epochs.get(epoch_id)
+            if record and record.state != netrun_sim.EpochState.Finished:
+                try:
+                    response, _ = self._do_action(
+                        netrun_sim.NetAction.cancel_epoch(epoch_id),
+                        epoch_id=epoch_id,
+                        detail={"node_name": node_name},
+                    )
+                    record.was_cancelled = True
+                    record.ended_at = get_timestamp_utc()
+                    record.destroyed_packets = list(response.destroyed_packets)
+                except Exception:
+                    pass  # Epoch may have already been cleaned up
+            raise
         finally:
             self._running_epochs.discard(epoch_id)
 
@@ -4093,22 +4278,28 @@ class Net:
                 f"Cannot execute source node(s):\n" + "\n".join(f"  - {e}" for e in errors)
             )
 
-        # 4. Execution loop
+        # 4. Streaming execution loop
         collected_salvos: list[TargetInputSalvo] = []
+        pending_tasks: dict[asyncio.Task, str] = {}  # task -> epoch_id
+        launched_epochs: set[str] = set()
+
         for _ in range(max_iterations):
             await self.run_until_blocked(auto_start_epochs=False)
             startable = self.get_startable_epochs()
-            if not startable:
+            # Filter out epochs we've already launched tasks for
+            startable = [eid for eid in startable if eid not in launched_epochs]
+            if not startable and not pending_tasks:
                 break
 
-            control_epochs = []
-            upstream_epochs = []
+            # Classify new startable epochs
             for epoch_id in startable:
                 epoch = self._netsim.get_epoch(epoch_id)
                 # Always execute control epochs immediately
                 salvo_cond = epoch.in_salvo.salvo_condition if epoch.in_salvo else None
                 if salvo_cond and is_control_salvo_condition(salvo_cond):
-                    control_epochs.append(epoch_id)
+                    task = asyncio.create_task(self._execute_epoch(epoch_id))
+                    pending_tasks[task] = epoch_id
+                    launched_epochs.add(epoch_id)
                     continue
                 classification = _classify_epoch(epoch, target_specs, upstream_nodes)
                 if classification == "target":
@@ -4124,34 +4315,35 @@ class Net:
                         packets=port_values,
                     ))
                 elif classification == "upstream":
-                    upstream_epochs.append(epoch_id)
+                    # Respect max_parallel_epochs
+                    allowed = self._filter_startable_epochs([epoch_id])
+                    if allowed:
+                        task = asyncio.create_task(self._execute_epoch(epoch_id))
+                        pending_tasks[task] = epoch_id
+                        launched_epochs.add(epoch_id)
 
-            # Always execute control epochs
-            if control_epochs:
-                ctrl_tasks = [asyncio.create_task(self._execute_epoch(eid)) for eid in control_epochs]
-                ctrl_results = await asyncio.gather(*ctrl_tasks, return_exceptions=True)
-                ctrl_exceptions = [r for r in ctrl_results if isinstance(r, Exception)]
-                if ctrl_exceptions:
-                    if len(ctrl_exceptions) == 1:
-                        raise ctrl_exceptions[0]
-                    raise ExceptionGroup("Control epoch failures", ctrl_exceptions)
-
-            if not upstream_epochs:
-                if control_epochs:
-                    continue  # Control effects may create new work — re-check
+            if not pending_tasks:
                 break
 
-            # Execute upstream epochs (respecting max_parallel_epochs)
-            upstream_epochs = self._filter_startable_epochs(upstream_epochs)
-            if not upstream_epochs:
-                break
-            tasks = [asyncio.create_task(self._execute_epoch(eid)) for eid in upstream_epochs]
-            results = await asyncio.gather(*tasks, return_exceptions=True)
-            exceptions = [r for r in results if isinstance(r, Exception)]
-            if exceptions:
-                if len(exceptions) == 1:
-                    raise exceptions[0]
-                raise ExceptionGroup("Upstream epoch failures", exceptions)
+            # Wait for at least one task to complete
+            done, _ = await asyncio.wait(pending_tasks.keys(), return_when=asyncio.FIRST_COMPLETED)
+
+            first_error: Exception | None = None
+            for task in done:
+                epoch_id = pending_tasks.pop(task)
+                launched_epochs.discard(epoch_id)
+                exc = task.exception()
+                if exc is not None and first_error is None:
+                    first_error = exc
+
+            if first_error is not None:
+                for remaining_task in pending_tasks:
+                    remaining_task.cancel()
+                if pending_tasks:
+                    await asyncio.wait(pending_tasks.keys())
+                raise first_error
+
+            # Loop back to propagate output and discover new epochs
 
         return collected_salvos
 
