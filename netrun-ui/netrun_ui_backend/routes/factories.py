@@ -22,23 +22,51 @@ def _get_working_dir() -> str | None:
     return os.environ.get("NETRUN_UI_WORKING_DIR")
 
 
+def _find_venv_site_packages(project_dir: str) -> str | None:
+    """Find the site-packages directory in a project's .venv (if it exists)."""
+    import glob
+    venv_dir = os.path.join(project_dir, ".venv")
+    if not os.path.isdir(venv_dir):
+        return None
+    # Match .venv/lib/python3.*/site-packages
+    matches = glob.glob(os.path.join(venv_dir, "lib", "python*", "site-packages"))
+    if matches:
+        return matches[0]
+    # Windows layout: .venv/Lib/site-packages
+    win_path = os.path.join(venv_dir, "Lib", "site-packages")
+    if os.path.isdir(win_path):
+        return win_path
+    return None
+
+
 @contextmanager
 def _with_working_dir_on_path():
-    """Temporarily add the project working directory to sys.path.
+    """Temporarily add the project working directory (and its venv) to sys.path.
 
     This allows importing local modules (e.g. ``nodes``) that live in the
-    user's project directory.
+    user's project directory. If the project has a ``.venv``, its
+    site-packages are also added so that editable installs and project
+    dependencies are importable even when the backend runs from a different
+    Python environment.
     """
     wd = _get_working_dir()
-    added = False
-    if wd and wd not in sys.path:
-        sys.path.insert(0, wd)
-        added = True
+    added_paths: list[str] = []
+    if wd:
+        # Add the working directory itself
+        if wd not in sys.path:
+            sys.path.insert(0, wd)
+            added_paths.append(wd)
+        # Add the project venv's site-packages (if present and not already on path)
+        site_pkgs = _find_venv_site_packages(wd)
+        if site_pkgs and site_pkgs not in sys.path:
+            sys.path.insert(0, site_pkgs)
+            added_paths.append(site_pkgs)
     try:
         yield
     finally:
-        if added and wd in sys.path:
-            sys.path.remove(wd)
+        for p in added_paths:
+            if p in sys.path:
+                sys.path.remove(p)
 
 
 def _resolve_base_dir(project_root: str | None = None) -> str | None:

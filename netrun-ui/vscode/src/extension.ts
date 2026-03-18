@@ -109,9 +109,14 @@ async function waitForServer(
 /**
  * Resolve the Python interpreter path. Priority:
  * 1. netrun-ui.pythonPath setting (if explicitly set by user)
- * 2. VS Code Python extension's active interpreter
- * 3. Workspace .venv/bin/python (if it exists)
- * 4. Fallback to "python"
+ * 2. Workspace .venv/bin/python (if it exists and has netrun_ui_backend)
+ * 3. VS Code Python extension's active interpreter
+ * 4. Workspace .venv/bin/python (even without netrun_ui_backend)
+ * 5. Fallback to "python"
+ *
+ * The workspace .venv is preferred over the VS Code Python extension because
+ * it contains the project's own dependencies (editable installs, etc.) which
+ * are needed for factory resolution.
  */
 async function resolvePythonPath(): Promise<string> {
 	const config = vscode.workspace.getConfiguration('netrun-ui');
@@ -126,6 +131,28 @@ async function resolvePythonPath(): Promise<string> {
 	if (isExplicitlySet) {
 		outputChannel.appendLine(`Using configured Python path: ${configured}`);
 		return configured;
+	}
+
+	// Try workspace .venv first — it has the project's dependencies
+	const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+	if (workspaceFolder) {
+		const venvPython = path.join(workspaceFolder, '.venv', 'bin', 'python');
+		if (fs.existsSync(venvPython)) {
+			// Check if the venv has netrun_ui_backend installed
+			try {
+				const { execFileSync } = require('child_process');
+				execFileSync(venvPython, ['-c', 'import netrun_ui_backend'], {
+					timeout: 5000,
+					stdio: 'ignore',
+				});
+				outputChannel.appendLine(`Using workspace .venv Python: ${venvPython}`);
+				return venvPython;
+			} catch {
+				outputChannel.appendLine(
+					`Workspace .venv exists but lacks netrun_ui_backend, trying other sources`
+				);
+			}
+		}
 	}
 
 	// Try to get the interpreter from VS Code's Python extension
@@ -155,18 +182,38 @@ async function resolvePythonPath(): Promise<string> {
 		outputChannel.appendLine(`Could not get interpreter from Python extension: ${err}`);
 	}
 
-	// Try workspace .venv
-	const workspaceFolder = vscode.workspace.workspaceFolders?.[0]?.uri.fsPath;
+	// Last resort: workspace .venv even without netrun_ui_backend
 	if (workspaceFolder) {
 		const venvPython = path.join(workspaceFolder, '.venv', 'bin', 'python');
 		if (fs.existsSync(venvPython)) {
-			outputChannel.appendLine(`Using workspace .venv Python: ${venvPython}`);
+			outputChannel.appendLine(`Using workspace .venv Python (fallback): ${venvPython}`);
 			return venvPython;
 		}
 	}
 
 	outputChannel.appendLine(`Falling back to default Python: ${configured}`);
 	return configured;
+}
+
+/**
+ * Extract the virtual environment root from a Python executable path.
+ * E.g. "/path/to/.venv/bin/python" -> "/path/to/.venv"
+ * Returns undefined if the path doesn't look like it's inside a venv.
+ */
+function extractVenvPath(pythonPath: string): string | undefined {
+	// Typical venv layout: <venv>/bin/python (Unix) or <venv>/Scripts/python.exe (Windows)
+	const normalized = path.resolve(pythonPath);
+	const dir = path.dirname(normalized);
+	const dirName = path.basename(dir);
+
+	if (dirName === 'bin' || dirName === 'Scripts') {
+		const candidate = path.dirname(dir);
+		// Verify it looks like a venv by checking for pyvenv.cfg
+		if (fs.existsSync(path.join(candidate, 'pyvenv.cfg'))) {
+			return candidate;
+		}
+	}
+	return undefined;
 }
 
 async function startBackend(context: vscode.ExtensionContext): Promise<number> {
@@ -192,11 +239,25 @@ async function startBackend(context: vscode.ExtensionContext): Promise<number> {
 
 	outputChannel.appendLine(`Starting backend: ${pythonPath} ${args.join(' ')}`);
 
+	// Build subprocess environment. If the Python path is inside a venv,
+	// set VIRTUAL_ENV so the subprocess picks up the venv's site-packages.
+	const env: Record<string, string | undefined> = {
+		...process.env,
+		NETRUN_UI_ALLOW_ALL_ORIGINS: '1',
+	};
+
+	const venvPath = extractVenvPath(pythonPath);
+	if (venvPath) {
+		env.VIRTUAL_ENV = venvPath;
+		// Prepend the venv's bin dir to PATH so child processes also resolve
+		// to the venv's Python and tools.
+		const venvBin = path.join(venvPath, process.platform === 'win32' ? 'Scripts' : 'bin');
+		env.PATH = `${venvBin}${path.delimiter}${process.env.PATH ?? ''}`;
+		outputChannel.appendLine(`Activating venv: VIRTUAL_ENV=${venvPath}`);
+	}
+
 	backendProcess = spawn(pythonPath, args, {
-		env: {
-			...process.env,
-			NETRUN_UI_ALLOW_ALL_ORIGINS: '1',
-		},
+		env,
 		stdio: ['ignore', 'pipe', 'pipe'],
 	});
 
