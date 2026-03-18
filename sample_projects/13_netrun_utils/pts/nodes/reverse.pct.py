@@ -7,18 +7,18 @@
 # ---
 
 # %% [markdown]
-# # nodes.transform
+# # nodes.reverse
 #
-# Transforms text to uppercase.
+# Reverses the input text.
 
 # %%
-#|default_exp transform
+#|default_exp reverse
 #|export_as_func true
 
 # %%
 #|set_func_signature
 def main(text: str, ctx, print) -> str:
-    """Transform text to uppercase."""
+    """Reverse the input text."""
     ...
 
 # %% [markdown]
@@ -28,14 +28,14 @@ def main(text: str, ctx, print) -> str:
 #|export
 import time
 
-print(f"Uppercasing {len(text)} chars")
-ctx.log("Uppercasing", input_length=len(text))
-time.sleep(1)  # Simulate processing
+print(f"Reversing {len(text)} chars")
+ctx.log("Reversing", input_length=len(text))
+time.sleep(2)  # Simulate processing
 
 # %%
 #|export
-result = text.upper()
-ctx.log("Uppercase complete")
+result = text[::-1]
+ctx.log("Reverse complete")
 print(f"Done: {result[:40]}...")
 
 # %%

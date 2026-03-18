@@ -59,7 +59,7 @@ class ObserveServer:
         net: Net,
         host: str = "127.0.0.1",
         port: int = 8000,
-        ws_interval: float = 1.0,
+        ws_interval: float = 0.2,
         name: str = "unnamed-net",
         registry_url: str | None = "http://localhost:18400",
     ):
