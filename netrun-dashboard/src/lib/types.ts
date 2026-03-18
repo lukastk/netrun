@@ -53,12 +53,21 @@ export interface EpochInfo {
 	factory: string | null;
 }
 
+/** Mirrors netrun_utils.observe.models.LogEntry */
+export interface LogEntry {
+	timestamp: string;
+	message: string;
+	node_name: string | null;
+	epoch_id: string | null;
+}
+
 /** WebSocket message from ObserveServer */
 export interface ObserveState {
 	status: NetStatus;
 	nodes: NodeStatus[];
 	edges: EdgeStatus[];
 	epochs: EpochInfo[];
+	logs: LogEntry[];
 }
 
 /** Entry in the dashboard registry */

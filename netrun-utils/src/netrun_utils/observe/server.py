@@ -133,6 +133,7 @@ class ObserveServer:
                         "nodes": [n.model_dump() for n in obs.get_nodes()],
                         "edges": [e.model_dump() for e in obs.get_edges()],
                         "epochs": [e.model_dump() for e in obs.get_epoch_logs()],
+                        "logs": [l.model_dump() for l in obs.get_all_logs()],
                     }
                     await ws.send_text(json.dumps(state))
                     await asyncio.sleep(self._ws_interval)
