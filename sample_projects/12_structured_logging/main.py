@@ -21,13 +21,7 @@ from netrun.logging._backends import JsonlEpochLogger, JsonlSimActionLogger, Sql
 async def run_pipeline(net: Net, url: str):
     """Inject a URL and run the pipeline to completion."""
     net.inject_data("fetch_data", "url", [url])
-    while True:
-        await net.run_until_blocked()
-        startable = net.get_startable_epochs()
-        if not startable:
-            break
-        for epoch_id in startable:
-            await net.execute_epoch(epoch_id)
+    await net.run_until_blocked()
 
 
 async def main():
@@ -275,11 +269,7 @@ async def main():
                           f"sim_actions={len(el.sim_actions)}")
 
             if not made_progress:
-                startable = net.get_startable_epochs()
-                if not startable:
-                    break
-                for epoch_id in startable:
-                    await net.execute_epoch(epoch_id)
+                break
 
     print()
     print("=" * 60)

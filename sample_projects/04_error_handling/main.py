@@ -16,17 +16,6 @@ from pathlib import Path
 from netrun.core import Net, NetConfig
 
 
-async def run_net(net):
-    """Run the net until no more progress can be made."""
-    while True:
-        await net.run_until_blocked()
-        startable = net.get_startable_epochs()
-        if not startable:
-            break
-        for epoch_id in startable:
-            await net.execute_epoch(epoch_id)
-
-
 async def main():
     config_path = Path(__file__).parent / "main.netrun.json"
     config = NetConfig.from_file(config_path)
@@ -51,11 +40,11 @@ async def main():
         # 6. Slow node: times out after 0.5s (runs on thread pool)
         net.inject_data("slow", "data", ["will_timeout"])
 
-        await run_net(net)
+        await net.run_until_blocked()
 
         # --- Phase 2: Second once_only invocation exceeds max_epochs ---
         net.inject_data("once_only", "data", ["second"])
-        await run_net(net)
+        await net.run_until_blocked()
 
         # --- Report results ---
         print("=" * 60)

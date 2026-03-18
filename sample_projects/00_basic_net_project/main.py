@@ -32,15 +32,7 @@ async def main():
         net.inject_data("analyze", "value", [42])
 
         # Run until all processing is complete
-        while True:
-            await net.run_until_blocked()
-
-            startable = net.get_startable_epochs()
-            if not startable:
-                break
-
-            for epoch_id in startable:
-                await net.execute_epoch(epoch_id)
+        await net.run_until_blocked()
 
         # Retrieve results from output queues
         results = net.flush_output_queue("results")

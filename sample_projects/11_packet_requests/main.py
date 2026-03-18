@@ -28,29 +28,18 @@ async def main():
         # Scenario 1: On-Startup Pull
         # =============================================================
         # Consumer has dependency_request with on_startup trigger.
-        # The first run_until_blocked() fires the startup request,
-        # which cascades backward to DataSource (a source node) and
-        # creates an epoch there.
+        # run_until_blocked() fires the startup request, which cascades
+        # backward to DataSource (a source node), executes it, and
+        # delivers the result forward to Consumer.
         #
-        # Note: Merger also has on_startup, so ConfigSource gets an
-        # epoch too. We'll handle both startup-triggered scenarios.
+        # Note: Merger also has on_startup, so ConfigSource gets
+        # triggered too.
         print("=" * 60)
         print("SCENARIO 1: On-Startup Pull")
         print("=" * 60)
         print()
 
         await net.run_until_blocked()
-
-        # Execute all startable epochs from startup requests.
-        # This will start DataSource and ConfigSource (both are source
-        # nodes activated by on_startup dependency requests).
-        while True:
-            startable = net.get_startable_epochs()
-            if not startable:
-                break
-            for epoch_id in startable:
-                await net.execute_epoch(epoch_id)
-            await net.run_until_blocked()
 
         results1 = net.flush_output_queue("consumer_output")
         print(f"Consumer got: {results1}")
@@ -72,14 +61,6 @@ async def main():
         net.request("Reporter", "report_v1")
         await net.run_until_blocked()
 
-        while True:
-            startable = net.get_startable_epochs()
-            if not startable:
-                break
-            for epoch_id in startable:
-                await net.execute_epoch(epoch_id)
-            await net.run_until_blocked()
-
         results2 = net.flush_output_queue("reporter_output")
         print(f"Reporter produced: {results2}")
         print()
@@ -98,14 +79,6 @@ async def main():
 
         net.inject_data("Merger", "live", ["user_click_event"])
         await net.run_until_blocked()
-
-        while True:
-            startable = net.get_startable_epochs()
-            if not startable:
-                break
-            for epoch_id in startable:
-                await net.execute_epoch(epoch_id)
-            await net.run_until_blocked()
 
         results3 = net.flush_output_queue("merger_output")
         print(f"Merger produced: {results3}")

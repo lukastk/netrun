@@ -33,13 +33,7 @@ async def main():
         net.inject_data("factory_pipeline.stage_0", "data", [{"value": 100, "label": "factory_test"}])
 
         # Run until all processing is complete
-        while True:
-            await net.run_until_blocked()
-            startable = net.get_startable_epochs()
-            if not startable:
-                break
-            for epoch_id in startable:
-                await net.execute_epoch(epoch_id)
+        await net.run_until_blocked()
 
         # Results
         print("=" * 60)

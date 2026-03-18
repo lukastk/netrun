@@ -18,17 +18,6 @@ from pathlib import Path
 from netrun.core import Net, NetConfig
 
 
-async def run_net(net):
-    """Run the net until no more progress can be made."""
-    while True:
-        await net.run_until_blocked()
-        startable = net.get_startable_epochs()
-        if not startable:
-            break
-        for epoch_id in startable:
-            await net.execute_epoch(epoch_id)
-
-
 async def main():
     config_path = Path(__file__).parent / "main.netrun.toml"
     config = NetConfig.from_file(config_path)
@@ -36,7 +25,7 @@ async def main():
     async with Net(config) as net:
         # Inject names into the greeter
         net.inject_data("greeter", "name", ["Alice", "Bob"])
-        await run_net(net)
+        await net.run_until_blocked()
 
         # Collect results
         results = net.flush_output_queue("results")

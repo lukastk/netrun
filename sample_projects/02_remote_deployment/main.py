@@ -120,13 +120,7 @@ async def main():
         net.inject_data("double", "x", [5])
         net.inject_data("add", "b", [10])
 
-        while True:
-            await net.run_until_blocked()
-            startable = net.get_startable_epochs()
-            if not startable:
-                break
-            for epoch_id in startable:
-                await net.execute_epoch(epoch_id)
+        await net.run_until_blocked()
 
         results = net.flush_output_queue("results")
         print("Result:")

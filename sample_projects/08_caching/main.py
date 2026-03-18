@@ -28,13 +28,7 @@ from netrun.storage.config import CacheConfig, CacheWhat, NodeCacheConfig, Stora
 async def run_pipeline(net: Net, url: str) -> float:
     t0 = time.monotonic()
     net.inject_data("fetch_data", "url", [url])
-    while True:
-        await net.run_until_blocked()
-        startable = net.get_startable_epochs()
-        if not startable:
-            break
-        for epoch_id in startable:
-            await net.execute_epoch(epoch_id)
+    await net.run_until_blocked()
     return time.monotonic() - t0
 
 

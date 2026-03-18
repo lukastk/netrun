@@ -14,17 +14,6 @@ from pathlib import Path
 from netrun.core import Net, NetConfig
 
 
-async def run_net(net):
-    """Run the net until no more progress can be made."""
-    while True:
-        await net.run_until_blocked()
-        startable = net.get_startable_epochs()
-        if not startable:
-            break
-        for epoch_id in startable:
-            await net.execute_epoch(epoch_id)
-
-
 async def main():
     config_path = Path(__file__).parent / "main.netrun.json"
     config = NetConfig.from_file(config_path)
@@ -37,7 +26,7 @@ async def main():
         for item in ["alpha", "beta", "gamma", "delta", "epsilon"]:
             net.inject_data("batch_processor", "data", [item])
 
-        await run_net(net)
+        await net.run_until_blocked()
 
         # --- 2. Rate-limited worker ---
         # Inject 4 items. rate_limit_per_second=2 means at most 2 per second.
@@ -45,14 +34,14 @@ async def main():
             net.inject_data("rate_limited_worker", "data", [item])
 
         t0 = time.time()
-        await run_net(net)
+        await net.run_until_blocked()
         elapsed = time.time() - t0
 
         # --- 3. Multi-output with secondary queue ---
         net.inject_data("multi_output", "value", [42])
         net.inject_data("multi_output", "value", [99])
 
-        await run_net(net)
+        await net.run_until_blocked()
 
         # --- Report results ---
         print("=" * 60)

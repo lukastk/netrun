@@ -18,13 +18,7 @@ async def run_pipeline(net: Net, seed: int) -> tuple[list, float]:
     """Inject seed, run to completion, return (results, elapsed_seconds)."""
     t0 = time.monotonic()
     net.inject_data("generate_data", "seed", [seed])
-    while True:
-        await net.run_until_blocked()
-        startable = net.get_startable_epochs()
-        if not startable:
-            break
-        for epoch_id in startable:
-            await net.execute_epoch(epoch_id)
+    await net.run_until_blocked()
     results = net.flush_output_queue("results")
     elapsed = time.monotonic() - t0
     return results, elapsed
