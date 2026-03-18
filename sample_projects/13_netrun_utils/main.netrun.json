@@ -2,14 +2,6 @@
   "extra": {
     "description": "Demo pipeline for netrun-dashboard with parallel nodes"
   },
-  "pools": {
-    "main": {
-      "spec": {
-        "type": "thread",
-        "num_workers": 4
-      }
-    }
-  },
   "node_vars": {
     "text_source": {
       "value": "greeting",

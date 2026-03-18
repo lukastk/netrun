@@ -17,7 +17,7 @@
 
 # %%
 #|set_func_signature
-def main(text: str, ctx, print) -> str:
+async def main(text: str, ctx, print) -> str:
     """Analyze text and produce statistics."""
     ...
 
@@ -26,11 +26,11 @@ def main(text: str, ctx, print) -> str:
 
 # %%
 #|export
-import time
+import asyncio
 
 print(f"Analyzing {len(text)} chars")
 ctx.log("Analyzing", input_length=len(text))
-time.sleep(3)  # Simulate heavier processing
+await asyncio.sleep(3)  # Simulate heavier processing
 
 # %%
 #|export

@@ -17,7 +17,7 @@
 
 # %%
 #|set_func_signature
-def main(text: str, ctx, print) -> str:
+async def main(text: str, ctx, print) -> str:
     """Reverse the input text."""
     ...
 
@@ -26,11 +26,11 @@ def main(text: str, ctx, print) -> str:
 
 # %%
 #|export
-import time
+import asyncio
 
 print(f"Reversing {len(text)} chars")
 ctx.log("Reversing", input_length=len(text))
-time.sleep(2)  # Simulate processing
+await asyncio.sleep(2)  # Simulate processing
 
 # %%
 #|export

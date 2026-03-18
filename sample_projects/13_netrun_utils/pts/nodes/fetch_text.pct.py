@@ -18,11 +18,11 @@
 
 # %%
 #|top_export
-import time
+import asyncio
 
 # %%
 #|set_func_signature
-def main(ctx, print) -> str:
+async def main(ctx, print) -> str:
     """Fetch text data from a configured source."""
     ...
 
@@ -52,7 +52,7 @@ ctx.log("Fetching text", source=source)
 
 # %%
 #|export
-time.sleep(1.5)  # Simulate I/O
+await asyncio.sleep(1.5)  # Simulate I/O
 
 texts = {
     "greeting": "Hello world! This is a sample text for processing.",

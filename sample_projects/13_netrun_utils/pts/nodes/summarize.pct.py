@@ -17,7 +17,7 @@
 
 # %%
 #|set_func_signature
-def main(text: str, ctx, print) -> str:
+async def main(text: str, ctx, print) -> str:
     """Produce a summary of the text."""
     ...
 
@@ -26,11 +26,11 @@ def main(text: str, ctx, print) -> str:
 
 # %%
 #|export
-import time
+import asyncio
 
 print(f"Summarizing {len(text)} chars")
 ctx.log("Summarizing", input_length=len(text))
-time.sleep(1.5)  # Simulate processing
+await asyncio.sleep(1.5)  # Simulate processing
 
 # %%
 #|export

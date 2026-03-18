@@ -45,7 +45,7 @@ def _ensure_static() -> None:
         return
 
     if BUILD_DIR.is_dir():
-        shutil.copytree(BUILD_DIR, STATIC_DIR)
+        shutil.copytree(BUILD_DIR, STATIC_DIR, dirs_exist_ok=True)
         logger.info("Frontend built and copied to server/static/")
     else:
         logger.warning("Build directory not found after npm run build")
