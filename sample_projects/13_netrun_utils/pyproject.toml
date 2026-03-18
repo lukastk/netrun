@@ -6,6 +6,7 @@ requires-python = ">=3.11"
 dependencies = [
     "netrun",
     "netrun-utils[observe,dev]",
+    "netrun-dashboard",
     "nblite>=1.1.5",
     "jupyterlab>=4.5.6",
     "netrun-ui>=0.2.0",
@@ -27,3 +28,4 @@ netrun = { path = "../../netrun", editable = true }
 netrun-utils = { path = "../../netrun-utils", editable = true }
 netrun-sim = { path = "../../netrun-sim/python", editable = true }
 netrun-ui = { path = "../../netrun-ui/", editable = true }
+netrun-dashboard = { path = "../../netrun-dashboard", editable = true }

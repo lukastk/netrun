@@ -19,15 +19,19 @@
 #|export
 import asyncio
 import json
+import logging
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 import uvicorn
+import httpx
 
 from netrun.net._net._net import Net
 
 from netrun_utils.observe.observer import NetObserver
 from netrun_utils.observe.models import SendControlRequest, InjectDataRequest
+
+logger = logging.getLogger(__name__)
 
 # %%
 #|export
@@ -56,14 +60,19 @@ class ObserveServer:
         host: str = "127.0.0.1",
         port: int = 8000,
         ws_interval: float = 1.0,
+        name: str = "unnamed-net",
+        registry_url: str | None = "http://localhost:18400",
     ):
         self._observer = NetObserver(net)
         self._host = host
         self._port = port
         self._ws_interval = ws_interval
+        self._name = name
+        self._registry_url = registry_url
         self._app = self._create_app()
         self._server: uvicorn.Server | None = None
         self._task: asyncio.Task | None = None
+        self._heartbeat_task: asyncio.Task | None = None
 
     def _create_app(self) -> FastAPI:
         app = FastAPI(title="netrun-utils observe", version="0.1.0")
@@ -80,6 +89,10 @@ class ObserveServer:
         @app.get("/health")
         def health():
             return {"status": "healthy"}
+
+        @app.get("/config")
+        def config():
+            return obs.get_config()
 
         @app.get("/status")
         def status():
@@ -147,6 +160,7 @@ class ObserveServer:
         """Start the server as a background asyncio task.
 
         Waits until the server is ready to accept connections before returning.
+        Registers with the dashboard registry if registry_url is set.
         """
         config = uvicorn.Config(
             self._app,
@@ -161,8 +175,26 @@ class ObserveServer:
         while not self._server.started:
             await asyncio.sleep(0.05)
 
+        # Register with dashboard and start heartbeat
+        if self._registry_url:
+            await self._register()
+            self._heartbeat_task = asyncio.create_task(self._heartbeat_loop())
+
     async def stop(self) -> None:
         """Gracefully stop the server."""
+        # Stop heartbeat
+        if self._heartbeat_task is not None:
+            self._heartbeat_task.cancel()
+            try:
+                await self._heartbeat_task
+            except asyncio.CancelledError:
+                pass
+            self._heartbeat_task = None
+
+        # Deregister from dashboard
+        if self._registry_url:
+            await self._deregister()
+
         if self._server is not None:
             self._server.should_exit = True
         if self._task is not None:
@@ -174,6 +206,41 @@ class ObserveServer:
     def url(self) -> str:
         """Base URL of the running server."""
         return f"http://{self._host}:{self._port}"
+
+    async def _register(self) -> None:
+        """Register with the dashboard registry. Silent on failure."""
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                await client.post(
+                    f"{self._registry_url}/api/register",
+                    json={"name": self._name, "url": self.url},
+                )
+        except Exception:
+            logger.debug("Failed to register with dashboard at %s", self._registry_url)
+
+    async def _deregister(self) -> None:
+        """Deregister from the dashboard registry. Silent on failure."""
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                await client.post(
+                    f"{self._registry_url}/api/deregister",
+                    json={"url": self.url},
+                )
+        except Exception:
+            logger.debug("Failed to deregister from dashboard at %s", self._registry_url)
+
+    async def _heartbeat_loop(self) -> None:
+        """Send heartbeats to the dashboard registry every 10 seconds."""
+        while True:
+            await asyncio.sleep(10)
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    await client.post(
+                        f"{self._registry_url}/api/heartbeat",
+                        json={"url": self.url},
+                    )
+            except Exception:
+                logger.debug("Heartbeat to dashboard failed")
 
     async def __aenter__(self) -> "ObserveServer":
         await self.start()

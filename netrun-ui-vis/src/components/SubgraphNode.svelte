@@ -31,11 +31,13 @@
 		onResize, onDescriptionToggle, onSubgraphOpen, onSubgraphToggleExpand, onPortGroupToggle,
 	}: Props = $props();
 
+	let localDescExpanded = $state(false);
 	let descExpanded = $derived((() => {
 		const config = (data as Record<string, unknown>)._config as Record<string, unknown> | undefined;
 		const extra = config?.extra as Record<string, unknown> | undefined;
 		const ui = extra?.ui as Record<string, unknown> | undefined;
-		return (ui?.descriptionExpanded as boolean) ?? false;
+		const fromConfig = ui?.descriptionExpanded as boolean | undefined;
+		return fromConfig ?? localDescExpanded;
 	})());
 
 	let portGroupStates = $derived((() => {
@@ -165,7 +167,11 @@
 	}
 
 	function handleDescToggle() {
-		onDescriptionToggle?.({ nodeId: id });
+		if (onDescriptionToggle) {
+			onDescriptionToggle({ nodeId: id });
+		} else {
+			localDescExpanded = !localDescExpanded;
+		}
 	}
 </script>
 

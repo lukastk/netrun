@@ -36,10 +36,12 @@
 		(cascadeHighlight?.visitedNodes.has(id) ?? false) && !isCascadeSource
 	);
 
+	let localDescExpanded = $state(false);
 	let descExpanded = $derived((() => {
 		const extra = (data._config?.extra ?? undefined) as Record<string, unknown> | undefined;
 		const ui = (extra?.ui ?? undefined) as Record<string, unknown> | undefined;
-		return (ui?.descriptionExpanded as boolean) ?? false;
+		const fromConfig = ui?.descriptionExpanded as boolean | undefined;
+		return fromConfig ?? localDescExpanded;
 	})());
 
 	let portGroupStates = $derived((() => {
@@ -127,7 +129,11 @@
 	}
 
 	function handleDescToggle() {
-		onDescriptionToggle?.({ nodeId: id });
+		if (onDescriptionToggle) {
+			onDescriptionToggle({ nodeId: id });
+		} else {
+			localDescExpanded = !localDescExpanded;
+		}
 	}
 </script>
 

@@ -233,6 +233,12 @@ class NetObserver:
         except Exception as e:
             return ControlResponse(ok=False, message=str(e))
 
+    # --- Config ---
+
+    def get_config(self) -> dict:
+        """Get the resolved net config as a JSON-serializable dict."""
+        return self._net.config_resolved.model_dump(mode="json")
+
     # --- Private helpers ---
 
     def _node_to_status(self, info) -> NodeStatus:
