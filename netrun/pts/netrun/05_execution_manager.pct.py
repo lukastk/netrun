@@ -606,12 +606,9 @@ class ExecutionManager:
 
         run_id = str(uuid.uuid4())
         timestamp_utc_submitted = get_timestamp_utc()
-        msg_id = await self._send_msg(
-            pool_id=pool_id,
-            worker_id=worker_id,
-            key=ExecutionManagerProtocolKeys.RUN.value,
-            data=(func_import_path_or_key, run_id, send_channel, func_args, func_kwargs),
-        )
+
+        # Update round-robin and job tracking BEFORE the first await,
+        # so concurrent tasks see the updated allocation state immediately.
         job_info = SubmittedJobInfo(
             run_id=run_id,
             timestamp_utc_submitted=timestamp_utc_submitted,
@@ -624,6 +621,13 @@ class ExecutionManager:
         if (pool_id, worker_id) in self._worker_round_robin_lst:
             self._worker_round_robin_lst.remove((pool_id, worker_id))
         self._worker_round_robin_lst.append((pool_id, worker_id))
+
+        msg_id = await self._send_msg(
+            pool_id=pool_id,
+            worker_id=worker_id,
+            key=ExecutionManagerProtocolKeys.RUN.value,
+            data=(func_import_path_or_key, run_id, send_channel, func_args, func_kwargs),
+        )
 
         # Wait for UP_RUN_STARTED
         started_msg = await self._recv_msg(pool_id, msg_id, expect=ExecutionManagerProtocolKeys.UP_RUN_STARTED, close_msg_queue=False)
