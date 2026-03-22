@@ -145,8 +145,7 @@
 	}
 
 	:global(.node-highlighted) {
-		outline: 2px solid var(--accent-color, #3b82f6);
-		outline-offset: 2px;
+		box-shadow: 0 0 0 4px var(--accent-color, #3b82f6);
 		border-radius: 6px;
 	}
 </style>
