@@ -23,6 +23,7 @@
 	);
 
 	let expandedEpochId = $state<string | null>(null);
+	let expandedLogKey = $state<string | null>(null);
 
 	// Collapsible sections
 	let statusOpen = $state(true);
@@ -147,14 +148,30 @@
 							{/if}
 							{#if epoch.node_log_entries.length > 0}
 								<div class="structured-logs">
-									{#each epoch.node_log_entries as entry}
-										<div class="log-line">
+									{#each epoch.node_log_entries as entry, ei}
+										{@const logKey = `${epoch.epoch_id}::${ei}`}
+										{@const hasFields = Object.keys(entry.fields).length > 0}
+										<div
+											class="log-line"
+											class:expandable={hasFields}
+											onclick={() => hasFields && (expandedLogKey = expandedLogKey === logKey ? null : logKey)}
+										>
 											<span class="mono muted">{formatTimeMs(entry.timestamp)}</span>
 											<span>{entry.message ?? ''}</span>
-											{#each Object.entries(entry.fields) as [k, v]}
-												<span class="field"><span class="field-key">{k}</span>={formatFieldValue(v)}</span>
-											{/each}
+											{#if hasFields}
+												<span class="field-indicator">&#9656; {Object.keys(entry.fields).length} fields</span>
+											{/if}
 										</div>
+										{#if expandedLogKey === logKey}
+											<div class="field-detail">
+												{#each Object.entries(entry.fields) as [k, v]}
+													<div class="field-row">
+														<span class="field-key">{k}</span>
+														<span class="field-value">{formatFieldValue(v)}</span>
+													</div>
+												{/each}
+											</div>
+										{/if}
 									{/each}
 								</div>
 							{/if}
@@ -376,13 +393,39 @@
 		align-items: baseline;
 	}
 
-	.field {
+	.log-line.expandable {
+		cursor: pointer;
+	}
+
+	.log-line.expandable:hover {
+		background: var(--bg-tertiary);
+	}
+
+	.field-indicator {
 		color: var(--text-secondary);
+		font-size: 9px;
+	}
+
+	.field-detail {
+		padding: 2px 0 4px 16px;
+		border-left: 2px solid var(--border-color);
+		margin-left: 4px;
+	}
+
+	.field-row {
+		display: flex;
+		gap: 8px;
 		font-size: 10px;
+		padding: 1px 0;
 	}
 
 	.field-key {
 		color: var(--purple-color);
+		flex-shrink: 0;
+	}
+
+	.field-value {
+		color: var(--text-primary);
 	}
 
 	.empty {
