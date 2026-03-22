@@ -114,6 +114,7 @@
 				settings={graphSettings}
 				showMinimap={false}
 				onNodeClick={handleNodeClick}
+				deleteKey={null}
 			/>
 		</SvelteFlowProvider>
 	{/if}
