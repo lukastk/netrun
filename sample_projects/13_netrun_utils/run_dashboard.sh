@@ -4,12 +4,24 @@
 # transform feeds into summarize. Nodes sleep 1-3s to simulate work.
 #
 # Usage: ./run_dashboard.sh
-#   Then open http://localhost:18400
+#   Then open http://localhost:<port>
 
 set -e
 
 DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$DIR"
+
+# Find a free port starting from a preferred port
+find_free_port() {
+    local port=$1
+    while lsof -i :"$port" >/dev/null 2>&1; do
+        port=$((port + 1))
+    done
+    echo "$port"
+}
+
+DASHBOARD_PORT=$(find_free_port 18400)
+OBSERVE_PORT=$(find_free_port 8000)
 
 cleanup() {
     echo ""
@@ -23,26 +35,34 @@ cleanup() {
 trap cleanup EXIT
 
 # 1. Start the dashboard server
-echo "Starting dashboard on http://localhost:18400 ..."
-uv run netrun-dashboard --port 18400 &
+echo "Starting dashboard on http://localhost:$DASHBOARD_PORT ..."
+uv run netrun-dashboard --port "$DASHBOARD_PORT" &
 DASHBOARD_PID=$!
 sleep 1
 
 # 2. Start the sample net and run the pipeline
-echo "Starting sample net with ObserveServer on http://localhost:8000 ..."
+echo "Starting sample net with ObserveServer on http://localhost:$OBSERVE_PORT ..."
 uv run python -c "
 import asyncio
 from pathlib import Path
 from netrun.core import Net, NetConfig
 from netrun_utils.observe import ObserveServer
 
+DASHBOARD_PORT = $DASHBOARD_PORT
+OBSERVE_PORT = $OBSERVE_PORT
+
 async def main():
     config = NetConfig.from_file(Path('main.netrun.json'))
     async with Net(config, run_source_nodes=False) as net:
-        async with ObserveServer(net, port=8000, name='demo-pipeline') as server:
+        async with ObserveServer(
+            net,
+            port=OBSERVE_PORT,
+            name='demo-pipeline',
+            registry_url=f'http://localhost:{DASHBOARD_PORT}',
+        ) as server:
             print(f'ObserveServer running at {server.url}')
             print()
-            print('Open http://localhost:18400 in your browser.')
+            print(f'Open http://localhost:{DASHBOARD_PORT} in your browser.')
             print('Starting pipeline in 3 seconds...')
             await asyncio.sleep(3)
             run = 1
