@@ -105,7 +105,7 @@
 						<td class="mono">{formatDuration(epoch.duration_ms)}</td>
 						<td class="mono">{formatDuration(epoch.queue_time_ms)}</td>
 						<td class="mono">{epoch.started_at ? formatTime(epoch.started_at) : '-'}</td>
-						<td class="info-cell">
+						<td>
 							{#if epoch.was_cache_hit}
 								<span class="tag">cache</span>
 							{/if}
@@ -292,17 +292,12 @@
 	.outcome-error { background: rgba(239, 68, 68, 0.15); color: var(--error-color); }
 	.outcome-cancelled { background: rgba(160, 160, 160, 0.1); color: var(--text-secondary); }
 
-	.info-cell {
-		display: flex;
-		gap: 4px;
-		align-items: center;
-	}
-
 	.tag {
 		display: inline-block;
 		padding: 0 4px;
 		border-radius: 2px;
 		font-size: 10px;
+		margin-right: 4px;
 		background: rgba(59, 130, 246, 0.15);
 		color: var(--accent-color);
 	}
