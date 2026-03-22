@@ -11,7 +11,6 @@
 
 	let filterNode = $state('');
 	let autoScroll = $state(true);
-	let showStructured = $state(true);
 	let listEl: HTMLDivElement | undefined = $state();
 	let expandedIndex = $state<number | null>(null);
 
@@ -42,7 +41,7 @@
 		}
 
 		// Structured logs from completed epochs
-		if (showStructured) {
+		{
 			for (const epoch of epochs) {
 				for (const entry of epoch.node_log_entries) {
 					result.push({
@@ -58,8 +57,20 @@
 			}
 		}
 
-		result.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-		return result;
+		// Deduplicate: if a structured log and a print buffer log have the same
+		// timestamp and node, the print version is the formatted form of the
+		// structured log — keep only the structured one.
+		const structuredKeys = new Set(
+			result
+				.filter((r) => r.isStructured)
+				.map((r) => `${r.timestamp}::${r.node_name}`),
+		);
+		const deduped = result.filter(
+			(r) => r.isStructured || !structuredKeys.has(`${r.timestamp}::${r.node_name}`),
+		);
+
+		deduped.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+		return deduped;
 	});
 
 	let filtered = $derived(
@@ -118,10 +129,6 @@
 			class="filter-input"
 		/>
 		<label class="toggle">
-			<input type="checkbox" bind:checked={showStructured} />
-			Structured
-		</label>
-		<label class="toggle">
 			<input type="checkbox" bind:checked={autoScroll} />
 			Auto-scroll
 		</label>
@@ -141,15 +148,12 @@
 					onclick={() => handleClick(log, i)}
 				>
 					<span class="log-time">{formatTime(log.timestamp)}</span>
-					{#if log.isStructured}
-						<span class="log-badge">LOG</span>
-					{/if}
 					{#if log.node_name}
 						<span class="log-node">{log.node_name}</span>
 					{/if}
 					<span class="log-message">{log.message}</span>
-					{#if log.isStructured && log.fields && Object.keys(log.fields).length > 0}
-						<span class="field-count">{Object.keys(log.fields).length} fields</span>
+					{#if log.fields && Object.keys(log.fields).length > 0}
+						<span class="field-indicator">&#9656; {Object.keys(log.fields).length} fields</span>
 					{/if}
 				</div>
 				{#if expandedIndex === i && log.fields}
@@ -252,16 +256,6 @@
 		font-variant-numeric: tabular-nums;
 	}
 
-	.log-badge {
-		font-size: 9px;
-		font-weight: 600;
-		padding: 0 3px;
-		border-radius: 2px;
-		background: rgba(168, 85, 247, 0.15);
-		color: #a855f7;
-		flex-shrink: 0;
-	}
-
 	.log-node {
 		color: var(--accent-color);
 		flex-shrink: 0;
@@ -275,7 +269,7 @@
 		word-break: break-word;
 	}
 
-	.field-count {
+	.field-indicator {
 		color: var(--text-secondary);
 		font-size: 10px;
 		flex-shrink: 0;

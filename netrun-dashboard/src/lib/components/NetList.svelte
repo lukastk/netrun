@@ -1,6 +1,12 @@
 <script lang="ts">
 	import { getRegistryState, selectNet, addManualNet } from '../stores/registryStore.svelte.js';
 
+	interface Props {
+		hideHeader?: boolean;
+	}
+
+	let { hideHeader = false }: Props = $props();
+
 	const registry = getRegistryState();
 
 	let manualName = $state('');
@@ -22,7 +28,9 @@
 </script>
 
 <div class="net-list">
-	<div class="header">Nets</div>
+	{#if !hideHeader}
+		<div class="header">Nets</div>
+	{/if}
 
 	<div class="list">
 		{#each registry.nets as net (net.url)}

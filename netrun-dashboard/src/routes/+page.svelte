@@ -42,6 +42,7 @@
 	}
 
 	// Resizable bottom panel
+	let bottomPanelOpen = $state(true);
 	let panelHeight = $state(260);
 	let dragging = $state(false);
 	let mainAreaEl: HTMLDivElement | undefined = $state();
@@ -77,38 +78,45 @@
 					onNodeClick={handleGraphNodeClick}
 				/>
 			</div>
-			<!-- svelte-ignore a11y_no_static_element_interactions -->
-			<div class="resize-handle" onpointerdown={onPointerDown}></div>
-			<div class="bottom-panel" style:height="{panelHeight}px">
-				<div class="tab-bar">
-					<button class="tab" class:active={activeTab === 'epochs'} onclick={() => (activeTab = 'epochs')}>
-						Epochs
-						{#if netState.liveState}
-							<span class="tab-count">{netState.liveState.epochs.length}</span>
+			{#if bottomPanelOpen}
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div class="resize-handle" onpointerdown={onPointerDown}></div>
+				<div class="bottom-panel" style:height="{panelHeight}px">
+					<div class="tab-bar">
+						<button class="tab" class:active={activeTab === 'epochs'} onclick={() => (activeTab = 'epochs')}>
+							Epochs
+							{#if netState.liveState}
+								<span class="tab-count">{netState.liveState.epochs.length}</span>
+							{/if}
+						</button>
+						<button class="tab" class:active={activeTab === 'logs'} onclick={() => (activeTab = 'logs')}>
+							Logs
+							{#if netState.liveState}
+								<span class="tab-count">{netState.liveState.logs.length}</span>
+							{/if}
+						</button>
+						<button class="panel-close" onclick={() => (bottomPanelOpen = false)}>&#x2715;</button>
+					</div>
+					<div class="tab-content">
+						{#if activeTab === 'epochs'}
+							<EpochTable
+								epochs={netState.liveState?.epochs ?? []}
+								onNodeHighlight={handleNodeHighlight}
+							/>
+						{:else}
+							<LogViewer
+								logs={netState.liveState?.logs ?? []}
+								epochs={netState.liveState?.epochs ?? []}
+								onNodeHighlight={handleNodeHighlight}
+							/>
 						{/if}
-					</button>
-					<button class="tab" class:active={activeTab === 'logs'} onclick={() => (activeTab = 'logs')}>
-						Logs
-						{#if netState.liveState}
-							<span class="tab-count">{netState.liveState.logs.length}</span>
-						{/if}
-					</button>
+					</div>
 				</div>
-				<div class="tab-content">
-					{#if activeTab === 'epochs'}
-						<EpochTable
-							epochs={netState.liveState?.epochs ?? []}
-							onNodeHighlight={handleNodeHighlight}
-						/>
-					{:else}
-						<LogViewer
-							logs={netState.liveState?.logs ?? []}
-							epochs={netState.liveState?.epochs ?? []}
-							onNodeHighlight={handleNodeHighlight}
-						/>
-					{/if}
-				</div>
-			</div>
+			{:else}
+				<button class="panel-reopen" onclick={() => (bottomPanelOpen = true)}>
+					Epochs / Logs ▲
+				</button>
+			{/if}
 		</div>
 	{:else}
 		<div class="loading">Loading config...</div>
@@ -180,6 +188,35 @@
 	.tab.active {
 		color: var(--text-primary);
 		border-bottom-color: var(--accent-color);
+	}
+
+	.panel-close {
+		margin-left: auto;
+		padding: 4px 8px;
+		font-size: 12px;
+		color: var(--text-secondary);
+		background: transparent;
+	}
+
+	.panel-close:hover {
+		color: var(--text-primary);
+		background: transparent;
+	}
+
+	.panel-reopen {
+		padding: 4px 16px;
+		font-size: 11px;
+		color: var(--text-secondary);
+		background: var(--bg-secondary);
+		border-top: 1px solid var(--border-color);
+		border-radius: 0;
+		width: 100%;
+		text-align: center;
+	}
+
+	.panel-reopen:hover {
+		color: var(--text-primary);
+		background: var(--bg-tertiary);
 	}
 
 	.tab-count {
