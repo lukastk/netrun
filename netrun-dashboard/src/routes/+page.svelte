@@ -29,7 +29,7 @@
 		registry.nets.find((n) => n.url === registry.selectedUrl)?.name ?? 'unknown',
 	);
 
-	let activeTab = $state<'epochs' | 'logs'>('epochs');
+	let activeTab = $state<'epochs' | 'logs' | 'queues' | 'errors'>('epochs');
 
 	// Node selection: clicking a node opens the right sidebar
 	let selectedNode = $state<string | null>(null);
@@ -125,6 +125,18 @@
 									<span class="tab-count">{netState.liveState.logs.length}</span>
 								{/if}
 							</button>
+							<button class="tab" class:active={activeTab === 'queues'} onclick={() => (activeTab = 'queues')}>
+								Queues
+								{#if netState.liveState}
+									<span class="tab-count">{Object.keys(netState.liveState.output_queues).length}</span>
+								{/if}
+							</button>
+							{#if netState.liveState && (netState.liveState.dead_letters.length > 0 || netState.liveState.status.exception_count > 0)}
+								<button class="tab tab-error" class:active={activeTab === 'errors'} onclick={() => (activeTab = 'errors')}>
+									Errors
+									<span class="tab-count tab-count-error">{netState.liveState.dead_letters.length + netState.liveState.status.exception_count}</span>
+								</button>
+							{/if}
 							<button class="panel-close" onclick={() => (bottomPanelOpen = false)}>&#x2715;</button>
 						</div>
 						<div class="tab-content">
@@ -133,12 +145,52 @@
 									epochs={netState.liveState?.epochs ?? []}
 									onNodeHighlight={handleNodeHighlight}
 								/>
-							{:else}
+							{:else if activeTab === 'logs'}
 								<LogViewer
 									logs={netState.liveState?.logs ?? []}
 									epochs={netState.liveState?.epochs ?? []}
 									onNodeHighlight={handleNodeHighlight}
 								/>
+							{:else if activeTab === 'queues'}
+								<div class="simple-panel">
+									{#if netState.liveState}
+										{@const queues = netState.liveState.output_queues}
+										{#if Object.keys(queues).length === 0}
+											<div class="empty-panel">No output queues configured</div>
+										{:else}
+											<table class="simple-table">
+												<thead><tr><th>Queue</th><th>Pending</th></tr></thead>
+												<tbody>
+													{#each Object.entries(queues) as [name, count]}
+														<tr><td class="queue-name">{name}</td><td class="mono">{count}</td></tr>
+													{/each}
+												</tbody>
+											</table>
+										{/if}
+									{/if}
+								</div>
+							{:else if activeTab === 'errors'}
+								<div class="simple-panel">
+									{#if netState.liveState}
+										{#if netState.liveState.dead_letters.length > 0}
+											<div class="error-section-title">Dead Letters</div>
+											<table class="simple-table">
+												<thead><tr><th>Node</th><th>Error</th><th>Retries</th></tr></thead>
+												<tbody>
+													{#each netState.liveState.dead_letters as dl}
+														<tr>
+															<td class="queue-name">{dl.node_name}</td>
+															<td class="error-text">{dl.error}</td>
+															<td class="mono">{dl.retry_count}</td>
+														</tr>
+													{/each}
+												</tbody>
+											</table>
+										{:else}
+											<div class="empty-panel">No dead letters</div>
+										{/if}
+									{/if}
+								</div>
 							{/if}
 						</div>
 					</div>
@@ -285,6 +337,15 @@
 		background: var(--bg-tertiary);
 	}
 
+	.tab-error {
+		color: var(--error-color);
+	}
+
+	.tab-count-error {
+		background: rgba(239, 68, 68, 0.2);
+		color: var(--error-color);
+	}
+
 	.tab-count {
 		font-size: 10px;
 		font-weight: 400;
@@ -318,6 +379,64 @@
 		font-size: 13px;
 		color: var(--text-secondary);
 		opacity: 0.6;
+	}
+
+	.simple-panel {
+		height: 100%;
+		overflow: auto;
+		padding: 8px;
+	}
+
+	.empty-panel {
+		padding: 16px;
+		text-align: center;
+		color: var(--text-secondary);
+		font-size: 12px;
+	}
+
+	.simple-table {
+		width: 100%;
+		border-collapse: collapse;
+		font-size: 12px;
+	}
+
+	.simple-table th {
+		background: var(--bg-tertiary);
+		padding: 6px 10px;
+		text-align: left;
+		font-weight: 600;
+		color: var(--text-secondary);
+		font-size: 11px;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		border-bottom: 1px solid var(--border-color);
+	}
+
+	.simple-table td {
+		padding: 5px 10px;
+		border-bottom: 1px solid var(--border-color);
+	}
+
+	.queue-name {
+		font-weight: 600;
+	}
+
+	.mono {
+		font-variant-numeric: tabular-nums;
+	}
+
+	.error-text {
+		color: var(--error-color);
+		font-size: 11px;
+	}
+
+	.error-section-title {
+		font-size: 11px;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--text-secondary);
+		margin-bottom: 6px;
 	}
 
 	.loading {

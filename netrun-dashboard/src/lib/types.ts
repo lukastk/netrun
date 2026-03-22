@@ -83,6 +83,15 @@ export interface LogEntry {
 	epoch_id: string | null;
 }
 
+/** Dead letter queue entry */
+export interface DeadLetterEntry {
+	epoch_id: string;
+	node_name: string;
+	error: string;
+	error_type: string | null;
+	retry_count: number;
+}
+
 /** WebSocket message from ObserveServer */
 export interface ObserveState {
 	status: NetStatus;
@@ -90,6 +99,8 @@ export interface ObserveState {
 	edges: EdgeStatus[];
 	epochs: EpochInfo[];
 	logs: LogEntry[];
+	dead_letters: DeadLetterEntry[];
+	output_queues: Record<string, number>;
 }
 
 /** Entry in the dashboard registry */

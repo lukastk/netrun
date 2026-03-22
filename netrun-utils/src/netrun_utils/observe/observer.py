@@ -122,12 +122,6 @@ class NetObserver:
         busy = [name for name, info in nodes.items() if info.is_busy]
         idle = [name for name in node_names if name not in busy]
 
-        # Output queue packet counts
-        output_queues = {}
-        if self._net.config_resolved.output_queues:
-            for queue_name in self._net.config_resolved.output_queues:
-                output_queues[queue_name] = 0  # Queues are flushed, so show 0 unless we track
-
         return NetStatus(
             started=self._net.started,
             paused=self._net.paused,
@@ -141,7 +135,7 @@ class NetObserver:
             running_epoch_count=len(self._net.get_running_epochs()),
             dead_letter_count=len(self._net.dead_letter_queue),
             exception_count=len(self._net.exception_queue),
-            output_queues=output_queues,
+            output_queues=self.get_output_queue_counts(),
         )
 
     def get_nodes(self) -> list[NodeStatus]:
@@ -241,6 +235,29 @@ class NetObserver:
             return ControlResponse(ok=True, message=f"Injected {len(packet_ids)} packets into '{node_name}.{port_name}'")
         except Exception as e:
             return ControlResponse(ok=False, message=str(e))
+
+    # --- Net-level data ---
+
+    def get_dead_letter_queue(self) -> list[dict]:
+        """Get dead letter queue entries."""
+        result = []
+        for entry in self._net.dead_letter_queue:
+            result.append({
+                "epoch_id": str(entry.get("epoch_id", "")),
+                "node_name": entry.get("node_name", ""),
+                "error": str(entry.get("error", "")),
+                "error_type": type(entry.get("error")).__name__ if entry.get("error") else None,
+                "retry_count": entry.get("retry_count", 0),
+            })
+        return result
+
+    def get_output_queue_counts(self) -> dict[str, int]:
+        """Get output queue names and their current packet counts."""
+        result = {}
+        if self._net.config_resolved.output_queues:
+            for queue_name in self._net.config_resolved.output_queues:
+                result[queue_name] = self._net.output_count(queue_name)
+        return result
 
     # --- Config ---
 
