@@ -131,6 +131,10 @@
         "factory_args": {
           "func": "nodes.analyze.main"
         },
+        "execution_config": {
+          "retries": 1,
+          "propagate_exceptions": false
+        },
         "type": "node"
       },
       {

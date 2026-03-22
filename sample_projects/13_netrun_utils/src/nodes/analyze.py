@@ -3,10 +3,14 @@
 async def main(text: str, ctx, print) -> str:
     """Analyze text and produce statistics."""
     import asyncio
+    import random
     
     print(f"Analyzing {len(text)} chars")
     ctx.log("Analyzing", input_length=len(text))
     await asyncio.sleep(3)  # Simulate heavier processing
+    
+    if random.random() < 0.2:
+        raise RuntimeError("Simulated analysis failure (20% chance)")
     words = text.split()
     word_count = len(words)
     char_count = len(text)
