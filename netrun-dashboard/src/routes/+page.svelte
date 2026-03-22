@@ -30,6 +30,17 @@
 
 	let activeTab = $state<'epochs' | 'logs'>('epochs');
 
+	// Node highlight: set from epoch table, log viewer, or graph click
+	let highlightedNode = $state<string | null>(null);
+
+	function handleNodeHighlight(nodeName: string | null) {
+		highlightedNode = nodeName;
+	}
+
+	function handleGraphNodeClick(nodeName: string) {
+		highlightedNode = highlightedNode === nodeName ? null : nodeName;
+	}
+
 	// Resizable bottom panel
 	let panelHeight = $state(260);
 	let dragging = $state(false);
@@ -59,7 +70,12 @@
 	{#if netState.config}
 		<div class="main-area" bind:this={mainAreaEl}>
 			<div class="graph-pane">
-				<NetGraphView config={netState.config} liveState={netState.liveState} />
+				<NetGraphView
+					config={netState.config}
+					liveState={netState.liveState}
+					{highlightedNode}
+					onNodeClick={handleGraphNodeClick}
+				/>
 			</div>
 			<!-- svelte-ignore a11y_no_static_element_interactions -->
 			<div class="resize-handle" onpointerdown={onPointerDown}></div>
@@ -80,9 +96,16 @@
 				</div>
 				<div class="tab-content">
 					{#if activeTab === 'epochs'}
-						<EpochTable epochs={netState.liveState?.epochs ?? []} />
+						<EpochTable
+							epochs={netState.liveState?.epochs ?? []}
+							onNodeHighlight={handleNodeHighlight}
+						/>
 					{:else}
-						<LogViewer logs={netState.liveState?.logs ?? []} />
+						<LogViewer
+							logs={netState.liveState?.logs ?? []}
+							epochs={netState.liveState?.epochs ?? []}
+							onNodeHighlight={handleNodeHighlight}
+						/>
 					{/if}
 				</div>
 			</div>

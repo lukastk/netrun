@@ -9,9 +9,11 @@
 	interface Props {
 		config: Record<string, unknown>;
 		liveState: ObserveState | null;
+		highlightedNode: string | null;
+		onNodeClick?: (nodeName: string) => void;
 	}
 
-	let { config, liveState }: Props = $props();
+	let { config, liveState, highlightedNode, onNodeClick }: Props = $props();
 
 	const nodeTypes: NodeTypes = {
 		netrunNode: NetrunNode,
@@ -53,40 +55,53 @@
 		}
 	});
 
-	// Apply live status as CSS classes via DOM — no node replacement
+	// Apply live status + highlight as CSS classes via DOM
 	$effect(() => {
-		if (!liveState || !initialized) return;
+		if (!initialized) return;
 
-		const nodeStatusMap = new Map(liveState.nodes.map((n) => [n.name, n]));
+		const nodeStatusMap = liveState
+			? new Map(liveState.nodes.map((n) => [n.name, n]))
+			: null;
 
-		// Update node classes directly on DOM
 		for (const node of initialNodes) {
-			const status = nodeStatusMap.get(node.id);
-			if (!status) continue;
-
 			const el = document.querySelector(`[data-id="${node.id}"]`);
 			if (!el) continue;
 
+			// Status classes
 			el.classList.remove('node-disabled', 'node-busy', 'node-startable', 'node-idle');
-			if (!status.enabled) el.classList.add('node-disabled');
-			else if (status.is_busy) el.classList.add('node-busy');
-			else if (status.startable_epoch_ids.length > 0) el.classList.add('node-startable');
-			else el.classList.add('node-idle');
+			if (nodeStatusMap) {
+				const status = nodeStatusMap.get(node.id);
+				if (status) {
+					if (!status.enabled) el.classList.add('node-disabled');
+					else if (status.is_busy) el.classList.add('node-busy');
+					else if (status.startable_epoch_ids.length > 0) el.classList.add('node-startable');
+					else el.classList.add('node-idle');
+				}
+			}
+
+			// Highlight class
+			el.classList.toggle('node-highlighted', node.id === highlightedNode);
 		}
 
-		// Update edge labels — find edge label elements and update text
-		const edgeStatusMap = new Map(
-			liveState.edges.map((e) => [`${e.source_node}:${e.source_port}->${e.target_node}:${e.target_port}`, e]),
-		);
-		for (const edge of initialEdges) {
-			const key = `${edge.data?.sourceNode}:${edge.data?.sourcePort}->${edge.data?.targetNode}:${edge.data?.targetPort}`;
-			const status = edgeStatusMap.get(key);
-			const el = document.querySelector(`[data-id="${edge.id}"] .svelte-flow__edge-text`);
-			if (el) {
-				el.textContent = status && status.packet_count > 0 ? `${status.packet_count}` : '';
+		// Update edge labels
+		if (liveState) {
+			const edgeStatusMap = new Map(
+				liveState.edges.map((e) => [`${e.source_node}:${e.source_port}->${e.target_node}:${e.target_port}`, e]),
+			);
+			for (const edge of initialEdges) {
+				const key = `${edge.data?.sourceNode}:${edge.data?.sourcePort}->${edge.data?.targetNode}:${edge.data?.targetPort}`;
+				const status = edgeStatusMap.get(key);
+				const el = document.querySelector(`[data-id="${edge.id}"] .svelte-flow__edge-text`);
+				if (el) {
+					el.textContent = status && status.packet_count > 0 ? `${status.packet_count}` : '';
+				}
 			}
 		}
 	});
+
+	function handleNodeClick(event: { node: { id: string } }) {
+		onNodeClick?.(event.node.id);
+	}
 </script>
 
 <div class="graph-container">
@@ -98,6 +113,7 @@
 				{nodeTypes}
 				settings={graphSettings}
 				showMinimap={false}
+				onNodeClick={handleNodeClick}
 			/>
 		</SvelteFlowProvider>
 	{/if}
@@ -123,6 +139,12 @@
 
 	:global(.node-startable) {
 		outline: 2px solid var(--warning-color, #f59e0b);
+		outline-offset: 2px;
+		border-radius: 6px;
+	}
+
+	:global(.node-highlighted) {
+		outline: 2px solid var(--accent-color, #3b82f6);
 		outline-offset: 2px;
 		border-radius: 6px;
 	}

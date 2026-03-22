@@ -3,17 +3,20 @@
 
 	interface Props {
 		epochs: EpochInfo[];
+		onNodeHighlight?: (nodeName: string | null) => void;
 	}
 
-	let { epochs }: Props = $props();
+	let { epochs, onNodeHighlight }: Props = $props();
 
 	// Show most recent first
 	let sorted = $derived([...epochs].sort((a, b) => b.created_at.localeCompare(a.created_at)));
 
 	let expandedId = $state<string | null>(null);
 
-	function toggle(id: string) {
-		expandedId = expandedId === id ? null : id;
+	function toggle(epoch: EpochInfo) {
+		const wasExpanded = expandedId === epoch.epoch_id;
+		expandedId = wasExpanded ? null : epoch.epoch_id;
+		onNodeHighlight?.(wasExpanded ? null : epoch.node_name);
 	}
 
 	function formatDuration(ms: number | null): string {
@@ -26,6 +29,21 @@
 		try {
 			const d = new Date(iso);
 			return d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
+		} catch {
+			return iso;
+		}
+	}
+
+	function formatTimeMs(iso: string): string {
+		try {
+			const d = new Date(iso);
+			return d.toLocaleTimeString('en-US', {
+				hour12: false,
+				hour: '2-digit',
+				minute: '2-digit',
+				second: '2-digit',
+				fractionalSecondDigits: 3,
+			});
 		} catch {
 			return iso;
 		}
@@ -48,6 +66,12 @@
 		if (outcome === 'cancelled') return 'outcome-cancelled';
 		return '';
 	}
+
+	function formatFieldValue(v: unknown): string {
+		if (v === null || v === undefined) return 'null';
+		if (typeof v === 'string') return v;
+		return JSON.stringify(v);
+	}
 </script>
 
 <div class="epoch-table">
@@ -61,13 +85,14 @@
 					<th>State</th>
 					<th>Outcome</th>
 					<th>Duration</th>
+					<th>Queue</th>
 					<th>Started</th>
 					<th>Info</th>
 				</tr>
 			</thead>
 			<tbody>
 				{#each sorted as epoch (epoch.epoch_id)}
-					<tr class="epoch-row" class:expanded={expandedId === epoch.epoch_id} onclick={() => toggle(epoch.epoch_id)}>
+					<tr class="epoch-row" class:expanded={expandedId === epoch.epoch_id} onclick={() => toggle(epoch)}>
 						<td class="node-name">{epoch.node_name}</td>
 						<td><span class="badge {stateClass(epoch.state)}">{epoch.state}</span></td>
 						<td>
@@ -78,6 +103,7 @@
 							{/if}
 						</td>
 						<td class="mono">{formatDuration(epoch.duration_ms)}</td>
+						<td class="mono">{formatDuration(epoch.queue_time_ms)}</td>
 						<td class="mono">{epoch.started_at ? formatTime(epoch.started_at) : '-'}</td>
 						<td class="info-cell">
 							{#if epoch.was_cache_hit}
@@ -92,11 +118,14 @@
 							{#if epoch.error}
 								<span class="tag tag-error">err</span>
 							{/if}
+							{#if epoch.node_log_entries.length > 0}
+								<span class="tag tag-log">{epoch.node_log_entries.length} logs</span>
+							{/if}
 						</td>
 					</tr>
 					{#if expandedId === epoch.epoch_id}
 						<tr class="detail-row">
-							<td colspan="6">
+							<td colspan="7">
 								<div class="detail">
 									<div class="detail-grid">
 										<span class="detail-label">Epoch ID</span>
@@ -111,11 +140,31 @@
 										{/if}
 										{#if epoch.created_at}
 											<span class="detail-label">Created</span>
-											<span class="detail-value mono">{formatTime(epoch.created_at)}</span>
+											<span class="detail-value mono">{formatTimeMs(epoch.created_at)}</span>
+										{/if}
+										{#if epoch.started_at}
+											<span class="detail-label">Started</span>
+											<span class="detail-value mono">{formatTimeMs(epoch.started_at)}</span>
 										{/if}
 										{#if epoch.ended_at}
 											<span class="detail-label">Ended</span>
-											<span class="detail-value mono">{formatTime(epoch.ended_at)}</span>
+											<span class="detail-value mono">{formatTimeMs(epoch.ended_at)}</span>
+										{/if}
+										{#if epoch.in_salvo_ports.length > 0}
+											<span class="detail-label">Input</span>
+											<span class="detail-value">{epoch.in_salvo_ports.join(', ')} ({epoch.in_salvo_packet_count} packets)</span>
+										{/if}
+										{#if epoch.out_salvo_count > 0}
+											<span class="detail-label">Output</span>
+											<span class="detail-value">{epoch.out_salvo_count} salvos</span>
+										{/if}
+										{#if epoch.orphaned_packet_count > 0}
+											<span class="detail-label">Orphaned</span>
+											<span class="detail-value tag-error">{epoch.orphaned_packet_count} packets</span>
+										{/if}
+										{#if epoch.destroyed_packet_count > 0}
+											<span class="detail-label">Destroyed</span>
+											<span class="detail-value tag-error">{epoch.destroyed_packet_count} packets</span>
 										{/if}
 									</div>
 									{#if epoch.error}
@@ -124,6 +173,26 @@
 											{#if epoch.error_traceback}
 												<pre class="traceback">{epoch.error_traceback}</pre>
 											{/if}
+										</div>
+									{/if}
+									{#if epoch.node_log_entries.length > 0}
+										<div class="structured-logs">
+											<div class="section-label">Structured Logs</div>
+											{#each epoch.node_log_entries as entry}
+												<div class="log-entry" class:log-error={entry.level === 'error'}>
+													<span class="log-time">{formatTimeMs(entry.timestamp)}</span>
+													{#if entry.message}
+														<span class="log-msg">{entry.message}</span>
+													{/if}
+													{#if Object.keys(entry.fields).length > 0}
+														<span class="log-fields">
+															{#each Object.entries(entry.fields) as [k, v]}
+																<span class="log-field"><span class="field-key">{k}</span>={formatFieldValue(v)}</span>
+															{/each}
+														</span>
+													{/if}
+												</div>
+											{/each}
 										</div>
 									{/if}
 								</div>
@@ -243,6 +312,11 @@
 		color: var(--error-color);
 	}
 
+	.tag-log {
+		background: rgba(168, 85, 247, 0.15);
+		color: #a855f7;
+	}
+
 	.detail-row td {
 		padding: 0;
 		border-bottom: 1px solid var(--border-color);
@@ -290,5 +364,56 @@
 		word-break: break-all;
 		max-height: 200px;
 		overflow: auto;
+	}
+
+	.structured-logs {
+		margin-top: 8px;
+	}
+
+	.section-label {
+		font-size: 10px;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--text-secondary);
+		margin-bottom: 4px;
+	}
+
+	.structured-logs .log-entry {
+		display: flex;
+		gap: 8px;
+		padding: 2px 0;
+		font-size: 11px;
+		flex-wrap: wrap;
+		align-items: baseline;
+	}
+
+	.structured-logs .log-entry.log-error {
+		color: var(--error-color);
+	}
+
+	.log-time {
+		color: var(--text-secondary);
+		flex-shrink: 0;
+		font-variant-numeric: tabular-nums;
+	}
+
+	.log-msg {
+		color: var(--text-primary);
+	}
+
+	.log-fields {
+		display: flex;
+		gap: 6px;
+		flex-wrap: wrap;
+	}
+
+	.log-field {
+		color: var(--text-secondary);
+		font-size: 10px;
+	}
+
+	.field-key {
+		color: #a855f7;
 	}
 </style>

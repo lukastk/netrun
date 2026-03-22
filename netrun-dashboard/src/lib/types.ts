@@ -32,6 +32,14 @@ export interface EdgeStatus {
 	packet_count: number;
 }
 
+/** Mirrors netrun_utils.observe.models.StructuredLogEntry */
+export interface StructuredLogEntry {
+	timestamp: string;
+	message: string | null;
+	level: string;
+	fields: Record<string, unknown>;
+}
+
 /** Mirrors netrun_utils.observe.models.EpochInfo */
 export interface EpochInfo {
 	epoch_id: string;
@@ -41,6 +49,7 @@ export interface EpochInfo {
 	started_at: string | null;
 	ended_at: string | null;
 	duration_ms: number | null;
+	queue_time_ms: number | null;
 	outcome: string | null;
 	error: string | null;
 	error_type: string | null;
@@ -51,6 +60,12 @@ export interface EpochInfo {
 	was_file_storage_hit: boolean | null;
 	retry_count: number | null;
 	factory: string | null;
+	in_salvo_ports: string[];
+	in_salvo_packet_count: number;
+	out_salvo_count: number;
+	orphaned_packet_count: number;
+	destroyed_packet_count: number;
+	node_log_entries: StructuredLogEntry[];
 }
 
 /** Mirrors netrun_utils.observe.models.LogEntry */

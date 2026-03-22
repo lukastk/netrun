@@ -14,6 +14,7 @@ from ..observe.models import (
     NodeStatus,
     EdgeStatus,
     EpochInfo,
+    StructuredLogEntry,
     LogEntry,
     ControlResponse,
 )
@@ -38,6 +39,17 @@ def _epoch_log_to_info(log: EpochLog) -> EpochInfo:
     state = "finished"
     if log.outcome == "cancelled":
         state = "cancelled"
+    # Convert structured log entries
+    structured_logs = []
+    if hasattr(log, 'node_log_entries') and log.node_log_entries:
+        for entry in log.node_log_entries:
+            structured_logs.append(StructuredLogEntry(
+                timestamp=entry.timestamp.isoformat(),
+                message=entry.message,
+                level=entry.level,
+                fields=entry.fields,
+            ))
+
     return EpochInfo(
         epoch_id=log.epoch_id,
         node_name=log.node_name,
@@ -46,6 +58,7 @@ def _epoch_log_to_info(log: EpochLog) -> EpochInfo:
         started_at=log.started_at.isoformat() if log.started_at else None,
         ended_at=log.ended_at.isoformat() if log.ended_at else None,
         duration_ms=log.duration_ms,
+        queue_time_ms=log.queue_time_ms,
         outcome=log.outcome,
         error=log.error,
         error_type=log.error_type,
@@ -56,6 +69,12 @@ def _epoch_log_to_info(log: EpochLog) -> EpochInfo:
         was_file_storage_hit=log.was_file_storage_hit,
         retry_count=log.retry_count,
         factory=log.factory,
+        in_salvo_ports=log.in_salvo_ports if hasattr(log, 'in_salvo_ports') else [],
+        in_salvo_packet_count=log.in_salvo_packet_count if hasattr(log, 'in_salvo_packet_count') else 0,
+        out_salvo_count=log.out_salvo_count if hasattr(log, 'out_salvo_count') else 0,
+        orphaned_packet_count=log.orphaned_packet_count if hasattr(log, 'orphaned_packet_count') else 0,
+        destroyed_packet_count=log.destroyed_packet_count if hasattr(log, 'destroyed_packet_count') else 0,
+        node_log_entries=structured_logs,
     )
 
 

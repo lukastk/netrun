@@ -47,6 +47,14 @@ class EdgeStatus(BaseModel):
     packet_count: int = 0
 
 
+class StructuredLogEntry(BaseModel):
+    """A structured log entry from ctx.log()."""
+    timestamp: str  # ISO format
+    message: str | None = None
+    level: str = "info"  # "info" or "error"
+    fields: dict[str, Any] = {}
+
+
 class EpochInfo(BaseModel):
     """Information about an epoch (running, completed, or cancelled)."""
     epoch_id: str
@@ -56,6 +64,7 @@ class EpochInfo(BaseModel):
     started_at: str | None = None
     ended_at: str | None = None
     duration_ms: float | None = None
+    queue_time_ms: float | None = None
     outcome: str | None = None  # "success", "error", "cancelled", "cache_hit", "file_storage_hit"
     error: str | None = None
     error_type: str | None = None
@@ -66,6 +75,12 @@ class EpochInfo(BaseModel):
     was_file_storage_hit: bool = False
     retry_count: int = 0
     factory: str | None = None
+    in_salvo_ports: list[str] = []
+    in_salvo_packet_count: int = 0
+    out_salvo_count: int = 0
+    orphaned_packet_count: int = 0
+    destroyed_packet_count: int = 0
+    node_log_entries: list[StructuredLogEntry] = []
 
 
 class LogEntry(BaseModel):
