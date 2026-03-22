@@ -1,6 +1,7 @@
 <script lang="ts">
 	import type { ObserveState } from '../types.js';
-	import { formatDuration, formatTimeMs, formatFieldValue, stateClass, outcomeClass } from '../format.js';
+	import { formatDuration, formatTimeMs, stateClass, outcomeClass } from '../format.js';
+	import EpochDetail from './EpochDetail.svelte';
 
 	interface Props {
 		nodeName: string;
@@ -23,7 +24,6 @@
 	);
 
 	let expandedEpochId = $state<string | null>(null);
-	let expandedLogKey = $state<string | null>(null);
 
 	// Collapsible sections
 	let statusOpen = $state(true);
@@ -124,58 +124,7 @@
 						<span class="mono muted">{epoch.started_at ? formatTimeMs(epoch.started_at) : ''}</span>
 					</div>
 					{#if expandedEpochId === epoch.epoch_id}
-						<div class="epoch-detail">
-							<div class="info-grid">
-								<span class="label">Epoch ID</span>
-								<span class="value mono">{epoch.epoch_id}</span>
-								{#if epoch.pool_id}
-									<span class="label">Pool</span>
-									<span class="value">{epoch.pool_id} / worker {epoch.worker_id ?? '-'}</span>
-								{/if}
-								{#if epoch.queue_time_ms !== null}
-									<span class="label">Queue</span>
-									<span class="value mono">{formatDuration(epoch.queue_time_ms)}</span>
-								{/if}
-								{#if epoch.in_salvo_ports.length > 0}
-									<span class="label">Input</span>
-									<span class="value">{epoch.in_salvo_ports.join(', ')} ({epoch.in_salvo_packet_count} pkts)</span>
-								{/if}
-							</div>
-							{#if epoch.error}
-								<div class="error-block">
-									<div class="error-type">{epoch.error_type}: {epoch.error}</div>
-								</div>
-							{/if}
-							{#if epoch.node_log_entries.length > 0}
-								<div class="structured-logs">
-									{#each epoch.node_log_entries as entry, ei}
-										{@const logKey = `${epoch.epoch_id}::${ei}`}
-										{@const hasFields = Object.keys(entry.fields).length > 0}
-										<div
-											class="log-line"
-											class:expandable={hasFields}
-											onclick={() => hasFields && (expandedLogKey = expandedLogKey === logKey ? null : logKey)}
-										>
-											<span class="mono muted">{formatTimeMs(entry.timestamp)}</span>
-											<span>{entry.message ?? ''}</span>
-											{#if hasFields}
-												<span class="field-indicator">&#9656; {Object.keys(entry.fields).length} fields</span>
-											{/if}
-										</div>
-										{#if expandedLogKey === logKey}
-											<div class="field-detail">
-												{#each Object.entries(entry.fields) as [k, v]}
-													<div class="field-row">
-														<span class="field-key">{k}</span>
-														<span class="field-value">{formatFieldValue(v)}</span>
-													</div>
-												{/each}
-											</div>
-										{/if}
-									{/each}
-								</div>
-							{/if}
-						</div>
+						<EpochDetail {epoch} />
 					{/if}
 				{/each}
 				{#if nodeEpochs.length === 0}
@@ -358,74 +307,6 @@
 
 	.epoch-item:hover {
 		background: var(--bg-tertiary);
-	}
-
-	.epoch-detail {
-		padding: 6px 0 6px 12px;
-		border-left: 2px solid var(--border-color);
-		margin-left: 4px;
-		margin-bottom: 4px;
-	}
-
-	.error-block {
-		margin-top: 4px;
-		padding: 4px 6px;
-		background: rgba(239, 68, 68, 0.08);
-		border-radius: 3px;
-	}
-
-	.error-type {
-		font-size: 10px;
-		color: var(--error-color);
-		font-weight: 600;
-	}
-
-	.structured-logs {
-		margin-top: 4px;
-	}
-
-	.log-line {
-		display: flex;
-		gap: 6px;
-		padding: 1px 0;
-		font-size: 10px;
-		flex-wrap: wrap;
-		align-items: baseline;
-	}
-
-	.log-line.expandable {
-		cursor: pointer;
-	}
-
-	.log-line.expandable:hover {
-		background: var(--bg-tertiary);
-	}
-
-	.field-indicator {
-		color: var(--text-secondary);
-		font-size: 9px;
-	}
-
-	.field-detail {
-		padding: 2px 0 4px 16px;
-		border-left: 2px solid var(--border-color);
-		margin-left: 4px;
-	}
-
-	.field-row {
-		display: flex;
-		gap: 8px;
-		font-size: 10px;
-		padding: 1px 0;
-	}
-
-	.field-key {
-		color: var(--purple-color);
-		flex-shrink: 0;
-	}
-
-	.field-value {
-		color: var(--text-primary);
 	}
 
 	.empty {
