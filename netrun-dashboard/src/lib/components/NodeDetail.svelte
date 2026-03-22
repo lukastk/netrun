@@ -61,6 +61,12 @@
 
 	let expandedEpochId = $state<string | null>(null);
 
+	// Collapsible sections
+	let statusOpen = $state(true);
+	let portsOpen = $state(true);
+	let epochsOpen = $state(true);
+	let logsOpen = $state(true);
+
 	function formatFieldValue(v: unknown): string {
 		if (v === null || v === undefined) return 'null';
 		if (typeof v === 'string') return v;
@@ -75,140 +81,154 @@
 	</div>
 
 	{#if nodeStatus}
-		<!-- Status -->
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
 		<div class="section">
-			<div class="info-grid">
-				<span class="label">Status</span>
-				<span class="value">
-					{#if !nodeStatus.enabled}
-						<span class="badge state-cancelled">disabled</span>
-					{:else if nodeStatus.is_busy}
-						<span class="badge state-running">running</span>
-					{:else}
-						<span class="badge state-finished">idle</span>
-					{/if}
-				</span>
-
-				<span class="label">Epochs</span>
-				<span class="value">{nodeStatus.epoch_count}</span>
-
-				{#if nodeStatus.pools.length > 0}
-					<span class="label">Pools</span>
-					<span class="value">{nodeStatus.pools.join(', ')}</span>
-				{/if}
-
-				{#if nodeStatus.factory}
-					<span class="label">Factory</span>
-					<span class="value mono">{nodeStatus.factory}</span>
-				{/if}
+			<div class="section-title" onclick={() => (statusOpen = !statusOpen)}>
+				<span class="chevron" class:open={statusOpen}>&#9656;</span> Status
 			</div>
-		</div>
-
-		<!-- Ports -->
-		<div class="section">
-			<div class="section-title">Ports</div>
-			{#if nodeStatus.in_port_names.length > 0}
-				<div class="port-group">
-					<span class="port-label">In</span>
-					{#each nodeStatus.in_port_names as port}
-						<div class="port-item">
-							<span class="port-name">{port}</span>
-							{#if (nodeStatus.input_port_packet_counts[port] ?? 0) > 0}
-								<span class="packet-badge">{nodeStatus.input_port_packet_counts[port]}</span>
-							{/if}
-						</div>
-					{/each}
+			{#if statusOpen}
+				<div class="info-grid">
+					<span class="label">Status</span>
+					<span class="value">
+						{#if !nodeStatus.enabled}
+							<span class="badge state-cancelled">disabled</span>
+						{:else if nodeStatus.is_busy}
+							<span class="badge state-running">running</span>
+						{:else}
+							<span class="badge state-finished">idle</span>
+						{/if}
+					</span>
+					<span class="label">Epochs</span>
+					<span class="value">{nodeStatus.epoch_count}</span>
+					{#if nodeStatus.pools.length > 0}
+						<span class="label">Pools</span>
+						<span class="value">{nodeStatus.pools.join(', ')}</span>
+					{/if}
+					{#if nodeStatus.factory}
+						<span class="label">Factory</span>
+						<span class="value mono">{nodeStatus.factory}</span>
+					{/if}
 				</div>
 			{/if}
-			{#if nodeStatus.out_port_names.length > 0}
-				<div class="port-group">
-					<span class="port-label">Out</span>
-					{#each nodeStatus.out_port_names as port}
-						<div class="port-item">
-							<span class="port-name">{port}</span>
-						</div>
-					{/each}
-				</div>
+		</div>
+
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="section">
+			<div class="section-title" onclick={() => (portsOpen = !portsOpen)}>
+				<span class="chevron" class:open={portsOpen}>&#9656;</span> Ports
+			</div>
+			{#if portsOpen}
+				{#if nodeStatus.in_port_names.length > 0}
+					<div class="port-group">
+						<span class="port-label">In</span>
+						{#each nodeStatus.in_port_names as port}
+							<div class="port-item">
+								<span class="port-name">{port}</span>
+								{#if (nodeStatus.input_port_packet_counts[port] ?? 0) > 0}
+									<span class="packet-badge">{nodeStatus.input_port_packet_counts[port]}</span>
+								{/if}
+							</div>
+						{/each}
+					</div>
+				{/if}
+				{#if nodeStatus.out_port_names.length > 0}
+					<div class="port-group">
+						<span class="port-label">Out</span>
+						{#each nodeStatus.out_port_names as port}
+							<div class="port-item">
+								<span class="port-name">{port}</span>
+							</div>
+						{/each}
+					</div>
+				{/if}
 			{/if}
 		</div>
 	{/if}
 
-	<!-- Epoch history -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div class="section">
-		<div class="section-title">Epoch History ({nodeEpochs.length})</div>
-		<div class="epoch-list">
-			{#each nodeEpochs.slice(0, 50) as epoch (epoch.epoch_id)}
-				<div
-					class="epoch-item"
-					class:expanded={expandedEpochId === epoch.epoch_id}
-					onclick={() => (expandedEpochId = expandedEpochId === epoch.epoch_id ? null : epoch.epoch_id)}
-				>
-					<span class="badge {stateClass(epoch.state)}">{epoch.state}</span>
-					{#if epoch.outcome}
-						<span class="badge {outcomeClass(epoch.outcome)}">{epoch.outcome}</span>
-					{/if}
-					<span class="mono">{formatDuration(epoch.duration_ms)}</span>
-					<span class="mono muted">{epoch.started_at ? formatTime(epoch.started_at) : ''}</span>
-				</div>
-				{#if expandedEpochId === epoch.epoch_id}
-					<div class="epoch-detail">
-						<div class="info-grid">
-							<span class="label">Epoch ID</span>
-							<span class="value mono">{epoch.epoch_id}</span>
-							{#if epoch.pool_id}
-								<span class="label">Pool</span>
-								<span class="value">{epoch.pool_id} / worker {epoch.worker_id ?? '-'}</span>
+		<div class="section-title" onclick={() => (epochsOpen = !epochsOpen)}>
+			<span class="chevron" class:open={epochsOpen}>&#9656;</span> Epoch History ({nodeEpochs.length})
+		</div>
+		{#if epochsOpen}
+			<div class="epoch-list">
+				{#each nodeEpochs.slice(0, 50) as epoch (epoch.epoch_id)}
+					<div
+						class="epoch-item"
+						class:expanded={expandedEpochId === epoch.epoch_id}
+						onclick={() => (expandedEpochId = expandedEpochId === epoch.epoch_id ? null : epoch.epoch_id)}
+					>
+						<span class="badge {stateClass(epoch.state)}">{epoch.state}</span>
+						{#if epoch.outcome}
+							<span class="badge {outcomeClass(epoch.outcome)}">{epoch.outcome}</span>
+						{/if}
+						<span class="mono">{formatDuration(epoch.duration_ms)}</span>
+						<span class="mono muted">{epoch.started_at ? formatTime(epoch.started_at) : ''}</span>
+					</div>
+					{#if expandedEpochId === epoch.epoch_id}
+						<div class="epoch-detail">
+							<div class="info-grid">
+								<span class="label">Epoch ID</span>
+								<span class="value mono">{epoch.epoch_id}</span>
+								{#if epoch.pool_id}
+									<span class="label">Pool</span>
+									<span class="value">{epoch.pool_id} / worker {epoch.worker_id ?? '-'}</span>
+								{/if}
+								{#if epoch.queue_time_ms !== null}
+									<span class="label">Queue</span>
+									<span class="value mono">{formatDuration(epoch.queue_time_ms)}</span>
+								{/if}
+								{#if epoch.in_salvo_ports.length > 0}
+									<span class="label">Input</span>
+									<span class="value">{epoch.in_salvo_ports.join(', ')} ({epoch.in_salvo_packet_count} pkts)</span>
+								{/if}
+							</div>
+							{#if epoch.error}
+								<div class="error-block">
+									<div class="error-type">{epoch.error_type}: {epoch.error}</div>
+								</div>
 							{/if}
-							{#if epoch.queue_time_ms !== null}
-								<span class="label">Queue</span>
-								<span class="value mono">{formatDuration(epoch.queue_time_ms)}</span>
-							{/if}
-							{#if epoch.in_salvo_ports.length > 0}
-								<span class="label">Input</span>
-								<span class="value">{epoch.in_salvo_ports.join(', ')} ({epoch.in_salvo_packet_count} pkts)</span>
+							{#if epoch.node_log_entries.length > 0}
+								<div class="structured-logs">
+									{#each epoch.node_log_entries as entry}
+										<div class="log-line">
+											<span class="mono muted">{formatTime(entry.timestamp)}</span>
+											<span>{entry.message ?? ''}</span>
+											{#each Object.entries(entry.fields) as [k, v]}
+												<span class="field"><span class="field-key">{k}</span>={formatFieldValue(v)}</span>
+											{/each}
+										</div>
+									{/each}
+								</div>
 							{/if}
 						</div>
-						{#if epoch.error}
-							<div class="error-block">
-								<div class="error-type">{epoch.error_type}: {epoch.error}</div>
-							</div>
-						{/if}
-						{#if epoch.node_log_entries.length > 0}
-							<div class="structured-logs">
-								{#each epoch.node_log_entries as entry}
-									<div class="log-line">
-										<span class="mono muted">{formatTime(entry.timestamp)}</span>
-										<span>{entry.message ?? ''}</span>
-										{#each Object.entries(entry.fields) as [k, v]}
-											<span class="field"><span class="field-key">{k}</span>={formatFieldValue(v)}</span>
-										{/each}
-									</div>
-								{/each}
-							</div>
-						{/if}
-					</div>
+					{/if}
+				{/each}
+				{#if nodeEpochs.length === 0}
+					<div class="empty">No epochs</div>
 				{/if}
-			{/each}
-			{#if nodeEpochs.length === 0}
-				<div class="empty">No epochs</div>
-			{/if}
-		</div>
+			</div>
+		{/if}
 	</div>
 
-	<!-- Recent logs -->
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
 	<div class="section">
-		<div class="section-title">Recent Logs ({nodeLogs.length})</div>
-		<div class="log-list">
-			{#each nodeLogs.slice(-30) as log}
-				<div class="log-line">
-					<span class="mono muted">{formatTime(log.timestamp)}</span>
-					<span>{log.message}</span>
-				</div>
-			{/each}
-			{#if nodeLogs.length === 0}
-				<div class="empty">No logs</div>
-			{/if}
+		<div class="section-title" onclick={() => (logsOpen = !logsOpen)}>
+			<span class="chevron" class:open={logsOpen}>&#9656;</span> Recent Logs ({nodeLogs.length})
 		</div>
+		{#if logsOpen}
+			<div class="log-list">
+				{#each nodeLogs.slice(-30) as log}
+					<div class="log-line">
+						<span class="mono muted">{formatTime(log.timestamp)}</span>
+						<span>{log.message}</span>
+					</div>
+				{/each}
+				{#if nodeLogs.length === 0}
+					<div class="empty">No logs</div>
+				{/if}
+			</div>
+		{/if}
 	</div>
 </div>
 
@@ -260,6 +280,21 @@
 		letter-spacing: 0.05em;
 		color: var(--text-secondary);
 		margin-bottom: 6px;
+		cursor: pointer;
+		user-select: none;
+	}
+
+	.section-title:hover {
+		color: var(--text-primary);
+	}
+
+	.chevron {
+		display: inline-block;
+		transition: transform 0.15s;
+	}
+
+	.chevron.open {
+		transform: rotate(90deg);
 	}
 
 	.info-grid {
