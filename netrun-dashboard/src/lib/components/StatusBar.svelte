@@ -1,13 +1,24 @@
 <script lang="ts">
 	import type { ObserveState } from '../types.js';
+	import { pauseNet, resumeNet } from '../api.js';
 
 	interface Props {
 		name: string;
 		state: ObserveState | null;
 		connected: boolean;
+		observeUrl: string | null;
 	}
 
-	let { name, state, connected }: Props = $props();
+	let { name, state, connected, observeUrl }: Props = $props();
+
+	async function togglePause() {
+		if (!observeUrl || !state) return;
+		if (state.status.paused) {
+			await resumeNet(observeUrl);
+		} else {
+			await pauseNet(observeUrl);
+		}
+	}
 
 	const statusLabel = $derived.by(() => {
 		if (!connected || !state) return 'disconnected';
@@ -29,7 +40,10 @@
 <div class="status-bar">
 	<span class="net-name">{name}</span>
 	<span class="badge {statusClass}">{statusLabel}</span>
-	{#if state}
+	{#if state && observeUrl}
+		<button class="control-btn" onclick={togglePause}>
+			{state.status.paused ? '▶ Resume' : '⏸ Pause'}
+		</button>
 		<span class="stat">{state.status.node_names.length} nodes</span>
 		<span class="stat">{state.status.total_epochs} epochs</span>
 		<span class="stat">{state.status.busy_nodes.length} busy</span>
@@ -89,6 +103,17 @@
 	.badge.disconnected {
 		background: rgba(239, 68, 68, 0.15);
 		color: var(--error-color);
+	}
+
+	.control-btn {
+		padding: 2px 8px;
+		font-size: 11px;
+		background: var(--bg-tertiary);
+		border: 1px solid var(--border-color);
+	}
+
+	.control-btn:hover {
+		background: var(--border-color);
 	}
 
 	.stat {

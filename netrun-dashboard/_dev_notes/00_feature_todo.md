@@ -177,7 +177,10 @@ Button in the status bar to pause/resume the net.
 - [x] 6b (input port packet counts in WS) — done in Phase 1
 
 **Phase 3 — Controls:**
-- 7a-7d (enable/disable, inject, control, pause/resume)
+- [x] 7a (enable/disable node toggle in right sidebar)
+- [x] 7b (inject data form in right sidebar)
+- [x] 7d (pause/resume button in status bar)
+- 7c (send control signal — needs control port detection)
 
 **Phase 4 — Polish:**
 - 1b-1c (resizable sidebars)

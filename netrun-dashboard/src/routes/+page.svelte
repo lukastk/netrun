@@ -96,7 +96,7 @@
 <svelte:window onpointermove={onPointerMove} onpointerup={onPointerUp} />
 
 {#if registry.selectedUrl}
-	<StatusBar name={selectedName} state={netState.liveState} connected={netState.connected} />
+	<StatusBar name={selectedName} state={netState.liveState} connected={netState.connected} observeUrl={netState.currentUrl} />
 	{#if netState.config}
 		<div class="content-area" bind:this={contentAreaEl}>
 			<div class="main-area" bind:this={mainAreaEl}>
@@ -207,6 +207,7 @@
 					<NodeDetail
 						nodeName={selectedNode}
 						liveState={netState.liveState}
+						observeUrl={netState.currentUrl}
 						onClose={() => (selectedNode = null)}
 					/>
 				</aside>

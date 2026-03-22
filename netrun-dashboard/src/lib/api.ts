@@ -24,6 +24,37 @@ export async function fetchNetConfig(observeUrl: string): Promise<Record<string,
 	return res.json();
 }
 
+// --- Control API (sent to ObserveServer) ---
+
+async function postControl(observeUrl: string, path: string, body?: Record<string, unknown>): Promise<{ ok: boolean; message: string }> {
+	const res = await fetch(`${observeUrl}${path}`, {
+		method: 'POST',
+		headers: { 'Content-Type': 'application/json' },
+		body: body ? JSON.stringify(body) : undefined,
+	});
+	return res.json();
+}
+
+export function enableNode(observeUrl: string, nodeName: string) {
+	return postControl(observeUrl, `/nodes/${nodeName}/enable`);
+}
+
+export function disableNode(observeUrl: string, nodeName: string) {
+	return postControl(observeUrl, `/nodes/${nodeName}/disable`);
+}
+
+export function injectData(observeUrl: string, nodeName: string, portName: string, values: unknown[]) {
+	return postControl(observeUrl, '/inject', { node_name: nodeName, port_name: portName, values });
+}
+
+export function pauseNet(observeUrl: string) {
+	return postControl(observeUrl, '/pause');
+}
+
+export function resumeNet(observeUrl: string) {
+	return postControl(observeUrl, '/resume');
+}
+
 /** Connect to an ObserveServer's WebSocket for live state updates.
  *  Returns a function to close the connection.
  */

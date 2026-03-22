@@ -1,15 +1,45 @@
 <script lang="ts">
 	import type { ObserveState } from '../types.js';
 	import { formatDuration, formatTimeMs, formatFieldValue, stateClass, outcomeClass } from '../format.js';
+	import { enableNode, disableNode, injectData } from '../api.js';
 	import EpochDetail from './EpochDetail.svelte';
 
 	interface Props {
 		nodeName: string;
 		liveState: ObserveState | null;
+		observeUrl: string | null;
 		onClose: () => void;
 	}
 
-	let { nodeName, liveState, onClose }: Props = $props();
+	let { nodeName, liveState, observeUrl, onClose }: Props = $props();
+
+	// Inject form state
+	let injectPort = $state('');
+	let injectValue = $state('');
+	let injectOpen = $state(false);
+
+	async function handleToggleEnabled() {
+		if (!observeUrl || !nodeStatus) return;
+		if (nodeStatus.enabled) {
+			await disableNode(observeUrl, nodeName);
+		} else {
+			await enableNode(observeUrl, nodeName);
+		}
+	}
+
+	async function handleInject() {
+		if (!observeUrl || !injectPort.trim() || !injectValue.trim()) return;
+		try {
+			const parsed = JSON.parse(injectValue);
+			const values = Array.isArray(parsed) ? parsed : [parsed];
+			await injectData(observeUrl, nodeName, injectPort.trim(), values);
+			injectValue = '';
+		} catch {
+			// Try as raw string
+			await injectData(observeUrl, nodeName, injectPort.trim(), [injectValue]);
+			injectValue = '';
+		}
+	}
 
 	let nodeStatus = $derived(liveState?.nodes.find((n) => n.name === nodeName) ?? null);
 
@@ -135,6 +165,43 @@
 						{/each}
 					</div>
 				{/if}
+			{/if}
+		</div>
+	{/if}
+
+	{#if observeUrl}
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="section">
+			<div class="section-title" onclick={() => (injectOpen = !injectOpen)}>
+				<span class="chevron" class:open={injectOpen}>&#9656;</span> Controls
+			</div>
+			{#if injectOpen}
+				<div class="controls">
+					{#if nodeStatus}
+						<button class="control-btn" onclick={handleToggleEnabled}>
+							{nodeStatus.enabled ? 'Disable Node' : 'Enable Node'}
+						</button>
+					{/if}
+					<div class="inject-form">
+						<div class="inject-label">Inject Data</div>
+						<select bind:value={injectPort} class="inject-input">
+							<option value="">Select port...</option>
+							{#if nodeStatus}
+								{#each nodeStatus.in_port_names as port}
+									<option value={port}>{port}</option>
+								{/each}
+							{/if}
+						</select>
+						<input
+							type="text"
+							bind:value={injectValue}
+							placeholder='Value (JSON or string)'
+							class="inject-input"
+							onkeydown={(e) => e.key === 'Enter' && handleInject()}
+						/>
+						<button class="control-btn" onclick={handleInject} disabled={!injectPort || !injectValue}>Inject</button>
+					</div>
+				</div>
 			{/if}
 		</div>
 	{/if}
@@ -405,6 +472,48 @@
 
 	.field-value {
 		color: var(--text-primary);
+	}
+
+	.controls {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+
+	.control-btn {
+		padding: 4px 10px;
+		font-size: 11px;
+		background: var(--bg-tertiary);
+		border: 1px solid var(--border-color);
+		width: fit-content;
+	}
+
+	.control-btn:hover {
+		background: var(--border-color);
+	}
+
+	.control-btn:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+
+	.inject-form {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.inject-label {
+		font-size: 10px;
+		font-weight: 600;
+		color: var(--text-secondary);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.inject-input {
+		font-size: 11px;
+		padding: 3px 8px;
 	}
 
 	.empty {

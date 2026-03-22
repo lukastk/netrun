@@ -228,6 +228,22 @@ class NetObserver:
         except Exception as e:
             return ControlResponse(ok=False, message=str(e))
 
+    async def pause(self) -> ControlResponse:
+        """Pause the net."""
+        try:
+            await self._net.pause()
+            return ControlResponse(ok=True, message="Net paused")
+        except Exception as e:
+            return ControlResponse(ok=False, message=str(e))
+
+    async def resume(self) -> ControlResponse:
+        """Resume the net."""
+        try:
+            self._net.resume()
+            return ControlResponse(ok=True, message="Net resumed")
+        except Exception as e:
+            return ControlResponse(ok=False, message=str(e))
+
     def inject_data(self, node_name: str, port_name: str, values: list[Any]) -> ControlResponse:
         """Inject data into a node's input port."""
         try:

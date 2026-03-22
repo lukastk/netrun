@@ -123,6 +123,14 @@ class ObserveServer:
         def inject_data(req: InjectDataRequest):
             return obs.inject_data(req.node_name, req.port_name, req.values).model_dump()
 
+        @app.post("/pause")
+        async def pause():
+            return (await obs.pause()).model_dump()
+
+        @app.post("/resume")
+        async def resume():
+            return (await obs.resume()).model_dump()
+
         @app.websocket("/ws")
         async def websocket_endpoint(ws: WebSocket):
             await ws.accept()
