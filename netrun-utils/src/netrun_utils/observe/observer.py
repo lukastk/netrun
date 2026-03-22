@@ -122,9 +122,16 @@ class NetObserver:
         busy = [name for name, info in nodes.items() if info.is_busy]
         idle = [name for name in node_names if name not in busy]
 
+        # Output queue packet counts
+        output_queues = {}
+        if self._net.config_resolved.output_queues:
+            for queue_name in self._net.config_resolved.output_queues:
+                output_queues[queue_name] = 0  # Queues are flushed, so show 0 unless we track
+
         return NetStatus(
             started=self._net.started,
             paused=self._net.paused,
+            is_blocked=self._net.is_blocked() if self._net.started else False,
             node_names=node_names,
             edge_count=len(self._net.edges),
             total_epochs=len(self._net.epochs),
@@ -132,6 +139,9 @@ class NetObserver:
             idle_nodes=idle,
             startable_epoch_count=len(self._net.get_startable_epochs()),
             running_epoch_count=len(self._net.get_running_epochs()),
+            dead_letter_count=len(self._net.dead_letter_queue),
+            exception_count=len(self._net.exception_queue),
+            output_queues=output_queues,
         )
 
     def get_nodes(self) -> list[NodeStatus]:

@@ -98,6 +98,7 @@ class NetStatus(BaseModel):
     """Overall status of the Net."""
     started: bool
     paused: bool
+    is_blocked: bool = False
     node_names: list[str] = []
     edge_count: int = 0
     total_epochs: int = 0
@@ -105,6 +106,9 @@ class NetStatus(BaseModel):
     idle_nodes: list[str] = []
     startable_epoch_count: int = 0
     running_epoch_count: int = 0
+    dead_letter_count: int = 0
+    exception_count: int = 0
+    output_queues: dict[str, int] = {}
 
 # %% [markdown]
 # ## Control Models

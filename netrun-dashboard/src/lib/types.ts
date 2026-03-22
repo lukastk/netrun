@@ -2,6 +2,7 @@
 export interface NetStatus {
 	started: boolean;
 	paused: boolean;
+	is_blocked: boolean;
 	node_names: string[];
 	edge_count: number;
 	total_epochs: number;
@@ -9,6 +10,9 @@ export interface NetStatus {
 	idle_nodes: string[];
 	startable_epoch_count: number;
 	running_epoch_count: number;
+	dead_letter_count: number;
+	exception_count: number;
+	output_queues: Record<string, number>;
 }
 
 /** Mirrors netrun_utils.observe.models.NodeStatus */

@@ -12,6 +12,7 @@
 	const statusLabel = $derived.by(() => {
 		if (!connected || !state) return 'disconnected';
 		if (state.status.paused) return 'paused';
+		if (state.status.is_blocked) return 'blocked';
 		if (state.status.started) return 'running';
 		return 'stopped';
 	});
@@ -19,6 +20,7 @@
 	const statusClass = $derived.by(() => {
 		if (!connected || !state) return 'disconnected';
 		if (state.status.paused) return 'paused';
+		if (state.status.is_blocked) return 'blocked';
 		if (state.status.started) return 'running';
 		return 'stopped';
 	});
@@ -31,6 +33,12 @@
 		<span class="stat">{state.status.node_names.length} nodes</span>
 		<span class="stat">{state.status.total_epochs} epochs</span>
 		<span class="stat">{state.status.busy_nodes.length} busy</span>
+		{#if state.status.dead_letter_count > 0}
+			<span class="stat stat-error">{state.status.dead_letter_count} dead letters</span>
+		{/if}
+		{#if state.status.exception_count > 0}
+			<span class="stat stat-error">{state.status.exception_count} exceptions</span>
+		{/if}
 	{/if}
 </div>
 
@@ -68,6 +76,11 @@
 		color: var(--warning-color);
 	}
 
+	.badge.blocked {
+		background: rgba(245, 158, 11, 0.15);
+		color: var(--warning-color);
+	}
+
 	.badge.stopped {
 		background: rgba(160, 160, 160, 0.15);
 		color: var(--text-secondary);
@@ -81,5 +94,9 @@
 	.stat {
 		color: var(--text-secondary);
 		font-size: 12px;
+	}
+
+	.stat-error {
+		color: var(--error-color);
 	}
 </style>

@@ -169,10 +169,12 @@ Button in the status bar to pause/resume the net.
 - [x] 1a (right sidebar with node detail)
 
 **Phase 2 — Richer observability:**
-- 4b (input port packet counts)
-- 5a (dead letter queue)
-- 5c (output queue viewer)
-- 6a-6b (API enhancements for new data)
+- [x] 4b (input port packet counts) — done in Phase 1 via NodeStatus
+- [x] 5a (dead letter queue) — count shown in status bar
+- [x] 5c (output queue viewer) — queue names in NetStatus
+- [x] 5f (blocked state indicator) — shown in status bar
+- [x] 6a (structured logs in WS) — done in Phase 1
+- [x] 6b (input port packet counts in WS) — done in Phase 1
 
 **Phase 3 — Controls:**
 - 7a-7d (enable/disable, inject, control, pause/resume)
