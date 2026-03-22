@@ -5,6 +5,7 @@
 	import NetGraphView from '$lib/components/NetGraphView.svelte';
 	import EpochTable from '$lib/components/EpochTable.svelte';
 	import LogViewer from '$lib/components/LogViewer.svelte';
+	import NodeDetail from '$lib/components/NodeDetail.svelte';
 
 	const registry = getRegistryState();
 	const netState = getNetState();
@@ -30,37 +31,65 @@
 
 	let activeTab = $state<'epochs' | 'logs'>('epochs');
 
-	// Node highlight: set from epoch table, log viewer, or graph click
+	// Node selection: clicking a node opens the right sidebar
+	let selectedNode = $state<string | null>(null);
+
+	// Node highlight: set from epoch table or log viewer (temporary, clears on next click)
 	let highlightedNode = $state<string | null>(null);
+
+	// Effective highlight: selectedNode takes precedence
+	let effectiveHighlight = $derived(highlightedNode ?? selectedNode);
 
 	function handleNodeHighlight(nodeName: string | null) {
 		highlightedNode = nodeName;
 	}
 
 	function handleGraphNodeClick(nodeName: string) {
-		highlightedNode = highlightedNode === nodeName ? null : nodeName;
+		if (selectedNode === nodeName) {
+			selectedNode = null;
+		} else {
+			selectedNode = nodeName;
+			highlightedNode = null;
+		}
 	}
 
 	// Resizable bottom panel
 	let bottomPanelOpen = $state(true);
 	let panelHeight = $state(260);
-	let dragging = $state(false);
+	let draggingBottom = $state(false);
 	let mainAreaEl: HTMLDivElement | undefined = $state();
 
-	function onPointerDown(e: PointerEvent) {
-		dragging = true;
+	function onBottomPointerDown(e: PointerEvent) {
+		draggingBottom = true;
+		e.preventDefault();
+	}
+
+	// Resizable right sidebar
+	let rightSidebarWidth = $state(320);
+	let draggingRight = $state(false);
+	let contentAreaEl: HTMLDivElement | undefined = $state();
+
+	function onRightPointerDown(e: PointerEvent) {
+		draggingRight = true;
 		e.preventDefault();
 	}
 
 	function onPointerMove(e: PointerEvent) {
-		if (!dragging || !mainAreaEl) return;
-		const rect = mainAreaEl.getBoundingClientRect();
-		const newHeight = rect.bottom - e.clientY;
-		panelHeight = Math.max(60, Math.min(newHeight, rect.height - 100));
+		if (draggingBottom && mainAreaEl) {
+			const rect = mainAreaEl.getBoundingClientRect();
+			const newHeight = rect.bottom - e.clientY;
+			panelHeight = Math.max(60, Math.min(newHeight, rect.height - 100));
+		}
+		if (draggingRight && contentAreaEl) {
+			const rect = contentAreaEl.getBoundingClientRect();
+			const newWidth = rect.right - e.clientX;
+			rightSidebarWidth = Math.max(200, Math.min(newWidth, rect.width - 200));
+		}
 	}
 
 	function onPointerUp() {
-		dragging = false;
+		draggingBottom = false;
+		draggingRight = false;
 	}
 </script>
 
@@ -69,53 +98,66 @@
 {#if registry.selectedUrl}
 	<StatusBar name={selectedName} state={netState.liveState} connected={netState.connected} />
 	{#if netState.config}
-		<div class="main-area" bind:this={mainAreaEl}>
-			<div class="graph-pane">
-				<NetGraphView
-					config={netState.config}
-					liveState={netState.liveState}
-					{highlightedNode}
-					onNodeClick={handleGraphNodeClick}
-				/>
-			</div>
-			{#if bottomPanelOpen}
-				<!-- svelte-ignore a11y_no_static_element_interactions -->
-				<div class="resize-handle" onpointerdown={onPointerDown}></div>
-				<div class="bottom-panel" style:height="{panelHeight}px">
-					<div class="tab-bar">
-						<button class="tab" class:active={activeTab === 'epochs'} onclick={() => (activeTab = 'epochs')}>
-							Epochs
-							{#if netState.liveState}
-								<span class="tab-count">{netState.liveState.epochs.length}</span>
-							{/if}
-						</button>
-						<button class="tab" class:active={activeTab === 'logs'} onclick={() => (activeTab = 'logs')}>
-							Logs
-							{#if netState.liveState}
-								<span class="tab-count">{netState.liveState.logs.length}</span>
-							{/if}
-						</button>
-						<button class="panel-close" onclick={() => (bottomPanelOpen = false)}>&#x2715;</button>
-					</div>
-					<div class="tab-content">
-						{#if activeTab === 'epochs'}
-							<EpochTable
-								epochs={netState.liveState?.epochs ?? []}
-								onNodeHighlight={handleNodeHighlight}
-							/>
-						{:else}
-							<LogViewer
-								logs={netState.liveState?.logs ?? []}
-								epochs={netState.liveState?.epochs ?? []}
-								onNodeHighlight={handleNodeHighlight}
-							/>
-						{/if}
-					</div>
+		<div class="content-area" bind:this={contentAreaEl}>
+			<div class="main-area" bind:this={mainAreaEl}>
+				<div class="graph-pane">
+					<NetGraphView
+						config={netState.config}
+						liveState={netState.liveState}
+						highlightedNode={effectiveHighlight}
+						onNodeClick={handleGraphNodeClick}
+					/>
 				</div>
-			{:else}
-				<button class="panel-reopen" onclick={() => (bottomPanelOpen = true)}>
-					Epochs / Logs ▲
-				</button>
+				{#if bottomPanelOpen}
+					<!-- svelte-ignore a11y_no_static_element_interactions -->
+					<div class="resize-handle-h" onpointerdown={onBottomPointerDown}></div>
+					<div class="bottom-panel" style:height="{panelHeight}px">
+						<div class="tab-bar">
+							<button class="tab" class:active={activeTab === 'epochs'} onclick={() => (activeTab = 'epochs')}>
+								Epochs
+								{#if netState.liveState}
+									<span class="tab-count">{netState.liveState.epochs.length}</span>
+								{/if}
+							</button>
+							<button class="tab" class:active={activeTab === 'logs'} onclick={() => (activeTab = 'logs')}>
+								Logs
+								{#if netState.liveState}
+									<span class="tab-count">{netState.liveState.logs.length}</span>
+								{/if}
+							</button>
+							<button class="panel-close" onclick={() => (bottomPanelOpen = false)}>&#x2715;</button>
+						</div>
+						<div class="tab-content">
+							{#if activeTab === 'epochs'}
+								<EpochTable
+									epochs={netState.liveState?.epochs ?? []}
+									onNodeHighlight={handleNodeHighlight}
+								/>
+							{:else}
+								<LogViewer
+									logs={netState.liveState?.logs ?? []}
+									epochs={netState.liveState?.epochs ?? []}
+									onNodeHighlight={handleNodeHighlight}
+								/>
+							{/if}
+						</div>
+					</div>
+				{:else}
+					<button class="panel-reopen" onclick={() => (bottomPanelOpen = true)}>
+						Epochs / Logs ▲
+					</button>
+				{/if}
+			</div>
+			{#if selectedNode}
+				<!-- svelte-ignore a11y_no_static_element_interactions -->
+				<div class="resize-handle-v" onpointerdown={onRightPointerDown}></div>
+				<aside class="right-sidebar" style:width="{rightSidebarWidth}px">
+					<NodeDetail
+						nodeName={selectedNode}
+						liveState={netState.liveState}
+						onClose={() => (selectedNode = null)}
+					/>
+				</aside>
 			{/if}
 		</div>
 	{:else}
@@ -129,11 +171,18 @@
 {/if}
 
 <style>
+	.content-area {
+		flex: 1;
+		display: flex;
+		overflow: hidden;
+	}
+
 	.main-area {
 		flex: 1;
 		display: flex;
 		flex-direction: column;
 		overflow: hidden;
+		min-width: 0;
 	}
 
 	.graph-pane {
@@ -142,15 +191,32 @@
 		position: relative;
 	}
 
-	.resize-handle {
+	.resize-handle-h {
 		height: 5px;
 		cursor: ns-resize;
 		background: var(--border-color);
 		flex-shrink: 0;
 	}
 
-	.resize-handle:hover {
+	.resize-handle-h:hover {
 		background: var(--accent-color);
+	}
+
+	.resize-handle-v {
+		width: 5px;
+		cursor: ew-resize;
+		background: var(--border-color);
+		flex-shrink: 0;
+	}
+
+	.resize-handle-v:hover {
+		background: var(--accent-color);
+	}
+
+	.right-sidebar {
+		min-width: 200px;
+		background: var(--bg-secondary);
+		overflow: hidden;
 	}
 
 	.bottom-panel {

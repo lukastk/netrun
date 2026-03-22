@@ -243,6 +243,19 @@ class NetObserver:
 
     def _node_to_status(self, info) -> NodeStatus:
         """Convert a NodeInfo to a NodeStatus model."""
+        # Input port packet counts
+        port_packets = {}
+        try:
+            for port_name, packets in info.packets_at_all_input_ports().items():
+                port_packets[port_name] = len(packets)
+        except Exception:
+            pass
+
+        # Factory info
+        factory = None
+        if hasattr(info, 'cfg') and info.cfg and info.cfg.factory:
+            factory = str(info.cfg.factory)
+
         return NodeStatus(
             name=info.name,
             enabled=info.enabled,
@@ -252,4 +265,7 @@ class NetObserver:
             startable_epoch_ids=[str(e.id) for e in info.startable_epochs],
             in_port_names=info.in_port_names,
             out_port_names=info.out_port_names,
+            input_port_packet_counts=port_packets,
+            pools=info.pools,
+            factory=factory,
         )

@@ -36,6 +36,9 @@ class NodeStatus(BaseModel):
     startable_epoch_ids: list[str] = []
     in_port_names: list[str] = []
     out_port_names: list[str] = []
+    input_port_packet_counts: dict[str, int] = {}
+    pools: list[str] = []
+    factory: str | None = None
 
 
 class EdgeStatus(BaseModel):

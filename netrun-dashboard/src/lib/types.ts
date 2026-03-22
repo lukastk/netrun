@@ -21,6 +21,9 @@ export interface NodeStatus {
 	startable_epoch_ids: string[];
 	in_port_names: string[];
 	out_port_names: string[];
+	input_port_packet_counts: Record<string, number>;
+	pools: string[];
+	factory: string | null;
 }
 
 /** Mirrors netrun_utils.observe.models.EdgeStatus */

@@ -166,7 +166,7 @@ Button in the status bar to pause/resume the net.
 - [x] 2e (orphaned/destroyed packet counts) — done alongside 2f
 - [x] 3b (structured log view in log viewer) — done alongside 3a
 - [x] 3c (click log → highlight node) — done alongside 3a
-- 1a (right sidebar with node detail)
+- [x] 1a (right sidebar with node detail)
 
 **Phase 2 — Richer observability:**
 - 4b (input port packet counts)
