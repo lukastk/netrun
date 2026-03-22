@@ -39,16 +39,15 @@ def _epoch_log_to_info(log: EpochLog) -> EpochInfo:
     state = "finished"
     if log.outcome == "cancelled":
         state = "cancelled"
-    # Convert structured log entries
-    structured_logs = []
-    if hasattr(log, 'node_log_entries') and log.node_log_entries:
-        for entry in log.node_log_entries:
-            structured_logs.append(StructuredLogEntry(
-                timestamp=entry.timestamp.isoformat(),
-                message=entry.message,
-                level=entry.level,
-                fields=entry.fields,
-            ))
+    structured_logs = [
+        StructuredLogEntry(
+            timestamp=entry.timestamp.isoformat(),
+            message=entry.message,
+            level=entry.level,
+            fields=entry.fields,
+        )
+        for entry in (log.node_log_entries or [])
+    ]
 
     return EpochInfo(
         epoch_id=log.epoch_id,
@@ -69,11 +68,11 @@ def _epoch_log_to_info(log: EpochLog) -> EpochInfo:
         was_file_storage_hit=log.was_file_storage_hit,
         retry_count=log.retry_count,
         factory=log.factory,
-        in_salvo_ports=log.in_salvo_ports if hasattr(log, 'in_salvo_ports') else [],
-        in_salvo_packet_count=log.in_salvo_packet_count if hasattr(log, 'in_salvo_packet_count') else 0,
-        out_salvo_count=log.out_salvo_count if hasattr(log, 'out_salvo_count') else 0,
-        orphaned_packet_count=log.orphaned_packet_count if hasattr(log, 'orphaned_packet_count') else 0,
-        destroyed_packet_count=log.destroyed_packet_count if hasattr(log, 'destroyed_packet_count') else 0,
+        in_salvo_ports=log.in_salvo_ports,
+        in_salvo_packet_count=log.in_salvo_packet_count,
+        out_salvo_count=log.out_salvo_count,
+        orphaned_packet_count=log.orphaned_packet_count,
+        destroyed_packet_count=log.destroyed_packet_count,
         node_log_entries=structured_logs,
     )
 
@@ -245,16 +244,10 @@ class NetObserver:
         """Convert a NodeInfo to a NodeStatus model."""
         # Input port packet counts
         port_packets = {}
-        try:
-            for port_name, packets in info.packets_at_all_input_ports().items():
-                port_packets[port_name] = len(packets)
-        except Exception:
-            pass
+        for port_name, packets in info.packets_at_all_input_ports().items():
+            port_packets[port_name] = len(packets)
 
-        # Factory info
-        factory = None
-        if hasattr(info, 'cfg') and info.cfg and info.cfg.factory:
-            factory = str(info.cfg.factory)
+        factory = str(info.cfg.factory) if info.cfg and info.cfg.factory else None
 
         return NodeStatus(
             name=info.name,

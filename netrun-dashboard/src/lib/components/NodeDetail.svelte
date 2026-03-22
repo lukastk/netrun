@@ -1,5 +1,6 @@
 <script lang="ts">
-	import type { NodeStatus, EpochInfo, ObserveState } from '../types.js';
+	import type { ObserveState } from '../types.js';
+	import { formatDuration, formatTimeMs, formatFieldValue, stateClass, outcomeClass } from '../format.js';
 
 	interface Props {
 		nodeName: string;
@@ -21,44 +22,6 @@
 		(liveState?.logs ?? []).filter((l) => l.node_name === nodeName),
 	);
 
-	function formatDuration(ms: number | null): string {
-		if (ms === null) return '-';
-		if (ms < 1000) return `${ms.toFixed(0)}ms`;
-		return `${(ms / 1000).toFixed(2)}s`;
-	}
-
-	function formatTime(iso: string): string {
-		try {
-			const d = new Date(iso);
-			return d.toLocaleTimeString('en-US', {
-				hour12: false,
-				hour: '2-digit',
-				minute: '2-digit',
-				second: '2-digit',
-				fractionalSecondDigits: 3,
-			});
-		} catch {
-			return iso;
-		}
-	}
-
-	function stateClass(state: string): string {
-		switch (state) {
-			case 'finished': return 'state-finished';
-			case 'running': return 'state-running';
-			case 'startable': return 'state-startable';
-			case 'cancelled': return 'state-cancelled';
-			default: return '';
-		}
-	}
-
-	function outcomeClass(outcome: string | null): string {
-		if (!outcome) return '';
-		if (outcome === 'success') return 'outcome-success';
-		if (outcome === 'error') return 'outcome-error';
-		return '';
-	}
-
 	let expandedEpochId = $state<string | null>(null);
 
 	// Collapsible sections
@@ -66,12 +29,6 @@
 	let portsOpen = $state(true);
 	let epochsOpen = $state(true);
 	let logsOpen = $state(true);
-
-	function formatFieldValue(v: unknown): string {
-		if (v === null || v === undefined) return 'null';
-		if (typeof v === 'string') return v;
-		return JSON.stringify(v);
-	}
 </script>
 
 <div class="node-detail">
@@ -163,7 +120,7 @@
 							<span class="badge {outcomeClass(epoch.outcome)}">{epoch.outcome}</span>
 						{/if}
 						<span class="mono">{formatDuration(epoch.duration_ms)}</span>
-						<span class="mono muted">{epoch.started_at ? formatTime(epoch.started_at) : ''}</span>
+						<span class="mono muted">{epoch.started_at ? formatTimeMs(epoch.started_at) : ''}</span>
 					</div>
 					{#if expandedEpochId === epoch.epoch_id}
 						<div class="epoch-detail">
@@ -192,7 +149,7 @@
 								<div class="structured-logs">
 									{#each epoch.node_log_entries as entry}
 										<div class="log-line">
-											<span class="mono muted">{formatTime(entry.timestamp)}</span>
+											<span class="mono muted">{formatTimeMs(entry.timestamp)}</span>
 											<span>{entry.message ?? ''}</span>
 											{#each Object.entries(entry.fields) as [k, v]}
 												<span class="field"><span class="field-key">{k}</span>={formatFieldValue(v)}</span>
@@ -220,7 +177,7 @@
 			<div class="log-list">
 				{#each nodeLogs.slice(-30) as log}
 					<div class="log-line">
-						<span class="mono muted">{formatTime(log.timestamp)}</span>
+						<span class="mono muted">{formatTimeMs(log.timestamp)}</span>
 						<span>{log.message}</span>
 					</div>
 				{/each}
@@ -425,7 +382,7 @@
 	}
 
 	.field-key {
-		color: #a855f7;
+		color: var(--purple-color);
 	}
 
 	.empty {

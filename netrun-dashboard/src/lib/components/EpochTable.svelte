@@ -1,5 +1,6 @@
 <script lang="ts">
 	import type { EpochInfo } from '../types.js';
+	import { formatDuration, formatTime, formatTimeMs, formatFieldValue, stateClass, outcomeClass } from '../format.js';
 
 	interface Props {
 		epochs: EpochInfo[];
@@ -8,7 +9,6 @@
 
 	let { epochs, onNodeHighlight }: Props = $props();
 
-	// Show most recent first
 	let sorted = $derived([...epochs].sort((a, b) => b.created_at.localeCompare(a.created_at)));
 
 	let expandedId = $state<string | null>(null);
@@ -17,60 +17,6 @@
 		const wasExpanded = expandedId === epoch.epoch_id;
 		expandedId = wasExpanded ? null : epoch.epoch_id;
 		onNodeHighlight?.(wasExpanded ? null : epoch.node_name);
-	}
-
-	function formatDuration(ms: number | null): string {
-		if (ms === null) return '-';
-		if (ms < 1000) return `${ms.toFixed(0)}ms`;
-		return `${(ms / 1000).toFixed(2)}s`;
-	}
-
-	function formatTime(iso: string): string {
-		try {
-			const d = new Date(iso);
-			return d.toLocaleTimeString('en-US', { hour12: false, hour: '2-digit', minute: '2-digit', second: '2-digit' });
-		} catch {
-			return iso;
-		}
-	}
-
-	function formatTimeMs(iso: string): string {
-		try {
-			const d = new Date(iso);
-			return d.toLocaleTimeString('en-US', {
-				hour12: false,
-				hour: '2-digit',
-				minute: '2-digit',
-				second: '2-digit',
-				fractionalSecondDigits: 3,
-			});
-		} catch {
-			return iso;
-		}
-	}
-
-	function stateClass(state: string): string {
-		switch (state) {
-			case 'finished': return 'state-finished';
-			case 'running': return 'state-running';
-			case 'startable': return 'state-startable';
-			case 'cancelled': return 'state-cancelled';
-			default: return '';
-		}
-	}
-
-	function outcomeClass(outcome: string | null): string {
-		if (!outcome) return '';
-		if (outcome === 'success') return 'outcome-success';
-		if (outcome === 'error') return 'outcome-error';
-		if (outcome === 'cancelled') return 'outcome-cancelled';
-		return '';
-	}
-
-	function formatFieldValue(v: unknown): string {
-		if (v === null || v === undefined) return 'null';
-		if (typeof v === 'string') return v;
-		return JSON.stringify(v);
 	}
 </script>
 
@@ -309,7 +255,7 @@
 
 	.tag-log {
 		background: rgba(168, 85, 247, 0.15);
-		color: #a855f7;
+		color: var(--purple-color);
 	}
 
 	.detail-row td {
@@ -409,6 +355,6 @@
 	}
 
 	.field-key {
-		color: #a855f7;
+		color: var(--purple-color);
 	}
 </style>

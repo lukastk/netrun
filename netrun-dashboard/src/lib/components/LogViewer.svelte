@@ -1,5 +1,6 @@
 <script lang="ts">
-	import type { LogEntry, EpochInfo, StructuredLogEntry } from '../types.js';
+	import type { LogEntry, EpochInfo } from '../types.js';
+	import { formatTimeMs, formatFieldValue } from '../format.js';
 
 	interface Props {
 		logs: LogEntry[];
@@ -14,13 +15,11 @@
 	let listEl: HTMLDivElement | undefined = $state();
 	let expandedIndex = $state<number | null>(null);
 
-	// Merge print logs and structured logs into a unified chronological view
 	interface UnifiedLog {
 		timestamp: string;
 		node_name: string | null;
 		epoch_id: string | null;
 		message: string;
-		// If from structured log
 		level?: string;
 		fields?: Record<string, unknown>;
 		isStructured: boolean;
@@ -29,7 +28,6 @@
 	let unified = $derived.by((): UnifiedLog[] => {
 		const result: UnifiedLog[] = [];
 
-		// Print buffer logs
 		for (const log of logs) {
 			result.push({
 				timestamp: log.timestamp,
@@ -40,33 +38,29 @@
 			});
 		}
 
-		// Structured logs from completed epochs
-		{
-			for (const epoch of epochs) {
-				for (const entry of epoch.node_log_entries) {
-					result.push({
-						timestamp: entry.timestamp,
-						node_name: epoch.node_name,
-						epoch_id: epoch.epoch_id,
-						message: entry.message ?? '',
-						level: entry.level,
-						fields: entry.fields,
-						isStructured: true,
-					});
-				}
+		for (const epoch of epochs) {
+			for (const entry of epoch.node_log_entries) {
+				result.push({
+					timestamp: entry.timestamp,
+					node_name: epoch.node_name,
+					epoch_id: epoch.epoch_id,
+					message: entry.message ?? '',
+					level: entry.level,
+					fields: entry.fields,
+					isStructured: true,
+				});
 			}
 		}
 
-		// Deduplicate: if a structured log and a print buffer log have the same
-		// timestamp and node, the print version is the formatted form of the
-		// structured log — keep only the structured one.
+		// Deduplicate: ctx.log() produces both a print buffer entry and a structured
+		// entry with the same timestamp+node+epoch. Keep only the structured one.
 		const structuredKeys = new Set(
 			result
 				.filter((r) => r.isStructured)
-				.map((r) => `${r.timestamp}::${r.node_name}`),
+				.map((r) => `${r.timestamp}::${r.node_name}::${r.epoch_id}`),
 		);
 		const deduped = result.filter(
-			(r) => r.isStructured || !structuredKeys.has(`${r.timestamp}::${r.node_name}`),
+			(r) => r.isStructured || !structuredKeys.has(`${r.timestamp}::${r.node_name}::${r.epoch_id}`),
 		);
 
 		deduped.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
@@ -78,27 +72,6 @@
 			? unified.filter((l) => l.node_name?.toLowerCase().includes(filterNode.toLowerCase()))
 			: unified,
 	);
-
-	function formatTime(iso: string): string {
-		try {
-			const d = new Date(iso);
-			return d.toLocaleTimeString('en-US', {
-				hour12: false,
-				hour: '2-digit',
-				minute: '2-digit',
-				second: '2-digit',
-				fractionalSecondDigits: 3,
-			});
-		} catch {
-			return iso;
-		}
-	}
-
-	function formatFieldValue(v: unknown): string {
-		if (v === null || v === undefined) return 'null';
-		if (typeof v === 'string') return v;
-		return JSON.stringify(v);
-	}
 
 	function handleClick(log: UnifiedLog, index: number) {
 		if (log.isStructured && log.fields && Object.keys(log.fields).length > 0) {
@@ -147,7 +120,7 @@
 					class:expandable={log.isStructured && log.fields && Object.keys(log.fields).length > 0}
 					onclick={() => handleClick(log, i)}
 				>
-					<span class="log-time">{formatTime(log.timestamp)}</span>
+					<span class="log-time">{formatTimeMs(log.timestamp)}</span>
 					{#if log.node_name}
 						<span class="log-node">{log.node_name}</span>
 					{/if}
@@ -289,7 +262,7 @@
 	}
 
 	.field-key {
-		color: #a855f7;
+		color: var(--purple-color);
 		flex-shrink: 0;
 	}
 

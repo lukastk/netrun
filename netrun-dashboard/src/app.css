@@ -15,6 +15,7 @@
   --error-color: #ef4444;
   --warning-color: #f59e0b;
   --success-color: #22c55e;
+  --purple-color: #a855f7;
 
   /* Map to netrun-ui-vis namespaced variables */
   --netrun-bg-primary: var(--bg-primary);
