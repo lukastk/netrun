@@ -1,6 +1,6 @@
 <script lang="ts">
 	import type { ObserveState } from '../types.js';
-	import { formatDuration, formatTimeMs, stateClass, outcomeClass } from '../format.js';
+	import { formatDuration, formatTimeMs, formatFieldValue, stateClass, outcomeClass } from '../format.js';
 	import EpochDetail from './EpochDetail.svelte';
 
 	interface Props {
@@ -19,11 +19,47 @@
 			.sort((a, b) => b.created_at.localeCompare(a.created_at)),
 	);
 
-	let nodeLogs = $derived(
-		(liveState?.logs ?? []).filter((l) => l.node_name === nodeName),
-	);
+	interface UnifiedLog {
+		timestamp: string;
+		message: string;
+		fields?: Record<string, unknown>;
+		isStructured: boolean;
+	}
+
+	let nodeLogs = $derived.by((): UnifiedLog[] => {
+		const result: UnifiedLog[] = [];
+
+		// Print buffer logs
+		for (const log of (liveState?.logs ?? []).filter((l) => l.node_name === nodeName)) {
+			result.push({ timestamp: log.timestamp, message: log.message, isStructured: false });
+		}
+
+		// Structured logs from this node's epochs
+		for (const epoch of nodeEpochs) {
+			for (const entry of epoch.node_log_entries) {
+				result.push({
+					timestamp: entry.timestamp,
+					message: entry.message ?? '',
+					fields: entry.fields,
+					isStructured: true,
+				});
+			}
+		}
+
+		// Deduplicate: structured wins over print buffer at same timestamp
+		const structuredKeys = new Set(
+			result.filter((r) => r.isStructured).map((r) => r.timestamp),
+		);
+		const deduped = result.filter(
+			(r) => r.isStructured || !structuredKeys.has(r.timestamp),
+		);
+
+		deduped.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+		return deduped;
+	});
 
 	let expandedEpochId = $state<string | null>(null);
+	let expandedLogIndex = $state<number | null>(null);
 
 	// Collapsible sections
 	let statusOpen = $state(true);
@@ -141,11 +177,29 @@
 		</div>
 		{#if logsOpen}
 			<div class="log-list">
-				{#each nodeLogs.slice(-30) as log}
-					<div class="log-line">
+				{#each nodeLogs.slice(-50) as log, i}
+					{@const hasFields = log.isStructured && log.fields && Object.keys(log.fields).length > 0}
+					<div
+						class="log-line"
+						class:expandable={hasFields}
+						onclick={() => hasFields && (expandedLogIndex = expandedLogIndex === i ? null : i)}
+					>
 						<span class="mono muted">{formatTimeMs(log.timestamp)}</span>
 						<span>{log.message}</span>
+						{#if hasFields}
+							<span class="field-indicator">&#9656; {Object.keys(log.fields!).length} fields</span>
+						{/if}
 					</div>
+					{#if expandedLogIndex === i && log.fields}
+						<div class="field-detail">
+							{#each Object.entries(log.fields) as [k, v]}
+								<div class="field-row">
+									<span class="field-key">{k}</span>
+									<span class="field-value">{formatFieldValue(v)}</span>
+								</div>
+							{/each}
+						</div>
+					{/if}
 				{/each}
 				{#if nodeLogs.length === 0}
 					<div class="empty">No logs</div>
@@ -307,6 +361,50 @@
 
 	.epoch-item:hover {
 		background: var(--bg-tertiary);
+	}
+
+	.log-line {
+		display: flex;
+		gap: 6px;
+		padding: 1px 0;
+		font-size: 10px;
+		flex-wrap: wrap;
+		align-items: baseline;
+	}
+
+	.log-line.expandable {
+		cursor: pointer;
+	}
+
+	.log-line.expandable:hover {
+		background: var(--bg-tertiary);
+	}
+
+	.field-indicator {
+		color: var(--text-secondary);
+		font-size: 9px;
+	}
+
+	.field-detail {
+		padding: 2px 0 4px 16px;
+		border-left: 2px solid var(--border-color);
+		margin-left: 4px;
+	}
+
+	.field-row {
+		display: flex;
+		gap: 8px;
+		font-size: 10px;
+		padding: 1px 0;
+	}
+
+	.field-key {
+		color: var(--purple-color);
+		flex-shrink: 0;
+	}
+
+	.field-value {
+		color: var(--text-primary);
 	}
 
 	.empty {
