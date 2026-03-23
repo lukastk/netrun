@@ -9,6 +9,22 @@
 	let { children } = $props();
 
 	let sidebarOpen = $state(true);
+	let sidebarWidth = $state(280);
+	let draggingSidebar = $state(false);
+
+	function onSidebarPointerDown(e: PointerEvent) {
+		draggingSidebar = true;
+		e.preventDefault();
+	}
+
+	function onPointerMove(e: PointerEvent) {
+		if (!draggingSidebar) return;
+		sidebarWidth = Math.max(160, Math.min(e.clientX, 500));
+	}
+
+	function onPointerUp() {
+		draggingSidebar = false;
+	}
 
 	onMount(() => {
 		startPolling();
@@ -20,15 +36,19 @@
 	<title>netrun dashboard</title>
 </svelte:head>
 
+<svelte:window onpointermove={onPointerMove} onpointerup={onPointerUp} />
+
 <div class="layout">
 	{#if sidebarOpen}
-		<aside class="sidebar">
+		<aside class="sidebar" style:width="{sidebarWidth}px" style:min-width="{sidebarWidth}px">
 			<div class="sidebar-header">
 				<span class="sidebar-title">Nets</span>
 				<button class="sidebar-toggle" onclick={() => (sidebarOpen = false)}>&#x2715;</button>
 			</div>
 			<NetList hideHeader />
 		</aside>
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="resize-handle-v" onpointerdown={onSidebarPointerDown}></div>
 	{:else}
 		<button class="sidebar-reopen" onclick={() => (sidebarOpen = true)}>▶</button>
 	{/if}
@@ -46,13 +66,21 @@
 	}
 
 	.sidebar {
-		width: var(--sidebar-width);
-		min-width: var(--sidebar-width);
 		background: var(--bg-secondary);
-		border-right: 1px solid var(--border-color);
 		overflow: hidden;
 		display: flex;
 		flex-direction: column;
+	}
+
+	.resize-handle-v {
+		width: 5px;
+		cursor: ew-resize;
+		background: var(--border-color);
+		flex-shrink: 0;
+	}
+
+	.resize-handle-v:hover {
+		background: var(--accent-color);
 	}
 
 	.sidebar-header {

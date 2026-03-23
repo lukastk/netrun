@@ -55,13 +55,64 @@
 		}
 	});
 
-	// Apply live status + highlight as CSS classes via DOM
+	// Tooltip element
+	let tooltipEl: HTMLDivElement | undefined = $state();
+	let nodeStatusCache = new Map<string, typeof liveState extends null ? never : NonNullable<typeof liveState>['nodes'][0]>();
+
+	// One-time setup: attach hover listeners for tooltips
+	$effect(() => {
+		if (!initialized || !tooltipEl) return;
+
+		const listeners: Array<[Element, string, EventListener]> = [];
+
+		for (const node of initialNodes) {
+			const el = document.querySelector(`[data-id="${node.id}"]`);
+			if (!el) continue;
+
+			const onEnter = (e: Event) => {
+				const status = nodeStatusCache.get(node.id);
+				if (!status || !tooltipEl) return;
+				const stateLabel = !status.enabled ? 'disabled' : status.is_busy ? 'running' : 'idle';
+				const running = status.running_epoch_ids.length;
+				const startable = status.startable_epoch_ids.length;
+				tooltipEl.innerHTML = `<strong>${status.name}</strong><br>` +
+					`Status: ${stateLabel}<br>` +
+					`Epochs: ${status.epoch_count}` +
+					(running > 0 ? ` (${running} running)` : '') +
+					(startable > 0 ? ` (${startable} startable)` : '') +
+					(status.pools.length > 0 ? `<br>Pool: ${status.pools.join(', ')}` : '');
+				const rect = (el as HTMLElement).getBoundingClientRect();
+				tooltipEl.style.left = `${rect.left}px`;
+				tooltipEl.style.top = `${rect.bottom + 6}px`;
+				tooltipEl.style.display = 'block';
+			};
+
+			const onLeave = () => {
+				if (tooltipEl) tooltipEl.style.display = 'none';
+			};
+
+			el.addEventListener('mouseenter', onEnter);
+			el.addEventListener('mouseleave', onLeave);
+			listeners.push([el, 'mouseenter', onEnter], [el, 'mouseleave', onLeave]);
+		}
+
+		return () => {
+			for (const [el, event, fn] of listeners) {
+				el.removeEventListener(event, fn);
+			}
+		};
+	});
+
+	// Apply live status + highlight + badges via DOM
 	$effect(() => {
 		if (!initialized) return;
 
 		const nodeStatusMap = liveState
 			? new Map(liveState.nodes.map((n) => [n.name, n]))
 			: null;
+
+		// Update cache for tooltips
+		if (nodeStatusMap) nodeStatusCache = nodeStatusMap;
 
 		for (const node of initialNodes) {
 			const el = document.querySelector(`[data-id="${node.id}"]`);
@@ -76,6 +127,20 @@
 					else if (status.is_busy) el.classList.add('node-busy');
 					else if (status.startable_epoch_ids.length > 0) el.classList.add('node-startable');
 					else el.classList.add('node-idle');
+
+					// Epoch badge
+					let badge = el.querySelector('.epoch-badge') as HTMLElement | null;
+					if (status.epoch_count > 0) {
+						if (!badge) {
+							badge = document.createElement('div');
+							badge.className = 'epoch-badge';
+							(el as HTMLElement).style.position = 'relative';
+							el.appendChild(badge);
+						}
+						badge.textContent = `${status.epoch_count}`;
+					} else if (badge) {
+						badge.remove();
+					}
 				}
 			}
 
@@ -105,6 +170,7 @@
 </script>
 
 <div class="graph-container">
+	<div class="dashboard-tooltip" bind:this={tooltipEl}></div>
 	{#if initialized}
 		<SvelteFlowProvider>
 			<NetrunFlowViewer
@@ -147,5 +213,36 @@
 	:global(.node-highlighted) {
 		box-shadow: 0 0 0 4px var(--accent-color, #3b82f6);
 		border-radius: 6px;
+	}
+
+	:global(.epoch-badge) {
+		position: absolute;
+		top: -8px;
+		right: -8px;
+		background: var(--accent-color, #3b82f6);
+		color: white;
+		font-size: 9px;
+		font-weight: 700;
+		padding: 1px 5px;
+		border-radius: 8px;
+		z-index: 5;
+		pointer-events: none;
+		line-height: 14px;
+	}
+
+	.dashboard-tooltip {
+		position: fixed;
+		background: var(--bg-tertiary);
+		border: 1px solid var(--border-color);
+		padding: 8px 10px;
+		border-radius: 4px;
+		font-size: 11px;
+		line-height: 1.5;
+		z-index: 1000;
+		pointer-events: none;
+		display: none;
+		max-width: 280px;
+		box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+		color: var(--text-primary);
 	}
 </style>

@@ -180,10 +180,13 @@ Button in the status bar to pause/resume the net.
 - [x] 7a (enable/disable node toggle in right sidebar)
 - [x] 7b (inject data form in right sidebar)
 - [x] 7d (pause/resume button in status bar)
-- 7c (send control signal — needs control port detection)
+- [x] 7c (send control signal — dedicated control buttons per port)
 
 **Phase 4 — Polish:**
-- 1b-1c (resizable sidebars)
-- 4c-4d (node badges, tooltips)
-- 5d-5e (net action log, pool topology)
-- 2g (net action trace per epoch)
+- [x] 1b (resizable left sidebar)
+- [x] 1c (resizable right sidebar) — done in Phase 1
+- [x] 4c (node badges showing epoch count)
+- [x] 4d (tooltip on hover with node info)
+- [x] 5e (pool/worker topology tab)
+- 5d (net action log — needs backend endpoint)
+- 2g (net action trace per epoch — needs backend endpoint)

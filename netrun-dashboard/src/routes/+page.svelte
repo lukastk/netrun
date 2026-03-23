@@ -6,6 +6,7 @@
 	import EpochTable from '$lib/components/EpochTable.svelte';
 	import LogViewer from '$lib/components/LogViewer.svelte';
 	import NodeDetail from '$lib/components/NodeDetail.svelte';
+	import PoolTopology from '$lib/components/PoolTopology.svelte';
 
 	const registry = getRegistryState();
 	const netState = getNetState();
@@ -29,7 +30,7 @@
 		registry.nets.find((n) => n.url === registry.selectedUrl)?.name ?? 'unknown',
 	);
 
-	let activeTab = $state<'epochs' | 'logs' | 'queues' | 'errors'>('epochs');
+	let activeTab = $state<'epochs' | 'logs' | 'queues' | 'pools' | 'errors'>('epochs');
 
 	// Node selection: clicking a node opens the right sidebar
 	let selectedNode = $state<string | null>(null);
@@ -131,6 +132,9 @@
 									<span class="tab-count">{Object.keys(netState.liveState.output_queues).length}</span>
 								{/if}
 							</button>
+							<button class="tab" class:active={activeTab === 'pools'} onclick={() => (activeTab = 'pools')}>
+								Pools
+							</button>
 							{#if netState.liveState && (netState.liveState.dead_letters.length > 0 || netState.liveState.status.exception_count > 0)}
 								<button class="tab tab-error" class:active={activeTab === 'errors'} onclick={() => (activeTab = 'errors')}>
 									Errors
@@ -169,6 +173,8 @@
 										{/if}
 									{/if}
 								</div>
+							{:else if activeTab === 'pools'}
+								<PoolTopology config={netState.config} liveState={netState.liveState} />
 							{:else if activeTab === 'errors'}
 								<div class="simple-panel">
 									{#if netState.liveState}
