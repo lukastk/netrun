@@ -213,16 +213,17 @@ async def _get_input_salvo(
     are unwrapped to scalar values.
     """
     # Check if the node has input ports
-    node_info = net.nodes[node_name]
-    if not node_info.in_port_names:
+    node_config = net.get_node_config(node_name)
+    in_port_names = list(node_config.in_ports.keys()) if node_config.in_ports else []
+    if not in_port_names:
         if verbose:
             print(f"Node '{node_name}' is a source node (no input ports)")
         return {}
 
     # Try cached input salvos first (only if caching is enabled for this node)
     cached = []
-    if node_info.is_cache_enabled:
-        cached = net.get_cached_input_salvos(node_name)
+    if net.cache.is_enabled(node_name):
+        cached = net.cache.input_salvos(node_name)
     if cached:
         if verbose:
             print(f"Using cached input salvo (entry 0 of {len(cached)})")

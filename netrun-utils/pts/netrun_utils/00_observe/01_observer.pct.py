@@ -17,7 +17,6 @@
 
 # %%
 #|export
-import warnings
 from typing import Any
 
 from netrun.net._net._net import Net
@@ -123,35 +122,33 @@ class NetObserver:
 
     def __init__(self, net: Net):
         self._net = net
-        if not net.config_resolved.retain_epoch_logs:
-            warnings.warn(
-                "Net config has retain_epoch_logs=False. Epoch log data will not be "
-                "available through the observe API. Set retain_epoch_logs=True in your "
-                "NetConfig for full observability.",
-                UserWarning,
-                stacklevel=2,
-            )
 
     # --- Query methods ---
 
     def get_status(self) -> NetStatus:
         """Get overall net status."""
-        nodes = self._net.nodes
-        node_names = list(nodes.keys())
-        busy = [name for name, info in nodes.items() if info.is_busy]
-        idle = [name for name in node_names if name not in busy]
+        resolved = self._net._config_resolved
+        node_names = [nc.name for nc in resolved.graph.nodes]
+
+        running_ids = set()
+        for epoch_state in self._net.epochs.values():
+            if _epoch_state_to_str(epoch_state.state) == "running":
+                running_ids.add(epoch_state.node_name)
+
+        busy = [name for name in node_names if name in running_ids]
+        idle = [name for name in node_names if name not in running_ids]
 
         return NetStatus(
             started=self._net.started,
             paused=self._net.paused,
             is_blocked=self._net.is_blocked() if self._net.started else False,
             node_names=node_names,
-            edge_count=len(self._net.edges),
+            edge_count=len(self._net.graph.edges()),
             total_epochs=len(self._net.epochs),
             busy_nodes=busy,
             idle_nodes=idle,
             startable_epoch_count=len(self._net.get_startable_epochs()),
-            running_epoch_count=len(self._net.get_running_epochs()),
+            running_epoch_count=len(running_ids),
             dead_letter_count=len(self._net.dead_letter_queue),
             exception_count=len(self._net.exception_queue),
             output_queues=self.get_output_queue_counts(),
@@ -159,24 +156,29 @@ class NetObserver:
 
     def get_nodes(self) -> list[NodeStatus]:
         """Get status of all nodes."""
-        return [self._node_to_status(info) for info in self._net.nodes.values()]
+        resolved = self._net._config_resolved
+        return [self._build_node_status(nc.name) for nc in resolved.graph.nodes]
 
     def get_node(self, name: str) -> NodeStatus:
         """Get status of a single node."""
-        return self._node_to_status(self._net.nodes[name])
+        return self._build_node_status(name)
 
     def get_edges(self) -> list[EdgeStatus]:
         """Get status of all edges."""
-        return [
-            EdgeStatus(
-                source_node=edge.source_node,
-                source_port=edge.source_port,
-                target_node=edge.target_node,
-                target_port=edge.target_port,
-                packet_count=edge.packet_count,
-            )
-            for edge in self._net.edges
-        ]
+        result = []
+        for edge in self._net.graph.edges():
+            # Count packets on this edge
+            import netrun_sim
+            location = netrun_sim.PacketLocation.edge(edge)
+            packet_ids = self._net.netsim.get_packets_at_location(location)
+            result.append(EdgeStatus(
+                source_node=edge.source.node_name,
+                source_port=edge.source.port_name,
+                target_node=edge.target.node_name,
+                target_port=edge.target.port_name,
+                packet_count=len(packet_ids),
+            ))
+        return result
 
     def get_epoch_logs(self) -> list[EpochInfo]:
         """Get all epoch information.
@@ -207,7 +209,7 @@ class NetObserver:
                 node_name=node_name,
                 epoch_id=str(epoch_id),
             )
-            for ts, epoch_id, node_name, message in self._net.get_all_logs_chronological()
+            for ts, epoch_id, node_name, message in self._net.logs.all_chronological()
         ]
 
     def get_node_logs(self, node_name: str) -> list[LogEntry]:
@@ -218,7 +220,7 @@ class NetObserver:
                 message=message,
                 node_name=node_name,
             )
-            for ts, message in self._net.get_node_logs(node_name)
+            for ts, message in self._net.logs.for_node(node_name)
         ]
 
     # --- Control methods ---
@@ -289,38 +291,68 @@ class NetObserver:
     def get_output_queue_counts(self) -> dict[str, int]:
         """Get output queue names and their current packet counts."""
         result = {}
-        if self._net.config_resolved.output_queues:
-            for queue_name in self._net.config_resolved.output_queues:
-                result[queue_name] = self._net.output_count(queue_name)
+        resolved = self._net._config_resolved
+        if resolved.output_queues:
+            for queue_name in resolved.output_queues:
+                queue = self._net._output_queues.get(queue_name)
+                result[queue_name] = queue.qsize() if queue else 0
         return result
 
     # --- Config ---
 
     def get_config(self) -> dict:
         """Get the resolved net config as a JSON-serializable dict."""
-        return self._net.config_resolved.model_dump(mode="json")
+        return self._net._config_resolved.model_dump(mode="json")
 
     # --- Private helpers ---
 
-    def _node_to_status(self, info) -> NodeStatus:
-        """Convert a NodeInfo to a NodeStatus model."""
+    def _build_node_status(self, node_name: str) -> NodeStatus:
+        """Build a NodeStatus model for a node by name."""
+        node_config = self._net.get_node_config(node_name)
+
+        # Enabled state
+        enabled = self._net.is_node_enabled(node_name)
+
+        # Epoch counts and IDs
+        running_ids = []
+        startable_ids = []
+        epoch_count = 0
+        for epoch_state in self._net.epochs.values():
+            if epoch_state.node_name == node_name:
+                epoch_count += 1
+                state_str = _epoch_state_to_str(epoch_state.state)
+                if state_str == "running":
+                    running_ids.append(epoch_state.id)
+                elif state_str == "startable":
+                    startable_ids.append(epoch_state.id)
+
         # Input port packet counts
         port_packets = {}
-        for port_name, packets in info.packets_at_all_input_ports().items():
+        for port_name, packets in self._net.get_packets_at_all_ports(node_name).items():
             port_packets[port_name] = len(packets)
 
-        factory = str(info.cfg.factory) if info.cfg and info.cfg.factory else None
+        # Port names
+        in_port_names = list(node_config.in_ports.keys()) if node_config.in_ports else []
+        out_port_names = list(node_config.out_ports.keys()) if node_config.out_ports else []
+
+        # Pools
+        pools = []
+        if node_config.execution_config and node_config.execution_config.pools:
+            pools = list(node_config.execution_config.pools)
+
+        # Factory
+        factory = str(node_config.factory) if node_config.factory else None
 
         return NodeStatus(
-            name=info.name,
-            enabled=info.enabled,
-            epoch_count=info.epoch_count,
-            is_busy=info.is_busy,
-            running_epoch_ids=[str(e.id) for e in info.running_epochs],
-            startable_epoch_ids=[str(e.id) for e in info.startable_epochs],
-            in_port_names=info.in_port_names,
-            out_port_names=info.out_port_names,
+            name=node_name,
+            enabled=enabled,
+            epoch_count=epoch_count,
+            is_busy=len(running_ids) > 0,
+            running_epoch_ids=running_ids,
+            startable_epoch_ids=startable_ids,
+            in_port_names=in_port_names,
+            out_port_names=out_port_names,
             input_port_packet_counts=port_packets,
-            pools=info.pools,
+            pools=pools,
             factory=factory,
         )

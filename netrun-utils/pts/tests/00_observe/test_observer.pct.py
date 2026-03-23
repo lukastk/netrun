@@ -180,7 +180,8 @@ async def test_epoch_logs_after_execution():
 
 # %%
 #|export
-def test_warns_when_retain_epoch_logs_false():
+def test_observer_with_retain_epoch_logs_false():
+    """Observer works even when retain_epoch_logs is False."""
     config = NetConfig(
         pools={"main": PoolConfig(spec=MainPoolConfig())},
         graph=GraphConfig(nodes=[
@@ -189,5 +190,6 @@ def test_warns_when_retain_epoch_logs_false():
         retain_epoch_logs=False,
     )
     net = Net(config, run_source_nodes=False)
-    with pytest.warns(UserWarning, match="retain_epoch_logs"):
-        NetObserver(net)
+    obs = NetObserver(net)
+    status = obs.get_status()
+    assert status.started is False
