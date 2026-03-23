@@ -58,6 +58,7 @@
 		onConnect?: (connection: Connection) => void;
 		onBeforeConnect?: (connection: Connection) => Connection | false;
 		onDelete?: (params: { nodes: Node[]; edges: Edge[] }) => void;
+		onPaneClick?: (event: { event: MouseEvent }) => void;
 		onPaneContextMenu?: (event: MouseEvent) => void;
 		onNodeContextAction?: (event: { node: Node; action: string }) => void;
 		onEdgeContextAction?: (event: { edge: Edge; action: string }) => void;
@@ -85,6 +86,7 @@
 		onConnect,
 		onBeforeConnect,
 		onDelete,
+		onPaneClick,
 		onPaneContextMenu,
 		onNodeContextAction,
 		onEdgeContextAction,
@@ -231,6 +233,7 @@
 		ondelete={onDelete}
 		onselectionchange={onSelectionChange}
 		onnodedragstop={onNodeDragStop}
+		onpaneclick={onPaneClick}
 		onpanecontextmenu={handlePaneContextMenu}
 		onnodecontextmenu={handleNodeContextMenuEvent}
 		onnodeclick={onNodeClick}

@@ -55,6 +55,11 @@
 		}
 	}
 
+	function handlePaneClick() {
+		selectedNode = null;
+		highlightedNode = null;
+	}
+
 	// Resizable bottom panel
 	let bottomPanelOpen = $state(true);
 	let panelHeight = $state(260);
@@ -108,6 +113,7 @@
 						liveState={netState.liveState}
 						highlightedNode={effectiveHighlight}
 						onNodeClick={handleGraphNodeClick}
+						onPaneClick={handlePaneClick}
 					/>
 				</div>
 				{#if bottomPanelOpen}

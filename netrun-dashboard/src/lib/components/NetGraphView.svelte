@@ -11,9 +11,10 @@
 		liveState: ObserveState | null;
 		highlightedNode: string | null;
 		onNodeClick?: (nodeName: string) => void;
+		onPaneClick?: (event: { event: MouseEvent }) => void;
 	}
 
-	let { config, liveState, highlightedNode, onNodeClick }: Props = $props();
+	let { config, liveState, highlightedNode, onNodeClick, onPaneClick }: Props = $props();
 
 	const nodeTypes: NodeTypes = {
 		netrunNode: NetrunNode,
@@ -166,6 +167,10 @@
 	function handleNodeClick(event: { node: { id: string } }) {
 		onNodeClick?.(event.node.id);
 	}
+
+	function handlePaneClick(event: { event: MouseEvent }) {
+		onPaneClick?.(event);
+	}
 </script>
 
 <div class="graph-container">
@@ -179,6 +184,7 @@
 				settings={graphSettings}
 				showMinimap={false}
 				onNodeClick={handleNodeClick}
+				onPaneClick={handlePaneClick}
 				deleteKey={null}
 			/>
 		</SvelteFlowProvider>
