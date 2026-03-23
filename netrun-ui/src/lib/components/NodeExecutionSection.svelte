@@ -16,8 +16,8 @@
 		pools?: string[];
 		// Execution functions (regular nodes only)
 		exec_node_func?: string | null;
-		start_node_func?: string | null;
-		stop_node_func?: string | null;
+		init_node_func?: string | null;
+		close_node_func?: string | null;
 		on_node_failure?: string | null;
 		[key: string]: unknown;
 	}
@@ -110,7 +110,7 @@
 	let customPoolInput = $state('');
 
 	// Env var mode tracking for custom fields
-	const envVarFields = ['pools', 'exec_node_func', 'start_node_func', 'stop_node_func', 'on_node_failure', 'signals', 'controls'] as const;
+	const envVarFields = ['pools', 'exec_node_func', 'init_node_func', 'close_node_func', 'on_node_failure', 'signals', 'controls'] as const;
 	let envVarModes: Record<string, boolean> = $state({});
 
 	$effect(() => {
@@ -253,8 +253,8 @@
 		<div class="field-group-header">Execution Functions</div>
 		{#each [
 			{ key: 'exec_node_func', label: isFactory ? 'Exec Function Override' : 'Exec Function', placeholder: isFactory ? 'override factory default' : 'module.path.func' },
-			{ key: 'start_node_func', label: 'Start Function', placeholder: 'module.path.func' },
-			{ key: 'stop_node_func', label: 'Stop Function', placeholder: 'module.path.func' },
+			{ key: 'init_node_func', label: 'Init Function', placeholder: 'module.path.func' },
+			{ key: 'close_node_func', label: 'Close Function', placeholder: 'module.path.func' },
 			{ key: 'on_node_failure', label: 'On Failure Function', placeholder: 'module.path.func' },
 		] as funcField (funcField.key)}
 			<div class="field">

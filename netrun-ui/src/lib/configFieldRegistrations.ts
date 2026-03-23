@@ -67,10 +67,10 @@ registerField('NodeConfig', 'dependency_request', 'custom', 'DependencyRequestSe
 registerField('NodeExecutionConfig', 'enabled', 'auto');
 registerField('NodeExecutionConfig', 'pools', 'custom', 'NodeExecutionSection.svelte');
 registerField('NodeExecutionConfig', 'exec_node_func', 'custom', 'NodeExecutionSection.svelte');
-registerField('NodeExecutionConfig', 'start_node_func', 'custom', 'NodeExecutionSection.svelte');
-registerField('NodeExecutionConfig', 'stop_node_func', 'custom', 'NodeExecutionSection.svelte');
+registerField('NodeExecutionConfig', 'init_node_func', 'custom', 'NodeExecutionSection.svelte');
+registerField('NodeExecutionConfig', 'close_node_func', 'custom', 'NodeExecutionSection.svelte');
 registerField('NodeExecutionConfig', 'on_node_failure', 'custom', 'NodeExecutionSection.svelte');
-registerField('NodeExecutionConfig', 'defer_startup', 'auto');
+registerField('NodeExecutionConfig', 'defer_init', 'auto');
 registerField('NodeExecutionConfig', 'max_parallel_epochs', 'auto');
 registerField('NodeExecutionConfig', 'max_epochs', 'auto');
 registerField('NodeExecutionConfig', 'rate_limit_per_second', 'auto');
@@ -88,7 +88,7 @@ registerField('NodeExecutionConfig', 'type_checking_enabled', 'auto');
 registerField('NodeExecutionConfig', 'propagate_exceptions', 'auto');
 registerField('NodeExecutionConfig', 'print_exceptions', 'auto');
 registerField('NodeExecutionConfig', 'storage', 'custom', 'NodeStorageSection.svelte');
-registerField('NodeExecutionConfig', 'run_on_startup', 'auto');
+registerField('NodeExecutionConfig', 'run_on_init', 'auto');
 registerField('NodeExecutionConfig', 'signals', 'custom', 'NodeExecutionSection.svelte');
 registerField('NodeExecutionConfig', 'controls', 'custom', 'NodeExecutionSection.svelte');
 

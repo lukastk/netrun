@@ -54,15 +54,15 @@ def test_signal_port_name():
     """Test signal_port_name generates correct port names."""
     assert signal_port_name("epoch_finished") == "__signal_epoch_finished__"
     assert signal_port_name("epoch_failed") == "__signal_epoch_failed__"
-    assert signal_port_name("node_started") == "__signal_node_started__"
-    assert signal_port_name("node_stopped") == "__signal_node_stopped__"
+    assert signal_port_name("node_initialized") == "__signal_node_initialized__"
+    assert signal_port_name("node_closed") == "__signal_node_closed__"
 
 # %%
 #|export
 def test_is_signal_port():
     """Test is_signal_port correctly identifies signal ports."""
     assert is_signal_port("__signal_epoch_finished__") is True
-    assert is_signal_port("__signal_node_started__") is True
+    assert is_signal_port("__signal_node_initialized__") is True
     assert is_signal_port("output") is False
     assert is_signal_port("__signal_") is False
     assert is_signal_port("__signal_foo") is False
@@ -73,7 +73,7 @@ def test_is_signal_port():
 def test_signal_type_from_port():
     """Test signal_type_from_port extracts signal type."""
     assert signal_type_from_port("__signal_epoch_finished__") == "epoch_finished"
-    assert signal_type_from_port("__signal_node_started__") == "node_started"
+    assert signal_type_from_port("__signal_node_initialized__") == "node_initialized"
     assert signal_type_from_port("output") is None
     assert signal_type_from_port("__signal_") is None
 
@@ -83,7 +83,7 @@ def test_validate_signal_types_valid():
     """Test validate_signal_types accepts valid types."""
     validate_signal_types(["epoch_finished"])
     validate_signal_types(["epoch_finished", "epoch_failed"])
-    validate_signal_types(["node_started", "node_stopped"])
+    validate_signal_types(["node_initialized", "node_closed"])
     validate_signal_types(list(VALID_SIGNAL_TYPES))
     validate_signal_types([])  # empty is valid
 
@@ -122,11 +122,11 @@ def test_signal_value_dataclass():
     """Test SignalValue hierarchy can be created with all fields."""
     # Base SignalValue (node lifecycle)
     sv_base = SignalValue(
-        signal="node_started",
+        signal="node_initialized",
         node_name="A",
         timestamp=datetime.now(),
     )
-    assert sv_base.signal == "node_started"
+    assert sv_base.signal == "node_initialized"
     assert sv_base.node_name == "A"
     assert not isinstance(sv_base, EpochSignalValue)
 
@@ -339,7 +339,7 @@ async def test_epoch_finished_signal_triggers_downstream():
                         pools=["main"],
                         exec_node_func=node_a_exec,
                         signals=["epoch_finished"],
-                        run_on_startup=True,
+                        run_on_init=True,
                     ),
                 ),
                 NodeConfig(
@@ -405,7 +405,7 @@ async def test_epoch_failed_signal_triggers_downstream():
                         pools=["main"],
                         exec_node_func=node_a_exec,
                         signals=["epoch_failed"],
-                        run_on_startup=True,
+                        run_on_init=True,
                         propagate_exceptions=False,
                         retries=0,
                     ),
@@ -440,8 +440,8 @@ async def test_epoch_failed_signal_triggers_downstream():
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_node_started_signal():
-    """Test that node_started signal is emitted when a node starts."""
+async def test_node_initialized_signal():
+    """Test that node_initialized signal is emitted when a node starts."""
     results = []
 
     def node_a_exec(ctx, packets):
@@ -470,7 +470,7 @@ async def test_node_started_signal():
                         node_name="A",
                         pools=["main"],
                         exec_node_func=node_a_exec,
-                        signals=["node_started"],
+                        signals=["node_initialized"],
                     ),
                 ),
                 NodeConfig(
@@ -484,13 +484,13 @@ async def test_node_started_signal():
                 ),
             ],
             edges=[
-                EdgeConfig(source_node="A", source_port="__signal_node_started__", target_node="B", target_port="trigger"),
+                EdgeConfig(source_node="A", source_port="__signal_node_initialized__", target_node="B", target_port="trigger"),
             ],
         ),
     )
 
     async with Net(config) as net:
-        # node_started signal is emitted during Net.start() → _start_all_nodes()
+        # node_initialized signal is emitted during Net.init() → _init_all_nodes()
         # Run to let B pick up the signal
         await _run_net_to_completion(net)
 
@@ -498,14 +498,14 @@ async def test_node_started_signal():
     signal_val = results[0]
     assert isinstance(signal_val, SignalValue)
     assert not isinstance(signal_val, EpochSignalValue)
-    assert signal_val.signal == "node_started"
+    assert signal_val.signal == "node_initialized"
     assert signal_val.node_name == "A"
 
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_node_stopped_signal():
-    """Test that node_stopped signal doesn't crash (signal emitted during shutdown)."""
+async def test_node_closed_signal():
+    """Test that node_closed signal doesn't crash (signal emitted during shutdown)."""
     def node_a_exec(ctx, packets):
         pass
 
@@ -526,7 +526,7 @@ async def test_node_stopped_signal():
                         node_name="A",
                         pools=["main"],
                         exec_node_func=node_a_exec,
-                        signals=["node_stopped"],
+                        signals=["node_closed"],
                     ),
                 ),
             ],
@@ -534,7 +534,7 @@ async def test_node_stopped_signal():
         ),
     )
 
-    # node_stopped signal is emitted during Net.stop() — B can't execute
+    # node_closed signal is emitted during Net.stop() — B can't execute
     # because the net is already stopping. Just verify no crash.
     async with Net(config) as net:
         pass
@@ -564,8 +564,8 @@ async def test_signal_unconnected_port_no_crash():
                         node_name="A",
                         pools=["main"],
                         exec_node_func=node_a_exec,
-                        signals=["epoch_finished", "epoch_failed", "node_started", "node_stopped"],
-                        run_on_startup=True,
+                        signals=["epoch_finished", "epoch_failed", "node_initialized", "node_closed"],
+                        run_on_init=True,
                     ),
                 ),
             ],
@@ -639,7 +639,7 @@ async def test_default_signals_applied_to_all_nodes():
                         node_name="A",
                         pools=["main"],
                         exec_node_func=node_a_exec,
-                        run_on_startup=True,
+                        run_on_init=True,
                     ),
                 ),
                 NodeConfig(
@@ -716,7 +716,7 @@ async def test_signal_with_regular_output():
                         pools=["main"],
                         exec_node_func=node_a_exec,
                         signals=["epoch_finished"],
-                        run_on_startup=True,
+                        run_on_init=True,
                     ),
                 ),
                 NodeConfig(
@@ -757,8 +757,8 @@ async def test_signal_with_regular_output():
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_node_started_signal_deferred_startup():
-    """Test that node_started signal fires on first epoch for deferred nodes."""
+async def test_node_initialized_signal_deferred_startup():
+    """Test that node_initialized signal fires on first epoch for deferred nodes."""
     results = []
 
     def node_a_exec(ctx, packets):
@@ -786,9 +786,9 @@ async def test_node_started_signal_deferred_startup():
                         node_name="A",
                         pools=["main"],
                         exec_node_func=node_a_exec,
-                        signals=["node_started"],
-                        defer_startup=True,
-                        run_on_startup=True,
+                        signals=["node_initialized"],
+                        defer_init=True,
+                        run_on_init=True,
                     ),
                 ),
                 NodeConfig(
@@ -802,7 +802,7 @@ async def test_node_started_signal_deferred_startup():
                 ),
             ],
             edges=[
-                EdgeConfig(source_node="A", source_port="__signal_node_started__", target_node="B", target_port="trigger"),
+                EdgeConfig(source_node="A", source_port="__signal_node_initialized__", target_node="B", target_port="trigger"),
             ],
         ),
     )
@@ -810,10 +810,10 @@ async def test_node_started_signal_deferred_startup():
     async with Net(config) as net:
         await _run_net_to_completion(net)
 
-    # node_started should fire when A's first epoch triggers deferred startup
+    # node_initialized should fire when A's first epoch triggers deferred startup
     assert len(results) == 1
     assert isinstance(results[0], SignalValue)
-    assert results[0].signal == "node_started"
+    assert results[0].signal == "node_initialized"
     assert results[0].node_name == "A"
 
 # %%
@@ -852,7 +852,7 @@ async def test_per_node_signal_override():
                         node_name="A",
                         pools=["main"],
                         exec_node_func=node_a_exec,
-                        run_on_startup=True,
+                        run_on_init=True,
                         signals=[],  # opt-out
                     ),
                 ),
@@ -869,7 +869,7 @@ async def test_per_node_signal_override():
                         node_name="B",
                         pools=["main"],
                         exec_node_func=node_b_exec,
-                        run_on_startup=True,
+                        run_on_init=True,
                         # signals=None → inherits default_signals=["epoch_finished"]
                     ),
                 ),
@@ -933,7 +933,7 @@ async def test_epoch_started_signal_triggers_downstream():
                         pools=["main"],
                         exec_node_func=node_a_exec,
                         signals=["epoch_started"],
-                        run_on_startup=True,
+                        run_on_init=True,
                     ),
                 ),
                 NodeConfig(
@@ -996,7 +996,7 @@ async def test_epoch_cancelled_signal_user_cancel():
                         pools=["main"],
                         exec_node_func=node_a_exec,
                         signals=["epoch_cancelled"],
-                        run_on_startup=True,
+                        run_on_init=True,
                     ),
                 ),
                 NodeConfig(
@@ -1088,7 +1088,7 @@ async def test_epoch_cancelled_signal_max_epochs():
                         pools=["main"],
                         exec_node_func=node_a_exec,
                         signals=["epoch_cancelled"],
-                        run_on_startup=True,
+                        run_on_init=True,
                         max_epochs=1,
                         propagate_exceptions=False,
                     ),
@@ -1110,7 +1110,7 @@ async def test_epoch_cancelled_signal_max_epochs():
         ),
     )
 
-    async with Net(config, run_source_nodes=False) as net:
+    async with Net(config, run_init_nodes=False) as net:
         await net.execute_node("A")
         # A's output is on the self-loop edge. Use auto_start_epochs=False
         # to avoid infinite loop (run_until_blocked with auto_start would

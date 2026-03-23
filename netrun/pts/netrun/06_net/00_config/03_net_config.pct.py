@@ -353,7 +353,7 @@ class NetConfig(VarResolvableModel):
     retain_net_action_logs: bool | VarRef = Field(default=False, description="Keep NetActionLog objects in memory, accessible via net.net_action_log.")
     epoch_log_echo_stdout: bool | VarRef = Field(default=False, description="Pretty-print epoch logs to stdout when epochs complete.")
 
-    default_signals: list[str] | VarRef = Field(default_factory=list, description="Default signal types for all nodes. Nodes inherit this unless they set their own signals list. Valid types: 'epoch_started', 'epoch_finished', 'epoch_failed', 'epoch_cancelled', 'node_started', 'node_stopped'.")
+    default_signals: list[str] | VarRef = Field(default_factory=list, description="Default signal types for all nodes. Nodes inherit this unless they set their own signals list. Valid types: 'epoch_started', 'epoch_finished', 'epoch_failed', 'epoch_cancelled', 'node_initialized', 'node_closed'.")
 
     default_controls: list[str] | VarRef = Field(default_factory=list, description="Default control types for all nodes. Nodes inherit this unless they set their own controls list.")
 

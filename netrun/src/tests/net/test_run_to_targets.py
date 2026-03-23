@@ -753,14 +753,14 @@ async def test_auto_start():
         assert len(salvos) == 1
         assert salvos[0].node_name == "B"
         assert salvos[0].packets["in"] == [42]
-        assert net._started
+        assert net._initialized
     finally:
-        await net.stop()
+        await net.close()
 
 # %% pts/tests/06_net/test_run_to_targets.pct.py 45
 @pytest.mark.asyncio
 async def test_source_nodes_executed():
-    """Source node (run_on_startup=True) output flows to target via run_to_targets."""
+    """Source node (run_on_init=True) output flows to target via run_to_targets."""
     def source_func(ctx, packets):
         out_id = ctx.create_packet("from_source")
         ctx.load_output_port("out", out_id)
@@ -791,7 +791,7 @@ async def test_source_nodes_executed():
                 execution_config=NodeExecutionConfig(
                     pools=["main"],
                     exec_node_func=source_func,
-                    run_on_startup=True,
+                    run_on_init=True,
                 ),
             ),
             _make_passthrough_node("Middle"),
@@ -811,7 +811,7 @@ async def test_source_nodes_executed():
         assert salvos[0].node_name == "Sink"
         assert salvos[0].packets["in"] == ["from_source"]
     finally:
-        await net.stop()
+        await net.close()
 
 # %% pts/tests/06_net/test_run_to_targets.pct.py 47
 @pytest.mark.asyncio
@@ -847,7 +847,7 @@ async def test_raises_on_disabled_source_node():
                 execution_config=NodeExecutionConfig(
                     pools=["main"],
                     exec_node_func=source_func,
-                    run_on_startup=True,
+                    run_on_init=True,
                     enabled=False,
                 ),
             ),
@@ -863,7 +863,7 @@ async def test_raises_on_disabled_source_node():
         with pytest.raises(RuntimeError, match="Cannot execute source node"):
             await net.run_to_targets("Sink")
     finally:
-        await net.stop()
+        await net.close()
 
 # %% pts/tests/06_net/test_run_to_targets.pct.py 49
 @pytest.mark.asyncio
@@ -889,12 +889,12 @@ async def test_pre_start_inject():
         assert len(salvos) == 1
         assert salvos[0].packets["in"] == [99]
     finally:
-        await net.stop()
+        await net.close()
 
 # %% pts/tests/06_net/test_run_to_targets.pct.py 51
 @pytest.mark.asyncio
 async def test_no_double_source_execution():
-    """Source nodes don't run twice if start(run_source_nodes=True) already ran them."""
+    """Source nodes don't run twice if start(run_init_nodes=True) already ran them."""
     execution_count = []
 
     def source_func(ctx, packets):
@@ -928,7 +928,7 @@ async def test_no_double_source_execution():
                 execution_config=NodeExecutionConfig(
                     pools=["main"],
                     exec_node_func=source_func,
-                    run_on_startup=True,
+                    run_on_init=True,
                 ),
             ),
             _make_sink_node("Sink"),
@@ -939,7 +939,7 @@ async def test_no_double_source_execution():
     )
 
     net = Net(config)
-    await net.start()  # This runs source nodes (run_source_nodes=True by default)
+    await net.init()  # This runs source nodes (run_init_nodes=True by default)
     try:
         assert len(execution_count) == 1
 
@@ -951,7 +951,7 @@ async def test_no_double_source_execution():
         assert len(salvos) == 1
         assert salvos[0].packets["in"] == ["val"]
     finally:
-        await net.stop()
+        await net.close()
 
 # %% pts/tests/06_net/test_run_to_targets.pct.py 53
 @pytest.mark.asyncio
@@ -991,7 +991,7 @@ async def test_irrelevant_source_nodes_not_executed():
             execution_config=NodeExecutionConfig(
                 pools=["main"],
                 exec_node_func=make_source_func(name),
-                run_on_startup=True,
+                run_on_init=True,
             ),
         )
 
@@ -1021,7 +1021,7 @@ async def test_irrelevant_source_nodes_not_executed():
         assert salvos[0].node_name == "Sink1"
         assert salvos[0].packets["in"] == ["from_SourceA"]
     finally:
-        await net.stop()
+        await net.close()
 
 # %% pts/tests/06_net/test_run_to_targets.pct.py 56
 @pytest.mark.asyncio
@@ -1072,7 +1072,7 @@ async def test_run_to_targets_control_triggered_target():
                 execution_config=NodeExecutionConfig(
                     pools=["main"],
                     exec_node_func=source_func,
-                    run_on_startup=True,
+                    run_on_init=True,
                     signals=["epoch_finished"],
                 ),
             ),
@@ -1115,4 +1115,4 @@ async def test_run_to_targets_control_triggered_target():
         assert len(salvos) == 1
         assert salvos[0].node_name == "Target"
     finally:
-        await net.stop()
+        await net.close()

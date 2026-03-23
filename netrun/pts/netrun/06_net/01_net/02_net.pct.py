@@ -398,14 +398,14 @@ class Net:
     function execution via ExecutionManager.
     """
 
-    def __init__(self, config: NetConfig, run_source_nodes: bool = True):
+    def __init__(self, config: NetConfig, run_init_nodes: bool = True):
         """Initialize the Net with the given configuration.
 
         Args:
             config: The NetConfig defining pools, graph, and execution settings.
-            run_source_nodes: If False, skip executing run_on_startup nodes during start().
+            run_init_nodes: If False, skip executing run_on_init nodes during init().
         """
-        self._run_source_nodes = run_source_nodes
+        self._run_init_nodes = run_init_nodes
         self._config: NetConfig = config
         self._config_resolved: NetConfig = config.resolve()
 
@@ -420,10 +420,10 @@ class Net:
 
         self._graph: netrun_sim.Graph = self._config_resolved.graph.get_graph()
         self._netsim = netrun_sim.NetSim(self._graph)
-        self._started: bool = False
-        self._source_nodes_executed: set[str] = set()  # tracks which run_on_startup nodes have been executed
+        self._initialized: bool = False
+        self._init_nodes_executed: set[str] = set()  # tracks which run_on_init nodes have been executed
         self._paused: bool = False
-        self._stopping: bool = False
+        self._closing: bool = False
 
         # Packet value storage
         self._packet_store = PacketStore()
@@ -458,8 +458,8 @@ class Net:
         # Exception queue for non-propagating epoch failures
         self._exception_queue: list[Exception] = []
 
-        # Track which nodes have had start_node_func called
-        self._started_nodes: set[str] = set()
+        # Track which nodes have had init_node_func called
+        self._initialized_nodes: set[str] = set()
 
         # Build node execution configs lookup (using resolved config for runtime)
         self._node_execution_configs: dict[str, NodeExecutionConfig] = {}
@@ -478,8 +478,8 @@ class Net:
             "start_epoch":       self._control_start_epoch,
             "cancel_epoch":      self._control_cancel_epoch,
             "cancel_all_epochs": self._control_cancel_all_epochs,
-            "start_node":        self._control_start_node,
-            "stop_node":         self._control_stop_node,
+            "init_node":         self._control_init_node,
+            "close_node":        self._control_close_node,
             "enable":            self._control_enable,
             "disable":           self._control_disable,
             "set_epoch_count":   self._control_set_epoch_count,
@@ -761,9 +761,9 @@ class Net:
         return self._netsim
 
     @property
-    def started(self) -> bool:
-        """Check if the Net has been started."""
-        return self._started
+    def initialized(self) -> bool:
+        """Check if the Net has been initialized."""
+        return self._initialized
 
     @property
     def paused(self) -> bool:
@@ -1246,61 +1246,61 @@ class Net:
             record.logs.extend(buffer)
 
 
-    async def start(self, run_source_nodes: bool | None = None) -> None:
-        """Start the Net.
+    async def init(self, run_init_nodes: bool | None = None) -> None:
+        """Initialize the Net.
 
         This starts the ExecutionManager, all pools, registers node functions,
-        and calls start_node_func for nodes that don't have defer_startup.
+        and calls init_node_func for nodes that don't have defer_init.
 
         Args:
-            run_source_nodes: If False, skip executing run_on_startup nodes.
+            run_init_nodes: If False, skip executing run_on_init nodes.
                 If None (default), falls back to the constructor parameter.
         """
-        if self._started:
-            raise RuntimeError("Net already started")
+        if self._initialized:
+            raise RuntimeError("Net already initialized")
 
         await self._execution_manager.start()
 
         # Register node functions with all workers
         await self._register_node_functions()
 
-        # Call start_node_func for non-deferred nodes
-        await self._start_all_nodes()
+        # Call init_node_func for non-deferred nodes
+        await self._init_all_nodes()
 
-        self._started = True
+        self._initialized = True
 
-        # Execute run_on_startup nodes (skip disabled)
-        _run_source = run_source_nodes if run_source_nodes is not None else self._run_source_nodes
-        if _run_source:
+        # Execute run_on_init nodes (skip disabled)
+        _run_init = run_init_nodes if run_init_nodes is not None else self._run_init_nodes
+        if _run_init:
             for node_config in self._config_resolved.graph.nodes:
                 if node_config.name in self._disabled_nodes:
                     continue
                 config = self._get_node_execution_config(node_config.name)
-                if config is not None and config.run_on_startup:
+                if config is not None and config.run_on_init:
                     await self.execute_node(node_config.name)
-                    self._source_nodes_executed.add(node_config.name)
+                    self._init_nodes_executed.add(node_config.name)
 
-    def start_sync(self, run_source_nodes: bool | None = None) -> None:
-        """Start the Net synchronously.
+    def init_sync(self, run_init_nodes: bool | None = None) -> None:
+        """Initialize the Net synchronously.
 
-        Blocking wrapper for start().
+        Blocking wrapper for init().
 
         Args:
-            run_source_nodes: If False, skip executing run_on_startup nodes.
+            run_init_nodes: If False, skip executing run_on_init nodes.
                 If None (default), falls back to the constructor parameter.
         """
-        asyncio.run(self.start(run_source_nodes=run_source_nodes))
+        asyncio.run(self.init(run_init_nodes=run_init_nodes))
 
-    async def stop(self) -> None:
-        """Stop the Net gracefully.
+    async def close(self) -> None:
+        """Close the Net gracefully.
 
-        This calls stop_node_func for all started nodes, stops the background
+        This calls close_node_func for all initialized nodes, stops the background
         task, and closes the ExecutionManager.
         """
-        self._stopping = True
+        self._closing = True
 
-        # Call stop_node_func for all started nodes
-        await self._stop_all_nodes()
+        # Call close_node_func for all initialized nodes
+        await self._close_all_nodes()
 
         # Cancel background task if running
         if self._background_task is not None:
@@ -1314,8 +1314,8 @@ class Net:
         await self._execution_manager.close()
         self._cache_store.close()
         self._file_storage_store.close()
-        self._started = False
-        self._stopping = False
+        self._initialized = False
+        self._closing = False
 
     async def request_pool_shutdown(self, pool_id: str, timeout: float = 10.0) -> None:
         """Request a remote pool server to shut down.
@@ -1336,37 +1336,37 @@ class Net:
             raise TypeError(f"Pool '{pool_id}' is not a RemotePoolClient")
         await pool.request_shutdown(timeout=timeout)
 
-    def stop_sync(self) -> None:
-        """Stop the Net synchronously.
+    def close_sync(self) -> None:
+        """Close the Net synchronously.
 
-        Blocking wrapper for stop().
+        Blocking wrapper for close().
         """
-        asyncio.run(self.stop())
+        asyncio.run(self.close())
 
-    async def pause(self) -> None:
+    def pause(self) -> None:
         """Pause the Net.
 
         Finish running epochs but don't start new ones.
         """
         self._paused = True
 
-    async def resume(self) -> None:
+    def resume(self) -> None:
         """Resume the Net after pausing."""
         self._paused = False
 
     async def start_background(self) -> None:
         """Start the Net in a background task.
 
-        This starts the Net and creates a background task that continuously
+        This initializes the Net and creates a background task that continuously
         runs the execution loop. The loop will:
         - Run simulation steps to move packets
         - Execute startable epochs
         - Handle SIGINT for graceful shutdown
 
-        Use `stop()` to gracefully stop the background execution.
+        Use `close()` to gracefully stop the background execution.
         """
-        if not self._started:
-            await self.start()
+        if not self._initialized:
+            await self.init()
 
         if self._background_task is not None:
             raise RuntimeError("Background task already running")
@@ -1386,7 +1386,7 @@ class Net:
         3. Yields to allow other tasks to run
         """
         try:
-            while not self._stopping and not self._sigint_received:
+            while not self._closing and not self._sigint_received:
                 if self._paused:
                     # When paused, just sleep and check again
                     await asyncio.sleep(0.01)
@@ -1394,7 +1394,7 @@ class Net:
 
                 # Use streaming scheduler with stop-check callback
                 made_progress, _, _ = await self._run_streaming(
-                    check_should_stop=lambda: self._paused or self._stopping or self._sigint_received,
+                    check_should_stop=lambda: self._paused or self._closing or self._sigint_received,
                 )
 
                 # Small yield to allow other tasks
@@ -2181,9 +2181,9 @@ class Net:
             await self._finish_epoch_lifecycle(epoch_id, node_name)
             return None
 
-        # Deferred startup: call start_node_func on first epoch if not yet started
-        if node_name not in self._started_nodes:
-            await self._start_node(node_name)
+        # Deferred init: call init_node_func on first epoch if not yet initialized
+        if node_name not in self._initialized_nodes:
+            await self._init_node(node_name)
 
         # Check rate limiting
         if not self._check_rate_limit(node_name):
@@ -3176,16 +3176,16 @@ class Net:
             )
         matched_condition, _ = match
 
-        # Ensure start_node_func has been called
-        if node_name not in self._started_nodes:
-            await self._start_node(node_name)
+        # Ensure init_node_func has been called
+        if node_name not in self._initialized_nodes:
+            await self._init_node(node_name)
 
         if outside_net:
             return await self._execute_node_outside(node_name, inputs, matched_condition)
 
-        # Inside mode: requires started Net
-        if not self._started:
-            raise RuntimeError("Net must be started to execute nodes inside the net")
+        # Inside mode: requires initialized Net
+        if not self._initialized:
+            raise RuntimeError("Net must be initialized to execute nodes inside the net")
 
         # Verify node has an exec function
         config = self._get_node_execution_config(node_name)
@@ -3368,20 +3368,20 @@ class Net:
         module = importlib.import_module(module_path)
         return getattr(module, name)
 
-    def _get_node_start_func(self, node_name: str) -> Callable | None:
-        """Get the start_node_func for a node, resolving from config or factory.
+    def _get_node_init_func(self, node_name: str) -> Callable | None:
+        """Get the init_node_func for a node, resolving from config or factory.
 
         Args:
             node_name: The node name.
 
         Returns:
-            The start function, or None if not configured.
+            The init function, or None if not configured.
         """
         config = self._get_node_execution_config(node_name)
         if config is None:
             return None
 
-        func = config.start_node_func
+        func = config.init_node_func
         if func is not None:
             if isinstance(func, str):
                 func = self._import_from_path(func)
@@ -3399,20 +3399,20 @@ class Net:
 
         return None
 
-    def _get_node_stop_func(self, node_name: str) -> Callable | None:
-        """Get the stop_node_func for a node, resolving from config or factory.
+    def _get_node_close_func(self, node_name: str) -> Callable | None:
+        """Get the close_node_func for a node, resolving from config or factory.
 
         Args:
             node_name: The node name.
 
         Returns:
-            The stop function, or None if not configured.
+            The close function, or None if not configured.
         """
         config = self._get_node_execution_config(node_name)
         if config is None:
             return None
 
-        func = config.stop_node_func
+        func = config.close_node_func
         if func is not None:
             if isinstance(func, str):
                 func = self._import_from_path(func)
@@ -3657,17 +3657,17 @@ class Net:
         for eid in running_for_node:
             self._control_cancel_epoch(node_name, eid)
 
-    async def _control_start_node(self, node_name: str) -> None:
-        """Handle 'start_node' control: call the node's start function."""
-        if node_name in self._started_nodes:
-            raise RuntimeError(f"Control 'start_node': node '{node_name}' already started")
-        await self._start_node(node_name)
+    async def _control_init_node(self, node_name: str) -> None:
+        """Handle 'init_node' control: call the node's init function."""
+        if node_name in self._initialized_nodes:
+            raise RuntimeError(f"Control 'init_node': node '{node_name}' already initialized")
+        await self._init_node(node_name)
 
-    async def _control_stop_node(self, node_name: str) -> None:
-        """Handle 'stop_node' control: call the node's stop function."""
-        if node_name not in self._started_nodes:
-            raise RuntimeError(f"Control 'stop_node': node '{node_name}' not started")
-        await self._stop_node(node_name)
+    async def _control_close_node(self, node_name: str) -> None:
+        """Handle 'close_node' control: call the node's close function."""
+        if node_name not in self._initialized_nodes:
+            raise RuntimeError(f"Control 'close_node': node '{node_name}' not initialized")
+        await self._close_node(node_name)
 
     def _control_enable(self, node_name: str) -> None:
         """Handle 'enable' control: enable a disabled node."""
@@ -3822,7 +3822,7 @@ class Net:
         """Emit a signal outside any epoch.
 
         Creates a packet outside the net and transports it directly to the edge.
-        Used for node lifecycle signals (node_started, node_stopped) and epoch
+        Used for node lifecycle signals (node_initialized, node_closed) and epoch
         signals when the epoch is not Running (e.g., max_epochs cancellation).
 
         Args:
@@ -3874,60 +3874,60 @@ class Net:
                 detail={"node_name": node_name, "packet_id": packet_id},
             )
 
-    async def _start_node(self, node_name: str) -> None:
-        """Call start_node_func for a node if configured and not yet started.
+    async def _init_node(self, node_name: str) -> None:
+        """Call init_node_func for a node if configured and not yet initialized.
 
         Args:
-            node_name: The node to start.
+            node_name: The node to initialize.
         """
-        if node_name in self._started_nodes:
+        if node_name in self._initialized_nodes:
             return
 
-        func = self._get_node_start_func(node_name)
+        func = self._get_node_init_func(node_name)
         if func is not None:
             await self._call_lifecycle_func(func, node_name)
 
-        self._started_nodes.add(node_name)
+        self._initialized_nodes.add(node_name)
 
-        # Emit node_started signal
-        self._emit_out_of_epoch_signal(node_name, "node_started")
+        # Emit node_initialized signal
+        self._emit_out_of_epoch_signal(node_name, "node_initialized")
 
-    async def _stop_node(self, node_name: str) -> None:
-        """Call stop_node_func for a node if configured and was started.
+    async def _close_node(self, node_name: str) -> None:
+        """Call close_node_func for a node if configured and was initialized.
 
         Args:
-            node_name: The node to stop.
+            node_name: The node to close.
         """
-        if node_name not in self._started_nodes:
+        if node_name not in self._initialized_nodes:
             return
 
-        func = self._get_node_stop_func(node_name)
+        func = self._get_node_close_func(node_name)
         if func is not None:
             await self._call_lifecycle_func(func, node_name)
 
-        self._started_nodes.discard(node_name)
+        self._initialized_nodes.discard(node_name)
 
-        # Emit node_stopped signal
-        self._emit_out_of_epoch_signal(node_name, "node_stopped")
+        # Emit node_closed signal
+        self._emit_out_of_epoch_signal(node_name, "node_closed")
 
-    async def _start_all_nodes(self) -> None:
-        """Call start_node_func for all nodes that don't have defer_startup.
+    async def _init_all_nodes(self) -> None:
+        """Call init_node_func for all nodes that don't have defer_init.
 
-        Called during Net.start() after registering node functions.
+        Called during Net.init() after registering node functions.
         """
         for node_config in self._config_resolved.graph.nodes:
             config = self._get_node_execution_config(node_config.name)
-            if config is not None and not config.defer_startup:
-                await self._start_node(node_config.name)
+            if config is not None and not config.defer_init:
+                await self._init_node(node_config.name)
 
-    async def _stop_all_nodes(self) -> None:
-        """Call stop_node_func for all started nodes.
+    async def _close_all_nodes(self) -> None:
+        """Call close_node_func for all initialized nodes.
 
-        Called during Net.stop() before closing the execution manager.
+        Called during Net.close() before closing the execution manager.
         """
-        # Copy since _stop_node modifies the set
-        for node_name in list(self._started_nodes):
-            await self._stop_node(node_name)
+        # Copy since _close_node modifies the set
+        for node_name in list(self._initialized_nodes):
+            await self._close_node(node_name)
 
     async def _register_node_functions(self) -> None:
         """Register all node functions with the execution manager pools.
@@ -4150,14 +4150,14 @@ class Net:
         those targets without executing them. Useful for testing downstream
         nodes by inspecting exactly what inputs they would receive.
 
-        If the Net has not been started yet, it will be auto-started (without
-        executing source nodes). Source nodes (``run_on_startup=True``) are then
+        If the Net has not been initialized yet, it will be auto-initialized (without
+        executing init nodes). Init nodes (``run_on_init=True``) are then
         executed before the main loop if they haven't been run yet. This allows
         calling ``run_to_targets`` without an ``async with`` block::
 
             net = Net(config)
             salvos = await net.run_to_targets("Sink")
-            await net.stop()
+            await net.close()
 
         Args:
             targets: Target node specification. Can be:
@@ -4183,9 +4183,9 @@ class Net:
                 for salvo in salvos:
                     print(f"{salvo.node_name}.{salvo.salvo_condition}: {salvo.packets}")
         """
-        # Auto-start if not yet started (source nodes handled below)
-        if not self._started:
-            await self.start(run_source_nodes=False)
+        # Auto-init if not yet initialized (init nodes handled below)
+        if not self._initialized:
+            await self.init(run_init_nodes=False)
 
         # 1. Normalize targets to set of (node_name, salvo_condition | None)
         if isinstance(targets, str):
@@ -4212,14 +4212,14 @@ class Net:
         specific_targets = {n for n, c in target_specs if c is not None} - blanket_targets
         upstream_nodes |= specific_targets
 
-        # 4. Execute upstream source nodes that haven't been run yet
+        # 4. Execute upstream init nodes that haven't been run yet
         relevant_nodes = upstream_nodes | target_node_names
         errors = []
         for node_config in self._config_resolved.graph.nodes:
             exec_config = self._get_node_execution_config(node_config.name)
-            if exec_config is None or not exec_config.run_on_startup:
+            if exec_config is None or not exec_config.run_on_init:
                 continue
-            if node_config.name in self._source_nodes_executed:
+            if node_config.name in self._init_nodes_executed:
                 continue
             if node_config.name not in relevant_nodes:
                 continue
@@ -4234,7 +4234,7 @@ class Net:
                 errors.append(f"Source node '{node_config.name}' has no execution function")
                 continue
             await self.execute_node(node_config.name)
-            self._source_nodes_executed.add(node_config.name)
+            self._init_nodes_executed.add(node_config.name)
         if errors:
             raise RuntimeError(
                 f"Cannot execute source node(s):\n" + "\n".join(f"  - {e}" for e in errors)
@@ -4309,11 +4309,34 @@ class Net:
 
         return collected_salvos
 
+    def run_until_blocked_sync(self, *, auto_start_epochs: bool = True) -> tuple[bool, list[NetActionLog], list[EpochLog]]:
+        """Run the simulation until no more progress can be made (synchronous).
+
+        Blocking wrapper for run_until_blocked().
+
+        Args:
+            auto_start_epochs: If True (default), automatically execute any
+                startable epochs after moving packets.
+
+        Returns:
+            Tuple of (made_progress, net_actions, epoch_logs).
+        """
+        return asyncio.run(self.run_until_blocked(auto_start_epochs=auto_start_epochs))
+
+    def __enter__(self) -> "Net":
+        """Sync context manager entry - initializes the Net."""
+        self.init_sync()
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb) -> None:
+        """Sync context manager exit - closes the Net."""
+        self.close_sync()
+
     async def __aenter__(self) -> "Net":
-        """Context manager entry - starts the Net."""
-        await self.start()
+        """Async context manager entry - initializes the Net."""
+        await self.init()
         return self
 
     async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        """Context manager exit - stops the Net."""
-        await self.stop()
+        """Async context manager exit - closes the Net."""
+        await self.close()

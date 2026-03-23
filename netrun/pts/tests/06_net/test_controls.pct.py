@@ -426,8 +426,8 @@ async def test_cancel_all_epochs_control():
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_start_node_control():
-    """Test 'start_node' control starts a deferred node."""
+async def test_init_node_control():
+    """Test 'init_node' control initializes a deferred node."""
     started = {"value": False}
 
     def start_func(net_obj):
@@ -443,9 +443,9 @@ async def test_start_node_control():
                     execution_config=NodeExecutionConfig(
                         pools=["main"],
                         exec_node_func=_make_counting_exec_func({}),
-                        start_node_func=start_func,
-                        defer_startup=True,
-                        controls=["start_node"],
+                        init_node_func=start_func,
+                        defer_init=True,
+                        controls=["init_node"],
                     ),
                 ),
             ],
@@ -455,21 +455,21 @@ async def test_start_node_control():
 
     async with Net(config) as net:
         # Node should NOT be started yet (deferred)
-        assert "Worker" not in net._started_nodes
+        assert "Worker" not in net._initialized_nodes
 
-        # Send start_node control
-        net.send_control("Worker", "start_node")
+        # Send init_node control
+        net.send_control("Worker", "init_node")
         await net.run_until_blocked()
 
         # Node should now be started
-        assert "Worker" in net._started_nodes
+        assert "Worker" in net._initialized_nodes
         assert started["value"] is True
 
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_start_node_already_started_error():
-    """Test 'start_node' control errors if node is already started."""
+async def test_init_node_already_initialized_error():
+    """Test 'init_node' control errors if node is already initialized."""
     from netrun.net._net._context import EpochError
 
     config = NetConfig(
@@ -482,7 +482,7 @@ async def test_start_node_already_started_error():
                     execution_config=NodeExecutionConfig(
                         pools=["main"],
                         exec_node_func=_make_counting_exec_func({}),
-                        controls=["start_node"],
+                        controls=["init_node"],
                     ),
                 ),
             ],
@@ -491,19 +491,19 @@ async def test_start_node_already_started_error():
     )
 
     async with Net(config) as net:
-        # Node is already started during Net.start()
-        assert "Worker" in net._started_nodes
+        # Node is already initialized during Net.init()
+        assert "Worker" in net._initialized_nodes
 
         # Sending start_node should error
-        net.send_control("Worker", "start_node")
-        with pytest.raises(EpochError, match="already started"):
+        net.send_control("Worker", "init_node")
+        with pytest.raises(EpochError, match="already initialized"):
             await net.run_until_blocked()
 
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_stop_node_control():
-    """Test 'stop_node' control stops a started node."""
+async def test_close_node_control():
+    """Test 'close_node' control closes an initialized node."""
     stopped = {"value": False}
 
     def stop_func(net_obj):
@@ -519,8 +519,8 @@ async def test_stop_node_control():
                     execution_config=NodeExecutionConfig(
                         pools=["main"],
                         exec_node_func=_make_counting_exec_func({}),
-                        stop_node_func=stop_func,
-                        controls=["stop_node"],
+                        close_node_func=stop_func,
+                        controls=["close_node"],
                     ),
                 ),
             ],
@@ -530,21 +530,21 @@ async def test_stop_node_control():
 
     async with Net(config) as net:
         # Node should be started
-        assert "Worker" in net._started_nodes
+        assert "Worker" in net._initialized_nodes
 
-        # Send stop_node control
-        net.send_control("Worker", "stop_node")
+        # Send close_node control
+        net.send_control("Worker", "close_node")
         await net.run_until_blocked()
 
         # Node should now be stopped
-        assert "Worker" not in net._started_nodes
+        assert "Worker" not in net._initialized_nodes
         assert stopped["value"] is True
 
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_stop_node_not_started_error():
-    """Test 'stop_node' control errors if node is not started."""
+async def test_close_node_not_initialized_error():
+    """Test 'close_node' control errors if node is not initialized."""
     from netrun.net._net._context import EpochError
 
     config = NetConfig(
@@ -557,8 +557,8 @@ async def test_stop_node_not_started_error():
                     execution_config=NodeExecutionConfig(
                         pools=["main"],
                         exec_node_func=_make_counting_exec_func({}),
-                        defer_startup=True,
-                        controls=["stop_node"],
+                        defer_init=True,
+                        controls=["close_node"],
                     ),
                 ),
             ],
@@ -568,10 +568,10 @@ async def test_stop_node_not_started_error():
 
     async with Net(config) as net:
         # Node NOT started (deferred)
-        assert "Worker" not in net._started_nodes
+        assert "Worker" not in net._initialized_nodes
 
-        net.send_control("Worker", "stop_node")
-        with pytest.raises(EpochError, match="not started"):
+        net.send_control("Worker", "close_node")
+        with pytest.raises(EpochError, match="not initialized"):
             await net.run_until_blocked()
 
 # %%

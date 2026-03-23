@@ -2229,15 +2229,15 @@ def test_node_execution_config_resolve_with_file_path():
 
         exec_config = NodeExecutionConfig(
             exec_node_func=f"{funcs_file}::my_exec",
-            start_node_func=f"{funcs_file}::my_start",
+            init_node_func=f"{funcs_file}::my_start",
         )
 
         resolved = exec_config.resolve(project_root=tmp)
 
         assert callable(resolved.exec_node_func)
-        assert callable(resolved.start_node_func)
+        assert callable(resolved.init_node_func)
         assert resolved.exec_node_func.__name__ == "my_exec"
-        assert resolved.start_node_func.__name__ == "my_start"
+        assert resolved.init_node_func.__name__ == "my_start"
 
 # %%
 test_node_execution_config_resolve_with_file_path();

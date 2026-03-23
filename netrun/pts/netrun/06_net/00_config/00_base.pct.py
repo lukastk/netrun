@@ -699,7 +699,7 @@ from datetime import datetime
 SIGNAL_PORT_PREFIX = "__signal_"
 SIGNAL_PORT_SUFFIX = "__"
 
-VALID_SIGNAL_TYPES = frozenset({"epoch_started", "epoch_finished", "epoch_failed", "epoch_cancelled", "node_started", "node_stopped"})
+VALID_SIGNAL_TYPES = frozenset({"epoch_started", "epoch_finished", "epoch_failed", "epoch_cancelled", "node_initialized", "node_closed"})
 """Valid signal type names for the signals configuration."""
 
 
@@ -732,7 +732,7 @@ class SignalValue:
     This is stored in the PacketStore just like any other packet value.
     """
     signal: str
-    """Signal type: 'epoch_started', 'epoch_finished', 'epoch_failed', 'epoch_cancelled', 'node_started', 'node_stopped'."""
+    """Signal type: 'epoch_started', 'epoch_finished', 'epoch_failed', 'epoch_cancelled', 'node_initialized', 'node_closed'."""
 
     node_name: str
     """Name of the node that emitted this signal."""
@@ -855,8 +855,8 @@ CONTROL_TYPES: dict[str, ControlType] = {
     "start_epoch":       ControlType("start_epoch",       None, "Trigger a new epoch on a source node"),
     "cancel_epoch":      ControlType("cancel_epoch",      str,  "Cancel a specific running epoch by ID"),
     "cancel_all_epochs": ControlType("cancel_all_epochs", None, "Cancel all running epochs"),
-    "start_node":        ControlType("start_node",        None, "Call the node's start function"),
-    "stop_node":         ControlType("stop_node",         None, "Call the node's stop function"),
+    "init_node":         ControlType("init_node",         None, "Call the node's init function"),
+    "close_node":        ControlType("close_node",        None, "Call the node's close function"),
     "enable":            ControlType("enable",             None, "Enable a disabled node"),
     "disable":           ControlType("disable",            None, "Disable a node"),
     "set_epoch_count":   ControlType("set_epoch_count",   int,  "Set the node's epoch count"),

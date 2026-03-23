@@ -1206,7 +1206,7 @@ def test_net_creation():
     assert net.config == config
     assert net._graph is not None
     assert net._netsim is not None
-    assert net.started is False
+    assert net.initialized is False
     assert net.paused is False
 
 # %%
@@ -1313,13 +1313,13 @@ async def test_net_start_and_stop():
     config = create_simple_net_config()
     net = Net(config)
 
-    assert net.started is False
+    assert net.initialized is False
 
-    await net.start()
-    assert net.started is True
+    await net.init()
+    assert net.initialized is True
 
-    await net.stop()
-    assert net.started is False
+    await net.close()
+    assert net.initialized is False
 
 # %%
 #|export
@@ -1329,14 +1329,14 @@ async def test_net_start_twice_raises():
     config = create_simple_net_config()
     net = Net(config)
 
-    await net.start()
+    await net.init()
 
     with pytest.raises(RuntimeError) as exc_info:
-        await net.start()
+        await net.init()
 
-    assert "already started" in str(exc_info.value).lower()
+    assert "already initialized" in str(exc_info.value).lower()
 
-    await net.stop()
+    await net.close()
 
 # %%
 #|export
@@ -1346,9 +1346,9 @@ async def test_net_context_manager():
     config = create_simple_net_config()
 
     async with Net(config) as net:
-        assert net.started is True
+        assert net.initialized is True
 
-    assert net.started is False
+    assert net.initialized is False
 
 # %%
 #|export
@@ -1360,10 +1360,10 @@ async def test_net_pause_and_resume():
     async with Net(config) as net:
         assert net.paused is False
 
-        await net.pause()
+        net.pause()
         assert net.paused is True
 
-        await net.resume()
+        net.resume()
         assert net.paused is False
 
 # %%
@@ -1748,28 +1748,28 @@ def test_net_invalid_pool_type_raises():
 
 # %%
 #|export
-def test_net_start_sync():
-    """Test Net.start_sync works (synchronous wrapper)."""
+def test_net_init_sync():
+    """Test Net.init_sync works (synchronous wrapper)."""
     config = create_simple_net_config()
     net = Net(config)
 
     # This would actually start the net, so we just test it's callable
-    assert callable(net.start_sync)
+    assert callable(net.init_sync)
 
 # %%
-test_net_start_sync()
+test_net_init_sync()
 
 # %%
 #|export
-def test_net_stop_sync():
-    """Test Net.stop_sync is callable."""
+def test_net_close_sync():
+    """Test Net.close_sync is callable."""
     config = create_simple_net_config()
     net = Net(config)
 
-    assert callable(net.stop_sync)
+    assert callable(net.close_sync)
 
 # %%
-test_net_stop_sync()
+test_net_close_sync()
 
 # %% [markdown]
 # ## Dead Letter Queue Tests
@@ -1915,12 +1915,12 @@ async def test_net_start_background():
     net = Net(config)
     await net.start_background()
 
-    assert net.started
+    assert net.initialized
     assert net._background_task is not None
     assert not net._background_task.done()
 
-    await net.stop()
-    assert not net.started
+    await net.close()
+    assert not net.initialized
 
 # %%
 #|export
@@ -1944,7 +1944,7 @@ async def test_net_start_background_already_running():
         with pytest.raises(RuntimeError, match="Background task already running"):
             await net.start_background()
     finally:
-        await net.stop()
+        await net.close()
 
 # %%
 #|export
@@ -2724,7 +2724,7 @@ def test_net_from_file_json(tmp_path):
 
     assert isinstance(net, Net)
     assert net.config is not None
-    assert net.started is False
+    assert net.initialized is False
 
 # %%
 #|export
@@ -4575,13 +4575,13 @@ async def test_max_parallel_epochs_per_node():
     assert sorted(results_b) == [3, 4]
 
 # %% [markdown]
-# ## start_node_func, stop_node_func, and defer_startup Tests
+# ## init_node_func, close_node_func, and defer_init Tests
 
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_start_node_func_called_on_net_start():
-    """Test that start_node_func is called when the Net starts."""
+async def test_init_node_func_called_on_net_start():
+    """Test that init_node_func is called when the Net starts."""
     lifecycle = []
 
     def my_start(net):
@@ -4601,7 +4601,7 @@ async def test_start_node_func_called_on_net_start():
                     node_name="Worker",
                     pools=["main"],
                     exec_node_func=my_exec,
-                    start_node_func=my_start,
+                    init_node_func=my_start,
                 ),
             ),
         ],
@@ -4614,14 +4614,14 @@ async def test_start_node_func_called_on_net_start():
     )
 
     async with Net(config) as net:
-        # start_node_func should have been called during Net.start()
+        # init_node_func should have been called during Net.init()
         assert lifecycle == ["started"]
 
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_stop_node_func_called_on_net_stop():
-    """Test that stop_node_func is called when the Net stops."""
+async def test_close_node_func_called_on_net_stop():
+    """Test that close_node_func is called when the Net stops."""
     lifecycle = []
 
     def my_start(net):
@@ -4644,8 +4644,8 @@ async def test_stop_node_func_called_on_net_stop():
                     node_name="Worker",
                     pools=["main"],
                     exec_node_func=my_exec,
-                    start_node_func=my_start,
-                    stop_node_func=my_stop,
+                    init_node_func=my_start,
+                    close_node_func=my_stop,
                 ),
             ),
         ],
@@ -4660,14 +4660,14 @@ async def test_stop_node_func_called_on_net_stop():
     async with Net(config) as net:
         assert lifecycle == ["started"]
 
-    # stop_node_func should have been called during Net.stop()
+    # close_node_func should have been called during Net.close()
     assert lifecycle == ["started", "stopped"]
 
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_defer_startup_delays_start_node_func():
-    """Test that defer_startup=True delays start_node_func until first epoch."""
+async def test_defer_init_delays_init_node_func():
+    """Test that defer_init=True delays init_node_func until first epoch."""
     lifecycle = []
 
     def my_start(net):
@@ -4691,9 +4691,9 @@ async def test_defer_startup_delays_start_node_func():
                     node_name="Worker",
                     pools=["main"],
                     exec_node_func=my_exec,
-                    start_node_func=my_start,
-                    stop_node_func=my_stop,
-                    defer_startup=True,
+                    init_node_func=my_start,
+                    close_node_func=my_stop,
+                    defer_init=True,
                 ),
             ),
         ],
@@ -4706,7 +4706,7 @@ async def test_defer_startup_delays_start_node_func():
     )
 
     async with Net(config) as net:
-        # start_node_func should NOT have been called yet
+        # init_node_func should NOT have been called yet
         assert lifecycle == []
 
         # Trigger an epoch
@@ -4716,7 +4716,7 @@ async def test_defer_startup_delays_start_node_func():
         # Now start should have been called before execution
         assert lifecycle == ["started", "executed"]
 
-    # stop should be called on Net.stop()
+    # stop should be called on Net.close()
     assert lifecycle == ["started", "executed", "stopped"]
 
 # %%
@@ -4746,8 +4746,8 @@ async def test_start_stop_with_async_funcs():
                     node_name="Worker",
                     pools=["main"],
                     exec_node_func=my_exec,
-                    start_node_func=my_start,
-                    stop_node_func=my_stop,
+                    init_node_func=my_start,
+                    close_node_func=my_stop,
                 ),
             ),
         ],
@@ -4767,8 +4767,8 @@ async def test_start_stop_with_async_funcs():
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_start_node_func_called_once_with_defer_startup():
-    """Test that start_node_func is called exactly once even with multiple epochs."""
+async def test_init_node_func_called_once_with_defer_init():
+    """Test that init_node_func is called exactly once even with multiple epochs."""
     start_count = 0
 
     def my_start(net):
@@ -4789,8 +4789,8 @@ async def test_start_node_func_called_once_with_defer_startup():
                     node_name="Worker",
                     pools=["main"],
                     exec_node_func=my_exec,
-                    start_node_func=my_start,
-                    defer_startup=True,
+                    init_node_func=my_start,
+                    defer_init=True,
                 ),
             ),
         ],
@@ -4815,7 +4815,7 @@ async def test_start_node_func_called_once_with_defer_startup():
 #|export
 @pytest.mark.asyncio
 async def test_stop_not_called_for_unstarted_deferred_node():
-    """Test that stop_node_func is NOT called for a deferred node that never ran."""
+    """Test that close_node_func is NOT called for a deferred node that never ran."""
     lifecycle = []
 
     def my_start(net):
@@ -4838,9 +4838,9 @@ async def test_stop_not_called_for_unstarted_deferred_node():
                     node_name="Worker",
                     pools=["main"],
                     exec_node_func=my_exec,
-                    start_node_func=my_start,
-                    stop_node_func=my_stop,
-                    defer_startup=True,
+                    init_node_func=my_start,
+                    close_node_func=my_stop,
+                    defer_init=True,
                 ),
             ),
         ],
@@ -5517,8 +5517,8 @@ async def test_async_retry_on_thread_pool():
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_execute_node_calls_start_node_func():
-    """Test that execute_node calls start_node_func if not yet called."""
+async def test_execute_node_calls_init_node_func():
+    """Test that execute_node calls init_node_func if not yet called."""
     lifecycle = []
 
     def my_start(net):
@@ -5538,8 +5538,8 @@ async def test_execute_node_calls_start_node_func():
                     node_name="Worker",
                     pools=["main"],
                     exec_node_func=my_exec,
-                    start_node_func=my_start,
-                    defer_startup=True,
+                    init_node_func=my_start,
+                    defer_init=True,
                 ),
             ),
         ],
@@ -5557,13 +5557,13 @@ async def test_execute_node_calls_start_node_func():
         assert "started" in lifecycle
 
 # %% [markdown]
-# ## run_on_startup Tests
+# ## run_on_init Tests
 
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_run_on_startup_basic():
-    """Test that a node with run_on_startup=True is executed during Net.start()."""
+async def test_run_on_init_basic():
+    """Test that a node with run_on_init=True is executed during Net.init()."""
     execution_log = []
 
     def source_node(ctx, packets):
@@ -5598,7 +5598,7 @@ async def test_run_on_startup_basic():
                     node_name="Source",
                     pools=["main"],
                     exec_node_func=source_node,
-                    run_on_startup=True,
+                    run_on_init=True,
                 ),
             ),
         ],
@@ -5619,8 +5619,8 @@ async def test_run_on_startup_basic():
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_run_on_startup_error_no_valid_condition():
-    """Test that run_on_startup raises ValueError if no salvo condition is satisfied with empty inputs."""
+async def test_run_on_init_error_no_valid_condition():
+    """Test that run_on_init raises ValueError if no salvo condition is satisfied with empty inputs."""
     graph_config = GraphConfig(
         nodes=[
             NodeConfig(
@@ -5640,7 +5640,7 @@ async def test_run_on_startup_error_no_valid_condition():
                     node_name="NeedsInput",
                     pools=["main"],
                     exec_node_func=lambda ctx, packets: None,
-                    run_on_startup=True,
+                    run_on_init=True,
                 ),
             ),
         ],
@@ -5659,8 +5659,8 @@ async def test_run_on_startup_error_no_valid_condition():
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_run_on_startup_outputs_flow_downstream():
-    """Test that run_on_startup node outputs flow to downstream nodes."""
+async def test_run_on_init_outputs_flow_downstream():
+    """Test that run_on_init node outputs flow to downstream nodes."""
     execution_log = []
 
     def source_node(ctx, packets):
@@ -5702,7 +5702,7 @@ async def test_run_on_startup_outputs_flow_downstream():
                     node_name="Source",
                     pools=["main"],
                     exec_node_func=source_node,
-                    run_on_startup=True,
+                    run_on_init=True,
                 ),
             ),
             NodeConfig(
@@ -5742,8 +5742,8 @@ async def test_run_on_startup_outputs_flow_downstream():
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_run_on_startup_skip_via_start_param():
-    """Test that start(run_source_nodes=False) skips startup nodes."""
+async def test_run_on_init_skip_via_start_param():
+    """Test that init(run_init_nodes=False) skips init nodes."""
     execution_log = []
 
     def source_node(ctx, packets):
@@ -5778,7 +5778,7 @@ async def test_run_on_startup_skip_via_start_param():
                     node_name="Source",
                     pools=["main"],
                     exec_node_func=source_node,
-                    run_on_startup=True,
+                    run_on_init=True,
                 ),
             ),
         ],
@@ -5791,7 +5791,7 @@ async def test_run_on_startup_skip_via_start_param():
     )
 
     net = Net(config)
-    await net.start(run_source_nodes=False)
+    await net.init(run_init_nodes=False)
     try:
         # Startup node should NOT have been executed
         assert execution_log == []
@@ -5799,13 +5799,13 @@ async def test_run_on_startup_skip_via_start_param():
         await net.execute_node("Source")
         assert execution_log == ["executed"]
     finally:
-        await net.stop()
+        await net.close()
 
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_run_on_startup_skip_via_constructor():
-    """Test that Net(config, run_source_nodes=False) skips startup nodes via context manager."""
+async def test_run_on_init_skip_via_constructor():
+    """Test that Net(config, run_init_nodes=False) skips init nodes via context manager."""
     execution_log = []
 
     def source_node(ctx, packets):
@@ -5840,7 +5840,7 @@ async def test_run_on_startup_skip_via_constructor():
                     node_name="Source",
                     pools=["main"],
                     exec_node_func=source_node,
-                    run_on_startup=True,
+                    run_on_init=True,
                 ),
             ),
         ],
@@ -5852,15 +5852,15 @@ async def test_run_on_startup_skip_via_constructor():
         graph=graph_config,
     )
 
-    async with Net(config, run_source_nodes=False) as net:
+    async with Net(config, run_init_nodes=False) as net:
         # Startup node should NOT have been executed
         assert execution_log == []
 
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_run_on_startup_start_param_overrides_constructor():
-    """Test that start(run_source_nodes=True) overrides constructor's False."""
+async def test_run_on_init_start_param_overrides_constructor():
+    """Test that start(run_init_nodes=True) overrides constructor's False."""
     execution_log = []
 
     def source_node(ctx, packets):
@@ -5895,7 +5895,7 @@ async def test_run_on_startup_start_param_overrides_constructor():
                     node_name="Source",
                     pools=["main"],
                     exec_node_func=source_node,
-                    run_on_startup=True,
+                    run_on_init=True,
                 ),
             ),
         ],
@@ -5907,13 +5907,13 @@ async def test_run_on_startup_start_param_overrides_constructor():
         graph=graph_config,
     )
 
-    net = Net(config, run_source_nodes=False)
-    await net.start(run_source_nodes=True)
+    net = Net(config, run_init_nodes=False)
+    await net.init(run_init_nodes=True)
     try:
-        # start() param overrides constructor — startup node SHOULD have executed
+        # init() param overrides constructor — init node SHOULD have executed
         assert execution_log == ["executed"]
     finally:
-        await net.stop()
+        await net.close()
 
 # %% [markdown]
 # ## Node Enabled/Disabled Tests
@@ -6123,8 +6123,8 @@ asyncio.get_event_loop().run_until_complete(test_enable_disable_unknown_node())
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_run_on_startup_disabled():
-    """Node with run_on_startup=True and enabled=False should NOT run on startup."""
+async def test_run_on_init_disabled():
+    """Node with run_on_init=True and enabled=False should NOT run on init."""
     execution_log = []
 
     def source_func(ctx, packets):
@@ -6149,7 +6149,7 @@ async def test_run_on_startup_disabled():
                     },
                     execution_config=NodeExecutionConfig(
                         exec_node_func=source_func,
-                        run_on_startup=True,
+                        run_on_init=True,
                         enabled=False,
                     ),
                 ),
@@ -6159,11 +6159,11 @@ async def test_run_on_startup_disabled():
     )
 
     async with Net(config) as net:
-        # Source should NOT have been executed despite run_on_startup
+        # Source should NOT have been executed despite run_on_init
         assert "source" not in execution_log
 
 # %%
-asyncio.get_event_loop().run_until_complete(test_run_on_startup_disabled())
+asyncio.get_event_loop().run_until_complete(test_run_on_init_disabled())
 
 # %% [markdown]
 # ## Epoch Lifecycle Callback Tests
@@ -6844,7 +6844,7 @@ async def test_streaming_linear_pipeline():
                     execution_config=NodeExecutionConfig(
                         node_name="A",
                         pools=["main"],
-                        run_on_startup=True,
+                        run_on_init=True,
                         exec_node_func=node_a,
                     ),
                 ),

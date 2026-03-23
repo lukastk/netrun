@@ -105,7 +105,7 @@ Args:
 
 NodeStartFunc = Callable
 """
-Function that starts a node.
+Function that initializes a node.
 
 Args:
     net: Net
@@ -113,7 +113,7 @@ Args:
 
 NodeStopFunc = Callable
 """
-Function that stops a node.
+Function that closes a node.
 
 Args:
     net: Net
@@ -218,14 +218,14 @@ class NodeExecutionConfig(VarResolvableModel):
     pools: list[str] | VarRef = Field(default_factory=lambda: ["main"], description="Which pools can execute this node.")
     exec_node_func: NodeExecutionFunc | str | VarRef | None = Field(default=None, description="Function to execute the node. Can be a callable or import path string.")
 
-    start_node_func: NodeStartFunc | str | VarRef | None = Field(default=None, description="Function called when the node starts up.")
-    stop_node_func: NodeStopFunc | str | VarRef | None = Field(default=None, description="Function called when the node shuts down.")
+    init_node_func: NodeStartFunc | str | VarRef | None = Field(default=None, description="Function called when the node initializes.")
+    close_node_func: NodeStopFunc | str | VarRef | None = Field(default=None, description="Function called when the node closes.")
     on_node_failure: OnNodeFailureFunc | str | VarRef | None = Field(default=None, description="Callback when node execution fails.")
 
     # Additional execution options (from PROJECT_SPEC.md)
-    defer_startup: bool | VarRef = Field(default=False, description="Defer start_node_func until the node's first epoch instead of during Net.start().")
+    defer_init: bool | VarRef = Field(default=False, description="Defer init_node_func until the node's first epoch instead of during Net.init().")
 
-    run_on_startup: bool | VarRef = Field(default=False, description="Execute this node once during Net.start(). Requires a satisfied input salvo condition with zero input packets.")
+    run_on_init: bool | VarRef = Field(default=False, description="Execute this node once during Net.init(). Requires a satisfied input salvo condition with zero input packets.")
 
     max_parallel_epochs: int | VarRef | None = Field(default=None, description="Maximum concurrent epochs for this node.")
     max_epochs: int | VarRef | None = Field(default=None, description="Maximum total epochs across this node's lifetime. None = unlimited.")
@@ -258,11 +258,11 @@ class NodeExecutionConfig(VarResolvableModel):
 
     storage: NodeStorageConfig | None = Field(default=None, description="Per-node storage configuration (cache and/or file storage).")
 
-    signals: list[str] | VarRef | None = Field(default=None, description="Signal types to emit on lifecycle events. None = inherit from NetConfig.default_signals. [] = no signals. Valid types: 'epoch_started', 'epoch_finished', 'epoch_failed', 'epoch_cancelled', 'node_started', 'node_stopped'.")
+    signals: list[str] | VarRef | None = Field(default=None, description="Signal types to emit on lifecycle events. None = inherit from NetConfig.default_signals. [] = no signals. Valid types: 'epoch_started', 'epoch_finished', 'epoch_failed', 'epoch_cancelled', 'node_initialized', 'node_closed'.")
 
     controls: list[str] | VarRef | None = Field(default=None, description="Control types to accept. None = inherit from NetConfig.default_controls. [] = no controls.")
 
-    @field_serializer("exec_node_func", "start_node_func", "stop_node_func", "on_node_failure", when_used='json')
+    @field_serializer("exec_node_func", "init_node_func", "close_node_func", "on_node_failure", when_used='json')
     def serialize_func(self, func: Callable | str | VarRef | None) -> str | dict | None:
         """Serialize functions to their import path for JSON.
 
@@ -320,7 +320,7 @@ class NodeExecutionConfig(VarResolvableModel):
 
         updates = {}
 
-        for field_name in ("exec_node_func", "start_node_func", "stop_node_func", "on_node_failure"):
+        for field_name in ("exec_node_func", "init_node_func", "close_node_func", "on_node_failure"):
             value = getattr(self, field_name)
             if isinstance(value, str):
                 updates[field_name] = _import_from_path(value, project_root=project_root)
@@ -564,8 +564,8 @@ class NodeConfig(VarResolvableModel):
         # Build execution config from functions
         execution_config = NodeExecutionConfig(
             exec_node_func=exec_func,
-            start_node_func=start_func,
-            stop_node_func=stop_func,
+            init_node_func=start_func,
+            close_node_func=stop_func,
             on_node_failure=on_failure_func,
         )
 
@@ -639,8 +639,8 @@ class NodeConfig(VarResolvableModel):
             # resolved lazily on workers using the factory info from NodeConfig
             factory_exec_config = NodeExecutionConfig(
                 exec_node_func=None,
-                start_node_func=None,
-                stop_node_func=None,
+                init_node_func=None,
+                close_node_func=None,
                 on_node_failure=None,
             )
 
