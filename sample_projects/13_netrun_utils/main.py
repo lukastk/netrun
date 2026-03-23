@@ -46,7 +46,7 @@ async def demo_observer():
 
         # Query status
         status = obs.get_status()
-        print(f"Net started: {status.started}")
+        print(f"Net initialized: {status.initialized}")
         print(f"Nodes: {status.node_names}")
         print(f"Edges: {status.edge_count}")
         print()
@@ -66,7 +66,7 @@ async def demo_observer():
                   f"{edge.target_node}.{edge.target_port} "
                   f"(packets: {edge.packet_count})")
 
-        # Run the pipeline (fetch_text has run_on_startup=true)
+        # Run the pipeline (fetch_text has run_on_init=true)
         print()
         print("Running pipeline...")
         await run_pipeline(net)
@@ -109,7 +109,7 @@ async def demo_server_and_client():
     print()
 
     config = NetConfig.from_file(CONFIG_PATH)
-    async with Net(config, run_source_nodes=False) as net:
+    async with Net(config, run_init_nodes=False) as net:
         async with ObserveServer(net, port=18400) as server:
             print(f"Server running at {server.url}")
             print()

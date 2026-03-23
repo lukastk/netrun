@@ -53,7 +53,7 @@ OBSERVE_PORT = $OBSERVE_PORT
 
 async def main():
     config = NetConfig.from_file(Path('main.netrun.json'))
-    async with Net(config, run_source_nodes=False) as net:
+    async with Net(config, run_init_nodes=False) as net:
         async with ObserveServer(
             net,
             port=OBSERVE_PORT,

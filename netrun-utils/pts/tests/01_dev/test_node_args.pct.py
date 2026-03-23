@@ -63,7 +63,7 @@ def _write_config_with_func(tmp_path: Path) -> Path:
                     "factory_args": {"func": "mypkg.nodes.source_func"},
                     "execution_config": {
                         "pools": ["main"],
-                        "run_on_startup": True,
+                        "run_on_init": True,
                     },
                 },
                 {

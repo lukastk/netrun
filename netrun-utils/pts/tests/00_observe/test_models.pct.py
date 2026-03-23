@@ -30,8 +30,8 @@ from netrun_utils.observe.models import (
 # %%
 #|export
 def test_net_status_construction():
-    status = NetStatus(started=True, paused=False, node_names=["a", "b"], edge_count=1)
-    assert status.started is True
+    status = NetStatus(initialized=True, paused=False, node_names=["a", "b"], edge_count=1)
+    assert status.initialized is True
     assert status.paused is False
     assert status.node_names == ["a", "b"]
     assert status.edge_count == 1
@@ -41,9 +41,9 @@ def test_net_status_construction():
 
 
 def test_net_status_serialization():
-    status = NetStatus(started=True, paused=False, busy_nodes=["a"])
+    status = NetStatus(initialized=True, paused=False, busy_nodes=["a"])
     d = status.model_dump()
-    assert d["started"] is True
+    assert d["initialized"] is True
     assert d["busy_nodes"] == ["a"]
     # Round-trip
     status2 = NetStatus.model_validate(d)

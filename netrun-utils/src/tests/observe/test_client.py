@@ -53,17 +53,17 @@ def _make_config() -> NetConfig:
 # %% pts/tests/00_observe/test_client.pct.py 6
 async def test_client_get_status():
     config = _make_config()
-    async with Net(config, run_source_nodes=False) as net:
+    async with Net(config, run_init_nodes=False) as net:
         async with ObserveServer(net, port=18322) as server:
             async with ObserveClient(server.url) as client:
                 status = await client.get_status()
-                assert status.started is True
+                assert status.initialized is True
                 assert set(status.node_names) == {"a", "b"}
 
 
 async def test_client_get_nodes():
     config = _make_config()
-    async with Net(config, run_source_nodes=False) as net:
+    async with Net(config, run_init_nodes=False) as net:
         async with ObserveServer(net, port=18323) as server:
             async with ObserveClient(server.url) as client:
                 nodes = await client.get_nodes()
@@ -76,7 +76,7 @@ async def test_client_get_nodes():
 
 async def test_client_get_edges():
     config = _make_config()
-    async with Net(config, run_source_nodes=False) as net:
+    async with Net(config, run_init_nodes=False) as net:
         async with ObserveServer(net, port=18324) as server:
             async with ObserveClient(server.url) as client:
                 edges = await client.get_edges()
@@ -87,7 +87,7 @@ async def test_client_get_edges():
 
 async def test_client_enable_disable():
     config = _make_config()
-    async with Net(config, run_source_nodes=False) as net:
+    async with Net(config, run_init_nodes=False) as net:
         async with ObserveServer(net, port=18325) as server:
             async with ObserveClient(server.url) as client:
                 resp = await client.disable_node("b")
@@ -102,7 +102,7 @@ async def test_client_enable_disable():
 
 async def test_client_inject_data():
     config = _make_config()
-    async with Net(config, run_source_nodes=False) as net:
+    async with Net(config, run_init_nodes=False) as net:
         async with ObserveServer(net, port=18326) as server:
             async with ObserveClient(server.url) as client:
                 resp = await client.inject_data("b", "inp", [1, 2])

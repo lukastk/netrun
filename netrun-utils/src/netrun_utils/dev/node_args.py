@@ -59,12 +59,12 @@ def set_node_func_args(
 
     # Get input data (from cache or by running upstream)
     async def _run():
-        net = Net(config, run_source_nodes=False)
-        await net.start(run_source_nodes=False)
+        net = Net(config, run_init_nodes=False)
+        await net.init(run_init_nodes=False)
         try:
             return await _get_input_salvo(net, full_name, verbose=verbose)
         finally:
-            await net.stop()
+            await net.close()
 
     input_data = _run_async(_run())
 

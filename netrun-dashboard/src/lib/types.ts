@@ -1,6 +1,6 @@
 /** Mirrors netrun_utils.observe.models.NetStatus */
 export interface NetStatus {
-	started: boolean;
+	initialized: boolean;
 	paused: boolean;
 	is_blocked: boolean;
 	node_names: string[];

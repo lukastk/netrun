@@ -95,7 +95,7 @@ class LogEntry(BaseModel):
 
 class NetStatus(BaseModel):
     """Overall status of the Net."""
-    started: bool
+    initialized: bool
     paused: bool
     is_blocked: bool = False
     node_names: list[str] = []

@@ -160,9 +160,9 @@ class NetObserver:
         idle = [name for name in node_names if name not in running_ids]
 
         return NetStatus(
-            started=self._net.started,
+            initialized=self._net.initialized,
             paused=self._net.paused,
-            is_blocked=self._net.is_blocked() if self._net.started else False,
+            is_blocked=self._net.is_blocked() if self._net.initialized else False,
             node_names=node_names,
             edge_count=len(self._net.graph.edges()),
             total_epochs=len(self._net.epochs),
@@ -273,7 +273,7 @@ class NetObserver:
     async def pause(self) -> ControlResponse:
         """Pause the net."""
         try:
-            await self._net.pause()
+            self._net.pause()
             return ControlResponse(ok=True, message="Net paused")
         except Exception as e:
             return ControlResponse(ok=False, message=str(e))
@@ -281,7 +281,7 @@ class NetObserver:
     async def resume(self) -> ControlResponse:
         """Resume the net."""
         try:
-            await self._net.resume()
+            self._net.resume()
             return ControlResponse(ok=True, message="Net resumed")
         except Exception as e:
             return ControlResponse(ok=False, message=str(e))

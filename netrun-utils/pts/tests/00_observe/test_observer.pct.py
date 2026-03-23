@@ -78,20 +78,20 @@ def _processor_func(ctx, packets):
 #|export
 async def test_get_status_before_start():
     config = _make_config()
-    net = Net(config, run_source_nodes=False)
+    net = Net(config, run_init_nodes=False)
     obs = NetObserver(net)
     status = obs.get_status()
     assert set(status.node_names) == {"source", "processor"}
     assert status.edge_count == 1
-    assert status.started is False
+    assert status.initialized is False
 
 
 async def test_get_status_after_start():
     config = _make_config()
-    async with Net(config, run_source_nodes=False) as net:
+    async with Net(config, run_init_nodes=False) as net:
         obs = NetObserver(net)
         status = obs.get_status()
-        assert status.started is True
+        assert status.initialized is True
         assert status.paused is False
 
 # %% [markdown]
@@ -101,7 +101,7 @@ async def test_get_status_after_start():
 #|export
 async def test_get_nodes():
     config = _make_config()
-    net = Net(config, run_source_nodes=False)
+    net = Net(config, run_init_nodes=False)
     obs = NetObserver(net)
     nodes = obs.get_nodes()
     assert len(nodes) == 2
@@ -121,7 +121,7 @@ async def test_get_nodes():
 #|export
 async def test_get_edges():
     config = _make_config()
-    net = Net(config, run_source_nodes=False)
+    net = Net(config, run_init_nodes=False)
     obs = NetObserver(net)
     edges = obs.get_edges()
     assert len(edges) == 1
@@ -136,7 +136,7 @@ async def test_get_edges():
 #|export
 async def test_enable_disable_node():
     config = _make_config()
-    async with Net(config, run_source_nodes=False) as net:
+    async with Net(config, run_init_nodes=False) as net:
         obs = NetObserver(net)
 
         resp = obs.disable_node("processor")
@@ -150,7 +150,7 @@ async def test_enable_disable_node():
 
 async def test_inject_data():
     config = _make_config()
-    async with Net(config, run_source_nodes=False) as net:
+    async with Net(config, run_init_nodes=False) as net:
         obs = NetObserver(net)
         resp = obs.inject_data("processor", "data", [42])
         assert resp.ok is True
@@ -162,7 +162,7 @@ async def test_inject_data():
 #|export
 async def test_epoch_logs_after_execution():
     config = _make_config()
-    async with Net(config, run_source_nodes=False) as net:
+    async with Net(config, run_init_nodes=False) as net:
         net.inject_data("processor", "data", [10])
         # run_until_blocked auto-starts and executes the epoch
         await net.run_until_blocked()
@@ -189,7 +189,7 @@ def test_observer_with_retain_epoch_logs_false():
         ]),
         retain_epoch_logs=False,
     )
-    net = Net(config, run_source_nodes=False)
+    net = Net(config, run_init_nodes=False)
     obs = NetObserver(net)
     status = obs.get_status()
-    assert status.started is False
+    assert status.initialized is False

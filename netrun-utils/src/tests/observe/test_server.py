@@ -55,7 +55,7 @@ def _make_config() -> NetConfig:
 # %% pts/tests/00_observe/test_server.pct.py 6
 async def test_health_endpoint():
     config = _make_config()
-    async with Net(config, run_source_nodes=False) as net:
+    async with Net(config, run_init_nodes=False) as net:
         async with ObserveServer(net, port=0) as server:
             # port=0 doesn't work with uvicorn, use a high port
             pass  # Just test that start/stop works
@@ -63,7 +63,7 @@ async def test_health_endpoint():
 
 async def test_server_endpoints():
     config = _make_config()
-    async with Net(config, run_source_nodes=False) as net:
+    async with Net(config, run_init_nodes=False) as net:
         server = ObserveServer(net, port=18321)
         await server.start()
         try:
@@ -77,7 +77,7 @@ async def test_server_endpoints():
                 resp = await client.get("/status")
                 assert resp.status_code == 200
                 data = resp.json()
-                assert data["started"] is True
+                assert data["initialized"] is True
                 assert set(data["node_names"]) == {"source", "sink"}
 
                 # Nodes

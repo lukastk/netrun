@@ -24,7 +24,7 @@
 		if (!connected || !state) return 'disconnected';
 		if (state.status.paused) return 'paused';
 		if (state.status.is_blocked) return 'blocked';
-		if (state.status.started) return 'running';
+		if (state.status.initialized) return 'running';
 		return 'stopped';
 	});
 
@@ -32,7 +32,7 @@
 		if (!connected || !state) return 'disconnected';
 		if (state.status.paused) return 'paused';
 		if (state.status.is_blocked) return 'blocked';
-		if (state.status.started) return 'running';
+		if (state.status.initialized) return 'running';
 		return 'stopped';
 	});
 </script>
