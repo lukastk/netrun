@@ -68,8 +68,8 @@ async def main():
             run = 1
             while True:
                 print(f'--- Run {run} ---')
-                await net.start_background()
                 net.send_control('fetch_text', 'start_epoch')
+                await net.start_background()
                 await net.wait_until_done()
                 print(f'Run {run} complete. Next run in 1 second...')
                 run += 1

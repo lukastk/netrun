@@ -138,15 +138,24 @@ export function configToGraph(config: Record<string, unknown>): NetrunGraph {
 	return { nodes, edges, settings };
 }
 
+const CONTROL_PORT_PREFIX = '__control_';
+const SIGNAL_PORT_PREFIX = '__signal_';
+const SPECIAL_PORT_SUFFIX = '__';
+
 function convertPorts(
 	configPorts: Record<string, { port_type?: string }> | undefined,
 	inferredPorts: Set<string> | undefined,
 ): PortConfig[] {
 	if (configPorts && Object.keys(configPorts).length > 0) {
-		return Object.entries(configPorts).map(([name, info]) => ({
-			name,
-			type: info.port_type ?? undefined,
-		}));
+		return Object.entries(configPorts).map(([name, info]) => {
+			const port: PortConfig = { name, type: info.port_type ?? undefined };
+			if (name.startsWith(CONTROL_PORT_PREFIX) && name.endsWith(SPECIAL_PORT_SUFFIX)) {
+				port.isControl = true;
+			} else if (name.startsWith(SIGNAL_PORT_PREFIX) && name.endsWith(SPECIAL_PORT_SUFFIX)) {
+				port.isSignal = true;
+			}
+			return port;
+		});
 	}
 	// Fall back to inferred ports from edges
 	if (inferredPorts && inferredPorts.size > 0) {

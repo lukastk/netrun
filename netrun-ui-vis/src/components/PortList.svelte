@@ -70,8 +70,10 @@
 			class="hidden-handle"
 		/>
 	{:else}
-		{@const signalType = item.port.isSignal ? extractPortTypeName(item.port.name, signalConfig) : null}
-		{@const controlType = item.port.isControl ? extractPortTypeName(item.port.name, controlConfig) : null}
+		{@const defaultSignalConfig = { prefix: '__signal_', suffix: '__', types: [] }}
+		{@const defaultControlConfig = { prefix: '__control_', suffix: '__', types: [] }}
+		{@const signalType = item.port.isSignal ? extractPortTypeName(item.port.name, signalConfig ?? defaultSignalConfig) : null}
+		{@const controlType = item.port.isControl ? extractPortTypeName(item.port.name, controlConfig ?? defaultControlConfig) : null}
 		<div class="port-row" class:port-indented={item.depth > 0} class:signal-port={!!signalType} class:control-port={!!controlType} style:padding-left="{item.depth * 12}px">
 			{#if side === 'in'}
 				<Handle
