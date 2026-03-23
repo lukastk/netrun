@@ -134,7 +134,6 @@
 						if (!badge) {
 							badge = document.createElement('div');
 							badge.className = 'epoch-badge';
-							(el as HTMLElement).style.position = 'relative';
 							el.appendChild(badge);
 						}
 						badge.textContent = `${status.epoch_count}`;
