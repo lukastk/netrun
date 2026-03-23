@@ -129,7 +129,7 @@ All major modules are fully implemented:
 
 ### Internal Utilities (`netrun._iutils`)
 
-- `_base` - Timestamp generation, patching decorators
+- `_base` - Timestamp generation
 - `hashing` - Hash computation utilities
 - `pickling` - Pickling method handling
 - `var_ref` - `VarRef`, `EnvVar` (alias), and `VarResolvableModel` for variable reference resolution
@@ -286,13 +286,24 @@ The Net module provides flow-based network execution by integrating with netrun-
 
 **Net Lifecycle**:
 ```python
+# Async usage
 async with Net(config) as net:
     net.inject_data("Source", "in", [value1, value2])
     await net.run_until_blocked()
-    startable = net.get_startable_epochs()
-    await net.execute_epoch(startable[0])
+    results = net.flush_output_queue("results")
+
+# Sync usage
+with Net(config) as net:
+    net.inject_data("Source", "in", [value1, value2])
+    net.run_until_blocked_sync()
     results = net.flush_output_queue("results")
 ```
+
+**Lifecycle methods**: `init()` / `close()` (async), `init_sync()` / `close_sync()` (sync). The context managers call these automatically.
+
+**Sub-objects**:
+- `net.cache` — Cache inspection and management (`net.cache.stats()`, `net.cache.entries(node)`, `net.cache.clear()`, etc.)
+- `net.logs` — Log query and printing (`net.logs.print_all()`, `net.logs.for_node(name)`, `net.logs.for_epoch(id)`, etc.)
 
 **Epoch Lifecycle Callbacks**: Register callbacks to observe epoch starts/ends in real time:
 ```python
@@ -301,12 +312,12 @@ remove = net.on_epoch_start(lambda node_name, epoch_id: print(f"{node_name} star
 remove = net.on_epoch_end(lambda node_name, epoch_id, record: print(f"{node_name} ended"))
 remove()  # deregister
 
-# NodeInfo-level: fires only for THAT node
-remove = net.nodes["fetch"].on_epoch_start(callback)
-remove = net.nodes["fetch"].on_epoch_end(callback)
+# Node-scoped: fires only for THAT node
+remove = net.on_epoch_start(callback, node="fetch")
+remove = net.on_epoch_end(callback, node="fetch")
 ```
 
-Both sync and async callbacks are supported. `on_epoch_end` receives the `EpochRecord` (with `was_cancelled`, `ended_at`, `started_at`, `logs`, etc.).
+Both sync and async callbacks are supported. `on_epoch_end` receives the `EpochLog` (with `was_cancelled`, `ended_at`, `started_at`, `logs`, etc.).
 
 **Features**: signals, controls, pause/resume, rate limiting, retries, type checking, print capture, output queues, caching, file storage, epoch lifecycle callbacks.
 
@@ -399,10 +410,10 @@ A factory module must export exactly **two functions**:
 - Cannot return closures or unpickleable objects
 - Subgraph factories may return `SubgraphConfig` instead of `NodeConfig`
 
-**`get_node_funcs(_net_config=None, *, **factory_args) -> tuple[exec_func, start_func, stop_func, on_failure_func]`**
+**`get_node_funcs(_net_config=None, *, **factory_args) -> tuple[exec_func, init_func, close_func, on_failure_func]`**
 - `_net_config` is injected the same way as above
 - Returns the execution functions as a 4-tuple
-- Typically: `(exec_func, None, None, None)`
+- Typically: `(exec_func, None, None, None)` — (exec, init, close, on_failure)
 - Can capture `factory_args` in closures (functions are resolved on each worker)
 - Not needed for subgraph factories
 
