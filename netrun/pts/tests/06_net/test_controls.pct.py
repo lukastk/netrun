@@ -41,6 +41,8 @@ from netrun.net.config import (
     control_type_from_port,
     is_control_salvo_condition,
     VALID_CONTROL_TYPES,
+    CONTROL_TYPES,
+    ControlType,
     validate_control_types,
     generate_control_ports,
     generate_control_salvo_conditions,
@@ -716,3 +718,143 @@ async def test_control_on_disabled_node():
         # Node should now be enabled and the queued data processed
         assert net.is_node_enabled("Worker")
         assert counter["count"] == 1
+
+# %% [markdown]
+# ## ControlType Registry Tests
+
+# %%
+#|export
+def test_control_type_registry_keys_match_valid_control_types():
+    """CONTROL_TYPES keys must match VALID_CONTROL_TYPES exactly."""
+    assert set(CONTROL_TYPES.keys()) == VALID_CONTROL_TYPES
+
+# %%
+#|export
+def test_control_type_dataclass():
+    """Test ControlType fields."""
+    ct = CONTROL_TYPES["cancel_epoch"]
+    assert isinstance(ct, ControlType)
+    assert ct.name == "cancel_epoch"
+    assert ct.value_type is str
+    assert ct.description != ""
+
+    ct_signal = CONTROL_TYPES["enable"]
+    assert ct_signal.value_type is None
+
+# %%
+#|export
+def test_control_type_value_types():
+    """Test that value_type is set correctly for controls that require values."""
+    assert CONTROL_TYPES["cancel_epoch"].value_type is str
+    assert CONTROL_TYPES["set_epoch_count"].value_type is int
+    # All others should be None
+    for name, ct in CONTROL_TYPES.items():
+        if name not in ("cancel_epoch", "set_epoch_count"):
+            assert ct.value_type is None, f"{name} should be a signal (value_type=None)"
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_send_control_rejects_value_for_signal_control():
+    """send_control should raise if a value is passed to a signal-style control."""
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="Worker",
+                    in_ports={"in": PortConfig()},
+                    execution_config=NodeExecutionConfig(
+                        pools=["main"],
+                        exec_node_func=_make_counting_exec_func({}),
+                        controls=["enable"],
+                    ),
+                ),
+            ],
+            edges=[],
+        ),
+    )
+
+    async with Net(config) as net:
+        with pytest.raises(ValueError, match="does not accept a value"):
+            net.send_control("Worker", "enable", value="unexpected")
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_send_control_requires_value_for_valued_control():
+    """send_control should raise if no value is passed to a valued control."""
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="Worker",
+                    in_ports={"in": PortConfig()},
+                    execution_config=NodeExecutionConfig(
+                        pools=["main"],
+                        exec_node_func=_make_counting_exec_func({}),
+                        controls=["cancel_epoch"],
+                    ),
+                ),
+            ],
+            edges=[],
+        ),
+    )
+
+    async with Net(config) as net:
+        with pytest.raises(ValueError, match="requires a str value"):
+            net.send_control("Worker", "cancel_epoch")
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_send_control_rejects_wrong_value_type():
+    """send_control should raise if value has wrong type."""
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="Worker",
+                    in_ports={"in": PortConfig()},
+                    execution_config=NodeExecutionConfig(
+                        pools=["main"],
+                        exec_node_func=_make_counting_exec_func({}),
+                        controls=["set_epoch_count"],
+                    ),
+                ),
+            ],
+            edges=[],
+        ),
+    )
+
+    async with Net(config) as net:
+        with pytest.raises(ValueError, match="requires a int value, got str"):
+            net.send_control("Worker", "set_epoch_count", value="not_an_int")
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_send_control_rejects_unknown_control_type():
+    """send_control should raise for unknown control types."""
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(
+            nodes=[
+                NodeConfig(
+                    name="Worker",
+                    in_ports={"in": PortConfig()},
+                    execution_config=NodeExecutionConfig(
+                        pools=["main"],
+                        exec_node_func=_make_counting_exec_func({}),
+                    ),
+                ),
+            ],
+            edges=[],
+        ),
+    )
+
+    async with Net(config) as net:
+        with pytest.raises(ValueError, match="Unknown control type"):
+            net.send_control("Worker", "bogus_control")

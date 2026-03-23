@@ -836,12 +836,35 @@ def validate_signal_types(signal_types: list[str]) -> None:
 CONTROL_PORT_PREFIX = "__control_"
 CONTROL_PORT_SUFFIX = "__"
 
-VALID_CONTROL_TYPES = frozenset({
-    "start_epoch", "cancel_epoch", "cancel_all_epochs",
-    "start_node", "stop_node",
-    "enable", "disable",
-    "set_epoch_count", "reset_epoch_count",
-})
+
+@dataclass(frozen=True)
+class ControlType:
+    """Metadata for a control type.
+
+    Attributes:
+        name: The control type identifier (e.g. "enable", "cancel_epoch").
+        value_type: Expected type for the control value, or None for signal-style controls.
+        description: Human-readable description of what this control does.
+    """
+    name: str
+    value_type: type | None = None
+    description: str = ""
+
+
+CONTROL_TYPES: dict[str, ControlType] = {
+    "start_epoch":       ControlType("start_epoch",       None, "Trigger a new epoch on a source node"),
+    "cancel_epoch":      ControlType("cancel_epoch",      str,  "Cancel a specific running epoch by ID"),
+    "cancel_all_epochs": ControlType("cancel_all_epochs", None, "Cancel all running epochs"),
+    "start_node":        ControlType("start_node",        None, "Call the node's start function"),
+    "stop_node":         ControlType("stop_node",         None, "Call the node's stop function"),
+    "enable":            ControlType("enable",             None, "Enable a disabled node"),
+    "disable":           ControlType("disable",            None, "Disable a node"),
+    "set_epoch_count":   ControlType("set_epoch_count",   int,  "Set the node's epoch count"),
+    "reset_epoch_count": ControlType("reset_epoch_count", None, "Reset the node's epoch count to 0"),
+}
+"""Registry of all control types with their metadata."""
+
+VALID_CONTROL_TYPES = frozenset(CONTROL_TYPES.keys())
 """Valid control type names for the controls configuration."""
 
 

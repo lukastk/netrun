@@ -17,7 +17,7 @@ from ...pool.thread import ThreadPool
 from ...pool.multiprocess import MultiprocessPool
 from ...pool.aio import SingleWorkerPool
 from ...pool.remote import RemotePoolClient
-from ...net.config import NetConfig, NodeExecutionConfig, PortConfig, RemotePoolConfig, SignalValue, EpochSignalValue, EpochFailedSignalValue, signal_port_name, is_signal_port, is_control_port, control_type_from_port, is_control_salvo_condition, control_port_name
+from ...net.config import NetConfig, NodeExecutionConfig, PortConfig, RemotePoolConfig, SignalValue, EpochSignalValue, EpochFailedSignalValue, signal_port_name, is_signal_port, is_control_port, control_type_from_port, is_control_salvo_condition, control_port_name, CONTROL_TYPES
 from ...net.config._nodes import resolve_effective_exec_field
 from ...execution_manager import ExecutionManager, PoolType, RunAllocationMethod
 from ..._iutils import get_timestamp_utc
@@ -446,6 +446,19 @@ class Net:
         for node_name, exec_config in self._node_execution_configs.items():
             if not exec_config.enabled:
                 self._disabled_nodes.add(node_name)
+
+        # Control handler dispatch table
+        self._control_handlers: dict[str, Callable] = {
+            "start_epoch":       self._control_start_epoch,
+            "cancel_epoch":      self._control_cancel_epoch,
+            "cancel_all_epochs": self._control_cancel_all_epochs,
+            "start_node":        self._control_start_node,
+            "stop_node":         self._control_stop_node,
+            "enable":            self._control_enable,
+            "disable":           self._control_disable,
+            "set_epoch_count":   self._control_set_epoch_count,
+            "reset_epoch_count": self._control_reset_epoch_count,
+        }
 
         # Build node port lookups (for type validation)
         self._node_in_ports: dict[str, dict[str, PortConfig]] = {}
@@ -3469,6 +3482,9 @@ class Net:
     async def _execute_control_action(self, control_type: str, node_name: str, packet_values: dict[str, Any]) -> None:
         """Dispatch a control action by type.
 
+        Uses the CONTROL_TYPES registry for value validation and
+        self._control_handlers for dispatch.
+
         Args:
             control_type: The control type string.
             node_name: The target node.
@@ -3477,42 +3493,25 @@ class Net:
         Raises:
             RuntimeError: If the control action fails.
         """
-        if control_type == "start_epoch":
-            self._control_start_epoch(node_name)
-        elif control_type == "cancel_epoch":
-            value = self._get_single_control_value(packet_values, control_type, node_name)
-            if not isinstance(value, str):
-                raise RuntimeError(
-                    f"Control 'cancel_epoch' on node '{node_name}': "
-                    f"expected str epoch_id, got {type(value).__name__}"
-                )
-            self._control_cancel_epoch(node_name, value)
-        elif control_type == "cancel_all_epochs":
-            self._control_cancel_all_epochs(node_name)
-        elif control_type == "start_node":
-            if node_name in self._started_nodes:
-                raise RuntimeError(f"Control 'start_node': node '{node_name}' already started")
-            await self._start_node(node_name)
-        elif control_type == "stop_node":
-            if node_name not in self._started_nodes:
-                raise RuntimeError(f"Control 'stop_node': node '{node_name}' not started")
-            await self._stop_node(node_name)
-        elif control_type == "enable":
-            self.enable_node(node_name)
-        elif control_type == "disable":
-            self.disable_node(node_name)
-        elif control_type == "set_epoch_count":
-            value = self._get_single_control_value(packet_values, control_type, node_name)
-            if not isinstance(value, int):
-                raise RuntimeError(
-                    f"Control 'set_epoch_count' on node '{node_name}': "
-                    f"expected int, got {type(value).__name__}"
-                )
-            self._node_epoch_counts[node_name] = value
-        elif control_type == "reset_epoch_count":
-            self._node_epoch_counts[node_name] = 0
-        else:
+        ct = CONTROL_TYPES.get(control_type)
+        if ct is None:
             raise RuntimeError(f"Unknown control type: '{control_type}'")
+
+        handler = self._control_handlers[control_type]
+
+        if ct.value_type is not None:
+            value = self._get_single_control_value(packet_values, control_type, node_name)
+            if not isinstance(value, ct.value_type):
+                raise RuntimeError(
+                    f"Control '{control_type}' on node '{node_name}': "
+                    f"expected {ct.value_type.__name__}, got {type(value).__name__}"
+                )
+            result = handler(node_name, value)
+        else:
+            result = handler(node_name)
+
+        if asyncio.iscoroutine(result):
+            await result
 
     def _get_single_control_value(self, packet_values: dict[str, Any], control_type: str, node_name: str) -> Any:
         """Extract the single packet value from a control salvo.
@@ -3632,6 +3631,34 @@ class Net:
         for eid in running_for_node:
             self._control_cancel_epoch(node_name, eid)
 
+    async def _control_start_node(self, node_name: str) -> None:
+        """Handle 'start_node' control: call the node's start function."""
+        if node_name in self._started_nodes:
+            raise RuntimeError(f"Control 'start_node': node '{node_name}' already started")
+        await self._start_node(node_name)
+
+    async def _control_stop_node(self, node_name: str) -> None:
+        """Handle 'stop_node' control: call the node's stop function."""
+        if node_name not in self._started_nodes:
+            raise RuntimeError(f"Control 'stop_node': node '{node_name}' not started")
+        await self._stop_node(node_name)
+
+    def _control_enable(self, node_name: str) -> None:
+        """Handle 'enable' control: enable a disabled node."""
+        self.enable_node(node_name)
+
+    def _control_disable(self, node_name: str) -> None:
+        """Handle 'disable' control: disable a node."""
+        self.disable_node(node_name)
+
+    def _control_set_epoch_count(self, node_name: str, value: int) -> None:
+        """Handle 'set_epoch_count' control: set the node's epoch count."""
+        self._node_epoch_counts[node_name] = value
+
+    def _control_reset_epoch_count(self, node_name: str) -> None:
+        """Handle 'reset_epoch_count' control: reset the node's epoch count to 0."""
+        self._node_epoch_counts[node_name] = 0
+
     def send_control(self, node_name: str, control_type: str, value: Any = None) -> str:
         """Inject a control packet into a node's control port.
 
@@ -3646,8 +3673,30 @@ class Net:
             The created packet ID.
 
         Raises:
-            ValueError: If the node doesn't have the specified control port.
+            ValueError: If the control type is unknown, the node doesn't have
+                the specified control port, or the value type is wrong.
         """
+        ct = CONTROL_TYPES.get(control_type)
+        if ct is None:
+            raise ValueError(
+                f"Unknown control type: '{control_type}'. "
+                f"Valid types: {sorted(CONTROL_TYPES.keys())}"
+            )
+        if ct.value_type is not None:
+            if value is None:
+                raise ValueError(
+                    f"Control '{control_type}' requires a {ct.value_type.__name__} value"
+                )
+            if not isinstance(value, ct.value_type):
+                raise ValueError(
+                    f"Control '{control_type}' requires a {ct.value_type.__name__} value, "
+                    f"got {type(value).__name__}"
+                )
+        elif value is not None:
+            raise ValueError(
+                f"Control '{control_type}' does not accept a value"
+            )
+
         port_name = control_port_name(control_type)
         # Validate node has this control port
         node_config = None

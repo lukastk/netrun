@@ -62,6 +62,8 @@ from ._base import (
     generate_signal_salvo_conditions,
     validate_signal_types,
     # Control utilities
+    ControlType,
+    CONTROL_TYPES,
     CONTROL_PORT_PREFIX,
     CONTROL_PORT_SUFFIX,
     VALID_CONTROL_TYPES,
