@@ -379,7 +379,7 @@ async def test_output_only_mode():
     assert call_count == 2
 
     # But outputs are recorded
-    entries = net.get_cached_entries("A")
+    entries = net.cache.entries("A")
     # Each run stores, but same hash means overwrite → 1 entry
     assert len(entries) >= 1
     assert entries[0].output_port_values["out"] == [15]
@@ -417,7 +417,7 @@ async def test_input_only_mode():
     assert call_count == 2
 
     # Inputs recorded
-    entries = net.get_cached_entries("A")
+    entries = net.cache.entries("A")
     assert len(entries) == 2
     # Check input values (sort by hash for deterministic order)
     input_vals = sorted([e.input_values_by_port["in"][0] for e in entries])
@@ -460,24 +460,24 @@ async def test_retrieval_api():
         net.try_get_output("results")  # drain
 
     # Input salvos
-    inputs = net.get_cached_input_salvos("A")
+    inputs = net.cache.input_salvos("A")
     assert len(inputs) == 2
     in_vals = sorted([i["in"][0] for i in inputs])
     assert in_vals == [10, 20]
 
     # Output salvos
-    outputs = net.get_cached_output_salvos("A")
+    outputs = net.cache.output_salvos("A")
     assert len(outputs) == 2
     out_vals = sorted([o["out"][0] for o in outputs])
     assert out_vals == [11, 21]
 
     # Lookup specific
-    result = net.get_cached_output_for_input("A", {"in": [10]})
+    result = net.cache.output_for_input("A", {"in": [10]})
     assert result is not None
     assert result.output_port_values["out"] == [11]
 
     # Lookup miss
-    result = net.get_cached_output_for_input("A", {"in": [999]})
+    result = net.cache.output_for_input("A", {"in": [999]})
     assert result is None
 
 # %% [markdown]
@@ -502,7 +502,7 @@ async def test_cache_stats():
             net.inject_data("A", "in", [val])
             await net.run_until_blocked()
 
-        stats = net.cache_stats()
+        stats = net.cache.stats()
         assert "A" in stats
         assert stats["A"]["entry_count"] == 3
         assert stats["A"]["epoch_count"] == 3
@@ -530,7 +530,7 @@ async def test_reservoir_sampling():
             net.inject_data("A", "in", [val])
             await net.run_until_blocked()
 
-    entries = net.get_cached_entries("A")
+    entries = net.cache.entries("A")
     assert len(entries) <= 2
 
 # %% [markdown]
@@ -750,7 +750,7 @@ async def test_clear_cache():
         assert call_count == 1
 
         # Clear
-        net.clear_cache()
+        net.cache.clear()
 
         # Cache miss → re-executes
         net.inject_data("A", "in", [1])
@@ -792,7 +792,7 @@ async def test_clear_node_cache():
         assert calls == {"A": 1, "B": 1}
 
         # Clear only A's cache
-        net.clear_node_cache("A")
+        net.cache.clear("A")
 
         # Re-run
         net.inject_data("A", "in", [1])
@@ -832,7 +832,7 @@ async def test_clear_cached_output_for_input():
         assert call_count == 2
 
         # Clear only input=1
-        net.clear_cached_output_for_input("A", {"in": [1]})
+        net.cache.clear_for_input("A", {"in": [1]})
 
         # input=1 re-executes, input=2 still cached
         net.inject_data("A", "in", [1])
@@ -844,39 +844,13 @@ async def test_clear_cached_output_for_input():
         assert call_count == 3  # cache hit
 
 # %% [markdown]
-# ## Test: clear_cached_inputs
+# ## Test: Cache helpers via net.cache sub-object
 
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_clear_cached_inputs():
-    """clear_cached_inputs() clears INPUT_ONLY entries."""
-    def exec_fn(ctx: NodeExecutionContext, packets):
-        for port, pids in packets.items():
-            for pid in pids:
-                ctx.consume_packet(pid)
-
-    node = _make_node("A", ["in"], [], exec_fn)
-    cache = CacheConfig(enabled=True, include_all_nodes=True,
-                        cache_what=CacheWhat.INPUT_ONLY)
-    net = _make_net(node, cache=cache)
-
-    async with net:
-        net.inject_data("A", "in", [1])
-        await net.run_until_blocked()
-        assert len(net.get_cached_entries("A")) == 1
-
-        net.clear_cached_inputs()
-        assert len(net.get_cached_entries("A")) == 0
-
-# %% [markdown]
-# ## Test: NodeInfo cache helpers
-
-# %%
-#|export
-@pytest.mark.asyncio
-async def test_node_info_cache_helpers():
-    """NodeInfo provides cache helpers that delegate to Net."""
+async def test_cache_sub_object_helpers():
+    """net.cache sub-object provides cache helpers."""
     def exec_fn(ctx: NodeExecutionContext, packets):
         for port, pids in packets.items():
             for pid in pids:
@@ -898,30 +872,28 @@ async def test_node_info_cache_helpers():
         await net.run_until_blocked()
         net.try_get_output("results")  # drain
 
-    node_info = net.nodes["A"]
+    # is_enabled
+    assert net.cache.is_enabled("A") is True
 
-    # is_cache_enabled
-    assert node_info.is_cache_enabled is True
+    # entries
+    assert len(net.cache.entries("A")) == 1
 
-    # cached_entries
-    assert len(node_info.cached_entries) == 1
+    # input_salvos / output_salvos
+    assert net.cache.input_salvos("A") == [{"in": [5]}]
+    assert net.cache.output_salvos("A") == [{"out": [10]}]
 
-    # cached_input_salvos / cached_output_salvos
-    assert node_info.cached_input_salvos == [{"in": [5]}]
-    assert node_info.cached_output_salvos == [{"out": [10]}]
-
-    # get_cached_output_for_input
-    result = node_info.get_cached_output_for_input({"in": [5]})
+    # output_for_input
+    result = net.cache.output_for_input("A", {"in": [5]})
     assert result is not None
     assert result.output_port_values["out"] == [10]
 
-    # cache_stats
-    stats = node_info.cache_stats
+    # stats
+    stats = net.cache.stats("A")
     assert stats["entry_count"] == 1
 
-    # clear_cache
-    node_info.clear_cache()
-    assert len(node_info.cached_entries) == 0
+    # clear
+    net.cache.clear("A")
+    assert len(net.cache.entries("A")) == 0
 
 # %% [markdown]
 # ## Test: EpochRecord.was_cache_hit

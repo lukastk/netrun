@@ -32,7 +32,7 @@ async def main():
         results = net.flush_output_queue("results")
         print(results[0])
         print()
-        net.print_all_logs(include_timestamps=False)
+        net.logs.print_all(include_timestamps=False)
 
     # ----------------------------------------------------------------
     # 2. run_to_targets: inspect what 'transform' would receive
@@ -61,7 +61,7 @@ async def main():
                         print(f"      {r}")
         print()
         print("Upstream logs (fetch_data, validate only):")
-        net.print_all_logs(include_timestamps=False)
+        net.logs.print_all(include_timestamps=False)
 
     # ----------------------------------------------------------------
     # 3. run_to_targets: test the node function with captured inputs

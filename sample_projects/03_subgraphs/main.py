@@ -49,7 +49,7 @@ async def main():
 
         # Node logs — shows subgraph-prefixed node names
         print("\nNode Logs:")
-        net.print_all_logs()
+        net.logs.print_all()
 
 
 if __name__ == "__main__":

@@ -134,74 +134,6 @@ def test_net_initializes_output_queues():
 
 # %%
 #|export
-def test_net_list_output_queues():
-    """Test list_output_queues method."""
-    graph_config = GraphConfig(
-        nodes=[
-            NodeConfig(name="Sink", out_ports={"out": PortConfig()}),
-        ],
-        edges=[],
-    )
-
-    config = NetConfig(
-        pools={"main": PoolConfig(spec=MainPoolConfig())},
-        graph=graph_config,
-        output_queues={
-            "results": OutputQueueConfig(ports=[("Sink", "out")]),
-        },
-    )
-
-    net = Net(config)
-    queue_names = net.list_output_queues()
-
-    assert "results" in queue_names
-
-# %%
-#|export
-def test_net_has_output_empty():
-    """Test has_output returns False for empty queue."""
-    graph_config = GraphConfig(
-        nodes=[
-            NodeConfig(name="Sink", out_ports={"out": PortConfig()}),
-        ],
-        edges=[],
-    )
-
-    config = NetConfig(
-        pools={"main": PoolConfig(spec=MainPoolConfig())},
-        graph=graph_config,
-        output_queues={
-            "results": OutputQueueConfig(ports=[("Sink", "out")]),
-        },
-    )
-
-    net = Net(config)
-    assert net.has_output("results") is False
-
-# %%
-#|export
-def test_net_output_count_empty():
-    """Test output_count returns 0 for empty queue."""
-    graph_config = GraphConfig(
-        nodes=[
-            NodeConfig(name="Sink", out_ports={"out": PortConfig()}),
-        ],
-        edges=[],
-    )
-
-    config = NetConfig(
-        pools={"main": PoolConfig(spec=MainPoolConfig())},
-        graph=graph_config,
-        output_queues={
-            "results": OutputQueueConfig(ports=[("Sink", "out")]),
-        },
-    )
-
-    net = Net(config)
-    assert net.output_count("results") == 0
-
-# %%
-#|export
 def test_net_try_get_output_empty():
     """Test try_get_output returns None for empty queue."""
     graph_config = GraphConfig(
@@ -280,10 +212,6 @@ def test_net_route_orphaned_packet_to_queue():
         from_port="out",
         epoch_id="epoch_1",
     )
-
-    # Check queue has the packet
-    assert net.has_output("results")
-    assert net.output_count("results") == 1
 
     # Default: get just the value
     value = net.try_get_output("results")
@@ -365,9 +293,6 @@ def test_net_route_orphaned_packet_discard():
         epoch_id="epoch_3",
     )
 
-    # No queues should have packets
-    assert len(net.list_output_queues()) == 0
-
     # Packet value should be consumed (discarded)
     with pytest.raises(KeyError):
         net._packet_store._get("pkt_789")
@@ -425,12 +350,6 @@ def test_net_output_queue_not_found():
     )
 
     net = Net(config)
-
-    with pytest.raises(KeyError, match="not found"):
-        net.has_output("unknown")
-
-    with pytest.raises(KeyError, match="not found"):
-        net.output_count("unknown")
 
     with pytest.raises(KeyError, match="not found"):
         net.try_get_output("unknown")

@@ -43,7 +43,7 @@ async def main():
 
         # Show logs
         print("\nNode Logs:")
-        net.print_all_logs()
+        net.logs.print_all()
 
 
 if __name__ == "__main__":

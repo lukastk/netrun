@@ -56,7 +56,7 @@ async def main():
         print()
         print("Node Logs:")
         for node_name in ["double", "add", "format_result", "analyze"]:
-            logs = net.get_node_logs(node_name)
+            logs = net.logs.for_node(node_name)
             if logs:
                 print(f"\n  [{node_name}]")
                 for timestamp, message in logs:

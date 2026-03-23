@@ -282,7 +282,7 @@ def test_no_signal_ports_by_default():
 # ## Signal Emission Integration Tests
 #
 # Note: exec functions always receive `(ctx, packets)` where packets is `dict[str, list[str]]`.
-# We use `run_until_blocked()` + `execute_startable_epochs()` loop for execution.
+# We use `run_until_blocked()` in a loop until no more progress is made.
 
 # %%
 #|export
@@ -299,9 +299,8 @@ from netrun.net.config import (
 async def _run_net_to_completion(net):
     """Helper: run a net until no more progress can be made."""
     while True:
-        await net.run_until_blocked()
-        executed = await net.execute_startable_epochs()
-        if not executed:
+        made_progress, _, _ = await net.run_until_blocked()
+        if not made_progress:
             break
 
 # %%
@@ -1117,9 +1116,8 @@ async def test_epoch_cancelled_signal_max_epochs():
         # to avoid infinite loop (run_until_blocked with auto_start would
         # keep cycling through the max_epochs cancel + signal delivery).
         for _ in range(10):
-            await net.run_until_blocked(auto_start_epochs=False)
-            executed = await net.execute_startable_epochs()
-            if not executed:
+            made_progress, _, _ = await net.run_until_blocked()
+            if not made_progress:
                 break
 
     # A runs once (max_epochs=1), second epoch gets cancelled

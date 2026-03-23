@@ -6,7 +6,7 @@ This example showcases:
 3. Epoch log stdout echo — real-time epoch summaries printed to terminal
 4. JSONL backend — persisting logs to JSONL files
 5. SQLite backend — persisting logs to a SQLite database
-6. NodeInfo.epoch_logs — per-node log access
+6. Per-node epoch log access
 
 Pipeline:  fetch_data -> process -> format_report -> [output queue]
 """
@@ -115,14 +115,14 @@ async def main():
             print(f"  {a.action_kind} -> {event_kinds}")
 
     # ==================================================================
-    # 4. NODE INFO EPOCH LOGS
+    # 4. PER-NODE EPOCH LOGS
     # ==================================================================
     print()
     print("=" * 60)
-    print("4. NODE INFO EPOCH LOGS")
+    print("4. PER-NODE EPOCH LOGS")
     print("=" * 60)
     print()
-    print("Access epoch logs per-node via net.nodes[name].epoch_logs.")
+    print("Access epoch logs per-node by filtering net.epoch_logs.")
     print()
 
     config = NetConfig.from_file(config_path)
@@ -134,7 +134,7 @@ async def main():
         await run_pipeline(net, "https://example.com/second")
 
         for name in ["fetch_data", "process", "format_report"]:
-            node_logs = net.nodes[name].epoch_logs
+            node_logs = [log for log in net.epoch_logs.values() if log.node_name == name]
             print(f"  {name}: {len(node_logs)} epoch(s)")
             for el in node_logs:
                 entries = "; ".join(

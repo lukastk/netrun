@@ -970,13 +970,13 @@ async def test_epoch_log_file_storage_hit():
         assert epoch_log.was_file_storage_hit is True
 
 # %% [markdown]
-# ## NodeInfo.epoch_logs property
+# ## Epoch logs filtered by node
 
 # %%
 #|export
 @pytest.mark.asyncio
 async def test_node_info_epoch_logs():
-    """NodeInfo.epoch_logs should return filtered EpochLogs for that node."""
+    """Epoch logs should be filterable by node name."""
     def node_a_func(ctx, packets):
         for pids in packets.values():
             for pid in pids:
@@ -1042,9 +1042,9 @@ async def test_node_info_epoch_logs():
         net.inject_data("A", "in", ["hello"])
         await net.run_until_blocked()
 
-        # NodeInfo should filter epoch logs to its own node
-        a_logs = net.nodes["A"].epoch_logs
-        b_logs = net.nodes["B"].epoch_logs
+        # Filter epoch logs to each node
+        a_logs = [log for log in net.epoch_logs.values() if log.node_name == "A"]
+        b_logs = [log for log in net.epoch_logs.values() if log.node_name == "B"]
 
     assert len(a_logs) == 1
     assert a_logs[0].node_name == "A"
@@ -1517,13 +1517,13 @@ async def test_ctx_log_no_message():
     assert epoch_log.user_fields == {"key": "value", "count": 42}
 
 # %% [markdown]
-# ## NodeInfo.epoch_logs when retention disabled
+# ## Epoch logs by node when retention disabled
 
 # %%
 #|export
 @pytest.mark.asyncio
 async def test_node_info_epoch_logs_no_retention():
-    """NodeInfo.epoch_logs should return empty list when retain_epoch_logs=False."""
+    """Epoch logs filtered by node should return empty list when retain_epoch_logs=False."""
     def exec_func(ctx, packets):
         for pids in packets.values():
             for pid in pids:
@@ -1536,7 +1536,7 @@ async def test_node_info_epoch_logs_no_retention():
     async with Net(config) as net:
         net.inject_data("A", "in", ["data"])
         await net.run_until_blocked()
-        assert net.nodes["A"].epoch_logs == []
+        assert [log for log in net.epoch_logs.values() if log.node_name == "A"] == []
 
 # %%
 #|export

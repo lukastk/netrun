@@ -181,8 +181,8 @@ def test_epochs_used_by_handle_print_buffer():
     assert len(net._epochs["epoch_1"].logs) == 1
     assert net._epochs["epoch_1"].logs[0] == (timestamp, "hello\n")
 
-    # Should be retrievable via get_node_log
-    node_logs = net.get_node_logs("NodeA")
+    # Should be retrievable via logs.for_node
+    node_logs = net.logs.for_node("NodeA")
     assert len(node_logs) == 1
     assert node_logs[0] == (timestamp, "hello\n")
 
@@ -195,9 +195,6 @@ def test_handle_print_buffer_unknown_epoch_skips_node_log():
     # Don't register epoch in _epochs
     timestamp = datetime.now()
     net._handle_print_buffer("epoch_unknown", [(timestamp, "orphaned\n")])
-
-    # Should not appear in any node log
-    assert net.list_node_log_names() == []
 
     # Epoch record doesn't exist, so no print_logs stored
     assert "epoch_unknown" not in net._epochs
@@ -220,8 +217,8 @@ def test_handle_print_buffer_multiple_nodes():
     net._handle_print_buffer("epoch_b1", [(t2, "b1\n")])
     net._handle_print_buffer("epoch_a2", [(t3, "a2\n")])
 
-    node_a_logs = net.get_node_logs("NodeA")
-    node_b_logs = net.get_node_logs("NodeB")
+    node_a_logs = net.logs.for_node("NodeA")
+    node_b_logs = net.logs.for_node("NodeB")
     assert len(node_a_logs) == 2
     assert len(node_b_logs) == 1
 
@@ -243,7 +240,7 @@ def test_get_epoch_log_from_record():
     record.logs = [(t, "msg\n")]
     net._epochs["e1"] = record
 
-    result = net.get_epoch_log("e1")
+    result = net.logs.for_epoch("e1")
     assert result == [(t, "msg\n")]
 
 # %%
@@ -251,7 +248,7 @@ def test_get_epoch_log_from_record():
 def test_get_epoch_log_unknown_epoch():
     """Test get_epoch_log returns empty list for unknown epoch."""
     net = _create_simple_net()
-    result = net.get_epoch_log("nonexistent")
+    result = net.logs.for_epoch("nonexistent")
     assert result == []
 
 # %% [markdown]
@@ -274,7 +271,7 @@ def test_get_all_logs_chronological_uses_epochs():
     record2.logs = [(t2, "from B")]
     net._epochs["epoch_2"] = record2
 
-    result = net.get_all_logs_chronological()
+    result = net.logs.all_chronological()
 
     assert len(result) == 2
     assert result[0] == (t1, "epoch_1", "NodeA", "from A")
@@ -291,7 +288,7 @@ def test_get_all_logs_chronological_format():
     record.logs = [(timestamp, "test message")]
     net._epochs["epoch_123"] = record
 
-    result = net.get_all_logs_chronological()
+    result = net.logs.all_chronological()
 
     assert len(result) == 1
     log_entry = result[0]
@@ -302,87 +299,7 @@ def test_get_all_logs_chronological_format():
     assert log_entry[3] == "test message"
 
 # %% [markdown]
-# ## list_epoch_log_ids / list_node_log_names
-
-# %%
-#|export
-def test_list_epoch_log_ids_empty():
-    """Test list_epoch_log_ids returns empty list when no logs."""
-    net = _create_simple_net()
-
-    result = net.list_epoch_log_ids()
-
-    assert result == []
-
-# %%
-#|export
-def test_list_epoch_log_ids_with_logs():
-    """Test list_epoch_log_ids returns epoch IDs with logs."""
-    net = _create_simple_net()
-
-    record1 = _mock_epoch_record("epoch_1", "NodeA")
-    record1.logs = [(datetime.now(), "log1")]
-    net._epochs["epoch_1"] = record1
-
-    record2 = _mock_epoch_record("epoch_2", "NodeB")
-    record2.logs = [(datetime.now(), "log2")]
-    net._epochs["epoch_2"] = record2
-
-    result = net.list_epoch_log_ids()
-
-    assert len(result) == 2
-    assert "epoch_1" in result
-    assert "epoch_2" in result
-
-# %%
-#|export
-def test_list_epoch_log_ids_excludes_empty():
-    """Test list_epoch_log_ids excludes epochs with no logs."""
-    net = _create_simple_net()
-
-    record1 = _mock_epoch_record("epoch_1", "NodeA")
-    record1.logs = [(datetime.now(), "log1")]
-    net._epochs["epoch_1"] = record1
-
-    # epoch_2 has no logs
-    net._epochs["epoch_2"] = _mock_epoch_record("epoch_2", "NodeB")
-
-    result = net.list_epoch_log_ids()
-    assert result == ["epoch_1"]
-
-# %%
-#|export
-def test_list_node_log_names_empty():
-    """Test list_node_log_names returns empty list when no logs."""
-    net = _create_simple_net()
-
-    result = net.list_node_log_names()
-
-    assert result == []
-
-# %%
-#|export
-def test_list_node_log_names_with_logs():
-    """Test list_node_log_names returns node names with logs."""
-    net = _create_simple_net()
-
-    # Add logs via epoch records
-    record_a = _mock_epoch_record("epoch_a", "NodeA")
-    record_a.logs = [(datetime.now(), "log1")]
-    net._epochs["epoch_a"] = record_a
-
-    record_b = _mock_epoch_record("epoch_b", "NodeB")
-    record_b.logs = [(datetime.now(), "log2")]
-    net._epochs["epoch_b"] = record_b
-
-    result = net.list_node_log_names()
-
-    assert len(result) == 2
-    assert "NodeA" in result
-    assert "NodeB" in result
-
-# %% [markdown]
-# ## get_all_logs_chronological sorting
+# ## logs.all_chronological sorting
 
 # %%
 #|export
@@ -390,7 +307,7 @@ def test_get_all_logs_chronological_empty():
     """Test get_all_logs_chronological returns empty list when no logs."""
     net = _create_simple_net()
 
-    result = net.get_all_logs_chronological()
+    result = net.logs.all_chronological()
 
     assert result == []
 
@@ -413,7 +330,7 @@ def test_get_all_logs_chronological_sorted():
     record2.logs = [(t1, "first"), (t3, "last")]
     net._epochs["epoch_2"] = record2
 
-    result = net.get_all_logs_chronological()
+    result = net.logs.all_chronological()
 
     assert len(result) == 3
     # Check sorted order
@@ -422,39 +339,6 @@ def test_get_all_logs_chronological_sorted():
     assert result[2][3] == "last"
     # Check timestamps are ascending
     assert result[0][0] <= result[1][0] <= result[2][0]
-
-# %% [markdown]
-# ## list returns copies
-
-# %%
-#|export
-def test_list_epoch_log_ids_returns_copy():
-    """Test list_epoch_log_ids returns a copy, not the internal state."""
-    net = _create_simple_net()
-    record = _mock_epoch_record("epoch_1", "NodeA")
-    record.logs = [(datetime.now(), "log")]
-    net._epochs["epoch_1"] = record
-
-    result = net.list_epoch_log_ids()
-    result.append("fake_epoch")
-
-    # Internal state should not be modified
-    assert "fake_epoch" not in net._epochs
-
-# %%
-#|export
-def test_list_node_log_names_returns_copy():
-    """Test list_node_log_names returns a copy, not the internal state."""
-    net = _create_simple_net()
-    record = _mock_epoch_record("epoch_1", "NodeA")
-    record.logs = [(datetime.now(), "log")]
-    net._epochs["epoch_1"] = record
-
-    result = net.list_node_log_names()
-    result.append("FakeNode")
-
-    # Internal state should not be modified
-    assert "FakeNode" not in net.list_node_log_names()
 
 # %% [markdown]
 # ## Exception Queue

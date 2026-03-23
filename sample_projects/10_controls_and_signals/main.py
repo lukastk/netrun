@@ -68,7 +68,7 @@ async def main():
 
         # === Print captured node logs ===
         print("\n=== Node Logs ===")
-        net.print_all_logs()
+        net.logs.print_all()
 
 
 if __name__ == "__main__":

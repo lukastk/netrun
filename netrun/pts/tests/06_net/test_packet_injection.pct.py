@@ -66,11 +66,11 @@ def _create_simple_net() -> Net:
 
 # %%
 #|export
-def test_create_external_packet():
+def test__create_external_packet():
     """Test create_external_packet creates a packet with value."""
     net = _create_simple_net()
 
-    packet_id = net.create_external_packet({"test": "data"})
+    packet_id = net._create_external_packet({"test": "data"})
 
     assert packet_id is not None
     assert isinstance(packet_id, str)
@@ -82,38 +82,38 @@ def test_create_external_packet():
 
 # %%
 #|export
-def test_create_external_packet_various_types():
+def test__create_external_packet_various_types():
     """Test create_external_packet with various value types."""
     net = _create_simple_net()
 
     # Dict
-    p1 = net.create_external_packet({"key": "value"})
+    p1 = net._create_external_packet({"key": "value"})
     assert net._packet_store._get(p1) == {"key": "value"}
 
     # String
-    p2 = net.create_external_packet("hello")
+    p2 = net._create_external_packet("hello")
     assert net._packet_store._get(p2) == "hello"
 
     # Number
-    p3 = net.create_external_packet(42)
+    p3 = net._create_external_packet(42)
     assert net._packet_store._get(p3) == 42
 
     # List
-    p4 = net.create_external_packet([1, 2, 3])
+    p4 = net._create_external_packet([1, 2, 3])
     assert net._packet_store._get(p4) == [1, 2, 3]
 
     # None
-    p5 = net.create_external_packet(None)
+    p5 = net._create_external_packet(None)
     assert net._packet_store._get(p5) is None
 
 # %%
 #|export
-def test_create_external_packets():
+def test__create_external_packets():
     """Test create_external_packets creates multiple packets."""
     net = _create_simple_net()
 
     values = [{"id": 1}, {"id": 2}, {"id": 3}]
-    packet_ids = net.create_external_packets(values)
+    packet_ids = net._create_external_packets(values)
 
     assert len(packet_ids) == 3
     for i, packet_id in enumerate(packet_ids):
@@ -121,25 +121,25 @@ def test_create_external_packets():
 
 # %%
 #|export
-def test_create_external_packets_empty():
+def test__create_external_packets_empty():
     """Test create_external_packets with empty list."""
     net = _create_simple_net()
 
-    packet_ids = net.create_external_packets([])
+    packet_ids = net._create_external_packets([])
 
     assert packet_ids == []
 
 # %%
 #|export
-def test_inject_packet():
+def test__inject_packet():
     """Test inject_packet transports packet to input port."""
     net = _create_simple_net()
 
     # Create a packet
-    packet_id = net.create_external_packet({"data": "test"})
+    packet_id = net._create_external_packet({"data": "test"})
 
     # Inject it
-    net.inject_packet(packet_id, "Source", "in")
+    net._inject_packet(packet_id, "Source", "in")
 
     # Verify packet is at input port
     packet = net._netsim.get_packet(packet_id)
@@ -221,21 +221,21 @@ def test_inject_multiple_packets_same_port():
 
 # %%
 #|export
-def test_create_and_inject_separately():
+def test__create_and_inject_separately():
     """Test creating packets first, then injecting them."""
     net = _create_simple_net()
 
     # Create packets first
-    p1 = net.create_external_packet("value1")
-    p2 = net.create_external_packet("value2")
+    p1 = net._create_external_packet("value1")
+    p2 = net._create_external_packet("value2")
 
     # Verify they're outside the net
     assert net._netsim.get_packet(p1).location.kind == "OutsideNet"
     assert net._netsim.get_packet(p2).location.kind == "OutsideNet"
 
     # Inject them
-    net.inject_packet(p1, "Source", "in")
-    net.inject_packet(p2, "Source", "in")
+    net._inject_packet(p1, "Source", "in")
+    net._inject_packet(p2, "Source", "in")
 
     # Now they should be at input port
     assert net._netsim.get_packet(p1).location.kind == "InputPort"

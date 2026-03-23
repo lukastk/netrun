@@ -17,12 +17,6 @@ from ._context import (
     create_net_func_preprocessor,
 )
 
-# Re-export from _info
-from ._info import (
-    NodeInfo,
-    EdgeInfo,
-)
-
 # Re-export from _run_to_targets
 from ._run_to_targets import (
     TargetInputSalvo,
@@ -31,4 +25,6 @@ from ._run_to_targets import (
 # Re-export from _net
 from ._net import (
     Net,
+    NetCacheAPI,
+    NetLogQuery,
 )

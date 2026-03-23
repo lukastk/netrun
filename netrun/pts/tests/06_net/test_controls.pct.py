@@ -419,7 +419,7 @@ async def test_cancel_all_epochs_control():
         await net.run_until_blocked()
 
         # Verify no running epochs
-        assert len(net.get_running_epochs()) == 0
+        assert len(net._running_epochs) == 0
 
 # %%
 #|export

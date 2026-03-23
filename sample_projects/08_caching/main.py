@@ -9,7 +9,7 @@ This example showcases:
 6. Cache modes — OUTPUT_ONLY and INPUT_ONLY
 7. Per-node cache overrides
 8. Version-based cache invalidation
-9. NodeInfo cache helpers
+9. Per-node cache access
 10. EpochRecord.was_cache_hit tracking
 
 Pipeline:  fetch_data -> process -> format_report -> [output queue]
@@ -130,19 +130,19 @@ async def main():
 
         # Inspect cached data for fetch_data
         print("Cached input salvos for 'fetch_data':")
-        for i, salvo in enumerate(net.get_cached_input_salvos("fetch_data")):
+        for i, salvo in enumerate(net.cache.input_salvos("fetch_data")):
             print(f"  Entry {i}: {salvo}")
 
         print()
         print("Cached output salvos for 'fetch_data':")
-        for i, salvo in enumerate(net.get_cached_output_salvos("fetch_data")):
+        for i, salvo in enumerate(net.cache.output_salvos("fetch_data")):
             source = salvo.get("out", [{}])[0].get("source", "?") if salvo.get("out") else "?"
             print(f"  Entry {i}: {{records: {len(salvo.get('out', [[]])[0].get('records', []))} items, source: {source}}}")
 
         # Lookup specific cached output
         print()
         print("Looking up cached output for specific input:")
-        result = net.get_cached_output_for_input(
+        result = net.cache.output_for_input(
             "fetch_data",
             {"url": ["https://example.com/data"]},
         )
@@ -171,7 +171,7 @@ async def main():
         await run_pipeline(net, "https://example.com/other")
         await run_pipeline(net, "https://example.com/data")  # cache hit
 
-        stats = net.cache_stats()
+        stats = net.cache.stats()
         for node_name, node_stats in sorted(stats.items()):
             print(f"  {node_name}:")
             print(f"    Cached entries: {node_stats['entry_count']}")
@@ -204,7 +204,7 @@ async def main():
         print(f"After 2 cached runs: fetch_data called {get_call_count('fetch_data')}x")
 
         # Clear only the first URL's cache
-        net.clear_cached_output_for_input(
+        net.cache.clear_for_input(
             "fetch_data",
             {"url": ["https://example.com/data"]},
         )
@@ -246,7 +246,7 @@ async def main():
         await run_pipeline(net, "https://example.com/data")  # executes again (OUTPUT_ONLY)
         print(f"fetch_data called: {get_call_count('fetch_data')}x  (both runs executed)")
 
-        outputs = net.get_cached_output_salvos("process")
+        outputs = net.cache.output_salvos("process")
         print(f"Recorded output salvos for 'process': {len(outputs)}")
         for i, out in enumerate(outputs):
             mean = out.get("out", [{}])[0].get("mean", "?") if out.get("out") else "?"
@@ -278,7 +278,7 @@ async def main():
         await run_pipeline(net, "https://example.com/data")
         await run_pipeline(net, "https://example.com/other")
 
-        inputs = net.get_cached_input_salvos("process")
+        inputs = net.cache.input_salvos("process")
         print(f"Recorded input salvos for 'process': {len(inputs)}")
         for i, inp in enumerate(inputs):
             source = inp.get("data", [{}])[0].get("source", "?") if inp.get("data") else "?"
@@ -334,14 +334,14 @@ async def main():
         print(f"Version 1, run 2: fetch_data called {get_call_count('fetch_data')}x  (cached under v1)")
 
     # ==================================================================
-    # 9. NODEINFO CACHE HELPERS
+    # 9. PER-NODE CACHE ACCESS
     # ==================================================================
     print()
     print("=" * 60)
-    print("9. NODEINFO CACHE HELPERS")
+    print("9. PER-NODE CACHE ACCESS")
     print("=" * 60)
     print()
-    print("Access cache data through the node info API.")
+    print("Access cache data through the net.cache API.")
     print()
 
     config = NetConfig.from_file(config_path)
@@ -354,19 +354,17 @@ async def main():
     async with Net(config) as net:
         await run_pipeline(net, "https://example.com/data")
 
-        fetch = net.nodes["fetch_data"]
-        print(f"fetch_data.is_cache_enabled: {fetch.is_cache_enabled}")
-        print(f"fetch_data.cache_stats: {fetch.cache_stats}")
-        print(f"fetch_data.cached_entries: {len(fetch.cached_entries)} entries")
+        print(f"fetch_data.is_cache_enabled: {net.cache.is_enabled('fetch_data')}")
+        print(f"fetch_data.cache_stats: {net.cache.stats('fetch_data')}")
+        print(f"fetch_data.cached_entries: {len(net.cache.entries('fetch_data'))} entries")
 
-        process_node = net.nodes["process"]
-        print(f"\nprocess.cached_input_salvos: {len(process_node.cached_input_salvos)} entries")
-        print(f"process.cached_output_salvos: {len(process_node.cached_output_salvos)} entries")
+        print(f"\nprocess.cached_input_salvos: {len(net.cache.input_salvos('process'))} entries")
+        print(f"process.cached_output_salvos: {len(net.cache.output_salvos('process'))} entries")
 
-        # Look up via NodeInfo
-        result = fetch.get_cached_output_for_input({"url": ["https://example.com/data"]})
+        # Look up cached output for specific input
+        result = net.cache.output_for_input("fetch_data", {"url": ["https://example.com/data"]})
         if result:
-            print(f"\nLookup via NodeInfo succeeded: cached at {result.cached_at.strftime('%H:%M:%S')}")
+            print(f"\nCache lookup succeeded: cached at {result.cached_at.strftime('%H:%M:%S')}")
 
     # ==================================================================
     # 10. EPOCH RECORD TRACKING

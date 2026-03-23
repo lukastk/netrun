@@ -90,7 +90,7 @@ async def main():
         print("=" * 60)
         print("NODE LOGS")
         print("=" * 60)
-        net.print_all_logs(include_timestamps=False)
+        net.logs.print_all(include_timestamps=False)
 
 
 if __name__ == "__main__":

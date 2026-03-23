@@ -129,7 +129,7 @@ async def main():
 
         print()
         print("Node Logs:")
-        net.print_all_logs()
+        net.logs.print_all()
 
         await net.request_pool_shutdown("remote")
 

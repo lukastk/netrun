@@ -34,8 +34,6 @@ from netrun.net._net import (
     MaxEpochsExceeded,
     EpochError,
     EpochRecord,
-    NodeInfo,
-    EdgeInfo,
     create_net_func_preprocessor,
 )
 from netrun.net.config import (
@@ -1206,8 +1204,8 @@ def test_net_creation():
     net = Net(config)
 
     assert net.config == config
-    assert net.graph is not None
-    assert net.netsim is not None
+    assert net._graph is not None
+    assert net._netsim is not None
     assert net.started is False
     assert net.paused is False
 
@@ -1230,13 +1228,13 @@ test_net_config_property()
 # %%
 #|export
 def test_net_graph_property():
-    """Test Net graph property returns netrun_sim.Graph."""
+    """Test Net _graph property returns netrun_sim.Graph."""
     import netrun_sim
 
     config = create_simple_net_config()
     net = Net(config)
 
-    assert isinstance(net.graph, netrun_sim.Graph)
+    assert isinstance(net._graph, netrun_sim.Graph)
 
 # %%
 test_net_graph_property()
@@ -1413,23 +1411,22 @@ async def test_net_get_startable_epochs():
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_net_get_running_epochs():
-    """Test Net.get_running_epochs returns list."""
+async def test_net_running_epochs_empty():
+    """Test Net._running_epochs is empty initially."""
     config = create_simple_net_config()
 
     async with Net(config) as net:
-        running = net.get_running_epochs()
-        assert isinstance(running, list)
+        running = net._running_epochs
         assert len(running) == 0  # No epochs running initially
 
 # %%
 #|export
 def test_net_get_epoch_log_empty():
-    """Test get_epoch_log returns empty list for unknown epoch."""
+    """Test logs.for_epoch returns empty list for unknown epoch."""
     config = create_simple_net_config()
     net = Net(config)
 
-    log = net.get_epoch_log("nonexistent_epoch")
+    log = net.logs.for_epoch("nonexistent_epoch")
     assert log == []
 
 # %%
@@ -1438,11 +1435,11 @@ test_net_get_epoch_log_empty()
 # %%
 #|export
 def test_net_get_node_logs_empty():
-    """Test get_node_logs returns empty list for unknown node."""
+    """Test logs.for_node returns empty list for unknown node."""
     config = create_simple_net_config()
     net = Net(config)
 
-    log = net.get_node_logs("NonexistentNode")
+    log = net.logs.for_node("NonexistentNode")
     assert log == []
 
 # %%
@@ -1470,7 +1467,7 @@ def test_net_handle_print_buffer():
     # Manually call _handle_print_buffer (normally called when receiving from worker)
     net._handle_print_buffer("epoch_123", buffer)
 
-    log = net.get_epoch_log("epoch_123")
+    log = net.logs.for_epoch("epoch_123")
     assert len(log) == 2
     assert log[0][1] == "Line 1\n"
     assert log[1][1] == "Line 2\n"
@@ -2070,14 +2067,8 @@ async def test_epoch_execution_simple_node():
         # Get the created packet ID from netsim
         # For this test, we'll manually place the packet
 
-        # Run until blocked to trigger epoch creation
+        # Run until blocked to trigger epoch creation and execute epochs
         await net.run_until_blocked()
-
-        # Execute any startable epochs
-        results = await net.execute_startable_epochs()
-
-        # Check execution happened (may be empty if no epochs were startable)
-        # The key is that the infrastructure works
 
 # %%
 #|export
@@ -2754,575 +2745,6 @@ def test_net_from_file_unsupported_format(tmp_path):
 
     with pytest.raises(ValueError, match="Unsupported"):
         Net.from_file(bad_file)
-
-# %% [markdown]
-# ## NodeInfo and EdgeInfo Tests
-
-# %%
-#|export
-def test_net_nodes_property():
-    """Test Net.nodes returns dict of NodeInfo objects."""
-    config = NetConfig(
-        pools={},
-        graph=GraphConfig(
-            nodes=[
-                NodeConfig(name="Source", in_ports={"in": PortConfig()}, out_ports={"out": PortConfig()}),
-                NodeConfig(name="Sink", in_ports={"in": PortConfig()}),
-            ],
-            edges=[EdgeConfig(source_node="Source", source_port="out", target_node="Sink", target_port="in")],
-        ),
-    )
-    net = Net(config)
-
-    nodes = net.nodes
-    assert isinstance(nodes, dict)
-    assert "Source" in nodes
-    assert "Sink" in nodes
-    assert isinstance(nodes["Source"], NodeInfo)
-    assert isinstance(nodes["Sink"], NodeInfo)
-
-# %%
-test_net_nodes_property()
-
-# %%
-#|export
-def test_net_edges_property():
-    """Test Net.edges returns list of EdgeInfo objects."""
-    config = NetConfig(
-        pools={},
-        graph=GraphConfig(
-            nodes=[
-                NodeConfig(name="Source", out_ports={"out": PortConfig()}),
-                NodeConfig(name="Sink", in_ports={"in": PortConfig()}),
-            ],
-            edges=[EdgeConfig(source_node="Source", source_port="out", target_node="Sink", target_port="in")],
-        ),
-    )
-    net = Net(config)
-
-    edges = net.edges
-    assert isinstance(edges, list)
-    assert len(edges) == 1
-    assert isinstance(edges[0], EdgeInfo)
-
-# %%
-test_net_edges_property()
-
-# %%
-#|export
-def test_node_info_name_and_cfg():
-    """Test NodeInfo.name and NodeInfo.cfg properties."""
-    config = NetConfig(
-        pools={},
-        graph=GraphConfig(
-            nodes=[NodeConfig(name="TestNode", in_ports={"in": PortConfig()}, out_ports={"out": PortConfig()})],
-        ),
-    )
-    net = Net(config)
-
-    node_info = net.nodes["TestNode"]
-    assert node_info.name == "TestNode"
-
-    cfg = node_info.cfg
-    assert cfg.name == "TestNode"
-    assert "in" in cfg.in_ports
-    assert "out" in cfg.out_ports
-
-# %%
-test_node_info_name_and_cfg()
-
-# %%
-#|export
-def test_node_info_port_names():
-    """Test NodeInfo.in_port_names and out_port_names."""
-    config = NetConfig(
-        pools={},
-        graph=GraphConfig(
-            nodes=[NodeConfig(
-                name="TestNode",
-                in_ports={"input1": PortConfig(), "input2": PortConfig()},
-                out_ports={"output1": PortConfig()},
-            )],
-        ),
-    )
-    net = Net(config)
-
-    node_info = net.nodes["TestNode"]
-    assert set(node_info.in_port_names) == {"input1", "input2"}
-    assert node_info.out_port_names == ["output1"]
-
-# %%
-test_node_info_port_names()
-
-# %%
-#|export
-def test_node_info_epoch_properties_empty():
-    """Test NodeInfo epoch properties when no epochs exist."""
-    config = NetConfig(
-        pools={},
-        graph=GraphConfig(nodes=[NodeConfig(name="TestNode", in_ports={"in": PortConfig()})]),
-    )
-    net = Net(config)
-
-    node_info = net.nodes["TestNode"]
-    assert node_info.epochs == []
-    assert node_info.running_epochs == []
-    assert node_info.startable_epochs == []
-    assert node_info.epoch_count == 0
-    assert node_info.is_busy is False
-
-# %%
-test_node_info_epoch_properties_empty()
-
-# %%
-#|export
-@pytest.mark.asyncio
-async def test_node_info_inject_packets():
-    """Test NodeInfo.inject_packets injects packets into input port."""
-    config = NetConfig(
-        pools={},
-        graph=GraphConfig(nodes=[NodeConfig(name="TestNode", in_ports={"in": PortConfig()})]),
-    )
-    net = Net(config)
-
-    node_info = net.nodes["TestNode"]
-    packet_ids = node_info.inject_packets("in", [1, 2, 3])
-
-    assert len(packet_ids) == 3
-    # Run step to trigger salvo (without auto-starting epochs)
-    await net.run_step(auto_start_epochs=False)
-    # Packets should be in a startable epoch now
-    assert len(node_info.startable_epochs) == 1
-
-# %%
-asyncio.get_event_loop().run_until_complete(test_node_info_inject_packets())
-
-# %%
-#|export
-@pytest.mark.asyncio
-async def test_node_info_packets_at_input_port():
-    """Test NodeInfo.packets_at_input_port returns packets waiting at port."""
-    config = NetConfig(
-        pools={},
-        graph=GraphConfig(nodes=[NodeConfig(name="TestNode", in_ports={"in": PortConfig()})]),
-    )
-    net = Net(config)
-
-    node_info = net.nodes["TestNode"]
-    # Inject packets
-    node_info.inject_packets("in", [1, 2])
-
-    # Check packets at port before run_step
-    packets = node_info.packets_at_input_port("in")
-    assert len(packets) == 2
-
-    # After run_step (without auto-starting epochs), packets move into epoch
-    await net.run_step(auto_start_epochs=False)
-    packets = node_info.packets_at_input_port("in")
-    assert len(packets) == 0
-
-# %%
-asyncio.get_event_loop().run_until_complete(test_node_info_packets_at_input_port())
-
-# %%
-#|export
-@pytest.mark.asyncio
-async def test_node_info_packets_at_all_input_ports():
-    """Test NodeInfo.packets_at_all_input_ports returns dict of all ports."""
-    config = NetConfig(
-        pools={},
-        graph=GraphConfig(nodes=[NodeConfig(
-            name="TestNode",
-            in_ports={"in1": PortConfig(), "in2": PortConfig()},
-        )]),
-    )
-    net = Net(config)
-
-    node_info = net.nodes["TestNode"]
-    node_info.inject_packets("in1", [1])
-    node_info.inject_packets("in2", [2, 3])
-
-    all_packets = node_info.packets_at_all_input_ports()
-    assert len(all_packets["in1"]) == 1
-    assert len(all_packets["in2"]) == 2
-
-# %%
-asyncio.get_event_loop().run_until_complete(test_node_info_packets_at_all_input_ports())
-
-# %%
-#|export
-@pytest.mark.asyncio
-async def test_node_info_packets_in_epoch():
-    """Test NodeInfo.packets_in_epoch returns packets inside an epoch."""
-    config = NetConfig(
-        pools={},
-        graph=GraphConfig(nodes=[NodeConfig(name="TestNode", in_ports={"in": PortConfig()})]),
-    )
-    net = Net(config)
-
-    node_info = net.nodes["TestNode"]
-    node_info.inject_packets("in", [1, 2, 3])
-
-    # Trigger salvo (without auto-starting epochs)
-    await net.run_step(auto_start_epochs=False)
-
-    # Get the startable epoch
-    epochs = node_info.startable_epochs
-    assert len(epochs) == 1
-
-    # Check packets in epoch
-    packets = node_info.packets_in_epoch(epochs[0].id)
-    assert len(packets) == 3
-
-# %%
-asyncio.get_event_loop().run_until_complete(test_node_info_packets_in_epoch())
-
-# %%
-#|export
-def test_node_info_incoming_outgoing_edges():
-    """Test NodeInfo.incoming_edges and outgoing_edges."""
-    config = NetConfig(
-        pools={},
-        graph=GraphConfig(
-            nodes=[
-                NodeConfig(name="Source", out_ports={"out": PortConfig()}),
-                NodeConfig(name="Middle", in_ports={"in": PortConfig()}, out_ports={"out": PortConfig()}),
-                NodeConfig(name="Sink", in_ports={"in": PortConfig()}),
-            ],
-            edges=[
-                EdgeConfig(source_node="Source", source_port="out", target_node="Middle", target_port="in"),
-                EdgeConfig(source_node="Middle", source_port="out", target_node="Sink", target_port="in"),
-            ],
-        ),
-    )
-    net = Net(config)
-
-    source_info = net.nodes["Source"]
-    middle_info = net.nodes["Middle"]
-    sink_info = net.nodes["Sink"]
-
-    assert len(source_info.incoming_edges) == 0
-    assert len(source_info.outgoing_edges) == 1
-
-    assert len(middle_info.incoming_edges) == 1
-    assert len(middle_info.outgoing_edges) == 1
-
-    assert len(sink_info.incoming_edges) == 1
-    assert len(sink_info.outgoing_edges) == 0
-
-# %%
-test_node_info_incoming_outgoing_edges()
-
-# %%
-#|export
-def test_node_info_execution_config():
-    """Test NodeInfo.execution_config and pools properties."""
-    config = NetConfig(
-        pools={"main_pool": PoolConfig(id="main_pool", spec=MainPoolConfig())},
-        graph=GraphConfig(
-            nodes=[
-                NodeConfig(
-                    name="WithExec",
-                    execution_config=NodeExecutionConfig(pools=["main_pool"]),
-                ),
-                NodeConfig(name="WithoutExec"),
-            ],
-        ),
-    )
-    net = Net(config)
-
-    with_exec = net.nodes["WithExec"]
-    without_exec = net.nodes["WithoutExec"]
-
-    assert with_exec.execution_config is not None
-    assert with_exec.pools == ["main_pool"]
-
-    assert without_exec.execution_config is None
-    assert without_exec.pools == []
-
-# %%
-test_node_info_execution_config()
-
-# %%
-#|export
-def test_edge_info_properties():
-    """Test EdgeInfo source/target properties."""
-    config = NetConfig(
-        pools={},
-        graph=GraphConfig(
-            nodes=[
-                NodeConfig(name="Source", out_ports={"out": PortConfig()}),
-                NodeConfig(name="Sink", in_ports={"in": PortConfig()}),
-            ],
-            edges=[EdgeConfig(source_node="Source", source_port="out", target_node="Sink", target_port="in")],
-        ),
-    )
-    net = Net(config)
-
-    edge_info = net.edges[0]
-    assert edge_info.source_node == "Source"
-    assert edge_info.source_port == "out"
-    assert edge_info.target_node == "Sink"
-    assert edge_info.target_port == "in"
-    assert edge_info.source == ("Source", "out")
-    assert edge_info.target == ("Sink", "in")
-
-# %%
-test_edge_info_properties()
-
-# %%
-#|export
-def test_edge_info_cfg():
-    """Test EdgeInfo.cfg returns edge configuration."""
-    config = NetConfig(
-        pools={},
-        graph=GraphConfig(
-            nodes=[
-                NodeConfig(name="Source", out_ports={"out": PortConfig()}),
-                NodeConfig(name="Sink", in_ports={"in": PortConfig()}),
-            ],
-            edges=[EdgeConfig(source_node="Source", source_port="out", target_node="Sink", target_port="in")],
-        ),
-    )
-    net = Net(config)
-
-    edge_info = net.edges[0]
-    cfg = edge_info.cfg
-
-    assert cfg.get_source().node_name == "Source"
-    assert cfg.get_source().port_name == "out"
-    assert cfg.get_target().node_name == "Sink"
-    assert cfg.get_target().port_name == "in"
-
-# %%
-test_edge_info_cfg()
-
-# %%
-#|export
-def test_edge_info_packet_tracking_empty():
-    """Test EdgeInfo packet properties when no packets on edge."""
-    config = NetConfig(
-        pools={},
-        graph=GraphConfig(
-            nodes=[
-                NodeConfig(name="Source", out_ports={"out": PortConfig()}),
-                NodeConfig(name="Sink", in_ports={"in": PortConfig()}),
-            ],
-            edges=[EdgeConfig(source_node="Source", source_port="out", target_node="Sink", target_port="in")],
-        ),
-    )
-    net = Net(config)
-
-    edge_info = net.edges[0]
-    assert edge_info.has_packets is False
-    assert edge_info.packet_count == 0
-    assert edge_info.packets_in_transit == []
-
-# %%
-test_edge_info_packet_tracking_empty()
-
-# %%
-#|export
-def test_edge_info_packet_tracking_with_packets():
-    """Test EdgeInfo packet tracking when packets are on edge."""
-    import netrun_sim
-
-    config = NetConfig(
-        pools={},
-        graph=GraphConfig(
-            nodes=[
-                NodeConfig(name="Source", out_ports={"out": PortConfig()}),
-                NodeConfig(name="Sink", in_ports={"in": PortConfig()}),
-            ],
-            edges=[EdgeConfig(source_node="Source", source_port="out", target_node="Sink", target_port="in")],
-        ),
-    )
-    net = Net(config)
-
-    # Create packet and place on edge
-    packet_id = net.create_external_packet({"value": 42})
-    edge_obj = list(net.graph.edges())[0]
-    net._netsim.do_action(netrun_sim.NetAction.transport_packet_to_location(
-        packet_id,
-        netrun_sim.PacketLocation.edge(edge_obj),
-    ))
-
-    edge_info = net.edges[0]
-    assert edge_info.has_packets is True
-    assert edge_info.packet_count == 1
-    assert len(edge_info.packets_in_transit) == 1
-    assert edge_info.packets_in_transit[0].id == packet_id
-
-# %%
-test_edge_info_packet_tracking_with_packets()
-
-# %%
-#|export
-def test_edge_info_node_info_methods():
-    """Test EdgeInfo.source_node_info and target_node_info methods."""
-    config = NetConfig(
-        pools={},
-        graph=GraphConfig(
-            nodes=[
-                NodeConfig(name="Source", out_ports={"out": PortConfig()}),
-                NodeConfig(name="Sink", in_ports={"in": PortConfig()}),
-            ],
-            edges=[EdgeConfig(source_node="Source", source_port="out", target_node="Sink", target_port="in")],
-        ),
-    )
-    net = Net(config)
-
-    edge_info = net.edges[0]
-
-    source_info = edge_info.source_node_info()
-    assert isinstance(source_info, NodeInfo)
-    assert source_info.name == "Source"
-
-    target_info = edge_info.target_node_info()
-    assert isinstance(target_info, NodeInfo)
-    assert target_info.name == "Sink"
-
-# %%
-test_edge_info_node_info_methods()
-
-# %%
-#|export
-def test_node_info_repr():
-    """Test NodeInfo.__repr__ returns meaningful string."""
-    config = NetConfig(
-        pools={},
-        graph=GraphConfig(nodes=[NodeConfig(name="TestNode")]),
-    )
-    net = Net(config)
-
-    node_info = net.nodes["TestNode"]
-    assert "TestNode" in repr(node_info)
-    assert "NodeInfo" in repr(node_info)
-
-# %%
-test_node_info_repr()
-
-# %%
-#|export
-def test_edge_info_repr():
-    """Test EdgeInfo.__repr__ returns meaningful string."""
-    config = NetConfig(
-        pools={},
-        graph=GraphConfig(
-            nodes=[
-                NodeConfig(name="Source", out_ports={"out": PortConfig()}),
-                NodeConfig(name="Sink", in_ports={"in": PortConfig()}),
-            ],
-            edges=[EdgeConfig(source_node="Source", source_port="out", target_node="Sink", target_port="in")],
-        ),
-    )
-    net = Net(config)
-
-    edge_info = net.edges[0]
-    repr_str = repr(edge_info)
-    assert "Source" in repr_str
-    assert "Sink" in repr_str
-    assert "EdgeInfo" in repr_str
-
-# %%
-test_edge_info_repr()
-
-# %%
-#|export
-def test_node_info_inject():
-    """Test NodeInfo.inject injects packets to multiple ports with plural=True."""
-    config = NetConfig(
-        pools={},
-        graph=GraphConfig(nodes=[NodeConfig(
-            name="TestNode",
-            in_ports={"in1": PortConfig(), "in2": PortConfig()},
-        )]),
-    )
-    net = Net(config)
-
-    node_info = net.nodes["TestNode"]
-    result = node_info.inject({
-        "in1": [1, 2, 3],
-        "in2": ["a", "b"],
-    }, plural=True)
-
-    # Check return value
-    assert "in1" in result
-    assert "in2" in result
-    assert len(result["in1"]) == 3
-    assert len(result["in2"]) == 2
-
-    # Verify packets are at ports
-    assert len(node_info.packets_at_input_port("in1")) == 3
-    assert len(node_info.packets_at_input_port("in2")) == 2
-
-# %%
-test_node_info_inject()
-
-# %%
-#|export
-def test_node_info_inject_packet_single():
-    """Test NodeInfo.inject_packet returns single packet ID."""
-    config = NetConfig(
-        pools={},
-        graph=GraphConfig(nodes=[NodeConfig(name="TestNode", in_ports={"in": PortConfig()})]),
-    )
-    net = Net(config)
-
-    node_info = net.nodes["TestNode"]
-    packet_id = node_info.inject_packet("in", {"value": 42})
-
-    # Should return a string, not a list
-    assert isinstance(packet_id, str)
-    assert len(node_info.packets_at_input_port("in")) == 1
-
-# %%
-test_node_info_inject_packet_single()
-
-# %%
-#|export
-def test_node_info_inject_default():
-    """Test NodeInfo.inject default (plural=False) treats each value as single packet."""
-    config = NetConfig(
-        pools={},
-        graph=GraphConfig(nodes=[NodeConfig(
-            name="TestNode",
-            in_ports={"in1": PortConfig(), "in2": PortConfig()},
-        )]),
-    )
-    net = Net(config)
-
-    node_info = net.nodes["TestNode"]
-    result = node_info.inject({
-        "in1": [1, 2, 3],  # This list becomes a single packet value
-        "in2": "hello",    # Single string value
-    })  # plural=False is default
-
-    # Each port should have exactly 1 packet
-    assert len(result["in1"]) == 1
-    assert len(result["in2"]) == 1
-    assert len(node_info.packets_at_input_port("in1")) == 1
-    assert len(node_info.packets_at_input_port("in2")) == 1
-
-# %%
-test_node_info_inject_default()
-
-# %%
-#|export
-def test_node_info_inject_plural_true_requires_list():
-    """Test NodeInfo.inject with plural=True requires list values."""
-    config = NetConfig(
-        pools={},
-        graph=GraphConfig(nodes=[NodeConfig(name="TestNode", in_ports={"in": PortConfig()})]),
-    )
-    net = Net(config)
-
-    node_info = net.nodes["TestNode"]
-    with pytest.raises(ValueError, match="must be a list"):
-        node_info.inject({"in": "not a list"}, plural=True)
-
-# %%
-test_node_info_inject_plural_true_requires_list()
 
 # %% [markdown]
 # ## Exception Propagation Tests
@@ -6669,47 +6091,6 @@ asyncio.get_event_loop().run_until_complete(test_is_blocked_with_disabled_node()
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_disabled_node_nodeinfo_api():
-    """NodeInfo.enabled, enable(), disable() convenience methods."""
-    def node_func(ctx, packets):
-        for port_name, pkt_ids in packets.items():
-            for pid in pkt_ids:
-                ctx.consume_packet(pid)
-
-    config = NetConfig(
-        pools={"main": PoolConfig(spec=MainPoolConfig())},
-        graph=GraphConfig(
-            nodes=[
-                NodeConfig(
-                    name="A",
-                    in_ports={"in": PortConfig()},
-                    execution_config=NodeExecutionConfig(
-                        exec_node_func=node_func,
-                    ),
-                ),
-            ],
-            edges=[],
-        ),
-    )
-
-    async with Net(config) as net:
-        info = net.nodes["A"]
-        assert info.enabled is True
-
-        info.disable()
-        assert info.enabled is False
-        assert not net.is_node_enabled("A")
-
-        info.enable()
-        assert info.enabled is True
-        assert net.is_node_enabled("A")
-
-# %%
-asyncio.get_event_loop().run_until_complete(test_disabled_node_nodeinfo_api())
-
-# %%
-#|export
-@pytest.mark.asyncio
 async def test_enable_disable_unknown_node():
     """enable_node/disable_node/is_node_enabled raise KeyError for unknown nodes."""
     config = NetConfig(
@@ -6888,8 +6269,8 @@ asyncio.get_event_loop().run_until_complete(test_on_epoch_end_callback())
 # %%
 #|export
 @pytest.mark.asyncio
-async def test_node_info_epoch_callbacks():
-    """NodeInfo callback only fires for that specific node."""
+async def test_node_scoped_epoch_callbacks():
+    """Node-scoped callback only fires for that specific node."""
     calls = []
 
     def on_start(node_name, epoch_id):
@@ -6950,7 +6331,7 @@ async def test_node_info_epoch_callbacks():
 
     async with Net(config) as net:
         # Register callback only for node B
-        net.nodes["B"].on_epoch_start(on_start)
+        net.on_epoch_start(on_start, node="B")
         net.inject_data("A", "in", [1])
         await net.run_until_blocked()
 
@@ -6958,7 +6339,7 @@ async def test_node_info_epoch_callbacks():
         assert calls == ["B"]
 
 # %%
-asyncio.get_event_loop().run_until_complete(test_node_info_epoch_callbacks())
+asyncio.get_event_loop().run_until_complete(test_node_scoped_epoch_callbacks())
 
 # %%
 #|export
