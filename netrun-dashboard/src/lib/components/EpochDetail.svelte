@@ -9,6 +9,8 @@
 	let { epoch }: Props = $props();
 
 	let expandedLogKey = $state<string | null>(null);
+	let actionsOpen = $state(false);
+	let expandedActionIndex = $state<number | null>(null);
 </script>
 
 <div class="epoch-detail">
@@ -95,6 +97,47 @@
 					</div>
 				{/if}
 			{/each}
+		</div>
+	{/if}
+	{#if epoch.net_actions.length > 0}
+		<div class="actions-section">
+			<!-- svelte-ignore a11y_no_static_element_interactions -->
+			<div class="section-label clickable" onclick={() => (actionsOpen = !actionsOpen)}>
+				<span class="chevron" class:open={actionsOpen}>&#9656;</span>
+				Net Actions ({epoch.net_actions.length})
+			</div>
+			{#if actionsOpen}
+				{#each epoch.net_actions as action, ai}
+					<div
+						class="action-row"
+						class:expandable={action.events.length > 0 || Object.keys(action.action_detail).length > 0}
+						onclick={() => expandedActionIndex = expandedActionIndex === ai ? null : ai}
+					>
+						<span class="mono muted">{formatTimeMs(action.timestamp)}</span>
+						<span class="action-kind">{action.action_kind}</span>
+						{#if action.events.length > 0}
+							<span class="muted">{action.events.length} events</span>
+						{/if}
+					</div>
+					{#if expandedActionIndex === ai}
+						<div class="action-detail">
+							{#if Object.keys(action.action_detail).length > 0}
+								{#each Object.entries(action.action_detail) as [k, v]}
+									<div class="kv"><span class="field-key">{k}</span> = {formatFieldValue(v)}</div>
+								{/each}
+							{/if}
+							{#each action.events as event}
+								<div class="event-row">
+									<span class="event-kind">{event.kind}</span>
+									{#each Object.entries(event.detail) as [k, v]}
+										<span class="kv"><span class="field-key">{k}</span>={formatFieldValue(v)}</span>
+									{/each}
+								</div>
+							{/each}
+						</div>
+					{/if}
+				{/each}
+			{/if}
 		</div>
 	{/if}
 </div>
@@ -223,6 +266,72 @@
 	}
 
 	.field-value {
+		color: var(--text-primary);
+	}
+
+	.actions-section {
+		margin-top: 8px;
+	}
+
+	.clickable {
+		cursor: pointer;
+		user-select: none;
+	}
+
+	.clickable:hover {
+		color: var(--text-primary);
+	}
+
+	.chevron {
+		display: inline-block;
+		transition: transform 0.15s;
+	}
+
+	.chevron.open {
+		transform: rotate(90deg);
+	}
+
+	.action-row {
+		display: flex;
+		gap: 6px;
+		padding: 2px 0;
+		font-size: 10px;
+		align-items: baseline;
+	}
+
+	.action-row.expandable {
+		cursor: pointer;
+	}
+
+	.action-row.expandable:hover {
+		background: var(--bg-tertiary);
+	}
+
+	.action-kind {
+		font-weight: 600;
+		color: var(--accent-color);
+	}
+
+	.action-detail {
+		padding: 2px 0 4px 16px;
+		border-left: 2px solid var(--border-color);
+		margin-left: 4px;
+		font-size: 10px;
+	}
+
+	.kv {
+		padding: 1px 0;
+	}
+
+	.event-row {
+		display: flex;
+		gap: 6px;
+		padding: 1px 0;
+		flex-wrap: wrap;
+	}
+
+	.event-kind {
+		font-weight: 600;
 		color: var(--text-primary);
 	}
 </style>

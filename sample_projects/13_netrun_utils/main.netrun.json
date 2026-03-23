@@ -40,6 +40,7 @@
     }
   },
   "retain_epoch_logs": true,
+  "retain_net_action_logs": true,
   "graph": {
     "nodes": [
       {

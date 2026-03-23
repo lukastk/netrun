@@ -188,5 +188,5 @@ Button in the status bar to pause/resume the net.
 - [x] 4c (node badges showing epoch count)
 - [x] 4d (tooltip on hover with node info)
 - [x] 5e (pool/worker topology tab)
-- 5d (net action log — needs backend endpoint)
-- 2g (net action trace per epoch — needs backend endpoint)
+- [x] 5d (net action log — live via WS)
+- [x] 2g (net action trace per epoch — in epoch detail)

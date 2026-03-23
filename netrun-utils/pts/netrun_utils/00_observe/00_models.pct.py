@@ -58,6 +58,22 @@ class StructuredLogEntry(BaseModel):
     fields: dict[str, Any] = {}
 
 
+class NetActionEventEntry(BaseModel):
+    """A single event produced by a net action."""
+    timestamp: str
+    kind: str
+    detail: dict[str, Any] = {}
+
+
+class NetActionEntry(BaseModel):
+    """A single net action log entry."""
+    timestamp: str
+    action_kind: str
+    action_detail: dict[str, Any] = {}
+    epoch_id: str | None = None
+    events: list[NetActionEventEntry] = []
+
+
 class EpochInfo(BaseModel):
     """Information about an epoch (running, completed, or cancelled)."""
     epoch_id: str
@@ -84,6 +100,7 @@ class EpochInfo(BaseModel):
     orphaned_packet_count: int = 0
     destroyed_packet_count: int = 0
     node_log_entries: list[StructuredLogEntry] = []
+    net_actions: list[NetActionEntry] = []
 
 
 class LogEntry(BaseModel):

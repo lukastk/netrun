@@ -142,6 +142,7 @@ class ObserveServer:
                         "edges": [e.model_dump() for e in obs.get_edges()],
                         "epochs": [e.model_dump() for e in obs.get_epoch_logs()],
                         "logs": [l.model_dump() for l in obs.get_all_logs()],
+                        "net_actions": [a.model_dump() for a in obs.get_net_actions()],
                         "dead_letters": obs.get_dead_letter_queue(),
                         "output_queues": obs.get_output_queue_counts(),
                     }

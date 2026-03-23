@@ -28,12 +28,32 @@ from netrun_utils.observe.models import (
     EdgeStatus,
     EpochInfo,
     StructuredLogEntry,
+    NetActionEntry,
+    NetActionEventEntry,
     LogEntry,
     ControlResponse,
 )
 
 # %%
 #|export
+def _action_log_to_entry(action) -> NetActionEntry:
+    """Convert a NetActionLog to a NetActionEntry model."""
+    events = []
+    for event in (action.events or []):
+        events.append(NetActionEventEntry(
+            timestamp=event.timestamp.isoformat(),
+            kind=event.kind,
+            detail=event.detail or {},
+        ))
+    return NetActionEntry(
+        timestamp=action.timestamp.isoformat(),
+        action_kind=action.action_kind,
+        action_detail=action.action_detail or {},
+        epoch_id=action.epoch_id,
+        events=events,
+    )
+
+
 def _epoch_state_to_str(state) -> str:
     """Convert a netrun_sim EpochState enum to a string."""
     s = str(state).lower()
@@ -88,6 +108,7 @@ def _epoch_log_to_info(log: EpochLog) -> EpochInfo:
         orphaned_packet_count=log.orphaned_packet_count,
         destroyed_packet_count=log.destroyed_packet_count,
         node_log_entries=structured_logs,
+        net_actions=[_action_log_to_entry(a) for a in (log.net_actions or [])],
     )
 
 
@@ -274,6 +295,10 @@ class NetObserver:
             return ControlResponse(ok=False, message=str(e))
 
     # --- Net-level data ---
+
+    def get_net_actions(self) -> list[NetActionEntry]:
+        """Get all retained net action log entries."""
+        return [_action_log_to_entry(a) for a in self._net.net_action_log]
 
     def get_dead_letter_queue(self) -> list[dict]:
         """Get dead letter queue entries."""

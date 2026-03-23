@@ -39,6 +39,22 @@ export interface EdgeStatus {
 	packet_count: number;
 }
 
+/** Mirrors netrun_utils.observe.models.NetActionEventEntry */
+export interface NetActionEventEntry {
+	timestamp: string;
+	kind: string;
+	detail: Record<string, unknown>;
+}
+
+/** Mirrors netrun_utils.observe.models.NetActionEntry */
+export interface NetActionEntry {
+	timestamp: string;
+	action_kind: string;
+	action_detail: Record<string, unknown>;
+	epoch_id: string | null;
+	events: NetActionEventEntry[];
+}
+
 /** Mirrors netrun_utils.observe.models.StructuredLogEntry */
 export interface StructuredLogEntry {
 	timestamp: string;
@@ -73,6 +89,7 @@ export interface EpochInfo {
 	orphaned_packet_count: number;
 	destroyed_packet_count: number;
 	node_log_entries: StructuredLogEntry[];
+	net_actions: NetActionEntry[];
 }
 
 /** Mirrors netrun_utils.observe.models.LogEntry */
@@ -99,6 +116,7 @@ export interface ObserveState {
 	edges: EdgeStatus[];
 	epochs: EpochInfo[];
 	logs: LogEntry[];
+	net_actions: NetActionEntry[];
 	dead_letters: DeadLetterEntry[];
 	output_queues: Record<string, number>;
 }

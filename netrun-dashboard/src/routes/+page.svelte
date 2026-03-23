@@ -7,6 +7,7 @@
 	import LogViewer from '$lib/components/LogViewer.svelte';
 	import NodeDetail from '$lib/components/NodeDetail.svelte';
 	import PoolTopology from '$lib/components/PoolTopology.svelte';
+	import NetActionLog from '$lib/components/NetActionLog.svelte';
 
 	const registry = getRegistryState();
 	const netState = getNetState();
@@ -30,7 +31,7 @@
 		registry.nets.find((n) => n.url === registry.selectedUrl)?.name ?? 'unknown',
 	);
 
-	let activeTab = $state<'epochs' | 'logs' | 'queues' | 'pools' | 'errors'>('epochs');
+	let activeTab = $state<'epochs' | 'logs' | 'actions' | 'queues' | 'pools' | 'errors'>('epochs');
 
 	// Node selection: clicking a node opens the right sidebar
 	let selectedNode = $state<string | null>(null);
@@ -126,6 +127,12 @@
 									<span class="tab-count">{netState.liveState.logs.length}</span>
 								{/if}
 							</button>
+							<button class="tab" class:active={activeTab === 'actions'} onclick={() => (activeTab = 'actions')}>
+								Actions
+								{#if netState.liveState}
+									<span class="tab-count">{netState.liveState.net_actions.length}</span>
+								{/if}
+							</button>
 							<button class="tab" class:active={activeTab === 'queues'} onclick={() => (activeTab = 'queues')}>
 								Queues
 								{#if netState.liveState}
@@ -155,6 +162,8 @@
 									epochs={netState.liveState?.epochs ?? []}
 									onNodeHighlight={handleNodeHighlight}
 								/>
+							{:else if activeTab === 'actions'}
+								<NetActionLog actions={netState.liveState?.net_actions ?? []} />
 							{:else if activeTab === 'queues'}
 								<div class="simple-panel">
 									{#if netState.liveState}
