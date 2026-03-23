@@ -10,7 +10,11 @@
 
 	let sorted = $derived([...actions].reverse());
 	let filterKind = $state('');
-	let expandedIndex = $state<number | null>(null);
+	let expandedKey = $state<string | null>(null);
+
+	function actionKey(a: NetActionEntry): string {
+		return `${a.timestamp}::${a.action_kind}::${a.epoch_id ?? ''}`;
+	}
 
 	let filtered = $derived(
 		filterKind
@@ -35,7 +39,7 @@
 			bind:value={filterKind}
 			class="filter-input"
 		/>
-		<span class="count">{filtered.length} / {actions.length} actions</span>
+		<span class="count">{filterKind ? `${filtered.length} / ${actions.length}` : actions.length} actions</span>
 	</div>
 	<div class="action-list">
 		{#if filtered.length === 0}
@@ -58,11 +62,12 @@
 					</tr>
 				</thead>
 				<tbody>
-					{#each filtered as action, i (i)}
+					{#each filtered as action (actionKey(action))}
+						{@const key = actionKey(action)}
 						<tr
 							class="action-row"
-							class:expanded={expandedIndex === i}
-							onclick={() => (expandedIndex = expandedIndex === i ? null : i)}
+							class:expanded={expandedKey === key}
+							onclick={() => (expandedKey = expandedKey === key ? null : key)}
 						>
 							<td class="mono">{formatTimeMs(action.timestamp)}</td>
 							<td><span class="action-kind">{action.action_kind}</span></td>
@@ -70,7 +75,7 @@
 							<td class="mono">{action.events.length}</td>
 							<td class="mono">{action.epoch_id?.slice(0, 8) ?? '-'}</td>
 						</tr>
-						{#if expandedIndex === i}
+						{#if expandedKey === key}
 							<tr class="detail-row">
 								<td colspan="5">
 									<div class="expanded-detail">
