@@ -70,7 +70,7 @@ async def main():
                 print(f'--- Run {run} ---')
                 net.send_control('fetch_text', 'start_epoch')
                 await net.start_background()
-                await net.wait_until_done()
+                await net.wait_until_blocked()
                 print(f'Run {run} complete. Next run in 1 second...')
                 run += 1
                 await asyncio.sleep(1)
