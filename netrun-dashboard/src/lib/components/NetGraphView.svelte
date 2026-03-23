@@ -215,6 +215,18 @@
 		border-radius: 6px;
 	}
 
+	/* Color SvelteFlow's selection border by node status */
+	:global(.svelte-flow__node.selected.node-busy) {
+		--xy-node-border-color: var(--success-color, #22c55e);
+	}
+
+	:global(.svelte-flow__node.selected.node-startable) {
+		--xy-node-border-color: var(--warning-color, #f59e0b);
+	}
+
+	:global(.svelte-flow__node.selected.node-disabled) {
+		--xy-node-border-color: var(--text-secondary, #a0a0a0);
+	}
 
 	:global(.epoch-badge) {
 		position: absolute;
