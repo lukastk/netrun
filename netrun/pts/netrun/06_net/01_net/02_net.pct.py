@@ -1417,6 +1417,8 @@ class Net:
         """
         if self._background_task is not None:
             await self._background_task
+            self._background_task = None
+            self._restore_sigint_handler()
 
     def is_blocked(self) -> bool:
         """Check if the network is blocked (no progress can be made).
