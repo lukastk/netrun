@@ -241,7 +241,7 @@ class NetObserver:
     async def resume(self) -> ControlResponse:
         """Resume the net."""
         try:
-            self._net.resume()
+            await self._net.resume()
             return ControlResponse(ok=True, message="Net resumed")
         except Exception as e:
             return ControlResponse(ok=False, message=str(e))
