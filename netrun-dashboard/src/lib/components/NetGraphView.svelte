@@ -56,11 +56,25 @@
 		}
 	});
 
-	// Tooltip element
+	// Tooltip
 	let tooltipEl: HTMLDivElement | undefined = $state();
-	let nodeStatusCache = new Map<string, typeof liveState extends null ? never : NonNullable<typeof liveState>['nodes'][0]>();
+	let hoveredNodeId = $state<string | null>(null);
+	let hoveredEl: HTMLElement | null = null;
 
-	// One-time setup: attach hover listeners for tooltips
+	function updateTooltipContent(status: NonNullable<typeof liveState>['nodes'][0]) {
+		if (!tooltipEl) return;
+		const stateLabel = !status.enabled ? 'disabled' : status.is_busy ? 'running' : 'idle';
+		const running = status.running_epoch_ids.length;
+		const startable = status.startable_epoch_ids.length;
+		tooltipEl.innerHTML = `<strong>${status.name}</strong><br>` +
+			`Status: ${stateLabel}<br>` +
+			`Epochs: ${status.epoch_count}` +
+			(running > 0 ? ` (${running} running)` : '') +
+			(startable > 0 ? ` (${startable} startable)` : '') +
+			(status.pools.length > 0 ? `<br>Pool: ${status.pools.join(', ')}` : '');
+	}
+
+	// One-time setup: attach hover listeners
 	$effect(() => {
 		if (!initialized || !tooltipEl) return;
 
@@ -70,25 +84,14 @@
 			const el = document.querySelector(`[data-id="${node.id}"]`);
 			if (!el) continue;
 
-			const onEnter = (e: Event) => {
-				const status = nodeStatusCache.get(node.id);
-				if (!status || !tooltipEl) return;
-				const stateLabel = !status.enabled ? 'disabled' : status.is_busy ? 'running' : 'idle';
-				const running = status.running_epoch_ids.length;
-				const startable = status.startable_epoch_ids.length;
-				tooltipEl.innerHTML = `<strong>${status.name}</strong><br>` +
-					`Status: ${stateLabel}<br>` +
-					`Epochs: ${status.epoch_count}` +
-					(running > 0 ? ` (${running} running)` : '') +
-					(startable > 0 ? ` (${startable} startable)` : '') +
-					(status.pools.length > 0 ? `<br>Pool: ${status.pools.join(', ')}` : '');
-				const rect = (el as HTMLElement).getBoundingClientRect();
-				tooltipEl.style.left = `${rect.left}px`;
-				tooltipEl.style.top = `${rect.bottom + 6}px`;
-				tooltipEl.style.display = 'block';
+			const onEnter = () => {
+				hoveredNodeId = node.id;
+				hoveredEl = el as HTMLElement;
 			};
 
 			const onLeave = () => {
+				hoveredNodeId = null;
+				hoveredEl = null;
 				if (tooltipEl) tooltipEl.style.display = 'none';
 			};
 
@@ -112,8 +115,17 @@
 			? new Map(liveState.nodes.map((n) => [n.name, n]))
 			: null;
 
-		// Update cache for tooltips
-		if (nodeStatusMap) nodeStatusCache = nodeStatusMap;
+		// Update tooltip if hovering
+		if (hoveredNodeId && nodeStatusMap && tooltipEl && hoveredEl) {
+			const status = nodeStatusMap.get(hoveredNodeId);
+			if (status) {
+				updateTooltipContent(status);
+				const rect = hoveredEl.getBoundingClientRect();
+				tooltipEl.style.left = `${rect.left}px`;
+				tooltipEl.style.top = `${rect.bottom + 6}px`;
+				tooltipEl.style.display = 'block';
+			}
+		}
 
 		for (const node of initialNodes) {
 			const el = document.querySelector(`[data-id="${node.id}"]`);
