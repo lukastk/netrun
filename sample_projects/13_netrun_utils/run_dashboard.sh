@@ -40,7 +40,7 @@ uv run netrun-dashboard --port "$DASHBOARD_PORT" &
 DASHBOARD_PID=$!
 sleep 1
 
-# 2. Start the sample net with background execution
+# 2. Start the sample net and run the pipeline
 echo "Starting sample net with ObserveServer on http://localhost:$OBSERVE_PORT ..."
 uv run python -c "
 import asyncio
@@ -63,23 +63,16 @@ async def main():
             print(f'ObserveServer running at {server.url}')
             print()
             print(f'Open http://localhost:{DASHBOARD_PORT} in your browser.')
-
-            # Start background execution loop — continuously processes
-            # any startable epochs (from inject, controls, etc.)
-            await net.start_background()
-
-            # Kick off the pipeline periodically
             print('Starting pipeline in 3 seconds...')
             await asyncio.sleep(3)
             run = 1
             while True:
                 print(f'--- Run {run} ---')
-                await net.execute_node('fetch_text')
-                print(f'Run {run} started.')
+                await net.start_background()
+                net.send_control('fetch_text', 'start_epoch')
+                await net.wait_until_done()
+                print(f'Run {run} complete. Next run in 1 second...')
                 run += 1
-                # Wait for pipeline to finish + gap between runs
-                while not net.is_blocked():
-                    await asyncio.sleep(0.1)
                 await asyncio.sleep(1)
 
 asyncio.run(main())

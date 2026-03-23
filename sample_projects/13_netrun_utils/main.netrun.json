@@ -45,7 +45,7 @@
       {
         "name": "fetch_text",
         "execution_config": {
-          "run_on_startup": true
+          "controls": ["start_epoch"]
         },
         "extra": {
           "source_path": "/Users/lukas/dev/20260318_a9uv81__netrun2__feat-netrun-utils/sample_projects/13_netrun_utils/src/nodes/fetch_text.py",
