@@ -85,11 +85,16 @@
 		(nodeStatus?.in_port_names ?? []).filter((name) => extractControlType(name) === null),
 	);
 
-	let nodeEpochs = $derived(
-		(liveState?.epochs ?? [])
+	let epochsClearedAt = $state<string | null>(null);
+	let logsClearedAt = $state<string | null>(null);
+
+	let nodeEpochs = $derived.by(() => {
+		let arr = (liveState?.epochs ?? [])
 			.filter((e) => e.node_name === nodeName)
-			.sort((a, b) => b.created_at.localeCompare(a.created_at)),
-	);
+			.sort((a, b) => b.created_at.localeCompare(a.created_at));
+		if (epochsClearedAt) arr = arr.filter((e) => e.created_at > epochsClearedAt!);
+		return arr;
+	});
 
 	interface UnifiedLog {
 		timestamp: string;
@@ -127,6 +132,7 @@
 		);
 
 		deduped.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+		if (logsClearedAt) return deduped.filter((r) => r.timestamp > logsClearedAt!);
 		return deduped;
 	});
 
@@ -276,6 +282,7 @@
 	<div class="section">
 		<div class="section-title" onclick={() => (epochsOpen = !epochsOpen)}>
 			<span class="chevron" class:open={epochsOpen}>&#9656;</span> Epoch History ({nodeEpochs.length})
+			<button class="section-clear" onclick={(e) => { e.stopPropagation(); epochsClearedAt = new Date().toISOString(); }}>Clear</button>
 		</div>
 		{#if epochsOpen}
 			<div class="epoch-list">
@@ -307,6 +314,7 @@
 	<div class="section">
 		<div class="section-title" onclick={() => (logsOpen = !logsOpen)}>
 			<span class="chevron" class:open={logsOpen}>&#9656;</span> Recent Logs ({nodeLogs.length})
+			<button class="section-clear" onclick={(e) => { e.stopPropagation(); logsClearedAt = new Date().toISOString(); }}>Clear</button>
 		</div>
 		{#if logsOpen}
 			<div class="log-list">
@@ -384,6 +392,9 @@
 	}
 
 	.section-title {
+		display: flex;
+		align-items: center;
+		gap: 4px;
 		font-size: 10px;
 		font-weight: 600;
 		text-transform: uppercase;
@@ -405,6 +416,21 @@
 
 	.chevron.open {
 		transform: rotate(90deg);
+	}
+
+	.section-clear {
+		margin-left: auto;
+		padding: 0 6px;
+		font-size: 9px;
+		background: transparent;
+		color: var(--text-secondary);
+		border: 1px solid var(--border-color);
+		border-radius: 3px;
+	}
+
+	.section-clear:hover {
+		color: var(--text-primary);
+		background: var(--bg-tertiary);
 	}
 
 	.info-grid {

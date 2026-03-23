@@ -12,6 +12,7 @@
 
 	let filterNode = $state('');
 	let autoScroll = $state(true);
+	let clearedAt = $state<string | null>(null);
 	let listEl: HTMLDivElement | undefined = $state();
 	let expandedIndex = $state<number | null>(null);
 
@@ -64,6 +65,9 @@
 		);
 
 		deduped.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+		if (clearedAt) {
+			return deduped.filter((r) => r.timestamp > clearedAt!);
+		}
 		return deduped;
 	});
 
@@ -106,6 +110,7 @@
 			Auto-scroll
 		</label>
 		<span class="log-count">{filtered.length} entries</span>
+		<button class="clear-btn" onclick={() => (clearedAt = new Date().toISOString())}>Clear</button>
 	</div>
 
 	<div class="log-list" bind:this={listEl}>
@@ -187,6 +192,17 @@
 		margin-left: auto;
 		font-size: 11px;
 		color: var(--text-secondary);
+	}
+
+	.clear-btn {
+		padding: 2px 8px;
+		font-size: 10px;
+		background: var(--bg-tertiary);
+		border: 1px solid var(--border-color);
+	}
+
+	.clear-btn:hover {
+		background: var(--border-color);
 	}
 
 	.log-list {

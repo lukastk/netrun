@@ -10,7 +10,41 @@
 
 	let { epochs, onNodeHighlight }: Props = $props();
 
-	let sorted = $derived([...epochs].sort((a, b) => b.created_at.localeCompare(a.created_at)));
+	// Clear: filter out epochs before this timestamp
+	let clearedAt = $state<string | null>(null);
+
+	let visible = $derived(
+		clearedAt ? epochs.filter((e) => e.created_at > clearedAt!) : epochs,
+	);
+
+	// Sorting
+	type SortKey = 'node_name' | 'state' | 'outcome' | 'duration_ms' | 'queue_time_ms' | 'started_at';
+	let sortKey = $state<SortKey>('started_at');
+	let sortAsc = $state(false);
+
+	function toggleSort(key: SortKey) {
+		if (sortKey === key) {
+			sortAsc = !sortAsc;
+		} else {
+			sortKey = key;
+			sortAsc = key === 'node_name'; // default asc for name, desc for others
+		}
+	}
+
+	let sorted = $derived.by(() => {
+		const arr = [...visible];
+		const dir = sortAsc ? 1 : -1;
+		arr.sort((a, b) => {
+			const av = a[sortKey];
+			const bv = b[sortKey];
+			if (av == null && bv == null) return 0;
+			if (av == null) return 1;
+			if (bv == null) return -1;
+			if (typeof av === 'number' && typeof bv === 'number') return (av - bv) * dir;
+			return String(av).localeCompare(String(bv)) * dir;
+		});
+		return arr;
+	});
 
 	let expandedId = $state<string | null>(null);
 
@@ -19,21 +53,35 @@
 		expandedId = wasExpanded ? null : epoch.epoch_id;
 		onNodeHighlight?.(wasExpanded ? null : epoch.node_name);
 	}
+
+	function handleClear() {
+		const now = new Date().toISOString();
+		clearedAt = now;
+	}
+
+	function sortIndicator(key: SortKey): string {
+		if (sortKey !== key) return '';
+		return sortAsc ? ' ▲' : ' ▼';
+	}
 </script>
 
 <div class="epoch-table">
+	<div class="toolbar">
+		<span class="count">{visible.length} epochs</span>
+		<button class="clear-btn" onclick={handleClear}>Clear</button>
+	</div>
 	{#if sorted.length === 0}
-		<div class="empty">No epochs yet</div>
+		<div class="empty">No epochs</div>
 	{:else}
 		<table>
 			<thead>
 				<tr>
-					<th>Node</th>
-					<th>State</th>
-					<th>Outcome</th>
-					<th>Duration</th>
-					<th>Queue</th>
-					<th>Started</th>
+					<th class="sortable" onclick={() => toggleSort('node_name')}>Node{sortIndicator('node_name')}</th>
+					<th class="sortable" onclick={() => toggleSort('state')}>State{sortIndicator('state')}</th>
+					<th class="sortable" onclick={() => toggleSort('outcome')}>Outcome{sortIndicator('outcome')}</th>
+					<th class="sortable" onclick={() => toggleSort('duration_ms')}>Duration{sortIndicator('duration_ms')}</th>
+					<th class="sortable" onclick={() => toggleSort('queue_time_ms')}>Queue{sortIndicator('queue_time_ms')}</th>
+					<th class="sortable" onclick={() => toggleSort('started_at')}>Started{sortIndicator('started_at')}</th>
 					<th>Info</th>
 				</tr>
 			</thead>
@@ -87,6 +135,34 @@
 	.epoch-table {
 		height: 100%;
 		overflow: auto;
+		display: flex;
+		flex-direction: column;
+	}
+
+	.toolbar {
+		display: flex;
+		align-items: center;
+		gap: 8px;
+		padding: 4px 8px;
+		border-bottom: 1px solid var(--border-color);
+		flex-shrink: 0;
+	}
+
+	.count {
+		font-size: 11px;
+		color: var(--text-secondary);
+	}
+
+	.clear-btn {
+		margin-left: auto;
+		padding: 2px 8px;
+		font-size: 10px;
+		background: var(--bg-tertiary);
+		border: 1px solid var(--border-color);
+	}
+
+	.clear-btn:hover {
+		background: var(--border-color);
 	}
 
 	.empty {
@@ -118,6 +194,15 @@
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 		border-bottom: 1px solid var(--border-color);
+	}
+
+	th.sortable {
+		cursor: pointer;
+		user-select: none;
+	}
+
+	th.sortable:hover {
+		color: var(--text-primary);
 	}
 
 	td {

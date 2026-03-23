@@ -8,19 +8,51 @@
 
 	let { actions }: Props = $props();
 
-	let sorted = $derived([...actions].reverse());
 	let filterKind = $state('');
+	let clearedAt = $state<string | null>(null);
 	let expandedKey = $state<string | null>(null);
+
+	// Sorting
+	type SortKey = 'timestamp' | 'action_kind' | 'events' | 'epoch_id';
+	let sortKey = $state<SortKey>('timestamp');
+	let sortAsc = $state(false);
+
+	function toggleSort(key: SortKey) {
+		if (sortKey === key) {
+			sortAsc = !sortAsc;
+		} else {
+			sortKey = key;
+			sortAsc = key === 'action_kind';
+		}
+	}
+
+	function sortIndicator(key: SortKey): string {
+		if (sortKey !== key) return '';
+		return sortAsc ? ' ▲' : ' ▼';
+	}
 
 	function actionKey(a: NetActionEntry): string {
 		return `${a.timestamp}::${a.action_kind}::${a.epoch_id ?? ''}`;
 	}
 
-	let filtered = $derived(
-		filterKind
-			? sorted.filter((a) => a.action_kind.toLowerCase().includes(filterKind.toLowerCase()))
-			: sorted,
+	let visible = $derived(
+		clearedAt ? actions.filter((a) => a.timestamp > clearedAt!) : actions,
 	);
+
+	let sorted = $derived.by(() => {
+		let arr = [...visible];
+		if (filterKind) {
+			arr = arr.filter((a) => a.action_kind.toLowerCase().includes(filterKind.toLowerCase()));
+		}
+		const dir = sortAsc ? 1 : -1;
+		arr.sort((a, b) => {
+			if (sortKey === 'events') return (a.events.length - b.events.length) * dir;
+			const av = sortKey === 'epoch_id' ? (a.epoch_id ?? '') : (a as any)[sortKey];
+			const bv = sortKey === 'epoch_id' ? (b.epoch_id ?? '') : (b as any)[sortKey];
+			return String(av).localeCompare(String(bv)) * dir;
+		});
+		return arr;
+	});
 
 	function summarizeDetail(detail: Record<string, unknown>): string {
 		const parts: string[] = [];
@@ -39,10 +71,11 @@
 			bind:value={filterKind}
 			class="filter-input"
 		/>
-		<span class="count">{filterKind ? `${filtered.length} / ${actions.length}` : actions.length} actions</span>
+		<span class="count">{filterKind ? `${sorted.length} / ${visible.length}` : visible.length} actions</span>
+		<button class="clear-btn" onclick={() => (clearedAt = new Date().toISOString())}>Clear</button>
 	</div>
 	<div class="action-list">
-		{#if filtered.length === 0}
+		{#if sorted.length === 0}
 			<div class="empty">
 				{#if actions.length === 0}
 					No net actions recorded. Ensure retain_net_action_logs is enabled.
@@ -54,15 +87,15 @@
 			<table>
 				<thead>
 					<tr>
-						<th>Time</th>
-						<th>Action</th>
+						<th class="sortable" onclick={() => toggleSort('timestamp')}>Time{sortIndicator('timestamp')}</th>
+						<th class="sortable" onclick={() => toggleSort('action_kind')}>Action{sortIndicator('action_kind')}</th>
 						<th>Detail</th>
-						<th>Events</th>
-						<th>Epoch</th>
+						<th class="sortable" onclick={() => toggleSort('events')}>Events{sortIndicator('events')}</th>
+						<th class="sortable" onclick={() => toggleSort('epoch_id')}>Epoch{sortIndicator('epoch_id')}</th>
 					</tr>
 				</thead>
 				<tbody>
-					{#each filtered as action (actionKey(action))}
+					{#each sorted as action (actionKey(action))}
 						{@const key = actionKey(action)}
 						<tr
 							class="action-row"
@@ -135,9 +168,20 @@
 	}
 
 	.count {
-		margin-left: auto;
 		font-size: 11px;
 		color: var(--text-secondary);
+	}
+
+	.clear-btn {
+		margin-left: auto;
+		padding: 2px 8px;
+		font-size: 10px;
+		background: var(--bg-tertiary);
+		border: 1px solid var(--border-color);
+	}
+
+	.clear-btn:hover {
+		background: var(--border-color);
 	}
 
 	.action-list {
@@ -174,6 +218,15 @@
 		text-transform: uppercase;
 		letter-spacing: 0.05em;
 		border-bottom: 1px solid var(--border-color);
+	}
+
+	th.sortable {
+		cursor: pointer;
+		user-select: none;
+	}
+
+	th.sortable:hover {
+		color: var(--text-primary);
 	}
 
 	td {
