@@ -43,6 +43,10 @@ export function disableNode(observeUrl: string, nodeName: string) {
 	return postControl(observeUrl, `/nodes/${nodeName}/disable`);
 }
 
+export function sendControl(observeUrl: string, nodeName: string, controlType: string, value?: unknown) {
+	return postControl(observeUrl, '/control', { node_name: nodeName, control_type: controlType, value: value ?? null });
+}
+
 export function injectData(observeUrl: string, nodeName: string, portName: string, values: unknown[]) {
 	return postControl(observeUrl, '/inject', { node_name: nodeName, port_name: portName, values });
 }

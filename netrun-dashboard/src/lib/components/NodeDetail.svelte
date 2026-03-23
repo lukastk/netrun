@@ -1,8 +1,17 @@
 <script lang="ts">
 	import type { ObserveState } from '../types.js';
 	import { formatDuration, formatTimeMs, formatFieldValue, stateClass, outcomeClass } from '../format.js';
-	import { enableNode, disableNode, injectData } from '../api.js';
+	import { enableNode, disableNode, injectData, sendControl } from '../api.js';
 	import EpochDetail from './EpochDetail.svelte';
+
+	const CONTROL_PREFIX = '__control_';
+	const CONTROL_SUFFIX = '__';
+
+	// Control types that require a value, and what type
+	const CONTROL_VALUE_TYPES: Record<string, string> = {
+		cancel_epoch: 'string (epoch ID)',
+		set_epoch_count: 'integer',
+	};
 
 	interface Props {
 		nodeName: string;
@@ -17,6 +26,12 @@
 	let injectPort = $state('');
 	let injectValue = $state('');
 	let injectOpen = $state(false);
+	let controlValues = $state<Record<string, string>>({});
+
+	function extractControlType(portName: string): string | null {
+		if (!portName.startsWith(CONTROL_PREFIX) || !portName.endsWith(CONTROL_SUFFIX)) return null;
+		return portName.slice(CONTROL_PREFIX.length, -CONTROL_SUFFIX.length);
+	}
 
 	async function handleToggleEnabled() {
 		if (!observeUrl || !nodeStatus) return;
@@ -24,6 +39,24 @@
 			await disableNode(observeUrl, nodeName);
 		} else {
 			await enableNode(observeUrl, nodeName);
+		}
+	}
+
+	async function handleSendControl(controlType: string) {
+		if (!observeUrl) return;
+		const valueType = CONTROL_VALUE_TYPES[controlType];
+		if (valueType) {
+			const raw = controlValues[controlType] ?? '';
+			if (!raw.trim()) return;
+			let value: unknown = raw;
+			if (valueType.startsWith('integer')) {
+				value = parseInt(raw, 10);
+				if (isNaN(value as number)) return;
+			}
+			await sendControl(observeUrl, nodeName, controlType, value);
+			controlValues[controlType] = '';
+		} else {
+			await sendControl(observeUrl, nodeName, controlType);
 		}
 	}
 
@@ -35,13 +68,22 @@
 			await injectData(observeUrl, nodeName, injectPort.trim(), values);
 			injectValue = '';
 		} catch {
-			// Try as raw string
 			await injectData(observeUrl, nodeName, injectPort.trim(), [injectValue]);
 			injectValue = '';
 		}
 	}
 
 	let nodeStatus = $derived(liveState?.nodes.find((n) => n.name === nodeName) ?? null);
+
+	let controlPorts = $derived(
+		(nodeStatus?.in_port_names ?? [])
+			.map((name) => ({ name, controlType: extractControlType(name) }))
+			.filter((p) => p.controlType !== null) as { name: string; controlType: string }[],
+	);
+
+	let dataPorts = $derived(
+		(nodeStatus?.in_port_names ?? []).filter((name) => extractControlType(name) === null),
+	);
 
 	let nodeEpochs = $derived(
 		(liveState?.epochs ?? [])
@@ -182,25 +224,49 @@
 							{nodeStatus.enabled ? 'Disable Node' : 'Enable Node'}
 						</button>
 					{/if}
-					<div class="inject-form">
-						<div class="inject-label">Inject Data</div>
-						<select bind:value={injectPort} class="inject-input">
-							<option value="">Select port...</option>
-							{#if nodeStatus}
-								{#each nodeStatus.in_port_names as port}
+
+					{#if controlPorts.length > 0}
+						<div class="control-group">
+							<div class="inject-label">Controls</div>
+							{#each controlPorts as cp}
+								{@const needsValue = CONTROL_VALUE_TYPES[cp.controlType]}
+								<div class="control-row">
+									{#if needsValue}
+										<input
+											type="text"
+											bind:value={controlValues[cp.controlType]}
+											placeholder={needsValue}
+											class="control-value-input"
+											onkeydown={(e) => e.key === 'Enter' && handleSendControl(cp.controlType)}
+										/>
+									{/if}
+									<button class="control-btn control-action" onclick={() => handleSendControl(cp.controlType)}>
+										{cp.controlType.replace(/_/g, ' ')}
+									</button>
+								</div>
+							{/each}
+						</div>
+					{/if}
+
+					{#if dataPorts.length > 0}
+						<div class="inject-form">
+							<div class="inject-label">Inject Data</div>
+							<select bind:value={injectPort} class="inject-input">
+								<option value="">Select port...</option>
+								{#each dataPorts as port}
 									<option value={port}>{port}</option>
 								{/each}
-							{/if}
-						</select>
-						<input
-							type="text"
-							bind:value={injectValue}
-							placeholder='Value (JSON or string)'
-							class="inject-input"
-							onkeydown={(e) => e.key === 'Enter' && handleInject()}
-						/>
-						<button class="control-btn" onclick={handleInject} disabled={!injectPort || !injectValue}>Inject</button>
-					</div>
+							</select>
+							<input
+								type="text"
+								bind:value={injectValue}
+								placeholder='Value (JSON or string)'
+								class="inject-input"
+								onkeydown={(e) => e.key === 'Enter' && handleInject()}
+							/>
+							<button class="control-btn" onclick={handleInject} disabled={!injectPort || !injectValue}>Inject</button>
+						</div>
+					{/if}
 				</div>
 			{/if}
 		</div>
@@ -495,6 +561,28 @@
 	.control-btn:disabled {
 		opacity: 0.4;
 		cursor: not-allowed;
+	}
+
+	.control-group {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.control-row {
+		display: flex;
+		gap: 4px;
+		align-items: center;
+	}
+
+	.control-value-input {
+		flex: 1;
+		font-size: 11px;
+		padding: 3px 8px;
+	}
+
+	.control-action {
+		text-transform: capitalize;
 	}
 
 	.inject-form {
