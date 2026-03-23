@@ -540,6 +540,7 @@ class Net:
 
         # Background task for main loop
         self._background_task: asyncio.Task | None = None
+        self._exit_on_idle: bool = False
 
         # SIGINT handling
         self._sigint_received: bool = False
@@ -1385,6 +1386,8 @@ class Net:
 
                 # Small yield to allow other tasks
                 if not made_progress:
+                    if self._exit_on_idle and self.is_blocked():
+                        break
                     # If nothing happened, sleep a bit to avoid busy-waiting
                     await asyncio.sleep(0.001)
                 else:
@@ -1407,11 +1410,10 @@ class Net:
             signal.signal(signal.SIGINT, self._original_sigint_handler)
             self._original_sigint_handler = None
 
-    async def wait_until_done(self) -> None:
+    async def wait_until_stopped(self) -> None:
         """Wait for the background task to complete.
 
         This blocks until:
-        - All epochs have finished and no packets can move
         - SIGINT is received
         - `stop()` is called from another task
         """
@@ -1419,6 +1421,25 @@ class Net:
             await self._background_task
             self._background_task = None
             self._restore_sigint_handler()
+
+    async def wait_until_blocked(self) -> None:
+        """Wait for the network to become idle, then stop the background loop.
+
+        This blocks until no epochs are running, no epochs are startable,
+        and no packets can move. Use this for inject-run-wait cycles:
+
+            net.send_control('source', 'start_epoch')
+            await net.start_background()
+            await net.wait_until_blocked()
+        """
+        self._exit_on_idle = True
+        try:
+            if self._background_task is not None:
+                await self._background_task
+                self._background_task = None
+                self._restore_sigint_handler()
+        finally:
+            self._exit_on_idle = False
 
     def is_blocked(self) -> bool:
         """Check if the network is blocked (no progress can be made).
