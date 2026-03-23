@@ -215,10 +215,6 @@
 		border-radius: 6px;
 	}
 
-	:global(.node-highlighted) {
-		box-shadow: 0 0 0 4px var(--accent-color, #3b82f6);
-		border-radius: 6px;
-	}
 
 	:global(.epoch-badge) {
 		position: absolute;
