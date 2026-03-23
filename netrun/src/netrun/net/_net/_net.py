@@ -2242,8 +2242,8 @@ class Net:
                     # on_hash_change == "overwrite": fall through to execution
 
         # Transition epoch to Running
-        await self._start_epoch_lifecycle(epoch_id, node_name)
         self._running_epochs.add(epoch_id)
+        await self._start_epoch_lifecycle(epoch_id, node_name)
 
         try:
             return await self._execute_epoch_with_retry(
