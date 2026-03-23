@@ -62,7 +62,7 @@ def test__create_external_packet():
     assert packet_id is not None
     assert isinstance(packet_id, str)
     # Verify value is stored
-    assert net._packet_store._get(packet_id) == {"test": "data"}
+    assert net._packet_store.peek(packet_id) == {"test": "data"}
     # Verify packet exists in netsim
     packet = net._netsim.get_packet(packet_id)
     assert packet is not None
@@ -74,23 +74,23 @@ def test__create_external_packet_various_types():
 
     # Dict
     p1 = net._create_external_packet({"key": "value"})
-    assert net._packet_store._get(p1) == {"key": "value"}
+    assert net._packet_store.peek(p1) == {"key": "value"}
 
     # String
     p2 = net._create_external_packet("hello")
-    assert net._packet_store._get(p2) == "hello"
+    assert net._packet_store.peek(p2) == "hello"
 
     # Number
     p3 = net._create_external_packet(42)
-    assert net._packet_store._get(p3) == 42
+    assert net._packet_store.peek(p3) == 42
 
     # List
     p4 = net._create_external_packet([1, 2, 3])
-    assert net._packet_store._get(p4) == [1, 2, 3]
+    assert net._packet_store.peek(p4) == [1, 2, 3]
 
     # None
     p5 = net._create_external_packet(None)
-    assert net._packet_store._get(p5) is None
+    assert net._packet_store.peek(p5) is None
 
 # %% pts/tests/06_net/test_packet_injection.pct.py 6
 def test__create_external_packets():
@@ -102,7 +102,7 @@ def test__create_external_packets():
 
     assert len(packet_ids) == 3
     for i, packet_id in enumerate(packet_ids):
-        assert net._packet_store._get(packet_id) == values[i]
+        assert net._packet_store.peek(packet_id) == values[i]
 
 # %% pts/tests/06_net/test_packet_injection.pct.py 7
 def test__create_external_packets_empty():
@@ -144,7 +144,7 @@ def test_inject_data():
     # Verify all packets are at input port
     for i, packet_id in enumerate(packet_ids):
         # Check value
-        assert net._packet_store._get(packet_id) == values[i]
+        assert net._packet_store.peek(packet_id) == values[i]
         # Check location
         packet = net._netsim.get_packet(packet_id)
         location = packet.location

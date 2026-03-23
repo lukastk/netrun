@@ -19,9 +19,7 @@ import netrun.packets as this_module
 from dataclasses import dataclass
 from typing import Any
 import threading
-import pickle
 import importlib
-from pathlib import Path
 from ulid import ULID
 
 # %%
@@ -164,63 +162,10 @@ class PacketStore:
                 raise KeyError(f"Packet '{packet_id}' not found")
             return self._store[packet_id]
 
-    def _get(self, packet_id: ULID) -> Any | LazyPacketValueSpec:
-        """Alias for peek(). Get raw value without evaluating or removing.
-
-        Raises:
-            KeyError: If the packet ID is not found.
-        """
-        return self.peek(packet_id)
-
     def exists(self, packet_id: ULID) -> bool:
         """Check if a packet ID exists in the store."""
         with self._lock:
             return packet_id in self._store
-
-    def list_ids(self) -> list[ULID]:
-        """List all packet IDs in the store."""
-        with self._lock:
-            return list(self._store.keys())
-
-    def save(self, path: str) -> None:
-        """Save all current values to a .pkl file.
-
-        Args:
-            path: The path to save to. Will be created if it doesn't exist.
-
-        Raises:
-            pickle.PicklingError: If a value cannot be pickled.
-        """
-        from pathlib import Path
-
-        path = Path(path)
-
-        with self._lock:
-            data = {
-                "store": {str(k) : v for k, v in self._store.items()},
-            }
-
-        with open(path, "wb") as f:
-            pickle.dump(data, f)
-
-    def load(self, path: str) -> None:
-        """Load values from a pickled PacketStore.
-
-        Replaces the current store contents with loaded values.
-
-        Args:
-            path: The path to load from.
-
-        Raises:
-            FileNotFoundError: If the file doesn't exist.
-        """
-        path = Path(path)
-
-        with open(path, "rb") as f:
-            packet_store_data = pickle.load(f)
-
-        with self._lock:
-            self._store = {ULID.from_str(k) : v for k, v in packet_store_data["store"].items()}
 
 # %%
 packet_store = PacketStore()
@@ -231,13 +176,3 @@ packet_store.register(packet_id, "my_value")
 assert packet_store.peek(packet_id) == "my_value"
 assert packet_store.consume(packet_id) == "my_value"
 assert not packet_store.exists(packet_id)
-
-# Test checkpointing
-import tempfile
-packet_id = ULID()
-packet_store.register(packet_id, "my_other_value")
-tmp_path = tempfile.mktemp(suffix=".pkl")
-packet_store.save(tmp_path)
-loaded_packet_store = PacketStore()
-loaded_packet_store.load(tmp_path)
-assert loaded_packet_store.peek(packet_id) == "my_other_value"

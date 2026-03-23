@@ -1887,13 +1887,118 @@ class Net:
                 # Peek at the value from PacketStore (don't consume yet - that happens in _commit_epoch_result).
                 # Evaluate LazyPacketValueSpec so downstream nodes receive actual values.
                 from ...packets import LazyPacketValueSpec
-                value = self._packet_store._get(packet_id)
+                value = self._packet_store.peek(packet_id)
                 if isinstance(value, LazyPacketValueSpec):
                     value = self._packet_store._evaluate_lazy_value(value, packet_id)
                     self._packet_store._store[packet_id] = value
                 packet_values[str(packet_id)] = value
 
         return packets, packet_values
+
+    # ------------------------------------------------------------------
+    # Epoch lifecycle helpers (shared across normal, cache, file-storage)
+    # ------------------------------------------------------------------
+
+    async def _start_epoch_lifecycle(self, epoch_id: str, node_name: str) -> None:
+        """Start an epoch: netsim transition, timestamp, state, signal, callback."""
+        self._do_action(netrun_sim.NetAction.start_epoch(epoch_id), epoch_id=epoch_id, detail={"node_name": node_name})
+        self._epochs[epoch_id].started_at = get_timestamp_utc()
+        self._epochs[epoch_id].state = netrun_sim.EpochState.Running
+        self._emit_epoch_signal(epoch_id, node_name, "epoch_started")
+        await self._fire_epoch_start(node_name, epoch_id)
+
+    async def _finish_epoch_lifecycle(self, epoch_id: str, node_name: str, *, retry_count: int = 0) -> None:
+        """Finish an epoch: snapshot, signal, netsim transition, timestamp, state, callback.
+
+        This snapshots out_salvos and orphaned_packets from netsim before finishing,
+        emits the epoch_finished signal while the epoch is still Running, then
+        transitions to Finished.
+        """
+        epoch_snapshot = self._netsim.get_epoch(epoch_id)
+        self._epochs[epoch_id].out_salvos = list(epoch_snapshot.out_salvos)
+        self._epochs[epoch_id].orphaned_packets = list(epoch_snapshot.orphaned_packets)
+
+        self._emit_epoch_signal(epoch_id, node_name, "epoch_finished")
+        self._do_action(netrun_sim.NetAction.finish_epoch(epoch_id), epoch_id=epoch_id, detail={"node_name": node_name})
+        self._epochs[epoch_id].ended_at = get_timestamp_utc()
+        self._epochs[epoch_id].state = netrun_sim.EpochState.Finished
+        await self._fire_epoch_end(node_name, epoch_id, retry_count=retry_count)
+
+    def _consume_epoch_inputs(self, epoch_id: str, node_name: str, packets: dict[str, list[str]], consumed_ports: set[str] | list[str]) -> None:
+        """Consume input packets for the specified ports.
+
+        Args:
+            epoch_id: The epoch ID.
+            node_name: The node name.
+            packets: Input packets by port name.
+            consumed_ports: Which ports' packets to consume.
+        """
+        for port_name in consumed_ports:
+            if port_name in packets:
+                for packet_id in packets[port_name]:
+                    self._packet_store.consume(packet_id)
+                    self._do_action(
+                        netrun_sim.NetAction.consume_packet(packet_id), epoch_id=epoch_id,
+                        detail={"node_name": node_name, "packet_id": packet_id},
+                    )
+
+    def _create_and_load_outputs(self, epoch_id: str, node_name: str, output_port_values: dict[str, list]) -> None:
+        """Create output packets, register their values, and load them into output ports.
+
+        Args:
+            epoch_id: The epoch ID.
+            node_name: The node name.
+            output_port_values: Mapping of port name to list of values to create.
+        """
+        for port_name, values in output_port_values.items():
+            for value in values:
+                response, _ = self._do_action(
+                    netrun_sim.NetAction.create_packet(epoch_id), epoch_id=epoch_id,
+                    detail={"node_name": node_name},
+                )
+                real_id = str(response.packet_id)
+                self._packet_store.register(real_id, value)
+                self._do_action(
+                    netrun_sim.NetAction.load_packet_into_output_port(real_id, port_name),
+                    epoch_id=epoch_id,
+                    detail={"node_name": node_name, "packet_id": real_id, "port_name": port_name},
+                )
+
+    def _send_single_output_salvo(self, epoch_id: str, node_name: str, salvo_name: str) -> None:
+        """Send one output salvo and route any orphaned packets to output queues.
+
+        Args:
+            epoch_id: The epoch ID.
+            node_name: The node name.
+            salvo_name: The salvo condition name to send.
+        """
+        self._do_action(
+            netrun_sim.NetAction.send_output_salvo(epoch_id, salvo_name),
+            epoch_id=epoch_id,
+            detail={"node_name": node_name, "salvo_condition": salvo_name},
+        )
+        epoch = self._netsim.get_epoch(epoch_id)
+        if epoch.orphaned_packets:
+            for orphaned_info in epoch.orphaned_packets:
+                self._route_orphaned_packet(
+                    packet_id=orphaned_info.packet_id,
+                    from_node=node_name,
+                    from_port=orphaned_info.from_port,
+                    epoch_id=epoch_id,
+                )
+
+    def _send_output_salvos(self, epoch_id: str, node_name: str, salvo_names: list[str]) -> None:
+        """Send multiple output salvos, handling orphaned packets after each.
+
+        Args:
+            epoch_id: The epoch ID.
+            node_name: The node name.
+            salvo_names: Ordered list of salvo condition names to send.
+        """
+        for salvo_name in salvo_names:
+            self._send_single_output_salvo(epoch_id, node_name, salvo_name)
+
+    # ------------------------------------------------------------------
 
     def _commit_epoch_result(self, epoch_id: str, result: NodeExecutionResult) -> dict[str, str]:
         """Commit the deferred actions from an epoch's execution result.
@@ -1952,25 +2057,7 @@ class Net:
 
             elif action_type == "send_output_salvo":
                 salvo_condition_name, = args
-
-                # Send output salvo in netsim
-                self._do_action(
-                    netrun_sim.NetAction.send_output_salvo(epoch_id, salvo_condition_name),
-                    epoch_id=epoch_id,
-                    detail={"node_name": node_name, "salvo_condition": salvo_condition_name},
-                )
-
-                # Check for orphaned packets (sent to unconnected output ports)
-                # and route them to output queues
-                epoch = self._netsim.get_epoch(epoch_id)
-                if epoch.orphaned_packets:
-                    for orphaned_info in epoch.orphaned_packets:
-                        self._route_orphaned_packet(
-                            packet_id=orphaned_info.packet_id,
-                            from_node=epoch.node_name,
-                            from_port=orphaned_info.from_port,
-                            epoch_id=epoch_id,
-                        )
+                self._send_single_output_salvo(epoch_id, node_name, salvo_condition_name)
 
         return deferred_to_real
 
@@ -2030,16 +2117,8 @@ class Net:
         )
         if not has_exec_func:
             # No execution function - just mark as running and finish immediately
-            self._do_action(netrun_sim.NetAction.start_epoch(epoch_id), epoch_id=epoch_id, detail={"node_name": node_name})
-            self._epochs[epoch_id].started_at = get_timestamp_utc()
-            self._emit_epoch_signal(epoch_id, node_name, "epoch_started")
-            await self._fire_epoch_start(node_name, epoch_id)
-            # Emit epoch_finished signal even for no-exec-func nodes
-            self._emit_epoch_signal(epoch_id, node_name, "epoch_finished")
-            self._do_action(netrun_sim.NetAction.finish_epoch(epoch_id), epoch_id=epoch_id, detail={"node_name": node_name})
-            self._epochs[epoch_id].ended_at = get_timestamp_utc()
-            self._epochs[epoch_id].state = netrun_sim.EpochState.Finished
-            await self._fire_epoch_end(node_name, epoch_id)
+            await self._start_epoch_lifecycle(epoch_id, node_name)
+            await self._finish_epoch_lifecycle(epoch_id, node_name)
             return None
 
         # Deferred startup: call start_node_func on first epoch if not yet started
@@ -2129,12 +2208,8 @@ class Net:
                     # on_hash_change == "overwrite": fall through to execution
 
         # Transition epoch to Running
-        self._do_action(netrun_sim.NetAction.start_epoch(epoch_id), epoch_id=epoch_id, detail={"node_name": node_name})
-        self._epochs[epoch_id].started_at = get_timestamp_utc()
-        self._epochs[epoch_id].state = netrun_sim.EpochState.Running
+        await self._start_epoch_lifecycle(epoch_id, node_name)
         self._running_epochs.add(epoch_id)
-        self._emit_epoch_signal(epoch_id, node_name, "epoch_started")
-        await self._fire_epoch_start(node_name, epoch_id)
 
         try:
             return await self._execute_epoch_with_retry(
@@ -2291,11 +2366,6 @@ class Net:
         # Success - commit deferred actions
         self._commit_epoch_result(epoch_id, execution_result)
 
-        # Refresh fields that changed during commit (before finish removes the epoch)
-        epoch_snapshot = self._netsim.get_epoch(epoch_id)
-        self._epochs[epoch_id].out_salvos = list(epoch_snapshot.out_salvos)
-        self._epochs[epoch_id].orphaned_packets = list(epoch_snapshot.orphaned_packets)
-
         # Cache storage after successful execution
         if input_hash is not None and self._cache_store.is_cache_enabled(node_name):
             self._store_epoch_in_cache(
@@ -2308,14 +2378,8 @@ class Net:
                 epoch_id, node_name, fs_input_hash, packets, packet_values, execution_result,
             )
 
-        # Emit epoch_finished signal (before finish_epoch, while epoch is still Running)
-        self._emit_epoch_signal(epoch_id, node_name, "epoch_finished")
-
-        # Finish the epoch
-        self._do_action(netrun_sim.NetAction.finish_epoch(epoch_id), epoch_id=epoch_id, detail={"node_name": node_name})
-        self._epochs[epoch_id].ended_at = get_timestamp_utc()
-        self._epochs[epoch_id].state = netrun_sim.EpochState.Finished
-        await self._fire_epoch_end(node_name, epoch_id, retry_count=retry_count)
+        # Snapshot, signal, finish, callback
+        await self._finish_epoch_lifecycle(epoch_id, node_name, retry_count=retry_count)
 
         return execution_result
 
@@ -2337,69 +2401,14 @@ class Net:
         Returns:
             A synthetic NodeExecutionResult representing the replayed epoch.
         """
-        # Start epoch in netsim
-        self._do_action(netrun_sim.NetAction.start_epoch(epoch_id), epoch_id=epoch_id, detail={"node_name": node_name})
-        self._epochs[epoch_id].started_at = get_timestamp_utc()
-        self._epochs[epoch_id].state = netrun_sim.EpochState.Running
-        self._emit_epoch_signal(epoch_id, node_name, "epoch_started")
-        await self._fire_epoch_start(node_name, epoch_id)
+        await self._start_epoch_lifecycle(epoch_id, node_name)
 
-        # Consume input packets
-        for port_name in cached.consumed_input_ports:
-            if port_name in packets:
-                for packet_id in packets[port_name]:
-                    self._packet_store.consume(packet_id)
-                    self._do_action(
-                        netrun_sim.NetAction.consume_packet(packet_id), epoch_id=epoch_id,
-                        detail={"node_name": node_name, "packet_id": packet_id},
-                    )
+        self._consume_epoch_inputs(epoch_id, node_name, packets, cached.consumed_input_ports)
+        self._create_and_load_outputs(epoch_id, node_name, cached.output_port_values)
+        self._send_output_salvos(epoch_id, node_name, cached.output_salvo_names)
 
-        # Create output packets and load into output ports
-        for port_name, values in cached.output_port_values.items():
-            for value in values:
-                response, _ = self._do_action(
-                    netrun_sim.NetAction.create_packet(epoch_id), epoch_id=epoch_id,
-                    detail={"node_name": node_name},
-                )
-                real_id = str(response.packet_id)
-                self._packet_store.register(real_id, value)
-                self._do_action(
-                    netrun_sim.NetAction.load_packet_into_output_port(real_id, port_name),
-                    epoch_id=epoch_id,
-                    detail={"node_name": node_name, "packet_id": real_id, "port_name": port_name},
-                )
-
-        # Send output salvos
-        for salvo_name in cached.output_salvo_names:
-            self._do_action(
-                netrun_sim.NetAction.send_output_salvo(epoch_id, salvo_name),
-                epoch_id=epoch_id,
-                detail={"node_name": node_name, "salvo_condition": salvo_name},
-            )
-            # Handle orphaned packets
-            epoch = self._netsim.get_epoch(epoch_id)
-            if epoch.orphaned_packets:
-                for orphaned_info in epoch.orphaned_packets:
-                    self._route_orphaned_packet(
-                        packet_id=orphaned_info.packet_id,
-                        from_node=node_name,
-                        from_port=orphaned_info.from_port,
-                        epoch_id=epoch_id,
-                    )
-
-        # Snapshot and finish
-        epoch_snapshot = self._netsim.get_epoch(epoch_id)
-        self._epochs[epoch_id].out_salvos = list(epoch_snapshot.out_salvos)
-        self._epochs[epoch_id].orphaned_packets = list(epoch_snapshot.orphaned_packets)
         self._epochs[epoch_id].was_cache_hit = True
-
-        # Emit epoch_finished signal (cache replay counts as successful completion)
-        self._emit_epoch_signal(epoch_id, node_name, "epoch_finished")
-
-        self._do_action(netrun_sim.NetAction.finish_epoch(epoch_id), epoch_id=epoch_id, detail={"node_name": node_name})
-        self._epochs[epoch_id].ended_at = get_timestamp_utc()
-        self._epochs[epoch_id].state = netrun_sim.EpochState.Finished
-        await self._fire_epoch_end(node_name, epoch_id)
+        await self._finish_epoch_lifecycle(epoch_id, node_name)
 
         # Return a synthetic result
         from ...net._net._context import DeferredActionQueue
@@ -2546,22 +2555,9 @@ class Net:
         backend_config = self._file_storage_store.resolve_backend_config(node_name)
         backend_config_json = backend_config.model_dump_json()
 
-        # Start epoch in netsim
-        self._do_action(netrun_sim.NetAction.start_epoch(epoch_id), epoch_id=epoch_id, detail={"node_name": node_name})
-        self._epochs[epoch_id].started_at = get_timestamp_utc()
-        self._epochs[epoch_id].state = netrun_sim.EpochState.Running
-        self._emit_epoch_signal(epoch_id, node_name, "epoch_started")
-        await self._fire_epoch_start(node_name, epoch_id)
+        await self._start_epoch_lifecycle(epoch_id, node_name)
 
-        # Consume input packets
-        for port_name in manifest.consumed_input_ports:
-            if port_name in packets:
-                for packet_id in packets[port_name]:
-                    self._packet_store.consume(packet_id)
-                    self._do_action(
-                        netrun_sim.NetAction.consume_packet(packet_id), epoch_id=epoch_id,
-                        detail={"node_name": node_name, "packet_id": packet_id},
-                    )
+        self._consume_epoch_inputs(epoch_id, node_name, packets, manifest.consumed_input_ports)
 
         # Build common serialization kwargs JSON
         ser_kwargs_json = _json_module.dumps({
@@ -2592,45 +2588,24 @@ class Net:
                     for name in zf.namelist():
                         extracted[name] = zf.read(name)
 
-            # Create output packets from extracted entries
+            # Create output packets from extracted entries, salvo by salvo
             if manifest.file_keys:
                 for salvo_name in manifest.output_salvo_names:
+                    salvo_port_values: dict[str, list] = {}
                     salvo_file_keys = manifest.file_keys.get(salvo_name, [])
                     for port_keys in salvo_file_keys:
                         for port_name, entry_name in port_keys.items():
                             data = extracted[entry_name]
                             value = deserialize(data, ser_method, pickling_method=pickling_method, **pickling_args)
-                            response, _ = self._do_action(
-                                netrun_sim.NetAction.create_packet(epoch_id), epoch_id=epoch_id,
-                                detail={"node_name": node_name},
-                            )
-                            real_id = str(response.packet_id)
-                            self._packet_store.register(real_id, value)
-                            self._do_action(
-                                netrun_sim.NetAction.load_packet_into_output_port(real_id, port_name),
-                                epoch_id=epoch_id,
-                                detail={"node_name": node_name, "packet_id": real_id, "port_name": port_name},
-                            )
+                            salvo_port_values.setdefault(port_name, []).append(value)
 
-                    # Send the output salvo
-                    self._do_action(
-                        netrun_sim.NetAction.send_output_salvo(epoch_id, salvo_name),
-                        epoch_id=epoch_id,
-                        detail={"node_name": node_name, "salvo_condition": salvo_name},
-                    )
-                    epoch = self._netsim.get_epoch(epoch_id)
-                    if epoch.orphaned_packets:
-                        for orphaned_info in epoch.orphaned_packets:
-                            self._route_orphaned_packet(
-                                packet_id=orphaned_info.packet_id,
-                                from_node=node_name,
-                                from_port=orphaned_info.from_port,
-                                epoch_id=epoch_id,
-                            )
+                    self._create_and_load_outputs(epoch_id, node_name, salvo_port_values)
+                    self._send_single_output_salvo(epoch_id, node_name, salvo_name)
 
         elif manifest.file_keys:
             # --- Per-file mode: create lazy specs for each output ---
             for salvo_name in manifest.output_salvo_names:
+                salvo_port_values: dict[str, list] = {}
                 salvo_file_keys = manifest.file_keys.get(salvo_name, [])
                 for port_keys in salvo_file_keys:
                     for port_name, file_key in port_keys.items():
@@ -2645,47 +2620,13 @@ class Net:
                                 "serialization_kwargs_json": ser_kwargs_json,
                             },
                         )
-                        response, _ = self._do_action(
-                            netrun_sim.NetAction.create_packet(epoch_id), epoch_id=epoch_id,
-                            detail={"node_name": node_name},
-                        )
-                        real_id = str(response.packet_id)
-                        self._packet_store.register(real_id, lazy_spec)
-                        self._do_action(
-                            netrun_sim.NetAction.load_packet_into_output_port(real_id, port_name),
-                            epoch_id=epoch_id,
-                            detail={"node_name": node_name, "packet_id": real_id, "port_name": port_name},
-                        )
+                        salvo_port_values.setdefault(port_name, []).append(lazy_spec)
 
-                # Send the output salvo
-                self._do_action(
-                    netrun_sim.NetAction.send_output_salvo(epoch_id, salvo_name),
-                    epoch_id=epoch_id,
-                    detail={"node_name": node_name, "salvo_condition": salvo_name},
-                )
-                epoch = self._netsim.get_epoch(epoch_id)
-                if epoch.orphaned_packets:
-                    for orphaned_info in epoch.orphaned_packets:
-                        self._route_orphaned_packet(
-                            packet_id=orphaned_info.packet_id,
-                            from_node=node_name,
-                            from_port=orphaned_info.from_port,
-                            epoch_id=epoch_id,
-                        )
+                self._create_and_load_outputs(epoch_id, node_name, salvo_port_values)
+                self._send_single_output_salvo(epoch_id, node_name, salvo_name)
 
-        # Snapshot and finish
-        epoch_snapshot = self._netsim.get_epoch(epoch_id)
-        self._epochs[epoch_id].out_salvos = list(epoch_snapshot.out_salvos)
-        self._epochs[epoch_id].orphaned_packets = list(epoch_snapshot.orphaned_packets)
         self._epochs[epoch_id].was_file_storage_hit = True
-
-        # Emit epoch_finished signal (file storage replay counts as successful completion)
-        self._emit_epoch_signal(epoch_id, node_name, "epoch_finished")
-
-        self._do_action(netrun_sim.NetAction.finish_epoch(epoch_id), epoch_id=epoch_id, detail={"node_name": node_name})
-        self._epochs[epoch_id].ended_at = get_timestamp_utc()
-        self._epochs[epoch_id].state = netrun_sim.EpochState.Finished
-        await self._fire_epoch_end(node_name, epoch_id)
+        await self._finish_epoch_lifecycle(epoch_id, node_name)
 
         # Return a synthetic result
         from ...net._net._context import DeferredActionQueue

@@ -258,7 +258,7 @@ def test_net_route_orphaned_packet_discard():
 
     # Packet value should be consumed (discarded)
     with pytest.raises(KeyError):
-        net._packet_store._get("pkt_789")
+        net._packet_store.peek("pkt_789")
 
 # %% pts/tests/06_net/test_output_queues.pct.py 17
 def test_net_route_orphaned_packet_error():

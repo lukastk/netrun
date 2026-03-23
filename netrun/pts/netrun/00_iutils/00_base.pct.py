@@ -20,21 +20,6 @@ import datetime
 
 # %%
 #|hide
-show_doc(this_module.patch_to)
-
-# %%
-#|export
-def patch_to(cls):
-    """Patch a class to add a method."""
-
-    def decorator(func):
-        setattr(cls, func.__name__, func)
-        return func
-
-    return decorator
-
-# %%
-#|hide
 show_doc(this_module.get_timestamp_utc)
 
 # %%
