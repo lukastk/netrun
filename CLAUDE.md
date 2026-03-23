@@ -30,6 +30,7 @@ This separation of concerns allows the actual execution and data storage to be i
 - Source code lives in `.pct.py` files (percent notebooks), not in the exported Python modules
 - Never edit files in `src/netrun/` directly - they are auto-generated
 - After editing `.pct.py` files, run `nbl export --reverse` then `nbl export`
+- **nblite does NOT auto-generate `__init__.py` files.** You must create `__init__.py` files manually in `src/` for any package that needs re-exports. These manual `__init__.py` files are not overwritten by `nbl export`.
 
 ### netrun-ui (Visual Editor)
 

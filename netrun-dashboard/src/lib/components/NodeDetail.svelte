@@ -1,0 +1,638 @@
+<script lang="ts">
+	import type { ObserveState } from '../types.js';
+	import { formatDuration, formatTimeMs, formatFieldValue, stateClass, outcomeClass } from '../format.js';
+	import { enableNode, disableNode, injectData, sendControl } from '../api.js';
+	import EpochDetail from './EpochDetail.svelte';
+
+	const CONTROL_PREFIX = '__control_';
+	const CONTROL_SUFFIX = '__';
+
+	// Control types that require a value, and what type
+	const CONTROL_VALUE_TYPES: Record<string, string> = {
+		cancel_epoch: 'string (epoch ID)',
+		set_epoch_count: 'integer',
+	};
+
+	interface Props {
+		nodeName: string;
+		liveState: ObserveState | null;
+		observeUrl: string | null;
+		onClose: () => void;
+	}
+
+	let { nodeName, liveState, observeUrl, onClose }: Props = $props();
+
+	// Inject form state
+	let injectPort = $state('');
+	let injectValue = $state('');
+	let injectOpen = $state(false);
+	let controlValues = $state<Record<string, string>>({});
+
+	function extractControlType(portName: string): string | null {
+		if (!portName.startsWith(CONTROL_PREFIX) || !portName.endsWith(CONTROL_SUFFIX)) return null;
+		return portName.slice(CONTROL_PREFIX.length, -CONTROL_SUFFIX.length);
+	}
+
+	async function handleToggleEnabled() {
+		if (!observeUrl || !nodeStatus) return;
+		if (nodeStatus.enabled) {
+			await disableNode(observeUrl, nodeName);
+		} else {
+			await enableNode(observeUrl, nodeName);
+		}
+	}
+
+	async function handleSendControl(controlType: string) {
+		if (!observeUrl) return;
+		const valueType = CONTROL_VALUE_TYPES[controlType];
+		if (valueType) {
+			const raw = controlValues[controlType] ?? '';
+			if (!raw.trim()) return;
+			let value: unknown = raw;
+			if (valueType.startsWith('integer')) {
+				value = parseInt(raw, 10);
+				if (isNaN(value as number)) return;
+			}
+			await sendControl(observeUrl, nodeName, controlType, value);
+			controlValues[controlType] = '';
+		} else {
+			await sendControl(observeUrl, nodeName, controlType);
+		}
+	}
+
+	async function handleInject() {
+		if (!observeUrl || !injectPort.trim() || !injectValue.trim()) return;
+		try {
+			const parsed = JSON.parse(injectValue);
+			const values = Array.isArray(parsed) ? parsed : [parsed];
+			await injectData(observeUrl, nodeName, injectPort.trim(), values);
+			injectValue = '';
+		} catch {
+			await injectData(observeUrl, nodeName, injectPort.trim(), [injectValue]);
+			injectValue = '';
+		}
+	}
+
+	let nodeStatus = $derived(liveState?.nodes.find((n) => n.name === nodeName) ?? null);
+
+	let controlPorts = $derived(
+		(nodeStatus?.in_port_names ?? [])
+			.map((name) => ({ name, controlType: extractControlType(name) }))
+			.filter((p) => p.controlType !== null) as { name: string; controlType: string }[],
+	);
+
+	let dataPorts = $derived(
+		(nodeStatus?.in_port_names ?? []).filter((name) => extractControlType(name) === null),
+	);
+
+	let epochsClearedAt = $state<string | null>(null);
+	let logsClearedAt = $state<string | null>(null);
+
+	let nodeEpochs = $derived.by(() => {
+		let arr = (liveState?.epochs ?? [])
+			.filter((e) => e.node_name === nodeName)
+			.sort((a, b) => b.created_at.localeCompare(a.created_at));
+		if (epochsClearedAt) arr = arr.filter((e) => e.created_at > epochsClearedAt!);
+		return arr;
+	});
+
+	interface UnifiedLog {
+		timestamp: string;
+		message: string;
+		fields?: Record<string, unknown>;
+		isStructured: boolean;
+	}
+
+	let nodeLogs = $derived.by((): UnifiedLog[] => {
+		const result: UnifiedLog[] = [];
+
+		// Print buffer logs
+		for (const log of (liveState?.logs ?? []).filter((l) => l.node_name === nodeName)) {
+			result.push({ timestamp: log.timestamp, message: log.message, isStructured: false });
+		}
+
+		// Structured logs from this node's epochs
+		for (const epoch of nodeEpochs) {
+			for (const entry of epoch.node_log_entries) {
+				result.push({
+					timestamp: entry.timestamp,
+					message: entry.message ?? '',
+					fields: entry.fields,
+					isStructured: true,
+				});
+			}
+		}
+
+		// Deduplicate: structured wins over print buffer at same timestamp
+		const structuredKeys = new Set(
+			result.filter((r) => r.isStructured).map((r) => r.timestamp),
+		);
+		const deduped = result.filter(
+			(r) => r.isStructured || !structuredKeys.has(r.timestamp),
+		);
+
+		deduped.sort((a, b) => a.timestamp.localeCompare(b.timestamp));
+		if (logsClearedAt) return deduped.filter((r) => r.timestamp > logsClearedAt!);
+		return deduped;
+	});
+
+	let expandedEpochId = $state<string | null>(null);
+	let expandedLogIndex = $state<number | null>(null);
+
+	// Collapsible sections
+	let statusOpen = $state(true);
+	let portsOpen = $state(true);
+	let epochsOpen = $state(true);
+	let logsOpen = $state(true);
+</script>
+
+<div class="node-detail">
+	<div class="detail-header">
+		<span class="detail-title">{nodeName}</span>
+		<button class="close-btn" onclick={onClose}>&#x2715;</button>
+	</div>
+
+	{#if nodeStatus}
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="section">
+			<div class="section-title" onclick={() => (statusOpen = !statusOpen)}>
+				<span class="chevron" class:open={statusOpen}>&#9656;</span> Status
+			</div>
+			{#if statusOpen}
+				<div class="info-grid">
+					<span class="label">Status</span>
+					<span class="value">
+						{#if !nodeStatus.enabled}
+							<span class="badge state-cancelled">disabled</span>
+						{:else if nodeStatus.is_busy}
+							<span class="badge state-running">running</span>
+						{:else}
+							<span class="badge state-finished">idle</span>
+						{/if}
+					</span>
+					<span class="label">Epochs</span>
+					<span class="value">{nodeStatus.epoch_count}</span>
+					{#if nodeStatus.pools.length > 0}
+						<span class="label">Pools</span>
+						<span class="value">{nodeStatus.pools.join(', ')}</span>
+					{/if}
+					{#if nodeStatus.factory}
+						<span class="label">Factory</span>
+						<span class="value mono">{nodeStatus.factory}</span>
+					{/if}
+				</div>
+			{/if}
+		</div>
+
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="section">
+			<div class="section-title" onclick={() => (portsOpen = !portsOpen)}>
+				<span class="chevron" class:open={portsOpen}>&#9656;</span> Ports
+			</div>
+			{#if portsOpen}
+				{#if nodeStatus.in_port_names.length > 0}
+					<div class="port-group">
+						<span class="port-label">In</span>
+						{#each nodeStatus.in_port_names as port}
+							<div class="port-item">
+								<span class="port-name">{port}</span>
+								{#if (nodeStatus.input_port_packet_counts[port] ?? 0) > 0}
+									<span class="packet-badge">{nodeStatus.input_port_packet_counts[port]}</span>
+								{/if}
+							</div>
+						{/each}
+					</div>
+				{/if}
+				{#if nodeStatus.out_port_names.length > 0}
+					<div class="port-group">
+						<span class="port-label">Out</span>
+						{#each nodeStatus.out_port_names as port}
+							<div class="port-item">
+								<span class="port-name">{port}</span>
+							</div>
+						{/each}
+					</div>
+				{/if}
+			{/if}
+		</div>
+	{/if}
+
+	{#if observeUrl}
+		<!-- svelte-ignore a11y_no_static_element_interactions -->
+		<div class="section">
+			<div class="section-title" onclick={() => (injectOpen = !injectOpen)}>
+				<span class="chevron" class:open={injectOpen}>&#9656;</span> Controls
+			</div>
+			{#if injectOpen}
+				<div class="controls">
+					{#if nodeStatus}
+						<button class="control-btn" onclick={handleToggleEnabled}>
+							{nodeStatus.enabled ? 'Disable Node' : 'Enable Node'}
+						</button>
+					{/if}
+
+					{#if controlPorts.length > 0}
+						<div class="control-group">
+							<div class="inject-label">Controls</div>
+							{#each controlPorts as cp}
+								{@const needsValue = CONTROL_VALUE_TYPES[cp.controlType]}
+								<div class="control-row">
+									{#if needsValue}
+										<input
+											type="text"
+											bind:value={controlValues[cp.controlType]}
+											placeholder={needsValue}
+											class="control-value-input"
+											onkeydown={(e) => e.key === 'Enter' && handleSendControl(cp.controlType)}
+										/>
+									{/if}
+									<button class="control-btn control-action" onclick={() => handleSendControl(cp.controlType)}>
+										{cp.controlType.replace(/_/g, ' ')}
+									</button>
+								</div>
+							{/each}
+						</div>
+					{/if}
+
+					{#if dataPorts.length > 0}
+						<div class="inject-form">
+							<div class="inject-label">Inject Data</div>
+							<select bind:value={injectPort} class="inject-input">
+								<option value="">Select port...</option>
+								{#each dataPorts as port}
+									<option value={port}>{port}</option>
+								{/each}
+							</select>
+							<input
+								type="text"
+								bind:value={injectValue}
+								placeholder='Value (JSON or string)'
+								class="inject-input"
+								onkeydown={(e) => e.key === 'Enter' && handleInject()}
+							/>
+							<button class="control-btn" onclick={handleInject} disabled={!injectPort || !injectValue}>Inject</button>
+						</div>
+					{/if}
+				</div>
+			{/if}
+		</div>
+	{/if}
+
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div class="section">
+		<div class="section-title" onclick={() => (epochsOpen = !epochsOpen)}>
+			<span class="chevron" class:open={epochsOpen}>&#9656;</span> Epoch History ({nodeEpochs.length})
+			<button class="section-clear" onclick={(e) => { e.stopPropagation(); epochsClearedAt = new Date().toISOString(); }}>Clear</button>
+		</div>
+		{#if epochsOpen}
+			<div class="epoch-list">
+				{#each nodeEpochs.slice(0, 50) as epoch (epoch.epoch_id)}
+					<div
+						class="epoch-item"
+						class:expanded={expandedEpochId === epoch.epoch_id}
+						onclick={() => (expandedEpochId = expandedEpochId === epoch.epoch_id ? null : epoch.epoch_id)}
+					>
+						<span class="badge {stateClass(epoch.state)}">{epoch.state}</span>
+						{#if epoch.outcome}
+							<span class="badge {outcomeClass(epoch.outcome)}">{epoch.outcome}</span>
+						{/if}
+						<span class="mono">{formatDuration(epoch.duration_ms)}</span>
+						<span class="mono muted">{epoch.started_at ? formatTimeMs(epoch.started_at) : ''}</span>
+					</div>
+					{#if expandedEpochId === epoch.epoch_id}
+						<EpochDetail {epoch} />
+					{/if}
+				{/each}
+				{#if nodeEpochs.length === 0}
+					<div class="empty">No epochs</div>
+				{/if}
+			</div>
+		{/if}
+	</div>
+
+	<!-- svelte-ignore a11y_no_static_element_interactions -->
+	<div class="section">
+		<div class="section-title" onclick={() => (logsOpen = !logsOpen)}>
+			<span class="chevron" class:open={logsOpen}>&#9656;</span> Recent Logs ({nodeLogs.length})
+			<button class="section-clear" onclick={(e) => { e.stopPropagation(); logsClearedAt = new Date().toISOString(); }}>Clear</button>
+		</div>
+		{#if logsOpen}
+			<div class="log-list">
+				{#each nodeLogs.slice(-50) as log, i}
+					{@const hasFields = log.isStructured && log.fields && Object.keys(log.fields).length > 0}
+					<div
+						class="log-line"
+						class:expandable={hasFields}
+						onclick={() => hasFields && (expandedLogIndex = expandedLogIndex === i ? null : i)}
+					>
+						<span class="mono muted">{formatTimeMs(log.timestamp)}</span>
+						<span>{log.message}</span>
+						{#if hasFields}
+							<span class="field-indicator">&#9656; {Object.keys(log.fields!).length} fields</span>
+						{/if}
+					</div>
+					{#if expandedLogIndex === i && log.fields}
+						<div class="field-detail">
+							{#each Object.entries(log.fields) as [k, v]}
+								<div class="field-row">
+									<span class="field-key">{k}</span>
+									<span class="field-value">{formatFieldValue(v)}</span>
+								</div>
+							{/each}
+						</div>
+					{/if}
+				{/each}
+				{#if nodeLogs.length === 0}
+					<div class="empty">No logs</div>
+				{/if}
+			</div>
+		{/if}
+	</div>
+</div>
+
+<style>
+	.node-detail {
+		height: 100%;
+		overflow-y: auto;
+		font-size: 12px;
+	}
+
+	.detail-header {
+		display: flex;
+		align-items: center;
+		justify-content: space-between;
+		padding: 12px 16px;
+		border-bottom: 1px solid var(--border-color);
+		position: sticky;
+		top: 0;
+		background: var(--bg-secondary);
+		z-index: 1;
+	}
+
+	.detail-title {
+		font-size: 14px;
+		font-weight: 700;
+	}
+
+	.close-btn {
+		padding: 2px 6px;
+		font-size: 11px;
+		color: var(--text-secondary);
+		background: transparent;
+	}
+
+	.close-btn:hover {
+		color: var(--text-primary);
+		background: transparent;
+	}
+
+	.section {
+		padding: 10px 16px;
+		border-bottom: 1px solid var(--border-color);
+	}
+
+	.section-title {
+		display: flex;
+		align-items: center;
+		gap: 4px;
+		font-size: 10px;
+		font-weight: 600;
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+		color: var(--text-secondary);
+		margin-bottom: 6px;
+		cursor: pointer;
+		user-select: none;
+	}
+
+	.section-title:hover {
+		color: var(--text-primary);
+	}
+
+	.chevron {
+		display: inline-block;
+		transition: transform 0.15s;
+	}
+
+	.chevron.open {
+		transform: rotate(90deg);
+	}
+
+	.section-clear {
+		margin-left: auto;
+		padding: 0 6px;
+		font-size: 9px;
+		background: transparent;
+		color: var(--text-secondary);
+		border: 1px solid var(--border-color);
+		border-radius: 3px;
+	}
+
+	.section-clear:hover {
+		color: var(--text-primary);
+		background: var(--bg-tertiary);
+	}
+
+	.info-grid {
+		display: grid;
+		grid-template-columns: auto 1fr;
+		gap: 2px 10px;
+		font-size: 11px;
+	}
+
+	.label {
+		color: var(--text-secondary);
+	}
+
+	.value {
+		color: var(--text-primary);
+	}
+
+	.mono {
+		font-variant-numeric: tabular-nums;
+	}
+
+	.muted {
+		color: var(--text-secondary);
+	}
+
+	.badge {
+		display: inline-block;
+		padding: 1px 5px;
+		border-radius: 3px;
+		font-size: 9px;
+		font-weight: 600;
+		text-transform: uppercase;
+	}
+
+	.state-finished { background: rgba(160, 160, 160, 0.15); color: var(--text-secondary); }
+	.state-running { background: rgba(59, 130, 246, 0.15); color: var(--accent-color); }
+	.state-startable { background: rgba(245, 158, 11, 0.15); color: var(--warning-color); }
+	.state-cancelled { background: rgba(160, 160, 160, 0.1); color: var(--text-secondary); }
+	.outcome-success { background: rgba(34, 197, 94, 0.15); color: var(--success-color); }
+	.outcome-error { background: rgba(239, 68, 68, 0.15); color: var(--error-color); }
+
+	.port-group {
+		margin-bottom: 4px;
+	}
+
+	.port-label {
+		font-size: 10px;
+		font-weight: 600;
+		color: var(--text-secondary);
+		text-transform: uppercase;
+	}
+
+	.port-item {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 1px 0 1px 12px;
+		font-size: 11px;
+	}
+
+	.port-name {
+		color: var(--text-primary);
+	}
+
+	.packet-badge {
+		font-size: 9px;
+		padding: 0 4px;
+		border-radius: 8px;
+		background: rgba(59, 130, 246, 0.2);
+		color: var(--accent-color);
+		font-weight: 600;
+	}
+
+	.epoch-list, .log-list {
+		max-height: 300px;
+		overflow-y: auto;
+	}
+
+	.epoch-item {
+		display: flex;
+		align-items: center;
+		gap: 6px;
+		padding: 3px 0;
+		cursor: pointer;
+		font-size: 11px;
+	}
+
+	.epoch-item:hover {
+		background: var(--bg-tertiary);
+	}
+
+	.log-line {
+		display: flex;
+		gap: 6px;
+		padding: 1px 0;
+		font-size: 10px;
+		flex-wrap: wrap;
+		align-items: baseline;
+	}
+
+	.log-line.expandable {
+		cursor: pointer;
+	}
+
+	.log-line.expandable:hover {
+		background: var(--bg-tertiary);
+	}
+
+	.field-indicator {
+		color: var(--text-secondary);
+		font-size: 9px;
+	}
+
+	.field-detail {
+		padding: 2px 0 4px 16px;
+		border-left: 2px solid var(--border-color);
+		margin-left: 4px;
+	}
+
+	.field-row {
+		display: flex;
+		gap: 8px;
+		font-size: 10px;
+		padding: 1px 0;
+	}
+
+	.field-key {
+		color: var(--purple-color);
+		flex-shrink: 0;
+	}
+
+	.field-value {
+		color: var(--text-primary);
+	}
+
+	.controls {
+		display: flex;
+		flex-direction: column;
+		gap: 8px;
+	}
+
+	.control-btn {
+		padding: 4px 10px;
+		font-size: 11px;
+		background: var(--bg-tertiary);
+		border: 1px solid var(--border-color);
+		width: fit-content;
+	}
+
+	.control-btn:hover {
+		background: var(--border-color);
+	}
+
+	.control-btn:disabled {
+		opacity: 0.4;
+		cursor: not-allowed;
+	}
+
+	.control-group {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.control-row {
+		display: flex;
+		gap: 4px;
+		align-items: center;
+	}
+
+	.control-value-input {
+		flex: 1;
+		font-size: 11px;
+		padding: 3px 8px;
+	}
+
+	.control-action {
+		text-transform: capitalize;
+	}
+
+	.inject-form {
+		display: flex;
+		flex-direction: column;
+		gap: 4px;
+	}
+
+	.inject-label {
+		font-size: 10px;
+		font-weight: 600;
+		color: var(--text-secondary);
+		text-transform: uppercase;
+		letter-spacing: 0.05em;
+	}
+
+	.inject-input {
+		font-size: 11px;
+		padding: 3px 8px;
+	}
+
+	.empty {
+		color: var(--text-secondary);
+		font-size: 11px;
+		padding: 4px 0;
+	}
+</style>

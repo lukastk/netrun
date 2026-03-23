@@ -1,0 +1,99 @@
+/* Global styles for netrun-dashboard */
+
+:root {
+  --sidebar-width: 280px;
+
+  /* Colors */
+  --bg-primary: #1a1a1a;
+  --bg-secondary: #242424;
+  --bg-tertiary: #2d2d2d;
+  --border-color: #404040;
+  --text-primary: #ffffff;
+  --text-secondary: #a0a0a0;
+  --accent-color: #3b82f6;
+  --accent-hover: #2563eb;
+  --error-color: #ef4444;
+  --warning-color: #f59e0b;
+  --success-color: #22c55e;
+  --purple-color: #a855f7;
+
+  /* Map to netrun-ui-vis namespaced variables */
+  --netrun-bg-primary: var(--bg-primary);
+  --netrun-bg-secondary: var(--bg-secondary);
+  --netrun-bg-tertiary: var(--bg-tertiary);
+  --netrun-border-color: var(--border-color);
+  --netrun-text-primary: var(--text-primary);
+  --netrun-text-secondary: var(--text-secondary);
+  --netrun-accent-color: var(--accent-color);
+  --netrun-error-color: var(--error-color);
+  --netrun-node-bg: var(--bg-tertiary);
+  --netrun-node-border: var(--border-color);
+  --netrun-node-selected: var(--accent-color);
+  --netrun-port-input: var(--success-color);
+  --netrun-port-output: var(--warning-color);
+  --netrun-subgraph-border: var(--success-color);
+}
+
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  height: 100%;
+  width: 100%;
+  font-family: 'SF Mono', Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
+  font-size: 14px;
+  color: var(--text-primary);
+  background: var(--bg-primary);
+}
+
+button {
+  cursor: pointer;
+  border: none;
+  background: var(--bg-tertiary);
+  color: var(--text-primary);
+  padding: 8px 12px;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+button:hover {
+  background: var(--border-color);
+}
+
+input, select, textarea {
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  color: var(--text-primary);
+  padding: 6px 10px;
+  border-radius: 4px;
+  font-family: inherit;
+  font-size: 13px;
+}
+
+input:focus, select:focus, textarea:focus {
+  outline: none;
+  border-color: var(--accent-color);
+}
+
+/* Scrollbar styling */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-secondary);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-color);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #505050;
+}

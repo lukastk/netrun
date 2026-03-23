@@ -43,6 +43,8 @@
 		nodeContextMenuItems?: (node: Node) => ContextMenuItem[];
 		/** Returns context menu items for an edge (return empty array to suppress menu). */
 		edgeContextMenuItems?: (edge: Edge) => ContextMenuItem[];
+		/** Key codes that trigger deletion. Defaults to ['Delete', 'Backspace']. Set to null to disable. */
+		deleteKey?: string[] | null;
 		/** Whether to show the minimap. Defaults to true. */
 		showMinimap?: boolean;
 		/** Custom minimap node coloring. */
@@ -56,6 +58,7 @@
 		onConnect?: (connection: Connection) => void;
 		onBeforeConnect?: (connection: Connection) => Connection | false;
 		onDelete?: (params: { nodes: Node[]; edges: Edge[] }) => void;
+		onPaneClick?: (event: { event: MouseEvent }) => void;
 		onPaneContextMenu?: (event: MouseEvent) => void;
 		onNodeContextAction?: (event: { node: Node; action: string }) => void;
 		onEdgeContextAction?: (event: { edge: Edge; action: string }) => void;
@@ -73,6 +76,7 @@
 		isValidConnection,
 		nodeContextMenuItems,
 		edgeContextMenuItems,
+		deleteKey = ['Delete', 'Backspace'],
 		showMinimap = true,
 		minimapNodeColor,
 		onNodeClick,
@@ -82,6 +86,7 @@
 		onConnect,
 		onBeforeConnect,
 		onDelete,
+		onPaneClick,
 		onPaneContextMenu,
 		onNodeContextAction,
 		onEdgeContextAction,
@@ -228,6 +233,7 @@
 		ondelete={onDelete}
 		onselectionchange={onSelectionChange}
 		onnodedragstop={onNodeDragStop}
+		onpaneclick={onPaneClick}
 		onpanecontextmenu={handlePaneContextMenu}
 		onnodecontextmenu={handleNodeContextMenuEvent}
 		onnodeclick={onNodeClick}
@@ -243,7 +249,7 @@
 			...getMarkers(edgeMarkersMode),
 		}}
 		connectionLineType={getConnectionLineType(edgeStyle)}
-		deleteKey={['Delete', 'Backspace']}
+		deleteKey={deleteKey}
 		{panOnDrag}
 		{selectionOnDrag}
 		selectionKey="Shift"

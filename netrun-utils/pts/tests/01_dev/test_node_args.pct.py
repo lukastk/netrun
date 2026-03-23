@@ -1,0 +1,164 @@
+# ---
+# jupyter:
+#   kernelspec:
+#     display_name: .venv
+#     language: python
+#     name: python3
+# ---
+
+# %% [markdown]
+# # Tests for set_node_func_args
+
+# %%
+#|default_exp dev.test_node_args
+
+# %%
+#|export
+import json
+import pytest
+from pathlib import Path
+
+from netrun.net._net._context import NodeExecutionContext
+
+from netrun_utils.dev.node_args import set_node_func_args
+from netrun_utils.dev._helpers import (
+    _load_config,
+    _resolve_node_name,
+    _get_node_func,
+    _get_merged_node_vars,
+)
+
+# %% [markdown]
+# ## Test node function module
+
+# %%
+#|export
+_NODE_FUNC_CODE = '''
+def source_func(ctx) -> str:
+    """Source node that produces data."""
+    return "hello"
+
+def process(data: str, ctx) -> str:
+    """Test node function."""
+    return data.upper()
+'''
+
+
+def _write_config_with_func(tmp_path: Path) -> Path:
+    """Write a config + node function file, return config path."""
+    # Write the node function module
+    func_dir = tmp_path / "mypkg"
+    func_dir.mkdir()
+    (func_dir / "__init__.py").write_text("")
+    (func_dir / "nodes.py").write_text(_NODE_FUNC_CODE)
+
+    # Write config where source produces data via factory and process consumes it
+    config = {
+        "pools": {"main": {"spec": {"type": "main"}}},
+        "graph": {
+            "nodes": [
+                {
+                    "name": "source",
+                    "factory": "netrun.node_factories.from_function",
+                    "factory_args": {"func": "mypkg.nodes.source_func"},
+                    "execution_config": {
+                        "pools": ["main"],
+                        "run_on_init": True,
+                    },
+                },
+                {
+                    "name": "process",
+                    "factory": "netrun.node_factories.from_function",
+                    "factory_args": {"func": "mypkg.nodes.process"},
+                    "execution_config": {
+                        "pools": ["main"],
+                        "node_vars": {
+                            "mode": {"value": "test", "type": "str"},
+                        },
+                    },
+                },
+            ],
+            "edges": [
+                {"source_node": "source", "source_port": "out", "target_node": "process", "target_port": "data"},
+            ],
+        },
+        "node_vars": {
+            "run_name": {"value": "dev_test", "type": "str"},
+        },
+        "retain_epoch_logs": True,
+    }
+    config_path = tmp_path / "test.netrun.json"
+    config_path.write_text(json.dumps(config))
+    return config_path
+
+# %% [markdown]
+# ## Tests for _get_node_func and _get_merged_node_vars
+
+# %%
+#|export
+def test_get_node_func(tmp_path):
+    """Test that _get_node_func resolves the user function and special params."""
+    import sys
+    sys.path.insert(0, str(tmp_path))
+    try:
+        config_path = _write_config_with_func(tmp_path)
+        config = _load_config(config_path)
+        func, special = _get_node_func(config, "process")
+        assert func.__name__ == "process"
+        assert "ctx" in special
+        assert "data" not in special  # data is a regular param, not special
+    finally:
+        sys.path.remove(str(tmp_path))
+
+
+def test_get_merged_node_vars_via_config(tmp_path):
+    """Test variable merging through config loading."""
+    import sys
+    sys.path.insert(0, str(tmp_path))
+    try:
+        config_path = _write_config_with_func(tmp_path)
+        config = _load_config(config_path)
+        merged = _get_merged_node_vars(config, "process")
+        assert "run_name" in merged
+        assert "mode" in merged
+        var, source = merged["run_name"]
+        assert var.value == "dev_test"
+        assert source == "global"
+        var, source = merged["mode"]
+        assert var.value == "test"
+        assert source == "node-level"
+    finally:
+        sys.path.remove(str(tmp_path))
+
+# %% [markdown]
+# ## Integration test for set_node_func_args
+
+# %%
+#|export
+async def test_set_node_func_args_return_args(tmp_path):
+    """Test set_node_func_args with return_args=True (uses run_to_targets)."""
+    import sys
+    sys.path.insert(0, str(tmp_path))
+    try:
+        config_path = _write_config_with_func(tmp_path)
+
+        args = set_node_func_args(
+            "process",
+            config_path,
+            return_args=True,
+            verbose=False,
+        )
+
+        assert args is not None
+        # Should have 'data' (from input port) and 'ctx' (special param)
+        assert "data" in args
+        assert args["data"] == "hello"  # source_func returns "hello"
+        assert "ctx" in args
+        assert isinstance(args["ctx"], NodeExecutionContext)
+        assert args["ctx"].node_name == "process"
+        # ctx.vars should include both global and node-level vars
+        ctx_vars = args["ctx"].vars
+        assert ctx_vars["run_name"] == "dev_test"
+        assert ctx_vars["mode"] == "test"
+    finally:
+        sys.path.remove(str(tmp_path))

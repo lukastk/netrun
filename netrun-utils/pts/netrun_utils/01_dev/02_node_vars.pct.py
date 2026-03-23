@@ -1,0 +1,76 @@
+# ---
+# jupyter:
+#   kernelspec:
+#     display_name: .venv
+#     language: python
+#     name: python3
+# ---
+
+# %% [markdown]
+# # show_node_vars
+#
+# Display a node's resolved variables in a formatted table.
+
+# %%
+#|default_exp dev.node_vars
+
+# %%
+#|export
+from pathlib import Path
+
+from netrun_utils.dev._helpers import (
+    _load_config,
+    _resolve_node_name,
+    _get_merged_node_vars,
+)
+
+# %%
+#|export
+def show_node_vars(
+    node_name: str,
+    config_path: str | Path,
+    *filter_names: str,
+    global_node_vars: dict | None = None,
+    node_vars: dict | None = None,
+) -> None:
+    """Display node variables for a node in a formatted table.
+
+    Args:
+        node_name: The node name (bare name is resolved against subgraph prefixes).
+        config_path: Path to the netrun config file (.json or .toml).
+        *filter_names: Optional variable names to filter by (show only these).
+        global_node_vars: Optional net-level variable overrides.
+        node_vars: Optional per-node variable overrides.
+    """
+    config = _load_config(config_path, global_node_vars=global_node_vars, node_vars=node_vars)
+    full_name = _resolve_node_name(config, node_name)
+    merged = _get_merged_node_vars(config, full_name)
+
+    if filter_names:
+        merged = {k: v for k, v in merged.items() if k in filter_names}
+
+    if not merged:
+        print(f"No variables for '{full_name}'")
+        return
+
+    # Build table data
+    rows = []
+    for name, (var, source) in sorted(merged.items()):
+        value_str = repr(var.value) if var.value is not None else "None"
+        rows.append((name, value_str, var.type, source))
+
+    # Calculate column widths
+    headers = ("Name", "Value", "Type", "Source")
+    widths = [len(h) for h in headers]
+    for row in rows:
+        for i, cell in enumerate(row):
+            widths[i] = max(widths[i], len(cell))
+
+    # Print table
+    print(f"\nNode variables for '{full_name}':")
+    header_line = "  ".join(h.ljust(widths[i]) for i, h in enumerate(headers))
+    print(header_line)
+    print("  ".join("\u2500" * w for w in widths))
+    for row in rows:
+        print("  ".join(cell.ljust(widths[i]) for i, cell in enumerate(row)))
+    print()
