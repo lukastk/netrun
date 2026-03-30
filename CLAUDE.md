@@ -40,6 +40,8 @@ This separation of concerns allows the actual execution and data storage to be i
 - `netrun-ui/README.md` - Project overview, architecture, and development setup
 - `netrun-ui/BACKEND_README.md` - Backend CLI usage and installation
 
+**Important:** `netrun-ui/netrun_ui_backend/vis_assets/` is intentionally NOT gitignored (so hatchling includes it in the wheel), but the built assets inside it must NEVER be committed to git. They are generated at build time by `npm run build:app` in `netrun-ui-vis/`. The CI release workflow creates them before building the wheel.
+
 ## Development Notes (_dev_notes)
 
 Each subproject may have a `_dev_notes/` directory containing implementation plans and development documentation. **These are critical for maintaining context across sessions.**
