@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "Observability and development utilities for netrun."
 requires-python = ">=3.11"
 dependencies = [
-    "netrun>=0.4.0",
+    "netrun>=0.5.0",
     "pydantic>=2.0.0",
 ]
 
