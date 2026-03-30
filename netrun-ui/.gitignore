@@ -10,7 +10,6 @@ node_modules
 
 # Built artifacts (rebuilt by hatch build hook during install)
 /netrun_ui_backend/static/
-/netrun_ui_backend/vis_assets/
 
 # OS
 .DS_Store
