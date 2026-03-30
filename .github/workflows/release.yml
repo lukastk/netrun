@@ -248,6 +248,11 @@ jobs:
         run: npm ci
         working-directory: netrun-ui
 
+      - name: Bundle vis assets into package
+        run: |
+          mkdir -p netrun-ui/netrun_ui_backend/vis_assets
+          cp netrun-ui-vis/dist/app/assets/* netrun-ui/netrun_ui_backend/vis_assets/
+
       - name: Install build tools
         run: pip install build
 
