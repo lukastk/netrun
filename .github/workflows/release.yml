@@ -236,6 +236,14 @@ jobs:
           cache: 'npm'
           cache-dependency-path: netrun-ui/package-lock.json
 
+      - name: Install netrun-ui-vis npm dependencies
+        run: npm ci
+        working-directory: netrun-ui-vis
+
+      - name: Build vis app assets (for export-html)
+        run: npm run build:app
+        working-directory: netrun-ui-vis
+
       - name: Install npm dependencies
         run: npm ci
         working-directory: netrun-ui
