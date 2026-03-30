@@ -4,13 +4,13 @@ A flow-based development (FBD) runtime system. Define networks of interconnected
 
 ## Components
 
-### [netrun-sim](netrun-sim/) — Simulation Engine
-
-A Rust library (with Python bindings) that simulates packet flow through a network. Handles packet locations, flow conditions, and epoch lifecycles — but not actual execution or data storage. This separation allows execution and storage to be implemented independently of the flow logic.
-
 ### [netrun](netrun/) — Runtime
 
 A pure Python package built on netrun-sim. Provides flow-based network execution (`Net`), RPC channels, worker pools (thread/process/remote), node factories, caching, file storage, a CLI, and more.
+
+### [netrun-sim](netrun-sim/) — Simulation Engine
+
+A Rust library (with Python bindings) that simulates packet flow through a network. Handles packet locations, flow conditions, and epoch lifecycles — but not actual execution or data storage. This separation allows execution and storage to be implemented independently of the flow logic.
 
 ### [netrun-ui](netrun-ui/) — Visual Editor
 
