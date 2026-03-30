@@ -254,10 +254,10 @@ jobs:
           cp netrun-ui-vis/dist/app/assets/* netrun-ui/netrun_ui_backend/vis_assets/
 
       - name: Install build tools
-        run: pip install build
+        run: pip install build hatchling
 
       - name: Build sdist and wheel
-        run: python -m build
+        run: python -m build --no-isolation
         working-directory: netrun-ui
 
       - name: Upload dist
