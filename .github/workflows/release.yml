@@ -248,6 +248,14 @@ jobs:
         run: npm ci
         working-directory: netrun-ui
 
+      - name: Build frontend
+        run: npm run build
+        working-directory: netrun-ui
+
+      - name: Copy frontend build to static/
+        run: cp -r build netrun_ui_backend/static
+        working-directory: netrun-ui
+
       - name: Bundle vis assets into package
         run: |
           mkdir -p netrun-ui/netrun_ui_backend/vis_assets
@@ -256,8 +264,10 @@ jobs:
       - name: Install build tools
         run: pip install build hatchling
 
-      - name: Build sdist and wheel
-        run: python -m build --no-isolation
+      - name: Build wheel and sdist
+        run: |
+          python -m build --wheel --no-isolation
+          python -m build --sdist --no-isolation
         working-directory: netrun-ui
 
       - name: Upload dist

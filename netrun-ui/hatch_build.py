@@ -18,11 +18,18 @@ class FrontendBuildHook(BuildHookInterface):
         root = Path(self.root)
         static_dir = root / "netrun_ui_backend" / "static"
 
+        # If static/ already exists (e.g. pre-built by CI), skip building
+        if static_dir.exists() and (static_dir / "index.html").exists():
+            print("Frontend already built, skipping build step.")
+            self._bundle_vis_assets(root)
+            return
+
         # Check if we have frontend source
         if not (root / "package.json").exists():
-            # No source - this will fail at runtime
-            # but we can't build without source
-            return
+            raise RuntimeError(
+                "No built frontend (netrun_ui_backend/static/) and no frontend source (package.json) found. "
+                "Cannot build wheel without frontend assets."
+            )
 
         print("Building frontend...")
 
@@ -37,8 +44,7 @@ class FrontendBuildHook(BuildHookInterface):
                 text=True,
             )
             if result.returncode != 0:
-                print(f"Warning: netrun-ui-vis npm install failed: {result.stderr}", file=sys.stderr)
-                return
+                raise RuntimeError(f"netrun-ui-vis npm install failed: {result.stderr}")
 
         # Install npm dependencies if needed
         if not (root / "node_modules").exists():
@@ -50,8 +56,7 @@ class FrontendBuildHook(BuildHookInterface):
                 text=True,
             )
             if result.returncode != 0:
-                print(f"Warning: npm install failed: {result.stderr}", file=sys.stderr)
-                return
+                raise RuntimeError(f"npm install failed: {result.stderr}")
 
         # Build the frontend
         result = subprocess.run(
@@ -62,19 +67,17 @@ class FrontendBuildHook(BuildHookInterface):
         )
 
         if result.returncode != 0:
-            print(f"Warning: Frontend build failed: {result.stderr}", file=sys.stderr)
-            print(result.stdout)
-            return
+            raise RuntimeError(f"Frontend build failed: {result.stderr}\n{result.stdout}")
 
         # Copy build to static directory
         build_dir = root / "build"
-        if build_dir.exists():
-            if static_dir.exists():
-                shutil.rmtree(static_dir)
-            shutil.copytree(build_dir, static_dir)
-            print("Frontend built successfully.")
-        else:
-            print("Warning: Build directory not found after npm build", file=sys.stderr)
+        if not build_dir.exists():
+            raise RuntimeError("Build directory not found after npm build")
+
+        if static_dir.exists():
+            shutil.rmtree(static_dir)
+        shutil.copytree(build_dir, static_dir)
+        print("Frontend built successfully.")
 
         # Bundle vis app assets for export-html
         self._bundle_vis_assets(root)
