@@ -112,8 +112,6 @@ PoolSpecConfig = Annotated[
 
 class PoolConfig(VarResolvableModel):
     """Configuration for a pool of workers."""
-    print_flush_interval: float | VarRef = 0.1
-    capture_prints: bool | VarRef = True
     spec: PoolSpecConfig = Field(default_factory=MainPoolConfig)
 
 # %% [markdown]
@@ -327,8 +325,6 @@ class NetConfig(VarResolvableModel):
     node_vars: dict[str, NodeVariable] | None = Field(default=None, description="Global default node variables, accessible via ctx.vars.")
 
     dead_letter_queue: bool | VarRef = Field(default=True, description="Enable dead letter queue for undeliverable packets.")
-    dead_letter_path: Annotated[str | VarRef | None, ProjectRootPath()] = Field(default=None, description="File path for dead letter queue storage.")
-    dead_letter_callback: Callable | str | VarRef | None = Field(default=None, description="Callback function or import path for dead letter handling.")
 
     # Output queue configuration
     output_queues: dict[str, OutputQueueConfig] | None = Field(default=None, description="Output queue configurations. None auto-generates queues for unconnected output ports.")
@@ -358,24 +354,6 @@ class NetConfig(VarResolvableModel):
     default_signals: list[str] | VarRef = Field(default_factory=list, description="Default signal types for all nodes. Nodes inherit this unless they set their own signals list. Valid types: 'epoch_started', 'epoch_finished', 'epoch_failed', 'epoch_cancelled', 'node_initialized', 'node_closed'.")
 
     default_controls: list[str] | VarRef = Field(default_factory=list, description="Default control types for all nodes. Nodes inherit this unless they set their own controls list.")
-
-    @field_serializer("dead_letter_callback", when_used='json')
-    def serialize_dead_letter_callback(self, callback: Callable | str | VarRef | None) -> str | dict | None:
-        """Serialize dead_letter_callback to import path for JSON.
-
-        Note: Only called during JSON serialization (model_dump_json).
-        EnvVar instances are serialized to their dict form.
-
-        Raises:
-            ValueError: If callback is defined in __main__, is a lambda, or is a closure.
-        """
-        if callback is None:
-            return None
-        if isinstance(callback, VarRef):
-            return callback.model_dump(by_alias=True)
-        if isinstance(callback, str):
-            return callback
-        return _get_callable_import_path(callback)
 
     @field_validator("default_signals")
     @classmethod
@@ -417,7 +395,6 @@ class NetConfig(VarResolvableModel):
         - All subgraphs in the graph (flattening to regular nodes)
         - All node factories in the graph
         - All string import paths to callables
-        - dead_letter_callback if it's a string
         - pools if None (generates default main pool)
         - Per-node $var resolution with merged vars (net + node override) in GraphConfig.resolve
 
@@ -489,10 +466,6 @@ class NetConfig(VarResolvableModel):
         # Generate default output queues for unconnected output ports
         if resolved.output_queues is None:
             updates["output_queues"] = _generate_default_output_queues(resolved_graph)
-
-        # Resolve dead_letter_callback
-        if isinstance(resolved.dead_letter_callback, str):
-            updates["dead_letter_callback"] = _import_from_path(resolved.dead_letter_callback, project_root=project_root)
 
         if updates:
             result = resolved.model_copy(update=updates)

@@ -1637,17 +1637,13 @@ test_net_check_rate_limit_window_expires()
 # %%
 #|export
 def test_node_execution_config_new_fields():
-    """Test NodeExecutionConfig has new print config fields."""
+    """Test NodeExecutionConfig has config fields."""
     config = NodeExecutionConfig(
         node_name="TestNode",
-        print_flush_interval=0.2,
-        print_buffer_max_size=100,
         print_echo_stdout=True,
         pool_allocation_method=RunAllocationMethod.LEAST_BUSY,
     )
 
-    assert config.print_flush_interval == 0.2
-    assert config.print_buffer_max_size == 100
     assert config.print_echo_stdout is True
     assert config.pool_allocation_method == RunAllocationMethod.LEAST_BUSY
 
@@ -1657,11 +1653,9 @@ test_node_execution_config_new_fields()
 # %%
 #|export
 def test_node_execution_config_defaults():
-    """Test NodeExecutionConfig has correct defaults for new fields."""
+    """Test NodeExecutionConfig has correct defaults."""
     config = NodeExecutionConfig()
 
-    assert config.print_flush_interval == 0.1
-    assert config.print_buffer_max_size is None
     assert config.print_echo_stdout is None
     assert config.pool_allocation_method is None
 

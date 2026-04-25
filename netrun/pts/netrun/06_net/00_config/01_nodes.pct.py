@@ -271,17 +271,9 @@ class NodeExecutionConfig(VarResolvableModel):
 
     resources: dict[str, int] | None = Field(default=None, description="Resource requirements as {resource_name: slots_needed}. Resources must be defined in NetConfig.resources with their capacity. Node epoch starts only when all required resource slots are available.")
 
-    defer_net_actions: bool | VarRef | None = Field(default=None, description="Defer net action notifications until epoch completes successfully. Required if retries enabled.")
-
     retries: int | VarRef | None = Field(default=None, description="Number of retry attempts on failure. None inherits from NetConfig.")
     retry_wait: float | VarRef | None = Field(default=None, description="Wait time in seconds between retries. None inherits from NetConfig.")
     timeout: float | VarRef | None = Field(default=None, description="Epoch execution timeout in seconds. None inherits from NetConfig.")
-
-    capture_prints: bool | VarRef = Field(default=True, description="Capture print statements in the node.")
-
-    print_flush_interval: float | VarRef = Field(default=0.1, description="How often to flush the print buffer in seconds.")
-
-    print_buffer_max_size: int | VarRef | None = Field(default=None, description="Max print buffer size before forced flush. None = unlimited.")
 
     print_echo_stdout: bool | VarRef | None = Field(default=None, description="Also print to actual stdout when ctx.print() is called. None inherits from NetConfig.")
 

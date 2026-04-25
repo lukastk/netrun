@@ -434,20 +434,15 @@ class Net:
         # Running epoch tracking
         self._running_epochs: set[str] = set()
 
-        # Cross-retry state dicts (epoch_id -> mutable dict accessible via ctx.state)
-        self._epoch_states: dict[str, dict[str, Any]] = {}
-
         # Scheduling constraint tracking
         self._node_has_completed: set[str] = set()  # Nodes that have completed at least one epoch
         self._resource_usage: dict[str, int] = {}  # Current resource slot usage per resource name
         self._resource_capacities: dict[str, int] = dict(self._config_resolved.resources) if self._config_resolved.resources else {}
 
-        # Epoch state (persists after epoch finishes in netsim)
+        # Epoch state (persists after epoch finishes in netsim).
+        # Consolidated: structured_logs, net_actions, and retry_state (ctx.state)
+        # are all stored on each _EpochState object.
         self._epochs: dict[str, _EpochState] = {}  # epoch_id -> _EpochState
-
-        # Per-epoch buffers for structured logs and net actions (populated during execution)
-        self._epoch_log_buffers: dict[str, list[NodeLogEntry]] = {}
-        self._epoch_net_actions: dict[str, list[NetActionLog]] = {}
 
         # Per run_step buffers (cleared at start of each run_step)
         self._step_net_actions: list[NetActionLog] = []
@@ -1582,8 +1577,8 @@ class Net:
         self._step_net_actions.append(net_action)
 
         # Add to epoch buffer if attributed
-        if epoch_id and epoch_id in self._epoch_net_actions:
-            self._epoch_net_actions[epoch_id].append(net_action)
+        if epoch_id and epoch_id in self._epochs:
+            self._epochs[epoch_id].net_actions.append(net_action)
 
         # Retain if configured
         if self._config_resolved.retain_net_action_logs:
@@ -2030,7 +2025,7 @@ class Net:
         self._do_action(netrun_sim.NetAction.finish_epoch(epoch_id), epoch_id=epoch_id, detail={"node_name": node_name})
         self._epochs[epoch_id].ended_at = get_timestamp_utc()
         self._epochs[epoch_id].state = netrun_sim.EpochState.Finished
-        self._epoch_states.pop(epoch_id, None)  # Clear cross-retry state on success
+        self._epochs[epoch_id].retry_state.clear()  # Clear cross-retry state on success
         self._node_has_completed.add(node_name)  # Mark node as having completed (for depends_on)
         await self._fire_epoch_end(node_name, epoch_id, retry_count=retry_count)
 
@@ -2210,8 +2205,6 @@ class Net:
         epoch = self._netsim.get_epoch(epoch_id)
         node_name = epoch.node_name
         self._epochs[epoch_id] = _EpochState.from_epoch(epoch)
-        self._epoch_log_buffers[epoch_id] = []
-        self._epoch_net_actions[epoch_id] = []
         config = self._get_node_execution_config(node_name)
 
         # Check if this is a control epoch
@@ -2401,10 +2394,6 @@ class Net:
         # Get func key for this node
         func_key = self._get_func_key(node_name)
 
-        # Initialize cross-retry state on first attempt
-        if retry_count == 0:
-            self._epoch_states[epoch_id] = {}
-
         # Dispatch to worker (with optional timeout)
         try:
             coro = self._execution_manager.run_allocate(
@@ -2417,7 +2406,7 @@ class Net:
                     "retry_count": retry_count,
                     "retry_timestamps": retry_timestamps,
                     "retry_exceptions": retry_exceptions,
-                    "state": self._epoch_states.get(epoch_id, {}),
+                    "state": self._epochs[epoch_id].retry_state,
                 },
             )
             effective_timeout = resolve_effective_exec_field("timeout", config, self._config_resolved)
@@ -2455,7 +2444,7 @@ class Net:
 
         # Handle structured log buffer
         if execution_result.structured_log_buffer:
-            self._epoch_log_buffers.setdefault(epoch_id, []).extend(
+            self._epochs[epoch_id].structured_logs.extend(
                 execution_result.structured_log_buffer
             )
 
@@ -3042,7 +3031,7 @@ class Net:
             record.was_cancelled = True
             record.ended_at = get_timestamp_utc()
             record.destroyed_packets = list(response.destroyed_packets)
-            self._epoch_states.pop(epoch_id, None)  # Clear cross-retry state on permanent failure
+            self._epochs[epoch_id].retry_state.clear()  # Clear cross-retry state on permanent failure
             await self._fire_epoch_end(node_name, epoch_id, error=error, retry_count=retry_count)
 
             # Store in dead letter queue
@@ -4180,8 +4169,8 @@ class Net:
 
         # Assemble EpochLog
         epoch_log = record.to_log(
-            node_log_entries=self._epoch_log_buffers.get(epoch_id, []),
-            net_actions=self._epoch_net_actions.get(epoch_id, []),
+            node_log_entries=record.structured_logs,
+            net_actions=record.net_actions,
             factory=factory,
             retry_count=retry_count,
             error=error,
@@ -4199,10 +4188,6 @@ class Net:
             ts = epoch_log.timestamp.strftime("%H:%M:%S.%f")[:-3]
             import builtins
             builtins.print(f"[{ts}] [{node_name}] {_format_epoch_log(epoch_log)}", flush=True)
-
-        # Clean up per-epoch buffers
-        self._epoch_log_buffers.pop(epoch_id, None)
-        self._epoch_net_actions.pop(epoch_id, None)
 
         # Clean up epoch state when not retaining logs
         if not self._config_resolved.retain_epoch_logs:

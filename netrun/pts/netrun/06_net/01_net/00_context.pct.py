@@ -955,6 +955,11 @@ class _EpochState:
     was_cache_hit: bool = False
     was_file_storage_hit: bool = False
 
+    # Consolidated from previously-separate dicts:
+    structured_logs: list = field(default_factory=list)  # was _epoch_log_buffers[epoch_id]
+    net_actions: list = field(default_factory=list)       # was _epoch_net_actions[epoch_id]
+    retry_state: dict = field(default_factory=dict)       # was _epoch_states[epoch_id] (ctx.state)
+
     @classmethod
     def from_epoch(cls, epoch) -> "_EpochState":
         """Create an _EpochState from a netrun_sim.Epoch object."""
@@ -1082,7 +1087,7 @@ EpochRecord = _EpochState
 # %% [markdown]
 # ## Deferred Action Queue
 #
-# For `defer_net_actions=True`, packet operations are queued and only committed on success.
+# Packet operations are queued during node execution and committed on success or discarded on failure.
 
 # %%
 #|export
@@ -1147,9 +1152,6 @@ class NetFuncPreprocessorNodeConfig:
     """Input port configs (serialized as dicts for pickling)."""
 
     # Copy of NodeExecutionConfig fields needed for context creation
-    capture_prints: bool = True
-    print_flush_interval: float = 0.1
-    print_buffer_max_size: int | None = None
     print_echo_stdout: bool = False
     retries: int = 0
     retry_wait: float = 0.0
@@ -1189,9 +1191,6 @@ class NetFuncPreprocessorNodeConfig:
             factory_args=factory_args,
             in_ports={name: port.model_dump() for name, port in in_ports.items()},
             out_ports={name: port.model_dump() for name, port in out_ports.items()},
-            capture_prints=exec_config.capture_prints,
-            print_flush_interval=exec_config.print_flush_interval,
-            print_buffer_max_size=exec_config.print_buffer_max_size,
             print_echo_stdout=ef.get("print_echo_stdout", False),
             retries=ef.get("retries", 0),
             retry_wait=ef.get("retry_wait", 0.0),
@@ -1290,9 +1289,6 @@ class NetFuncPreprocessor:
         exec_config = None
         if config:
             exec_config = NodeExecutionConfig(
-                capture_prints=config.capture_prints,
-                print_flush_interval=config.print_flush_interval,
-                print_buffer_max_size=config.print_buffer_max_size,
                 print_echo_stdout=config.print_echo_stdout,
                 retries=config.retries,
                 retry_wait=config.retry_wait,
