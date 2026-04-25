@@ -7037,3 +7037,119 @@ async def test_concurrent_async_siblings_on_main_pool():
 
 # %%
 asyncio.get_event_loop().run_until_complete(test_concurrent_async_siblings_on_main_pool())
+
+# %% [markdown]
+# ## Regression: faulthandler enabled after init
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_faulthandler_enabled_after_init():
+    """Test that faulthandler is enabled after Net.init()."""
+    import faulthandler
+    import platform
+
+    def noop_node(ctx, packets):
+        pass
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Noop",
+                in_ports={"in": PortConfig()},
+                in_salvo_conditions={
+                    "default": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"in": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="Noop",
+                    pools=["main"],
+                    exec_node_func=noop_node,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        assert faulthandler.is_enabled()
+
+# %%
+asyncio.get_event_loop().run_until_complete(test_faulthandler_enabled_after_init())
+
+# %% [markdown]
+# ## Regression: gc.collect called between retries
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_retry_calls_gc_collect():
+    """Test that gc.collect() is called between retry attempts."""
+    import gc
+
+    call_count = [0]
+
+    def failing_then_succeeds(ctx, packets):
+        call_count[0] += 1
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+        if call_count[0] <= 2:
+            raise ValueError(f"Fail attempt {call_count[0]}")
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="RetryNode",
+                in_ports={"in": PortConfig()},
+                in_salvo_conditions={
+                    "default": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"in": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="RetryNode",
+                    pools=["main"],
+                    exec_node_func=failing_then_succeeds,
+                    retries=3,
+                    retry_wait=0.0,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    with patch.object(gc, "collect", wraps=gc.collect) as mock_gc:
+        async with Net(config) as net:
+            net.inject_data("RetryNode", "in", [1])
+            await net.run_until_blocked()
+
+        # gc.collect() should have been called at least once (between retries)
+        assert mock_gc.call_count >= 1, (
+            f"gc.collect() was not called between retries (call_count={mock_gc.call_count})"
+        )
+
+    # The node should have succeeded on 3rd attempt
+    assert call_count[0] == 3
+
+# %%
+asyncio.get_event_loop().run_until_complete(test_retry_calls_gc_collect())

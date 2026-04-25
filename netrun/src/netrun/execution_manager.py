@@ -136,41 +136,56 @@ def _worker_func(
             # RUN
             if key == ExecutionManagerProtocolKeys.RUN.value:
                 msg_id, func_import_path_or_key, run_id, send_channel, args, kwargs = data
-                if func_import_path_or_key in registered_functions:
-                    func = registered_functions[func_import_path_or_key]
-                else:
-                    module_path, func_name = func_import_path_or_key.rsplit(".", 1)
-                    module = importlib.import_module(module_path)
-                    func = getattr(module, func_name)
-
-                if func_preprocessor is not None:
-                    func = func_preprocessor(func)
-
-                timestamp_utc_started = get_timestamp_utc()
-                channel.send(ExecutionManagerProtocolKeys.UP_RUN_STARTED.value, (msg_id, timestamp_utc_started))
-                res = _func_runner(
-                    channel=channel,
-                    func=func,
-                    send_channel=send_channel,
-                    args=args,
-                    kwargs=kwargs,
-                    event_loop=event_loop,
-                )
-
-                # Call done callback if provided
-                if func_done_callback is not None:
-                    if send_channel:
-                        func_done_callback(channel, *args, **kwargs, result=res)
+                timestamp_utc_started = None
+                started_sent = False
+                try:
+                    if func_import_path_or_key in registered_functions:
+                        func = registered_functions[func_import_path_or_key]
                     else:
-                        func_done_callback(*args, **kwargs, result=res)
+                        module_path, func_name = func_import_path_or_key.rsplit(".", 1)
+                        module = importlib.import_module(module_path)
+                        func = getattr(module, func_name)
 
-                timestamp_utc_completed = get_timestamp_utc()
-                if is_in_main_process:
-                    converted_to_str, _res = False, res
-                else:
-                    converted_to_str, _res = _convert_to_str_if_not_serializable(res)
+                    if func_preprocessor is not None:
+                        func = func_preprocessor(func)
 
-                channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res))
+                    timestamp_utc_started = get_timestamp_utc()
+                    channel.send(ExecutionManagerProtocolKeys.UP_RUN_STARTED.value, (msg_id, timestamp_utc_started))
+                    started_sent = True
+                    res = _func_runner(
+                        channel=channel,
+                        func=func,
+                        send_channel=send_channel,
+                        args=args,
+                        kwargs=kwargs,
+                        event_loop=event_loop,
+                    )
+
+                    # Call done callback if provided
+                    if func_done_callback is not None:
+                        if send_channel:
+                            func_done_callback(channel, *args, **kwargs, result=res)
+                        else:
+                            func_done_callback(*args, **kwargs, result=res)
+
+                    timestamp_utc_completed = get_timestamp_utc()
+                    if is_in_main_process:
+                        converted_to_str, _res = False, res
+                    else:
+                        converted_to_str, _res = _convert_to_str_if_not_serializable(res)
+
+                    channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res))
+                except Exception as e:
+                    # Send error response so the client doesn't hang forever
+                    timestamp_utc_error = get_timestamp_utc()
+                    if timestamp_utc_started is None:
+                        timestamp_utc_started = timestamp_utc_error
+                    try:
+                        if not started_sent:
+                            channel.send(ExecutionManagerProtocolKeys.UP_RUN_STARTED.value, (msg_id, timestamp_utc_started))
+                        channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_error, False, e))
+                    except Exception:
+                        pass  # Worker loop must survive
             # SEND_FUNCTION
             elif key == ExecutionManagerProtocolKeys.SEND_FUNCTION.value:
                 msg_id, func_key, func = data
@@ -213,30 +228,38 @@ async def _async_worker_func(
     async def _handle_run(msg_id, func, send_channel, args, kwargs):
         """Execute a single RUN request and send the response."""
         timestamp_utc_started = get_timestamp_utc()
-        await channel.send(ExecutionManagerProtocolKeys.UP_RUN_STARTED.value, (msg_id, timestamp_utc_started))
+        try:
+            await channel.send(ExecutionManagerProtocolKeys.UP_RUN_STARTED.value, (msg_id, timestamp_utc_started))
 
-        res = await _async_func_runner(
-            channel=channel,
-            func=func,
-            send_channel=send_channel,
-            args=args,
-            kwargs=kwargs,
-        )
+            res = await _async_func_runner(
+                channel=channel,
+                func=func,
+                send_channel=send_channel,
+                args=args,
+                kwargs=kwargs,
+            )
 
-        # Call done callback if provided
-        if func_done_callback is not None:
-            if send_channel:
-                callback_result = func_done_callback(channel, *args, **kwargs, result=res)
-            else:
-                callback_result = func_done_callback(*args, **kwargs, result=res)
-            # Await if the callback is async
-            if asyncio.iscoroutine(callback_result):
-                await callback_result
+            # Call done callback if provided
+            if func_done_callback is not None:
+                if send_channel:
+                    callback_result = func_done_callback(channel, *args, **kwargs, result=res)
+                else:
+                    callback_result = func_done_callback(*args, **kwargs, result=res)
+                # Await if the callback is async
+                if asyncio.iscoroutine(callback_result):
+                    await callback_result
 
-        timestamp_utc_completed = get_timestamp_utc()
-        converted_to_str, _res = False, res
+            timestamp_utc_completed = get_timestamp_utc()
+            converted_to_str, _res = False, res
 
-        await channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res))
+            await channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res))
+        except Exception as e:
+            # Send error response so the client doesn't hang forever
+            timestamp_utc_error = get_timestamp_utc()
+            try:
+                await channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_error, False, e))
+            except Exception:
+                pass  # If we can't send the error, the client will eventually timeout
 
     pending_tasks: set[asyncio.Task] = set()
 
@@ -460,7 +483,12 @@ class ExecutionManager:
             msg = await pool.recv()
             msg_id = msg.data[0]
             msg.data = msg.data[1:]
-            await self._msgs[pool_id][msg_id].put(msg)
+            # Queue may have been cleaned up if the job was cancelled/timed out.
+            # Silently discard orphaned responses.
+            queue = self._msgs[pool_id].get(msg_id)
+            if queue is not None:
+                await queue.put(msg)
+
 
     async def _send_msg(self, pool_id: str, worker_id: str, key: str, data: Any) -> str:
         pool = self._pools[pool_id]
@@ -571,32 +599,46 @@ class ExecutionManager:
             self._worker_round_robin_lst.remove((pool_id, worker_id))
         self._worker_round_robin_lst.append((pool_id, worker_id))
 
-        msg_id = await self._send_msg(
-            pool_id=pool_id,
-            worker_id=worker_id,
-            key=ExecutionManagerProtocolKeys.RUN.value,
-            data=(func_import_path_or_key, run_id, send_channel, func_args, func_kwargs),
-        )
+        msg_id = None
+        try:
+            msg_id = await self._send_msg(
+                pool_id=pool_id,
+                worker_id=worker_id,
+                key=ExecutionManagerProtocolKeys.RUN.value,
+                data=(func_import_path_or_key, run_id, send_channel, func_args, func_kwargs),
+            )
 
-        # Wait for UP_RUN_STARTED
-        started_msg = await self._recv_msg(pool_id, msg_id, expect=ExecutionManagerProtocolKeys.UP_RUN_STARTED, close_msg_queue=False)
-        job_info.timestamp_utc_started = started_msg.data[0]  # timestamp_utc_started
+            # Wait for UP_RUN_STARTED
+            started_msg = await self._recv_msg(pool_id, msg_id, expect=ExecutionManagerProtocolKeys.UP_RUN_STARTED, close_msg_queue=False)
+            job_info.timestamp_utc_started = started_msg.data[0]  # timestamp_utc_started
 
-        # Wait for UP_RUN_RESPONSE
-        msg = await self._recv_msg(pool_id, msg_id, expect=ExecutionManagerProtocolKeys.UP_RUN_RESPONSE, close_msg_queue=True)
-        self._worker_jobs[(pool_id, worker_id)].remove(job_info)
+            # Wait for UP_RUN_RESPONSE
+            msg = await self._recv_msg(pool_id, msg_id, expect=ExecutionManagerProtocolKeys.UP_RUN_RESPONSE, close_msg_queue=True)
+            msg_id = None  # Already cleaned up by close_msg_queue=True
 
-        timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res = msg.data
-        return JobResult(
-            timestamp_utc_submitted=job_info.timestamp_utc_submitted,
-            timestamp_utc_started=job_info.timestamp_utc_started,
-            timestamp_utc_completed=timestamp_utc_completed,
-            func_import_path_or_key=job_info.func_import_path_or_key,
-            pool_id=job_info.pool_id,
-            worker_id=job_info.worker_id,
-            converted_to_str=converted_to_str,
-            result=_res,
-        )
+            self._worker_jobs[(pool_id, worker_id)].remove(job_info)
+
+            timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res = msg.data
+            if isinstance(_res, Exception):
+                raise _res
+            return JobResult(
+                timestamp_utc_submitted=job_info.timestamp_utc_submitted,
+                timestamp_utc_started=job_info.timestamp_utc_started,
+                timestamp_utc_completed=timestamp_utc_completed,
+                func_import_path_or_key=job_info.func_import_path_or_key,
+                pool_id=job_info.pool_id,
+                worker_id=job_info.worker_id,
+                converted_to_str=converted_to_str,
+                result=_res,
+            )
+        finally:
+            # Clean up leaked state on cancellation/exception
+            try:
+                self._worker_jobs[(pool_id, worker_id)].remove(job_info)
+            except ValueError:
+                pass  # Already removed on the success path
+            if msg_id is not None and msg_id in self._msgs.get(pool_id, {}):
+                del self._msgs[pool_id][msg_id]
 
     async def run_allocate(
         self,

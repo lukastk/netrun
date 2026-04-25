@@ -31,6 +31,7 @@ from tests.execution_manager.workers import (
     add_numbers,
     multiply_numbers,
     slow_function,
+    function_with_error,
     function_returns_non_serializable,
     async_add,
     function_with_kwargs,
@@ -644,3 +645,108 @@ async def test_main_pool():
 
 # %%
 await test_main_pool();
+
+# %% [markdown]
+# ## Regression: Worker jobs cleanup on cancellation
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_worker_jobs_cleanup_on_cancellation():
+    """Test that _worker_jobs is cleaned up when run() is cancelled by timeout.
+
+    Regression test: worker jobs leak on timeout/cancellation causing
+    incorrect LEAST_BUSY worker selection.
+    """
+    manager = ExecutionManager({
+        "pool": (ThreadPool, {"num_workers": 2}),
+    })
+    async with manager:
+        await manager.send_function_to_pool("pool", "slow", slow_function)
+
+        # Start a slow job and cancel it via timeout
+        with pytest.raises((asyncio.TimeoutError, asyncio.CancelledError)):
+            await asyncio.wait_for(
+                manager.run(
+                    pool_id="pool",
+                    worker_id=0,
+                    func_import_path_or_key="slow",
+                    send_channel=False,
+                    func_args=(30.0,),  # 30s — will be cancelled long before
+                    func_kwargs={},
+                ),
+                timeout=0.05,
+            )
+
+        # _worker_jobs should be empty after cancellation
+        assert len(manager._worker_jobs[("pool", 0)]) == 0, (
+            "worker_jobs leaked after cancellation"
+        )
+
+        # msg queue should also be cleaned up
+        pool_msgs = manager._msgs.get("pool", {})
+        assert len(pool_msgs) == 0, (
+            f"msg queue leaked after cancellation: {list(pool_msgs.keys())}"
+        )
+
+        # LEAST_BUSY allocation should still work correctly
+        await manager.send_function_to_pool("pool", "add", add_numbers)
+        result = await manager.run_allocate(
+            pool_worker_ids=["pool"],
+            allocation_method=RunAllocationMethod.LEAST_BUSY,
+            func_import_path_or_key="add",
+            send_channel=False,
+            func_args=(1, 2),
+            func_kwargs={},
+        )
+        assert result.result == 3
+
+# %%
+await test_worker_jobs_cleanup_on_cancellation();
+
+# %% [markdown]
+# ## Regression: Worker exception does not crash worker loop
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_worker_exception_does_not_crash_loop():
+    """Test that an exception in a sync worker doesn't crash the worker loop.
+
+    Regression test: exception in _func_runner crashes the while True loop
+    in _worker_func, killing the entire worker.
+    """
+    manager = ExecutionManager({
+        "pool": (ThreadPool, {"num_workers": 1}),
+    })
+    async with manager:
+        await manager.send_function("pool", 0, "error_fn", function_with_error)
+        await manager.send_function("pool", 0, "add", add_numbers)
+
+        # First call: should get an error, not hang or crash the worker
+        with pytest.raises(Exception):
+            await asyncio.wait_for(
+                manager.run(
+                    pool_id="pool",
+                    worker_id=0,
+                    func_import_path_or_key="error_fn",
+                    send_channel=False,
+                    func_args=(),
+                    func_kwargs={},
+                ),
+                timeout=5.0,
+            )
+
+        # Worker should still be alive. Second call should succeed:
+        result = await manager.run(
+            pool_id="pool",
+            worker_id=0,
+            func_import_path_or_key="add",
+            send_channel=False,
+            func_args=(1, 2),
+            func_kwargs={},
+        )
+        assert result.result == 3
+
+# %%
+await test_worker_exception_does_not_crash_loop();

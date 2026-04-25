@@ -32,6 +32,7 @@ from tests.execution_manager.workers import (
     add_numbers,
     multiply_numbers,
     slow_function,
+    function_with_error,
     function_returns_non_serializable,
     function_with_kwargs,
     async_add,
@@ -552,3 +553,50 @@ async def test_concurrent_async_execution():
 
 # %%
 await test_concurrent_async_execution();
+
+# %% [markdown]
+# ## Regression: Async worker exception does not hang
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_worker_exception_does_not_hang():
+    """Test that worker-level exceptions result in an error, not a hang.
+
+    Regression test: async worker swallows exceptions in _handle_run,
+    causing run() to hang forever waiting for UP_RUN_RESPONSE.
+    """
+    manager = ExecutionManager({
+        "pool": (SingleWorkerPool, {}),
+    })
+    async with manager:
+        await manager.send_function("pool", 0, "error_fn", function_with_error)
+
+        # This should NOT hang. Before the fix, it would hang forever.
+        with pytest.raises(Exception):
+            await asyncio.wait_for(
+                manager.run(
+                    pool_id="pool",
+                    worker_id=0,
+                    func_import_path_or_key="error_fn",
+                    send_channel=False,
+                    func_args=(),
+                    func_kwargs={},
+                ),
+                timeout=5.0,
+            )
+
+        # Worker should still be functional after the error
+        await manager.send_function("pool", 0, "add", add_numbers)
+        result = await manager.run(
+            pool_id="pool",
+            worker_id=0,
+            func_import_path_or_key="add",
+            send_channel=False,
+            func_args=(10, 20),
+            func_kwargs={},
+        )
+        assert result.result == 30
+
+# %%
+await test_worker_exception_does_not_hang();

@@ -1233,6 +1233,15 @@ class Net:
         if self._initialized:
             raise RuntimeError("Net already initialized")
 
+        # Enable faulthandler for debugging (SIGUSR1 -> stack dump of all threads)
+        import faulthandler
+        try:
+            faulthandler.enable()
+            if hasattr(signal, 'SIGUSR1'):
+                faulthandler.register(signal.SIGUSR1, all_threads=True)
+        except (OSError, ValueError, IOError):
+            pass  # stderr may not support fileno (mocked in tests), or signal unavailable
+
         await self._execution_manager.start()
 
         # Register node functions with all workers
@@ -2907,6 +2916,24 @@ class Net:
             # Wait before retry
             if effective_retry_wait > 0:
                 await asyncio.sleep(effective_retry_wait)
+
+            # Force garbage collection to reclaim resources from the failed attempt
+            import gc
+            gc.collect()
+
+            # Log peak RSS for debugging memory issues during retries
+            try:
+                import resource
+                import platform as _platform
+                import logging
+                rss_raw = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+                rss_mb = rss_raw / (1024 * 1024) if _platform.system() == "Darwin" else rss_raw / 1024
+                logging.getLogger("netrun.net").debug(
+                    "Retry %d/%d for node '%s' (epoch %s), peak RSS: %.1f MB",
+                    retry_count + 1, effective_retries, node_name, epoch_id, rss_mb,
+                )
+            except ImportError:
+                pass  # resource module not available (Windows)
 
             # Retry (deferred actions were discarded, so we start fresh)
             return await self._execute_epoch_with_retry(

@@ -410,3 +410,51 @@ def test_help():
     assert "actions" in result.stdout
     assert "recipes" in result.stdout
     assert "download-agents" in result.stdout
+
+# %% [markdown]
+# ## Regression: validate reports resolution failures
+
+# %%
+#|export
+import tempfile
+
+def test_validate_reports_resolution_failure():
+    """Test that validate reports resolution errors instead of silently swallowing them.
+
+    Regression test: netrun validate suppresses resolution failures by catching
+    all exceptions and setting resolved=None, reporting valid=True.
+    """
+    config_data = {
+        "graph": {
+            "nodes": [
+                {
+                    "name": "TestNode",
+                    "factory": "nonexistent_module_that_does_not_exist.factory",
+                    "factory_args": {},
+                    "execution_config": {
+                        "pools": ["main"],
+                    },
+                }
+            ],
+            "edges": [],
+        },
+        "pools": {
+            "main": {"spec": {"type": "main"}},
+        },
+    }
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".netrun.json", delete=False) as f:
+        json.dump(config_data, f)
+        f.flush()
+        result = runner.invoke(app, ["validate", "-c", f.name])
+
+    # Resolution failures are reported as warnings (not errors, since resolution
+    # depends on Python path at runtime). The key requirement: the failure must
+    # NOT be silently swallowed — it must appear in the output.
+    data = json.loads(result.stdout)
+    warnings = data.get("warnings", [])
+    errors = data.get("errors", [])
+    all_messages = warnings + errors
+    assert any(
+        "resolution" in str(m).lower() or "module" in str(m).lower()
+        for m in all_messages
+    ), f"validate silently swallowed resolution failure: {data}"

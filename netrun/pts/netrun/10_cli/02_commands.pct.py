@@ -54,6 +54,7 @@ def validate(
     """Validate a netrun config file."""
     config_path = find_config(config)
     errors: list[str] = []
+    warnings: list[str] = []
     node_count = 0
     edge_count = 0
 
@@ -82,8 +83,9 @@ def validate(
     # Step 3: Post-resolution validation via Rust (only if resolve succeeds)
     try:
         resolved = net_config.resolve()
-    except Exception:
+    except Exception as e:
         resolved = None
+        warnings.append(f"Resolution error: {e}")
 
     if resolved is not None:
         try:
@@ -128,10 +130,16 @@ def validate(
         errors.append(f"Raw data check error: {e}")
 
     if errors:
-        output_json({"valid": False, "file": str(config_path), "errors": errors}, pretty)
+        result = {"valid": False, "file": str(config_path), "errors": errors}
+        if warnings:
+            result["warnings"] = warnings
+        output_json(result, pretty)
         raise typer.Exit(1)
     else:
-        output_json({"valid": True, "file": str(config_path), "nodes": node_count, "edges": edge_count}, pretty)
+        result = {"valid": True, "file": str(config_path), "nodes": node_count, "edges": edge_count}
+        if warnings:
+            result["warnings"] = warnings
+        output_json(result, pretty)
 
 # %% [markdown]
 # ## structure
