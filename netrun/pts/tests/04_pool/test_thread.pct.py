@@ -366,3 +366,44 @@ async def test_concurrent_responses():
 
 # %%
 await test_concurrent_responses();
+
+# %% [markdown]
+# ## Silence Detection
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_silence_detection_warns(caplog):
+    """Test that silence detection logs a warning for silent workers."""
+    import logging
+
+    def slow_echo_worker(channel, worker_id):
+        """Worker that responds slowly — triggers silence detection."""
+        import time
+        try:
+            while True:
+                key, data = channel.recv()
+                time.sleep(0.1)  # slow response
+                channel.send(f"echo:{key}", data)
+        except Exception:
+            pass
+
+    # 1.0s silence timeout, monitor checks every 0.5s
+    pool = ThreadPool(slow_echo_worker, num_workers=1, silence_timeout=1.0)
+    async with pool:
+        # Send a message and receive to establish a baseline timestamp
+        await pool.send(0, "hello", "world")
+        msg = await pool.recv(timeout=5.0)
+        assert msg.key == "echo:hello"
+
+        # Now wait >1s without any worker activity
+        with caplog.at_level(logging.WARNING, logger="netrun.pool"):
+            await asyncio.sleep(1.5)
+
+        # Should have logged a silence warning
+        assert any("silent" in record.message.lower() for record in caplog.records), (
+            f"Expected silence warning in logs, got: {[r.message for r in caplog.records]}"
+        )
+
+# %%
+await test_silence_detection_warns();

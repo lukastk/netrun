@@ -7500,3 +7500,308 @@ async def test_resources_none_is_noop():
 
 # %%
 asyncio.get_event_loop().run_until_complete(test_resources_none_is_noop())
+
+# %% [markdown]
+# ## Additional coverage tests
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_ctx_state_cleared_on_success():
+    """Test that ctx.state is cleaned up from internal tracking after epoch succeeds."""
+    def stateful_node(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+        ctx.state["key"] = "value"
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Stateful",
+                in_ports={"in": PortConfig()},
+                in_salvo_conditions={
+                    "default": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"in": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="Stateful",
+                    pools=["main"],
+                    exec_node_func=stateful_node,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        net.inject_data("Stateful", "in", [1])
+        await net.run_until_blocked()
+
+        # After success, the retry_state on the epoch record should be cleared
+        for epoch_id, record in net._epochs.items():
+            if record.node_name == "Stateful":
+                assert record.retry_state == {}, (
+                    f"retry_state should be cleared on success, got {record.retry_state}"
+                )
+
+# %%
+asyncio.get_event_loop().run_until_complete(test_ctx_state_cleared_on_success())
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_depends_on_multiple_dependencies():
+    """Test that a node waits for ALL dependencies to complete."""
+    execution_order = []
+
+    def node_a(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+        execution_order.append("A")
+
+    def node_b(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+        execution_order.append("B")
+
+    def node_c(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+        execution_order.append("C")
+
+    def make_node(name, func, depends_on=None):
+        return NodeConfig(
+            name=name,
+            in_ports={"in": PortConfig()},
+            in_salvo_conditions={
+                "default": SalvoConditionConfig(
+                    max_salvos=MaxSalvosFiniteConfig(max=1),
+                    ports={"in": PacketCountAllConfig()},
+                    term=SalvoConditionTermPortConfig(
+                        port_name="in",
+                        state=PortStateNonEmptyConfig(),
+                    ),
+                ),
+            },
+            execution_config=NodeExecutionConfig(
+                node_name=name,
+                pools=["main"],
+                exec_node_func=func,
+                depends_on=depends_on,
+            ),
+        )
+
+    graph_config = GraphConfig(
+        nodes=[
+            make_node("A", node_a),
+            make_node("B", node_b),
+            make_node("C", node_c, depends_on=["A", "B"]),
+        ],
+        edges=[],
+    )
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        net.inject_data("A", "in", [1])
+        net.inject_data("B", "in", [2])
+        net.inject_data("C", "in", [3])
+        await net.run_until_blocked()
+
+    # C depends on both A and B — it must run after both
+    assert "C" in execution_order
+    c_idx = execution_order.index("C")
+    assert "A" in execution_order[:c_idx], "A should complete before C"
+    assert "B" in execution_order[:c_idx], "B should complete before C"
+
+# %%
+asyncio.get_event_loop().run_until_complete(test_depends_on_multiple_dependencies())
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_depends_on_none_is_noop():
+    """Test that nodes without depends_on work as before."""
+    executed = [False]
+
+    def simple_node(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+        executed[0] = True
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Simple",
+                in_ports={"in": PortConfig()},
+                in_salvo_conditions={
+                    "default": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"in": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="Simple",
+                    pools=["main"],
+                    exec_node_func=simple_node,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        net.inject_data("Simple", "in", [1])
+        await net.run_until_blocked()
+
+    assert executed[0] is True
+
+# %%
+asyncio.get_event_loop().run_until_complete(test_depends_on_none_is_noop())
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_resources_multi_slot():
+    """Test that a multi-slot resource allows bounded concurrency."""
+    import time as _time
+
+    timestamps = {}
+
+    async def gpu_node(ctx, packets):
+        name = ctx.node_name
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+        timestamps[f"{name}_start"] = _time.monotonic()
+        await asyncio.sleep(0.1)
+        timestamps[f"{name}_end"] = _time.monotonic()
+
+    def make_gpu_node(name):
+        return NodeConfig(
+            name=name,
+            in_ports={"in": PortConfig()},
+            in_salvo_conditions={
+                "default": SalvoConditionConfig(
+                    max_salvos=MaxSalvosFiniteConfig(max=1),
+                    ports={"in": PacketCountAllConfig()},
+                    term=SalvoConditionTermPortConfig(
+                        port_name="in",
+                        state=PortStateNonEmptyConfig(),
+                    ),
+                ),
+            },
+            execution_config=NodeExecutionConfig(
+                node_name=name,
+                pools=["main"],
+                exec_node_func=gpu_node,
+                resources={"gpu": 1},
+            ),
+        )
+
+    graph_config = GraphConfig(
+        nodes=[make_gpu_node("G1"), make_gpu_node("G2"), make_gpu_node("G3")],
+        edges=[],
+    )
+    # 2 GPU slots: at most 2 of 3 nodes can run concurrently
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        resources={"gpu": 2},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        net.inject_data("G1", "in", [1])
+        net.inject_data("G2", "in", [2])
+        net.inject_data("G3", "in", [3])
+        await net.run_until_blocked()
+
+    # All 3 should have completed
+    assert all(f"G{i}_end" in timestamps for i in range(1, 4))
+
+    # With 2 slots and 3 nodes of 0.1s each: total >= 0.2s (2 rounds)
+    # If only 1 slot: total >= 0.3s. If unlimited: total ~0.1s.
+    starts = [timestamps[f"G{i}_start"] for i in range(1, 4)]
+    ends = [timestamps[f"G{i}_end"] for i in range(1, 4)]
+    total = max(ends) - min(starts)
+    # Should take at least 0.15s (2 rounds of ~0.1s with some overlap)
+    # but less than 0.25s (which would indicate only 1 slot)
+    assert total >= 0.15, f"Expected >= 0.15s for 2-slot bounded concurrency, got {total:.3f}s"
+
+# %%
+asyncio.get_event_loop().run_until_complete(test_resources_multi_slot())
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_resources_undefined_raises():
+    """Test that referencing an undefined resource raises an error."""
+    def simple_node(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="BadNode",
+                in_ports={"in": PortConfig()},
+                in_salvo_conditions={
+                    "default": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"in": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="BadNode",
+                    pools=["main"],
+                    exec_node_func=simple_node,
+                    resources={"nonexistent_resource": 1},
+                ),
+            ),
+        ],
+        edges=[],
+    )
+    # No resources defined at net level, but node requires one
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        resources={"other_resource": 1},  # different name
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        net.inject_data("BadNode", "in", [1])
+        with pytest.raises(ValueError, match="nonexistent_resource"):
+            await net.run_until_blocked()
+
+# %%
+asyncio.get_event_loop().run_until_complete(test_resources_undefined_raises())
