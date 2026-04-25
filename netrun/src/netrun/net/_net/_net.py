@@ -408,6 +408,14 @@ class Net:
         # Running epoch tracking
         self._running_epochs: set[str] = set()
 
+        # Cross-retry state dicts (epoch_id -> mutable dict accessible via ctx.state)
+        self._epoch_states: dict[str, dict[str, Any]] = {}
+
+        # Scheduling constraint tracking
+        self._node_has_completed: set[str] = set()  # Nodes that have completed at least one epoch
+        self._resource_usage: dict[str, int] = {}  # Current resource slot usage per resource name
+        self._resource_capacities: dict[str, int] = dict(self._config_resolved.resources) if self._config_resolved.resources else {}
+
         # Epoch state (persists after epoch finishes in netsim)
         self._epochs: dict[str, _EpochState] = {}  # epoch_id -> _EpochState
 
@@ -1860,6 +1868,8 @@ class Net:
         allowed = []
         # Track how many new epochs we're allowing per node (within this batch)
         new_per_node: dict[str, int] = {}
+        # Track resource slots claimed by newly-allowed epochs (within this batch)
+        new_resource_usage: dict[str, int] = {}
 
         for epoch_id in epoch_ids:
             epoch = self._netsim.get_epoch(epoch_id)
@@ -1886,7 +1896,36 @@ class Net:
                 if current >= max_parallel:
                     continue  # Skip — at the limit
 
+            # Check depends_on: all dependency nodes must have completed at least one epoch
+            if config and config.depends_on:
+                if not all(dep in self._node_has_completed for dep in config.depends_on):
+                    continue  # Skip — dependency not yet satisfied
+
+            # Check resources: all required resource slots must be available
+            if config and config.resources and self._resource_capacities:
+                can_acquire = True
+                for res_name, needed in config.resources.items():
+                    capacity = self._resource_capacities.get(res_name)
+                    if capacity is None:
+                        raise ValueError(
+                            f"Node '{node_name}' requires resource '{res_name}' "
+                            f"which is not defined in NetConfig.resources"
+                        )
+                    current_usage = (
+                        self._resource_usage.get(res_name, 0)
+                        + new_resource_usage.get(res_name, 0)
+                    )
+                    if current_usage + needed > capacity:
+                        can_acquire = False
+                        break
+                if not can_acquire:
+                    continue  # Skip — resource limit reached
+
             new_per_node[node_name] = new_per_node.get(node_name, 0) + 1
+            # Track resource usage within this batch
+            if config and config.resources:
+                for res_name, needed in config.resources.items():
+                    new_resource_usage[res_name] = new_resource_usage.get(res_name, 0) + needed
             allowed.append(epoch_id)
 
         return allowed
@@ -1965,6 +2004,8 @@ class Net:
         self._do_action(netrun_sim.NetAction.finish_epoch(epoch_id), epoch_id=epoch_id, detail={"node_name": node_name})
         self._epochs[epoch_id].ended_at = get_timestamp_utc()
         self._epochs[epoch_id].state = netrun_sim.EpochState.Finished
+        self._epoch_states.pop(epoch_id, None)  # Clear cross-retry state on success
+        self._node_has_completed.add(node_name)  # Mark node as having completed (for depends_on)
         await self._fire_epoch_end(node_name, epoch_id, retry_count=retry_count)
 
     def _consume_epoch_inputs(self, epoch_id: str, node_name: str, packets: dict[str, list[str]], consumed_ports: set[str] | list[str]) -> None:
@@ -2252,6 +2293,12 @@ class Net:
 
         # Transition epoch to Running
         self._running_epochs.add(epoch_id)
+
+        # Acquire resources for this epoch
+        if config.resources:
+            for res_name, needed in config.resources.items():
+                self._resource_usage[res_name] = self._resource_usage.get(res_name, 0) + needed
+
         await self._start_epoch_lifecycle(epoch_id, node_name)
 
         try:
@@ -2284,6 +2331,10 @@ class Net:
             raise
         finally:
             self._running_epochs.discard(epoch_id)
+            # Release resources
+            if config.resources:
+                for res_name, needed in config.resources.items():
+                    self._resource_usage[res_name] = self._resource_usage.get(res_name, 0) - needed
 
     async def _execute_epoch_with_retry(
         self,
@@ -2324,6 +2375,10 @@ class Net:
         # Get func key for this node
         func_key = self._get_func_key(node_name)
 
+        # Initialize cross-retry state on first attempt
+        if retry_count == 0:
+            self._epoch_states[epoch_id] = {}
+
         # Dispatch to worker (with optional timeout)
         try:
             coro = self._execution_manager.run_allocate(
@@ -2336,6 +2391,7 @@ class Net:
                     "retry_count": retry_count,
                     "retry_timestamps": retry_timestamps,
                     "retry_exceptions": retry_exceptions,
+                    "state": self._epoch_states.get(epoch_id, {}),
                 },
             )
             effective_timeout = resolve_effective_exec_field("timeout", config, self._config_resolved)
@@ -2960,6 +3016,7 @@ class Net:
             record.was_cancelled = True
             record.ended_at = get_timestamp_utc()
             record.destroyed_packets = list(response.destroyed_packets)
+            self._epoch_states.pop(epoch_id, None)  # Clear cross-retry state on permanent failure
             await self._fire_epoch_end(node_name, epoch_id, error=error, retry_count=retry_count)
 
             # Store in dead letter queue

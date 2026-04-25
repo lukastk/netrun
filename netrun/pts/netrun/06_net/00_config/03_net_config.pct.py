@@ -318,6 +318,8 @@ class NetConfig(VarResolvableModel):
     pools: dict[str, PoolConfig] | None = Field(default=None, description="Pool configurations. None generates a default main pool on resolve().")
     graph: GraphConfig
 
+    resources: dict[str, int] | None = Field(default=None, description="Named resource capacities as {resource_name: max_slots}. Nodes declare resource requirements in execution_config.resources. The scheduler ensures usage never exceeds capacity.")
+
     extra: dict[str, Any] = Field(default_factory=dict, description="Arbitrary extra data (descriptions, version info, tool-specific data).")
 
     default_pool_allocation_method: RunAllocationMethod | VarRef = Field(default=RunAllocationMethod.ROUND_ROBIN, description="Default worker allocation method for nodes with multiple pools.")

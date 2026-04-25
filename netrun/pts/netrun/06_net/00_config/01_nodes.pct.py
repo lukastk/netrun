@@ -267,6 +267,10 @@ class NodeExecutionConfig(VarResolvableModel):
 
     rate_limit_per_second: float | VarRef | None = Field(default=None, description="Maximum epoch triggers per second.")
 
+    depends_on: list[str] | None = Field(default=None, description="Node names that must have completed at least one epoch before this node can start. Provides directional ordering without explicit control edges.")
+
+    resources: dict[str, int] | None = Field(default=None, description="Resource requirements as {resource_name: slots_needed}. Resources must be defined in NetConfig.resources with their capacity. Node epoch starts only when all required resource slots are available.")
+
     defer_net_actions: bool | VarRef | None = Field(default=None, description="Defer net action notifications until epoch completes successfully. Required if retries enabled.")
 
     retries: int | VarRef | None = Field(default=None, description="Number of retry attempts on failure. None inherits from NetConfig.")

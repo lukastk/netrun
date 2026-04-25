@@ -7153,3 +7153,356 @@ async def test_retry_calls_gc_collect():
 
 # %%
 asyncio.get_event_loop().run_until_complete(test_retry_calls_gc_collect())
+
+# %% [markdown]
+# ## ctx.state Tests
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_ctx_state_persists_across_retries():
+    """Test that ctx.state is preserved across retry attempts."""
+    call_log = []
+
+    def stateful_node(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+
+        if "initialized" not in ctx.state:
+            ctx.state["initialized"] = True
+            ctx.state["counter"] = 0
+
+        ctx.state["counter"] += 1
+        call_log.append({"retry": ctx.retry_count, "counter": ctx.state["counter"]})
+
+        if ctx.retry_count < 2:
+            raise ValueError(f"Fail on retry {ctx.retry_count}")
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Stateful",
+                in_ports={"in": PortConfig()},
+                in_salvo_conditions={
+                    "default": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"in": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="Stateful",
+                    pools=["main"],
+                    exec_node_func=stateful_node,
+                    retries=3,
+                    retry_wait=0.0,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        net.inject_data("Stateful", "in", [1])
+        await net.run_until_blocked()
+
+    # State should have persisted — counter incremented on each attempt
+    assert len(call_log) == 3
+    assert call_log[0]["counter"] == 1  # First attempt
+    assert call_log[1]["counter"] == 2  # Second attempt (same dict)
+    assert call_log[2]["counter"] == 3  # Third attempt (same dict)
+
+# %%
+asyncio.get_event_loop().run_until_complete(test_ctx_state_persists_across_retries())
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_ctx_state_empty_by_default():
+    """Test that ctx.state is an empty dict when not used."""
+    observed_state = [None]
+
+    def check_state(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+        observed_state[0] = dict(ctx.state)
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="CheckState",
+                in_ports={"in": PortConfig()},
+                in_salvo_conditions={
+                    "default": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"in": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="CheckState",
+                    pools=["main"],
+                    exec_node_func=check_state,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        net.inject_data("CheckState", "in", [1])
+        await net.run_until_blocked()
+
+    assert observed_state[0] == {}
+
+# %%
+asyncio.get_event_loop().run_until_complete(test_ctx_state_empty_by_default())
+
+# %% [markdown]
+# ## depends_on Tests
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_depends_on_blocks_until_dependency_completes():
+    """Test that depends_on prevents a node from starting until its dependency completes."""
+    execution_order = []
+
+    def node_a(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+        execution_order.append("A")
+
+    def node_b(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+        execution_order.append("B")
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="A",
+                in_ports={"in": PortConfig()},
+                in_salvo_conditions={
+                    "default": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"in": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="A",
+                    pools=["main"],
+                    exec_node_func=node_a,
+                ),
+            ),
+            NodeConfig(
+                name="B",
+                in_ports={"in": PortConfig()},
+                in_salvo_conditions={
+                    "default": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"in": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="B",
+                    pools=["main"],
+                    exec_node_func=node_b,
+                    depends_on=["A"],
+                ),
+            ),
+        ],
+        edges=[],
+    )
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        # Inject data for both nodes
+        net.inject_data("A", "in", [1])
+        net.inject_data("B", "in", [2])
+        await net.run_until_blocked()
+
+    # A must execute before B (B depends_on A)
+    assert execution_order == ["A", "B"]
+
+# %%
+asyncio.get_event_loop().run_until_complete(test_depends_on_blocks_until_dependency_completes())
+
+# %% [markdown]
+# ## resources Tests
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_resources_mutual_exclusion():
+    """Test that two nodes with the same 1-slot resource never run concurrently."""
+    import time as _time
+
+    timestamps = {}
+
+    async def heavy_a(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+        timestamps["a_start"] = _time.monotonic()
+        await asyncio.sleep(0.1)
+        timestamps["a_end"] = _time.monotonic()
+
+    async def heavy_b(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+        timestamps["b_start"] = _time.monotonic()
+        await asyncio.sleep(0.1)
+        timestamps["b_end"] = _time.monotonic()
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="HeavyA",
+                in_ports={"in": PortConfig()},
+                in_salvo_conditions={
+                    "default": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"in": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="HeavyA",
+                    pools=["main"],
+                    exec_node_func=heavy_a,
+                    resources={"heavy_mem": 1},
+                ),
+            ),
+            NodeConfig(
+                name="HeavyB",
+                in_ports={"in": PortConfig()},
+                in_salvo_conditions={
+                    "default": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"in": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="HeavyB",
+                    pools=["main"],
+                    exec_node_func=heavy_b,
+                    resources={"heavy_mem": 1},
+                ),
+            ),
+        ],
+        edges=[],
+    )
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        resources={"heavy_mem": 1},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        net.inject_data("HeavyA", "in", [1])
+        net.inject_data("HeavyB", "in", [2])
+        await net.run_until_blocked()
+
+    # Both should have completed
+    assert "a_end" in timestamps and "b_end" in timestamps
+
+    # They must NOT have overlapped (mutual exclusion via 1-slot resource)
+    # One must have finished before the other started
+    a_before_b = timestamps["a_end"] <= timestamps["b_start"]
+    b_before_a = timestamps["b_end"] <= timestamps["a_start"]
+    assert a_before_b or b_before_a, (
+        f"HeavyA and HeavyB overlapped: A=[{timestamps['a_start']:.3f}, {timestamps['a_end']:.3f}], "
+        f"B=[{timestamps['b_start']:.3f}, {timestamps['b_end']:.3f}]"
+    )
+
+# %%
+asyncio.get_event_loop().run_until_complete(test_resources_mutual_exclusion())
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_resources_none_is_noop():
+    """Test that nodes without resources work as before."""
+    executed = [False]
+
+    def simple_node(ctx, packets):
+        for port_name, pkt_ids in packets.items():
+            for pid in pkt_ids:
+                ctx.consume_packet(pid)
+        executed[0] = True
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="Simple",
+                in_ports={"in": PortConfig()},
+                in_salvo_conditions={
+                    "default": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"in": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="Simple",
+                    pools=["main"],
+                    exec_node_func=simple_node,
+                ),
+            ),
+        ],
+        edges=[],
+    )
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    async with Net(config) as net:
+        net.inject_data("Simple", "in", [1])
+        await net.run_until_blocked()
+
+    assert executed[0] is True
+
+# %%
+asyncio.get_event_loop().run_until_complete(test_resources_none_is_noop())

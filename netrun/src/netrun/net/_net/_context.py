@@ -389,6 +389,11 @@ class NodeExecutionContext:
     retry_timestamps: list[datetime] = field(default_factory=list)
     retry_exceptions: list[Exception] = field(default_factory=list)
 
+    # Mutable state preserved across retries for the same epoch.
+    # Empty dict on first attempt; same dict instance reused on retries.
+    # Cleared when the epoch succeeds or permanently fails.
+    state: dict[str, Any] = field(default_factory=dict)
+
     # Internal (not for user access)
     _config: NodeExecutionConfig = field(repr=False, default=None)
     _print_buffer: list[tuple[datetime, str]] = field(default_factory=list, repr=False)
@@ -1180,6 +1185,7 @@ class NetFuncPreprocessor:
         retry_count: int,
         retry_timestamps: list[datetime] | None,
         retry_exceptions: list[Exception] | None,
+        state: dict[str, Any] | None = None,
     ) -> tuple[NodeExecutionContext, Callable]:
         """Common setup for both sync and async wrappers.
 
@@ -1229,6 +1235,7 @@ class NetFuncPreprocessor:
             retry_count=retry_count,
             retry_timestamps=retry_timestamps or [],
             retry_exceptions=retry_exceptions or [],
+            state=state if state is not None else {},
             _config=exec_config,
             _input_packet_values=packet_values,
             _in_ports=in_ports,
@@ -1276,10 +1283,11 @@ class NetFuncPreprocessor:
             retry_count: int = 0,
             retry_timestamps: list[datetime] | None = None,
             retry_exceptions: list[Exception] | None = None,
+            state: dict[str, Any] | None = None,
         ) -> NodeExecutionResult:
             ctx, actual_func = preprocessor_self._setup_context(
                 exec_node_func, epoch_id, node_name, packets, packet_values,
-                retry_count, retry_timestamps, retry_exceptions,
+                retry_count, retry_timestamps, retry_exceptions, state=state,
             )
 
             func_result = None
@@ -1317,10 +1325,11 @@ class NetFuncPreprocessor:
             retry_count: int = 0,
             retry_timestamps: list[datetime] | None = None,
             retry_exceptions: list[Exception] | None = None,
+            state: dict[str, Any] | None = None,
         ) -> NodeExecutionResult:
             ctx, actual_func = preprocessor_self._setup_context(
                 exec_node_func, epoch_id, node_name, packets, packet_values,
-                retry_count, retry_timestamps, retry_exceptions,
+                retry_count, retry_timestamps, retry_exceptions, state=state,
             )
 
             func_result = None
