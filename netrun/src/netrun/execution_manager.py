@@ -212,13 +212,6 @@ def _worker_func(
         else:
             raise ValueError(f"Unknown execution manager protocol key: '{key}'.")
 
-def _thread_worker_func(channel, worker_id, func_preprocessor: Callable | None = None, func_done_callback: Callable | None = None, shared_loop: asyncio.AbstractEventLoop | None = None):
-    return _worker_func(is_in_main_process=True, channel=channel, worker_id=worker_id, func_preprocessor=func_preprocessor, func_done_callback=func_done_callback, shared_loop=shared_loop)
-
-# If the worker is in a multiprocess pool, then the result needs to be pickleable for it to be sent back without being converted as `str(result)`.
-def _multiprocess_worker_func(channel, worker_id, func_preprocessor: Callable | None = None, func_done_callback: Callable | None = None, shared_loop: asyncio.AbstractEventLoop | None = None):
-    return _worker_func(is_in_main_process=False, channel=channel, worker_id=worker_id, func_preprocessor=func_preprocessor, func_done_callback=func_done_callback, shared_loop=shared_loop)
-
 # %% pts/netrun/05_execution_manager.pct.py 12
 async def _async_worker_func(
     channel,
@@ -448,7 +441,7 @@ class ExecutionManager:
         self._started = False
 
         self._worker_jobs: dict[tuple[str, str], list[SubmittedJobInfo]] = {}  # (pool_id, worker_id) -> list of SubmittedJobInfo
-        self._worker_round_robin_lst: list[tuple[str, str]] = []
+        self._round_robin_counter: int = 0
 
         # Shared event loop for async function dispatch in thread/multiprocess workers.
         # Created in start(), cleaned up in close().
@@ -482,12 +475,12 @@ class ExecutionManager:
             func_done_callback = pool_kwargs.pop('func_done_callback', None)
 
             if pool_type == ThreadPool:
-                worker_fn = functools.partial(_thread_worker_func, func_preprocessor=func_preprocessor, func_done_callback=func_done_callback, shared_loop=self._shared_loop)
+                worker_fn = functools.partial(_worker_func, True, func_preprocessor=func_preprocessor, func_done_callback=func_done_callback, shared_loop=self._shared_loop)
                 self._pools[pool_id] = ThreadPool(**pool_kwargs, worker_fn=worker_fn)
             elif pool_type == MultiprocessPool:
                 # Multiprocess workers create their own process-local shared loop
                 # (event loops can't cross process boundaries)
-                worker_fn = functools.partial(_multiprocess_worker_func, func_preprocessor=func_preprocessor, func_done_callback=func_done_callback)
+                worker_fn = functools.partial(_worker_func, False, func_preprocessor=func_preprocessor, func_done_callback=func_done_callback)
                 self._pools[pool_id] = MultiprocessPool(**pool_kwargs, worker_fn=worker_fn)
             elif pool_type == RemotePoolClient:
                 self._pools[pool_id] = RemotePoolClient(**pool_kwargs)
@@ -633,9 +626,6 @@ class ExecutionManager:
             worker_id=worker_id,
         )
         self._worker_jobs[(pool_id, worker_id)].append(job_info)
-        if (pool_id, worker_id) in self._worker_round_robin_lst:
-            self._worker_round_robin_lst.remove((pool_id, worker_id))
-        self._worker_round_robin_lst.append((pool_id, worker_id))
 
         msg_id = None
         try:
@@ -703,12 +693,9 @@ class ExecutionManager:
 
         # Select worker based on allocation method
         if allocation_method == RunAllocationMethod.ROUND_ROBIN:
-            round_robin_lst = [p for p in self._worker_round_robin_lst if p in worker_ids]
-            not_in_round_robin_lst = [p for p in worker_ids if p not in round_robin_lst]
-            if not_in_round_robin_lst:
-                pool_id, worker_id = not_in_round_robin_lst[0]
-            else:
-                pool_id, worker_id = round_robin_lst[0]
+            idx = self._round_robin_counter % len(worker_ids)
+            pool_id, worker_id = worker_ids[idx]
+            self._round_robin_counter += 1
 
         elif allocation_method == RunAllocationMethod.RANDOM:
             pool_id, worker_id = random.choice(worker_ids)

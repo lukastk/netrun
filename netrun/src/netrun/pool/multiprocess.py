@@ -20,6 +20,7 @@ from ..rpc.multiprocess import (
     create_queue_pair,
 )
 from ..pool.base import (
+    BasePool,
     WorkerId,
     WorkerFn,
     WorkerMessage,
@@ -422,7 +423,7 @@ def _thread_worker(
             }))
 
 # %% pts/netrun/04_pool/02_multiprocess.pct.py 21
-class MultiprocessPool:
+class MultiprocessPool(BasePool):
     """A pool of worker processes, each running multiple threads.
 
     Messages are routed to specific workers via their worker_id.
@@ -438,182 +439,92 @@ class MultiprocessPool:
         buffer_output: bool = True,
         output_flush_interval: float = 0.1,
         on_output: Callable[[int, OutputBuffer], None] | None = None,
+        **kwargs,
     ):
-        """Create a multiprocess pool.
-
-        Args:
-            worker_fn: Function to run in each worker thread (must be importable)
-            num_processes: Number of subprocesses to create
-            threads_per_process: Number of worker threads per subprocess
-            redirect_output: If True, capture stdout/stderr from subprocesses
-            buffer_output: If True, buffer captured output for retrieval.
-                          If False, discard captured output (silent mode).
-                          Only applies when redirect_output=True.
-            output_flush_interval: Interval in seconds between automatic output buffer
-                          flushes from subprocesses (default 0.1 = 100ms).
-                          Only applies when redirect_output=True and buffer_output=True.
-            on_output: Optional callback called when output buffer is received from a
-                          subprocess. Called with (process_idx, buffer) where buffer is
-                          a list of (timestamp, is_stdout, text) tuples.
-        """
         if num_processes < 1:
             raise ValueError("num_processes must be at least 1")
         if threads_per_process < 1:
             raise ValueError("threads_per_process must be at least 1")
 
+        super().__init__(num_workers=num_processes * threads_per_process, **kwargs)
         self._worker_fn = worker_fn
         self._num_processes = num_processes
         self._threads_per_process = threads_per_process
-        self._num_workers = num_processes * threads_per_process
         self._redirect_output = redirect_output
         self._buffer_output = buffer_output
         self._output_flush_interval = output_flush_interval
         self._on_output = on_output
-        self._running = False
 
-        # Will be populated on start()
         self._channels: list[ProcessChannel] = []
         self._processes: list[mp.Process] = []
-        self._recv_queue: asyncio.Queue = asyncio.Queue()
-        self._recv_tasks: list[asyncio.Task] = []
-        self._monitor_task: asyncio.Task | None = None
-        self._dead_processes: set[int] = set()  # Track processes we've already reported as dead
-        self._stdout_buffers: dict[int, OutputBuffer] = {}  # process_idx -> buffer
-        self._flush_events: dict[int, asyncio.Event] = {}  # process_idx -> event for flush response
-        self._shutdown_complete_events: dict[int, asyncio.Event] = {}  # process_idx -> event for shutdown complete
-
-    @property
-    def num_workers(self) -> int:
-        """Total number of workers in the pool."""
-        return self._num_workers
+        self._dead_processes: set[int] = set()
+        self._stdout_buffers: dict[int, OutputBuffer] = {}
+        self._flush_events: dict[int, asyncio.Event] = {}
+        self._shutdown_complete_events: dict[int, asyncio.Event] = {}
 
     @property
     def num_processes(self) -> int:
-        """Number of subprocesses."""
         return self._num_processes
 
     @property
     def threads_per_process(self) -> int:
-        """Number of threads per subprocess."""
         return self._threads_per_process
 
-    @property
-    def is_running(self) -> bool:
-        """Whether the pool has been started."""
-        return self._running
-
     def _worker_id_to_process_thread(self, worker_id: WorkerId) -> tuple[int, int]:
-        """Convert flat worker_id to (process_idx, thread_idx)."""
         process_idx = worker_id // self._threads_per_process
         thread_idx = worker_id % self._threads_per_process
         return process_idx, thread_idx
 
-    async def start(self) -> None:
-        """Start all processes and workers."""
-        if self._running:
-            raise PoolAlreadyStarted("Pool is already running")
-
+    async def _do_start(self) -> None:
         ctx = mp.get_context("spawn")
         self._channels = []
         self._processes = []
         self._stdout_buffers = {}
         self._flush_events = {}
         self._shutdown_complete_events = {i: asyncio.Event() for i in range(self._num_processes)}
+        self._dead_processes = set()
 
         for process_idx in range(self._num_processes):
-            # Create channel pair
             parent_channel, child_queues = create_queue_pair(ctx)
             self._channels.append(parent_channel)
-
-            # Initialize stdout buffer for this process
             self._stdout_buffers[process_idx] = []
 
-            # Create and start subprocess
             proc = ctx.Process(
                 target=_subprocess_main,
                 args=(
-                    child_queues[0],  # send_q
-                    child_queues[1],  # recv_q
-                    self._worker_fn,
-                    self._threads_per_process,
-                    process_idx,
-                    self._threads_per_process,
-                    self._redirect_output,
-                    self._buffer_output,
+                    child_queues[0], child_queues[1],
+                    self._worker_fn, self._threads_per_process,
+                    process_idx, self._threads_per_process,
+                    self._redirect_output, self._buffer_output,
                     self._output_flush_interval,
                 ),
             )
             proc.start()
             self._processes.append(proc)
 
-        self._running = True
-        self._dead_processes = set()
-        self._monitor_task = asyncio.create_task(self._monitor_processes())
-
-    async def _monitor_processes(self) -> None:
-        """Background task to detect dead subprocesses."""
-        while self._running:
-            for proc_idx, proc in enumerate(self._processes):
-                if proc_idx not in self._dead_processes and proc.exitcode is not None:
-                    # Process died
-                    self._dead_processes.add(proc_idx)
-                    exit_info = {
-                        "exit_code": proc.exitcode,
-                        "reason": f"Process exited with code {proc.exitcode}",
-                    }
-                    # Signal death for all workers in this process
-                    for thread_idx in range(self._threads_per_process):
-                        worker_id = proc_idx * self._threads_per_process + thread_idx
-                        await self._recv_queue.put(WorkerMessage(
-                            worker_id=worker_id,
-                            key=POOL_UP_ERROR_CRASHED,
-                            data=exit_info
-                        ))
-                    # Close the channel to unblock any recv_loop waiting on it
-                    # This ensures the recv task exits rather than hanging forever
-                    try:
-                        await self._channels[proc_idx].close()
-                    except Exception:
-                        pass
-                    # Set shutdown_complete_event so close() doesn't wait for dead processes
-                    if proc_idx in self._shutdown_complete_events:
-                        self._shutdown_complete_events[proc_idx].set()
-            await asyncio.sleep(0.5)  # Check every 500ms
-
     async def close(self, timeout: float | None = None) -> None:
         """Shut down all processes and clean up resources.
 
-        This method ensures that all pending output from subprocesses is received
-        before shutting down. It works by:
-        1. Sending RPC_KEY_SHUTDOWN to each subprocess
-        2. Waiting for each subprocess to send SHUTDOWN_COMPLETE (with final flush)
-        3. Then closing channels and cleaning up
-
-        Args:
-            timeout: Max seconds to wait for each process to finish gracefully.
-                     If None, wait indefinitely. If timeout expires, processes
-                     are forcefully terminated.
+        Overrides BasePool.close() because MultiprocessPool needs to:
+        1. Start recv tasks BEFORE setting _running=False (to receive SHUTDOWN_COMPLETE)
+        2. Send MP_DOWN_SHUTDOWN and wait for SHUTDOWN_COMPLETE
+        3. Close channels, then cancel recv tasks, then join processes
         """
         if not self._running:
             return
-
-        # Ensure recv tasks are running BEFORE we set _running = False
-        # This ensures we can receive SHUTDOWN_COMPLETE messages
         self._start_recv_tasks()
-
         self._running = False
 
-        # Cancel monitor task
-        if self._monitor_task and not self._monitor_task.done():
+        # Cancel monitor
+        if self._monitor_task is not None and not self._monitor_task.done():
             self._monitor_task.cancel()
             try:
                 await self._monitor_task
             except asyncio.CancelledError:
                 pass
+        self._monitor_task = None
 
-        # Send shutdown signals to each subprocess using MP_DOWN_SHUTDOWN (NOT RPC_KEY_SHUTDOWN)
-        # MP_DOWN_SHUTDOWN allows the subprocess to complete its shutdown sequence
-        # (including final flush and SHUTDOWN_COMPLETE) before the channel is closed
+        # Send shutdown to each subprocess
         for channel in self._channels:
             try:
                 await channel.send(MP_DOWN_SHUTDOWN, None)
@@ -621,24 +532,23 @@ class MultiprocessPool:
                 pass
 
         # Wait for SHUTDOWN_COMPLETE from all processes
-        # The recv loop will set the events when it receives SHUTDOWN_COMPLETE
-        shutdown_timeout = timeout if timeout is not None else 30.0  # Default 30s
+        shutdown_timeout = timeout if timeout is not None else 30.0
         try:
             await asyncio.wait_for(
                 asyncio.gather(*[
                     self._shutdown_complete_events[i].wait()
                     for i in range(self._num_processes)
                 ]),
-                timeout=shutdown_timeout
+                timeout=shutdown_timeout,
             )
         except TimeoutError:
-            pass  # Continue with cleanup even if some processes didn't respond
+            pass
 
-        # Now close channels - this is safe since we've received all messages
+        # Close channels
         for channel in self._channels:
             await channel.close()
 
-        # Cancel recv tasks (they should already be done since they break after SHUTDOWN_COMPLETE)
+        # Cancel recv tasks
         for task in self._recv_tasks:
             if not task.done():
                 task.cancel()
@@ -646,8 +556,9 @@ class MultiprocessPool:
                     await task
                 except asyncio.CancelledError:
                     pass
+        self._recv_tasks.clear()
 
-        # Wait for processes to finish
+        # Join/terminate processes
         for proc in self._processes:
             proc.join(timeout=timeout)
             if proc.is_alive():
@@ -656,244 +567,136 @@ class MultiprocessPool:
         self._channels = []
         self._processes = []
         self._recv_queue = asyncio.Queue()
-        self._recv_tasks = []
-        self._monitor_task = None
         self._dead_processes = set()
         self._stdout_buffers = {}
         self._flush_events = {}
         self._shutdown_complete_events = {}
 
-    async def send(self, worker_id: WorkerId, key: str, data: Any) -> None:
-        """Send a message to a specific worker."""
-        if not self._running:
-            raise PoolNotStarted("Pool has not been started")
+    async def _do_close(self, timeout: float | None = None) -> None:
+        # Not used — close() is overridden entirely
+        pass
 
-        if worker_id < 0 or worker_id >= self._num_workers:
-            raise ValueError(f"worker_id {worker_id} out of range [0, {self._num_workers})")
-
-        process_idx, thread_idx = self._worker_id_to_process_thread(worker_id)
-        await self._channels[process_idx].send(MP_DOWN_DISPATCH, (thread_idx, key, data))
-
-    def _start_recv_tasks(self) -> None:
-        """Start background tasks that forward messages to the queue."""
-        if self._recv_tasks:
-            return
-
-        async def recv_loop(process_idx: int, channel: ProcessChannel):
-            try:
-                # Keep receiving until shutdown complete or channel closed
-                while True:
-                    # Use a timeout to periodically check if process is still alive
-                    # This handles cases where the subprocess hangs during startup
-                    try:
-                        key, data = await channel.recv(timeout=1.0)
-                    except RecvTimeout:
-                        # Check if monitor has already detected and handled this dead process
-                        # This prevents race conditions where recv_loop might exit before
-                        # the monitor has put a CRASHED message in the queue
-                        if process_idx in self._dead_processes:
-                            # Monitor already handled it - safe to exit
-                            break
-                        # Otherwise continue waiting (monitor will detect death if process crashed)
-                        continue
-
-                    if key == MP_UP_RESPONSE:
-                        worker_id, msg_key, msg_data = data
-                        msg = WorkerMessage(worker_id=worker_id, key=msg_key, data=msg_data)
-                        await self._recv_queue.put(msg)
-                    elif key == MP_UP_SUBPROCESS_ERROR:
-                        # Subprocess reported a fatal error - propagate to all workers in this process
-                        for thread_idx in range(self._threads_per_process):
-                            worker_id = process_idx * self._threads_per_process + thread_idx
-                            await self._recv_queue.put(WorkerMessage(
-                                worker_id=worker_id,
-                                key=POOL_UP_ERROR_EXCEPTION,
-                                data=data  # dict with type, message, traceback
-                            ))
-                    elif key == MP_UP_STDOUT_BUFFER:
-                        # Append received buffer to our local buffer for this process
-                        self._stdout_buffers[process_idx].extend(data)
-                        # Call on_output callback if provided
-                        if self._on_output is not None and data:
-                            self._on_output(process_idx, data)
-                        # Signal that flush response was received
-                        if process_idx in self._flush_events:
-                            self._flush_events[process_idx].set()
-                    elif key == MP_UP_SHUTDOWN_COMPLETE:
-                        # Signal that this subprocess has finished shutdown
-                        if process_idx in self._shutdown_complete_events:
-                            self._shutdown_complete_events[process_idx].set()
-                        # Exit the loop after receiving shutdown complete
-                        break
-            except (ChannelClosed, asyncio.CancelledError):
-                pass
-            except Exception as e:
-                logging.getLogger("netrun.pool").error(
-                    f"recv_loop for process {process_idx} crashed: {e}", exc_info=True
-                )
-                # Notify for all workers in this process
-                for worker_id in range(
-                    process_idx * self._threads_per_process,
-                    (process_idx + 1) * self._threads_per_process,
-                ):
-                    await self._recv_queue.put(WorkerMessage(
-                        worker_id=worker_id,
-                        key=POOL_UP_ERROR_CRASHED,
-                        data={"reason": f"recv_loop exception: {e}"}
-                    ))
-
+    def _create_recv_loops(self) -> list:
+        loops = []
         for process_idx, channel in enumerate(self._channels):
-            task = asyncio.create_task(recv_loop(process_idx, channel))
-            self._recv_tasks.append(task)
+            async def recv_loop(_proc_idx=process_idx, _channel=channel):
+                try:
+                    while True:
+                        try:
+                            key, data = await _channel.recv(timeout=1.0)
+                        except RecvTimeout:
+                            if _proc_idx in self._dead_processes:
+                                break
+                            continue
 
-    async def recv(self, timeout: float | None = None) -> WorkerMessage:
-        """Receive a message from any worker.
+                        if key == MP_UP_RESPONSE:
+                            worker_id, msg_key, msg_data = data
+                            await self._recv_queue.put(
+                                WorkerMessage(worker_id=worker_id, key=msg_key, data=msg_data)
+                            )
+                        elif key == MP_UP_SUBPROCESS_ERROR:
+                            for thread_idx in range(self._threads_per_process):
+                                worker_id = _proc_idx * self._threads_per_process + thread_idx
+                                await self._recv_queue.put(WorkerMessage(
+                                    worker_id=worker_id, key=POOL_UP_ERROR_EXCEPTION, data=data,
+                                ))
+                        elif key == MP_UP_STDOUT_BUFFER:
+                            self._stdout_buffers[_proc_idx].extend(data)
+                            if self._on_output is not None and data:
+                                self._on_output(_proc_idx, data)
+                            if _proc_idx in self._flush_events:
+                                self._flush_events[_proc_idx].set()
+                        elif key == MP_UP_SHUTDOWN_COMPLETE:
+                            if _proc_idx in self._shutdown_complete_events:
+                                self._shutdown_complete_events[_proc_idx].set()
+                            break
+                except (ChannelClosed, asyncio.CancelledError):
+                    pass
+                except Exception as e:
+                    logging.getLogger("netrun.pool").error(
+                        f"recv_loop for process {_proc_idx} crashed: {e}", exc_info=True
+                    )
+                    for worker_id in range(
+                        _proc_idx * self._threads_per_process,
+                        (_proc_idx + 1) * self._threads_per_process,
+                    ):
+                        await self._recv_queue.put(WorkerMessage(
+                            worker_id=worker_id, key=POOL_UP_ERROR_CRASHED,
+                            data={"reason": f"recv_loop exception: {e}"},
+                        ))
+            loops.append(recv_loop())
+        return loops
 
-        Raises:
-            WorkerException: If the worker raised an exception
-            WorkerCrashed: If the worker died unexpectedly
-            WorkerTimeout: If the worker timed out
-            RecvTimeout: If this recv() call times out
-        """
-        if not self._running:
-            raise PoolNotStarted("Pool has not been started")
+    async def _check_worker_health(self) -> None:
+        for proc_idx, proc in enumerate(self._processes):
+            if proc_idx not in self._dead_processes and proc.exitcode is not None:
+                self._dead_processes.add(proc_idx)
+                exit_info = {
+                    "exit_code": proc.exitcode,
+                    "reason": f"Process exited with code {proc.exitcode}",
+                }
+                for thread_idx in range(self._threads_per_process):
+                    worker_id = proc_idx * self._threads_per_process + thread_idx
+                    await self._recv_queue.put(WorkerMessage(
+                        worker_id=worker_id, key=POOL_UP_ERROR_CRASHED, data=exit_info,
+                    ))
+                try:
+                    await self._channels[proc_idx].close()
+                except Exception:
+                    pass
+                if proc_idx in self._shutdown_complete_events:
+                    self._shutdown_complete_events[proc_idx].set()
 
-        self._start_recv_tasks()
-
-        try:
-            if timeout is None:
-                msg = await self._recv_queue.get()
-            else:
-                msg = await asyncio.wait_for(
-                    self._recv_queue.get(),
-                    timeout=timeout,
-                )
-        except TimeoutError:
-            raise RecvTimeout(f"Receive timed out after {timeout}s")
-
-        _check_error_and_raise(msg)
-        return msg
-
-    async def try_recv(self) -> WorkerMessage | None:
-        """Non-blocking receive from any worker.
-
-        Raises:
-            WorkerException: If the worker raised an exception
-            WorkerCrashed: If the worker died unexpectedly
-            WorkerTimeout: If the worker timed out
-        """
-        if not self._running:
-            raise PoolNotStarted("Pool has not been started")
-
-        # If recv tasks are running, check the queue first
-        if self._recv_tasks:
-            try:
-                msg = self._recv_queue.get_nowait()
-                _check_error_and_raise(msg)
-                return msg
-            except asyncio.QueueEmpty:
-                return None
-
-        # Otherwise, read directly from channels
+    async def _try_recv_direct(self) -> WorkerMessage | None:
+        """Direct non-blocking receive (when recv tasks aren't running)."""
         for process_idx, channel in enumerate(self._channels):
             result = await channel.try_recv()
             if result is not None:
                 key, data = result
                 if key == MP_UP_RESPONSE:
                     worker_id, msg_key, msg_data = data
-                    msg = WorkerMessage(worker_id=worker_id, key=msg_key, data=msg_data)
-                    _check_error_and_raise(msg)
-                    return msg
-
+                    return WorkerMessage(worker_id=worker_id, key=msg_key, data=msg_data)
         return None
 
-    async def broadcast(self, key: str, data: Any) -> None:
-        """Send a message to all workers."""
+    async def send(self, worker_id: WorkerId, key: str, data: Any) -> None:
         if not self._running:
             raise PoolNotStarted("Pool has not been started")
+        if worker_id < 0 or worker_id >= self._num_workers:
+            raise ValueError(f"worker_id {worker_id} out of range [0, {self._num_workers})")
+        process_idx, thread_idx = self._worker_id_to_process_thread(worker_id)
+        await self._channels[process_idx].send(MP_DOWN_DISPATCH, (thread_idx, key, data))
 
+    async def broadcast(self, key: str, data: Any) -> None:
+        if not self._running:
+            raise PoolNotStarted("Pool has not been started")
         for channel in self._channels:
             await channel.send(MP_DOWN_BROADCAST, (key, data))
 
-    async def flush_stdout(self, process_idx: int, timeout: float|None = None) -> OutputBuffer:
-        """Flush and retrieve stdout/stderr buffer from a specific process.
-
-        Sends a flush request to the subprocess, waits for the response,
-        and returns the buffer contents. The subprocess buffer is cleared.
-
-        Args:
-            process_idx: Index of the process (0 to num_processes-1)
-            timeout: Maximum time to wait for response in seconds
-
-        Returns:
-            List of (timestamp, is_stdout, text) tuples.
-            is_stdout is True for stdout, False for stderr.
-
-        Raises:
-            PoolNotStarted: If the pool is not running
-            ValueError: If process_idx is out of range
-            RecvTimeout: If the subprocess doesn't respond in time
-        """
+    async def flush_stdout(self, process_idx: int, timeout: float | None = None) -> OutputBuffer:
+        """Flush and retrieve stdout/stderr buffer from a specific process."""
         if not self._running:
             raise PoolNotStarted("Pool has not been started")
-
         if process_idx < 0 or process_idx >= self._num_processes:
             raise ValueError(f"process_idx {process_idx} out of range [0, {self._num_processes})")
 
-        # Ensure recv tasks are running to capture the response
         self._start_recv_tasks()
-
-        # Create an event to wait for the flush response
         event = asyncio.Event()
         self._flush_events[process_idx] = event
-
-        # Send flush request
         await self._channels[process_idx].send(MP_DOWN_FLUSH_STDOUT, None)
-
-        # Wait for response
         try:
             await asyncio.wait_for(event.wait(), timeout=timeout)
         except TimeoutError:
             raise RecvTimeout(f"flush_stdout timed out after {timeout}s")
         finally:
-            # Clean up event
             self._flush_events.pop(process_idx, None)
-
-        # Extract buffer and clear it
         result = self._stdout_buffers[process_idx]
         self._stdout_buffers[process_idx] = []
         return result
 
-    async def flush_all_stdout(self, timeout: float|None = None) -> dict[int, OutputBuffer]:
-        """Flush and retrieve stdout/stderr buffers from all processes.
-
-        Args:
-            timeout: Maximum time to wait for each process response
-
-        Returns:
-            Dictionary mapping process_idx to buffer contents.
-            Each buffer is a list of (timestamp, is_stdout, text) tuples.
-
-        Raises:
-            PoolNotStarted: If the pool is not running
-        """
+    async def flush_all_stdout(self, timeout: float | None = None) -> dict[int, OutputBuffer]:
+        """Flush and retrieve stdout/stderr buffers from all processes."""
         if not self._running:
             raise PoolNotStarted("Pool has not been started")
-
-        # Flush all processes concurrently
-        tasks = [
-            self.flush_stdout(process_idx, timeout=timeout)
-            for process_idx in range(self._num_processes)
-        ]
+        tasks = [self.flush_stdout(i, timeout=timeout) for i in range(self._num_processes)]
         results = await asyncio.gather(*tasks)
-
         return {i: result for i, result in enumerate(results)}
-
-    async def __aenter__(self) -> "MultiprocessPool":
-        """Context manager entry - starts the pool."""
-        await self.start()
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        """Context manager exit - closes the pool."""
-        await self.close()
