@@ -8,6 +8,7 @@ from collections.abc import Callable, Awaitable
 from ._iutils import get_timestamp_utc
 from datetime import datetime
 import asyncio
+import threading
 from enum import Enum
 from dataclasses import dataclass
 import importlib
@@ -48,18 +49,33 @@ def _func_runner(
     send_channel: bool,
     args: tuple,
     kwargs: dict,
-    event_loop: asyncio.AbstractEventLoop,
+    shared_loop: asyncio.AbstractEventLoop | None = None,
 ) -> Any:
-    if asyncio.iscoroutinefunction(func):
-        if send_channel:
-            return event_loop.run_until_complete(func(channel, *args, **kwargs))
-        else:
-            return event_loop.run_until_complete(func(*args, **kwargs))
+    """Run a function (sync or async) in a worker thread.
+
+    When a func_preprocessor is used, it returns a sync wrapper that handles
+    async dispatch internally. When called directly without a preprocessor,
+    async functions are submitted to the shared event loop.
+    """
+    if send_channel:
+        call_args = (channel, *args)
     else:
-        if send_channel:
-            return func(channel, *args, **kwargs)
+        call_args = args
+
+    if asyncio.iscoroutinefunction(func):
+        coro = func(*call_args, **kwargs)
+        if shared_loop is not None:
+            future = asyncio.run_coroutine_threadsafe(coro, shared_loop)
+            return future.result()
         else:
-            return func(*args, **kwargs)
+            # Fallback: create a temporary event loop (for backward compat)
+            loop = asyncio.new_event_loop()
+            try:
+                return loop.run_until_complete(coro)
+            finally:
+                loop.close()
+    else:
+        return func(*call_args, **kwargs)
 
 # %% pts/netrun/05_execution_manager.pct.py 8
 def _convert_to_str_if_not_serializable(obj: Any) -> tuple[bool, Any]:
@@ -113,6 +129,7 @@ def _worker_func(
     worker_id,
     func_preprocessor: Callable | None = None,
     func_done_callback: Callable | None = None,
+    shared_loop: asyncio.AbstractEventLoop | None = None,
 ):
     """Worker function that handles execution manager protocol messages.
 
@@ -120,89 +137,87 @@ def _worker_func(
         is_in_main_process: If True, results don't need to be serializable.
         channel: RPC channel for communication.
         worker_id: ID of this worker.
-        func_preprocessor: If provided, this is a function that preprocesses the function before it is executed.
-        func_done_callback: If provided, this is called after function execution with the same args/kwargs
-            that were passed to the function, plus the result. Signature: callback(channel, *args, **kwargs, result=result)
-            if send_channel was True, otherwise callback(*args, **kwargs, result=result).
+        func_preprocessor: If provided, preprocesses the function before execution.
+            Uses call_for_sync_worker() for sync dispatch with shared_loop for async.
+        func_done_callback: If provided, called after function execution.
+        shared_loop: Shared event loop for async function dispatch. Async user
+            functions are submitted to this loop via run_coroutine_threadsafe().
     """
+    # Set shared loop on preprocessor so its sync wrapper can dispatch async functions
+    if func_preprocessor is not None and shared_loop is not None:
+        func_preprocessor._shared_loop = shared_loop
 
-    event_loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(event_loop)
     registered_functions: dict[str, Callable[..., Awaitable] | Callable[..., None]] = {}
 
-    try:
-        while True:
-            key, data = channel.recv()
-            # RUN
-            if key == ExecutionManagerProtocolKeys.RUN.value:
-                msg_id, func_import_path_or_key, run_id, send_channel, args, kwargs = data
-                timestamp_utc_started = None
-                started_sent = False
+    while True:
+        key, data = channel.recv()
+        # RUN
+        if key == ExecutionManagerProtocolKeys.RUN.value:
+            msg_id, func_import_path_or_key, run_id, send_channel, args, kwargs = data
+            timestamp_utc_started = None
+            started_sent = False
+            try:
+                if func_import_path_or_key in registered_functions:
+                    func = registered_functions[func_import_path_or_key]
+                else:
+                    module_path, func_name = func_import_path_or_key.rsplit(".", 1)
+                    module = importlib.import_module(module_path)
+                    func = getattr(module, func_name)
+
+                if func_preprocessor is not None:
+                    func = func_preprocessor.call_for_sync_worker(func)
+
+                timestamp_utc_started = get_timestamp_utc()
+                channel.send(ExecutionManagerProtocolKeys.UP_RUN_STARTED.value, (msg_id, timestamp_utc_started))
+                started_sent = True
+                res = _func_runner(
+                    channel=channel,
+                    func=func,
+                    send_channel=send_channel,
+                    args=args,
+                    kwargs=kwargs,
+                    shared_loop=shared_loop,
+                )
+
+                # Call done callback if provided
+                if func_done_callback is not None:
+                    if send_channel:
+                        func_done_callback(channel, *args, **kwargs, result=res)
+                    else:
+                        func_done_callback(*args, **kwargs, result=res)
+
+                timestamp_utc_completed = get_timestamp_utc()
+                if is_in_main_process:
+                    converted_to_str, _res = False, res
+                else:
+                    converted_to_str, _res = _convert_to_str_if_not_serializable(res)
+
+                channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res))
+            except Exception as e:
+                # Send error response so the client doesn't hang forever
+                timestamp_utc_error = get_timestamp_utc()
+                if timestamp_utc_started is None:
+                    timestamp_utc_started = timestamp_utc_error
                 try:
-                    if func_import_path_or_key in registered_functions:
-                        func = registered_functions[func_import_path_or_key]
-                    else:
-                        module_path, func_name = func_import_path_or_key.rsplit(".", 1)
-                        module = importlib.import_module(module_path)
-                        func = getattr(module, func_name)
+                    if not started_sent:
+                        channel.send(ExecutionManagerProtocolKeys.UP_RUN_STARTED.value, (msg_id, timestamp_utc_started))
+                    channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_error, False, e))
+                except Exception:
+                    pass  # Worker loop must survive
+        # SEND_FUNCTION
+        elif key == ExecutionManagerProtocolKeys.SEND_FUNCTION.value:
+            msg_id, func_key, func = data
+            registered_functions[func_key] = func
+            channel.send(ExecutionManagerProtocolKeys.UP_SEND_FUNCTION_RESPONSE.value, (msg_id,))
+        else:
+            raise ValueError(f"Unknown execution manager protocol key: '{key}'.")
 
-                    if func_preprocessor is not None:
-                        func = func_preprocessor(func)
-
-                    timestamp_utc_started = get_timestamp_utc()
-                    channel.send(ExecutionManagerProtocolKeys.UP_RUN_STARTED.value, (msg_id, timestamp_utc_started))
-                    started_sent = True
-                    res = _func_runner(
-                        channel=channel,
-                        func=func,
-                        send_channel=send_channel,
-                        args=args,
-                        kwargs=kwargs,
-                        event_loop=event_loop,
-                    )
-
-                    # Call done callback if provided
-                    if func_done_callback is not None:
-                        if send_channel:
-                            func_done_callback(channel, *args, **kwargs, result=res)
-                        else:
-                            func_done_callback(*args, **kwargs, result=res)
-
-                    timestamp_utc_completed = get_timestamp_utc()
-                    if is_in_main_process:
-                        converted_to_str, _res = False, res
-                    else:
-                        converted_to_str, _res = _convert_to_str_if_not_serializable(res)
-
-                    channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res))
-                except Exception as e:
-                    # Send error response so the client doesn't hang forever
-                    timestamp_utc_error = get_timestamp_utc()
-                    if timestamp_utc_started is None:
-                        timestamp_utc_started = timestamp_utc_error
-                    try:
-                        if not started_sent:
-                            channel.send(ExecutionManagerProtocolKeys.UP_RUN_STARTED.value, (msg_id, timestamp_utc_started))
-                        channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_error, False, e))
-                    except Exception:
-                        pass  # Worker loop must survive
-            # SEND_FUNCTION
-            elif key == ExecutionManagerProtocolKeys.SEND_FUNCTION.value:
-                msg_id, func_key, func = data
-                registered_functions[func_key] = func
-                channel.send(ExecutionManagerProtocolKeys.UP_SEND_FUNCTION_RESPONSE.value, (msg_id,))
-            else:
-                raise ValueError(f"Unknown execution manager protocol key: '{key}'.")
-    finally:
-        event_loop.close()
-        asyncio.set_event_loop(None)
-
-def _thread_worker_func(channel, worker_id, func_preprocessor: Callable | None = None, func_done_callback: Callable | None = None):
-    return _worker_func(is_in_main_process=True, channel=channel, worker_id=worker_id, func_preprocessor=func_preprocessor, func_done_callback=func_done_callback)
+def _thread_worker_func(channel, worker_id, func_preprocessor: Callable | None = None, func_done_callback: Callable | None = None, shared_loop: asyncio.AbstractEventLoop | None = None):
+    return _worker_func(is_in_main_process=True, channel=channel, worker_id=worker_id, func_preprocessor=func_preprocessor, func_done_callback=func_done_callback, shared_loop=shared_loop)
 
 # If the worker is in a multiprocess pool, then the result needs to be pickleable for it to be sent back without being converted as `str(result)`.
-def _multiprocess_worker_func(channel, worker_id, func_preprocessor: Callable | None = None, func_done_callback: Callable | None = None):
-    return _worker_func(is_in_main_process=False, channel=channel, worker_id=worker_id, func_preprocessor=func_preprocessor, func_done_callback=func_done_callback)
+def _multiprocess_worker_func(channel, worker_id, func_preprocessor: Callable | None = None, func_done_callback: Callable | None = None, shared_loop: asyncio.AbstractEventLoop | None = None):
+    return _worker_func(is_in_main_process=False, channel=channel, worker_id=worker_id, func_preprocessor=func_preprocessor, func_done_callback=func_done_callback, shared_loop=shared_loop)
 
 # %% pts/netrun/05_execution_manager.pct.py 12
 async def _async_worker_func(
@@ -303,6 +318,7 @@ def remote_execution_manager_worker(
     worker_id: int,
     func_preprocessor: Callable | None = None,
     func_done_callback: Callable | None = None,
+    shared_loop: asyncio.AbstractEventLoop | None = None,
 ) -> None:
     return _worker_func(
         is_in_main_process=False,
@@ -310,6 +326,7 @@ def remote_execution_manager_worker(
         worker_id=worker_id,
         func_preprocessor=func_preprocessor,
         func_done_callback=func_done_callback,
+        shared_loop=shared_loop,
     )
 
 # %% pts/netrun/05_execution_manager.pct.py 15
@@ -433,10 +450,28 @@ class ExecutionManager:
         self._worker_jobs: dict[tuple[str, str], list[SubmittedJobInfo]] = {}  # (pool_id, worker_id) -> list of SubmittedJobInfo
         self._worker_round_robin_lst: list[tuple[str, str]] = []
 
+        # Shared event loop for async function dispatch in thread/multiprocess workers.
+        # Created in start(), cleaned up in close().
+        self._shared_loop: asyncio.AbstractEventLoop | None = None
+        self._shared_loop_thread: threading.Thread | None = None
+
     async def start(self) -> None:
         """Start all pools and initialize the execution manager."""
         if self._started:
             raise RuntimeError("ExecutionManager is already started.")
+
+        # Create shared event loop on a dedicated daemon thread.
+        # Thread pool workers submit async coroutines to this loop via
+        # run_coroutine_threadsafe(). This replaces the broken per-thread
+        # event loops that lacked child watchers and couldn't share asyncio
+        # primitives across workers.
+        self._shared_loop = asyncio.new_event_loop()
+        self._shared_loop_thread = threading.Thread(
+            target=self._shared_loop.run_forever,
+            daemon=True,
+            name="netrun-shared-async-loop",
+        )
+        self._shared_loop_thread.start()
 
         for pool_id, (pool_type, pool_init_kwargs) in self._pool_configs.items():
             if 'worker_fn' in pool_init_kwargs:
@@ -447,14 +482,17 @@ class ExecutionManager:
             func_done_callback = pool_kwargs.pop('func_done_callback', None)
 
             if pool_type == ThreadPool:
-                worker_fn = functools.partial(_thread_worker_func, func_preprocessor=func_preprocessor, func_done_callback=func_done_callback)
+                worker_fn = functools.partial(_thread_worker_func, func_preprocessor=func_preprocessor, func_done_callback=func_done_callback, shared_loop=self._shared_loop)
                 self._pools[pool_id] = ThreadPool(**pool_kwargs, worker_fn=worker_fn)
             elif pool_type == MultiprocessPool:
+                # Multiprocess workers create their own process-local shared loop
+                # (event loops can't cross process boundaries)
                 worker_fn = functools.partial(_multiprocess_worker_func, func_preprocessor=func_preprocessor, func_done_callback=func_done_callback)
                 self._pools[pool_id] = MultiprocessPool(**pool_kwargs, worker_fn=worker_fn)
             elif pool_type == RemotePoolClient:
                 self._pools[pool_id] = RemotePoolClient(**pool_kwargs)
             elif pool_type == SingleWorkerPool:
+                # SingleWorkerPool runs on the main event loop — no shared loop needed
                 worker_fn = functools.partial(_async_worker_func, func_preprocessor=func_preprocessor, func_done_callback=func_done_callback)
                 self._pools[pool_id] = SingleWorkerPool(**pool_kwargs, worker_fn=worker_fn)
             else:
@@ -755,6 +793,15 @@ class ExecutionManager:
         # Now close the pools
         for pool in self._pools.values():
             await pool.close()
+
+        # Stop the shared event loop
+        if self._shared_loop is not None:
+            self._shared_loop.call_soon_threadsafe(self._shared_loop.stop)
+            if self._shared_loop_thread is not None:
+                self._shared_loop_thread.join(timeout=5.0)
+            self._shared_loop.close()
+            self._shared_loop = None
+            self._shared_loop_thread = None
 
         self._started = False
 

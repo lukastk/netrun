@@ -35,6 +35,8 @@ from tests.execution_manager.workers import (
     function_returns_non_serializable,
     async_add,
     function_with_kwargs,
+    async_subprocess_function,
+    nested_async_function,
 )
 
 # %% [markdown]
@@ -750,3 +752,196 @@ async def test_worker_exception_does_not_crash_loop():
 
 # %%
 await test_worker_exception_does_not_crash_loop();
+
+# %% [markdown]
+# ## Shared Event Loop Tests
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_async_subprocess_in_thread_pool():
+    """Test that async subprocess works on ThreadPool via shared event loop.
+
+    Previously, per-thread event loops lacked child watchers, causing
+    asyncio.create_subprocess_exec to hang forever. The shared event loop
+    fixes this.
+    """
+    manager = ExecutionManager({
+        "pool": (ThreadPool, {"num_workers": 1}),
+    })
+    async with manager:
+        await manager.send_function("pool", 0, "subprocess_fn", async_subprocess_function)
+
+        result = await asyncio.wait_for(
+            manager.run(
+                pool_id="pool",
+                worker_id=0,
+                func_import_path_or_key="subprocess_fn",
+                send_channel=False,
+                func_args=(),
+                func_kwargs={},
+            ),
+            timeout=10.0,
+        )
+        assert result.result == "subprocess_output"
+
+# %%
+await test_async_subprocess_in_thread_pool();
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_nested_async_in_thread_pool():
+    """Test that nested async calls work on ThreadPool.
+
+    Previously, nested run_until_complete calls were fragile. The shared
+    event loop provides natural await semantics.
+    """
+    manager = ExecutionManager({
+        "pool": (ThreadPool, {"num_workers": 1}),
+    })
+    async with manager:
+        await manager.send_function("pool", 0, "nested", nested_async_function)
+
+        result = await manager.run(
+            pool_id="pool",
+            worker_id=0,
+            func_import_path_or_key="nested",
+            send_channel=False,
+            func_args=(),
+            func_kwargs={},
+        )
+        assert result.result == "outer_inner_result"
+
+# %%
+await test_nested_async_in_thread_pool();
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_sync_function_unaffected_by_shared_loop():
+    """Regression test: sync functions still work correctly on ThreadPool.
+
+    Sync functions should run directly in the worker thread, not through
+    the shared event loop.
+    """
+    import time
+
+    def cpu_bound_sync(n: int) -> int:
+        """Sync function that does CPU work."""
+        total = 0
+        for i in range(n):
+            total += i
+        return total
+
+    manager = ExecutionManager({
+        "pool": (ThreadPool, {"num_workers": 2}),
+    })
+    async with manager:
+        await manager.send_function_to_pool("pool", "cpu", cpu_bound_sync)
+
+        # Run two sync functions concurrently on different workers
+        start = time.monotonic()
+        tasks = [
+            asyncio.create_task(
+                manager.run(
+                    pool_id="pool",
+                    worker_id=i,
+                    func_import_path_or_key="cpu",
+                    send_channel=False,
+                    func_args=(100_000,),
+                    func_kwargs={},
+                )
+            )
+            for i in range(2)
+        ]
+        results = await asyncio.gather(*tasks)
+
+        # Both should complete with correct results
+        expected = sum(range(100_000))
+        for r in results:
+            assert r.result == expected
+
+# %%
+await test_sync_function_unaffected_by_shared_loop();
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_asyncio_event_across_workers():
+    """Test that asyncio primitives work across ThreadPool workers.
+
+    Two async functions on different workers of the same pool share an
+    asyncio.Event. One sets it, the other waits on it. This verifies
+    cross-worker async coordination via the shared event loop.
+    """
+    shared_event = asyncio.Event()
+
+    async def setter(delay: float) -> str:
+        await asyncio.sleep(delay)
+        shared_event.set()
+        return "set"
+
+    async def waiter() -> str:
+        await asyncio.wait_for(shared_event.wait(), timeout=5.0)
+        return "received"
+
+    manager = ExecutionManager({
+        "pool": (ThreadPool, {"num_workers": 2}),
+    })
+    async with manager:
+        await manager.send_function("pool", 0, "setter", setter)
+        await manager.send_function("pool", 1, "waiter", waiter)
+
+        # Start both concurrently
+        setter_task = asyncio.create_task(
+            manager.run(
+                pool_id="pool",
+                worker_id=0,
+                func_import_path_or_key="setter",
+                send_channel=False,
+                func_args=(0.1,),
+                func_kwargs={},
+            )
+        )
+        waiter_task = asyncio.create_task(
+            manager.run(
+                pool_id="pool",
+                worker_id=1,
+                func_import_path_or_key="waiter",
+                send_channel=False,
+                func_args=(),
+                func_kwargs={},
+            )
+        )
+
+        setter_result, waiter_result = await asyncio.gather(setter_task, waiter_task)
+        assert setter_result.result == "set"
+        assert waiter_result.result == "received"
+
+# %%
+await test_asyncio_event_across_workers();
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_shared_loop_cleanup():
+    """Test that the shared event loop is properly cleaned up on close."""
+    import threading
+
+    manager = ExecutionManager({
+        "pool": (ThreadPool, {"num_workers": 1}),
+    })
+    async with manager:
+        # The shared loop thread should be alive
+        assert manager._shared_loop is not None
+        assert manager._shared_loop_thread is not None
+        assert manager._shared_loop_thread.is_alive()
+        loop_thread = manager._shared_loop_thread
+
+    # After close, the loop thread should have stopped
+    assert not loop_thread.is_alive()
+    assert manager._shared_loop is None
+
+# %%
+await test_shared_loop_cleanup();

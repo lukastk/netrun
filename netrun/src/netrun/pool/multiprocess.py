@@ -183,6 +183,16 @@ def _subprocess_main_inner(
     # Create channel to parent
     parent_channel = SyncProcessChannel(parent_send_q, parent_recv_q)
 
+    # Create process-local shared event loop for async function dispatch.
+    # Each subprocess gets its own loop (event loops can't cross process boundaries).
+    shared_loop = asyncio.new_event_loop()
+    shared_loop_thread = threading.Thread(
+        target=shared_loop.run_forever,
+        daemon=True,
+        name=f"netrun-subprocess-{process_idx}-async-loop",
+    )
+    shared_loop_thread.start()
+
     # Create thread-safe queues for each worker
     # worker_queues[thread_idx] = (send_to_worker, recv_from_worker)
     worker_send_queues: list[queue.Queue] = [queue.Queue() for _ in range(num_threads)]
@@ -195,6 +205,7 @@ def _subprocess_main_inner(
         t = threading.Thread(
             target=_thread_worker,
             args=(worker_fn, worker_send_queues[thread_idx], response_queue, worker_id),
+            kwargs={"shared_loop": shared_loop},
             daemon=True,
         )
         t.start()
@@ -314,6 +325,11 @@ def _subprocess_main_inner(
                     except Exception:
                         pass
 
+        # Stop the process-local shared event loop
+        shared_loop.call_soon_threadsafe(shared_loop.stop)
+        shared_loop_thread.join(timeout=5.0)
+        shared_loop.close()
+
         # Signal that shutdown is complete
         try:
             parent_channel.send(MP_UP_SHUTDOWN_COMPLETE, None)
@@ -326,6 +342,7 @@ def _thread_worker(
     recv_queue: queue.Queue,
     response_queue: queue.Queue,
     worker_id: WorkerId,
+    shared_loop: asyncio.AbstractEventLoop | None = None,
 ):
     """Run worker function in a thread within subprocess."""
 
@@ -373,7 +390,20 @@ def _thread_worker(
 
     channel = _WorkerChannel()
     try:
-        worker_fn(channel, worker_id)
+        # Only pass shared_loop if the worker function accepts it.
+        # ExecutionManager worker functions accept it; raw pool worker functions don't.
+        import inspect
+        _accepts_shared_loop = False
+        if shared_loop is not None:
+            try:
+                sig = inspect.signature(worker_fn)
+                _accepts_shared_loop = "shared_loop" in sig.parameters
+            except (ValueError, TypeError):
+                pass
+        if _accepts_shared_loop:
+            worker_fn(channel, worker_id, shared_loop=shared_loop)
+        else:
+            worker_fn(channel, worker_id)
     except ChannelClosed:
         pass
     except Exception as e:
