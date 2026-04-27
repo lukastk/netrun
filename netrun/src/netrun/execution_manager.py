@@ -18,6 +18,7 @@ import random
 import functools
 
 from .rpc.base import RPCChannel
+from .pool.base import POOL_UP_ERROR_KEYS, _check_error_and_raise
 from .pool.thread import ThreadPool
 from .pool.multiprocess import MultiprocessPool
 from .pool.aio import SingleWorkerPool
@@ -442,6 +443,7 @@ class ExecutionManager:
 
         self._worker_jobs: dict[tuple[str, str], list[SubmittedJobInfo]] = {}  # (pool_id, worker_id) -> list of SubmittedJobInfo
         self._round_robin_counter: int = 0
+        self._msg_worker_map: dict[str, dict[str, int]] = {}  # pool_id -> {msg_id -> worker_id}
 
         # Shared event loop for async function dispatch in thread/multiprocess workers.
         # Created in start(), cleaned up in close().
@@ -511,11 +513,25 @@ class ExecutionManager:
     async def _msg_recv_task_func(self, pool_id: str):
         pool = self._pools[pool_id]
         while True:
-            msg = await pool.recv()
+            msg = await pool.recv_raw()
+
+            # Pool-level error (worker crashed/died) — route to affected jobs
+            # instead of crashing the entire receiver task.
+            if msg.key in POOL_UP_ERROR_KEYS:
+                worker_id = msg.worker_id
+                affected_msg_ids = [
+                    mid for mid, wid in self._msg_worker_map.get(pool_id, {}).items()
+                    if wid == worker_id
+                ]
+                for mid in affected_msg_ids:
+                    queue = self._msgs[pool_id].get(mid)
+                    if queue is not None:
+                        await queue.put(msg)
+                continue
+
+            # Normal message — route by msg_id
             msg_id = msg.data[0]
             msg.data = msg.data[1:]
-            # Queue may have been cleaned up if the job was cancelled/timed out.
-            # Silently discard orphaned responses.
             queue = self._msgs[pool_id].get(msg_id)
             if queue is not None:
                 await queue.put(msg)
@@ -535,6 +551,8 @@ class ExecutionManager:
         # Create the queue BEFORE sending to avoid race condition where response
         # arrives before the queue is created
         self._msgs[pool_id][msg_id] = asyncio.Queue()
+        # Track which worker this msg_id is for (needed to route worker errors)
+        self._msg_worker_map.setdefault(pool_id, {})[msg_id] = worker_id
 
         await pool.send(
             worker_id=worker_id,
@@ -581,6 +599,11 @@ class ExecutionManager:
 
         if close_msg_queue:
             del self._msgs[pool_id][msg_id]
+            self._msg_worker_map.get(pool_id, {}).pop(msg_id, None)
+
+        # Check for pool-level error routed from _msg_recv_task_func
+        if msg.key in POOL_UP_ERROR_KEYS:
+            _check_error_and_raise(msg)
 
         if msg.key != expect.value:
             raise ValueError(f"Expected message key '{expect.value}', got '{msg.key}'.")
@@ -667,6 +690,7 @@ class ExecutionManager:
                 pass  # Already removed on the success path
             if msg_id is not None and msg_id in self._msgs.get(pool_id, {}):
                 del self._msgs[pool_id][msg_id]
+                self._msg_worker_map.get(pool_id, {}).pop(msg_id, None)
 
     async def run_allocate(
         self,

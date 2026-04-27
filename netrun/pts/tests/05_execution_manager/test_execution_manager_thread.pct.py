@@ -945,3 +945,63 @@ async def test_shared_loop_cleanup():
 
 # %%
 await test_shared_loop_cleanup();
+
+# %% [markdown]
+# ## Worker crash isolation tests
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_worker_crash_does_not_kill_other_workers():
+    """Test that a worker crash doesn't prevent other workers from functioning.
+
+    Previously, a worker crash killed the _msg_recv_task_func for the entire
+    pool, making all workers unreachable. Now, the error is routed only to
+    the affected job and the receiver continues.
+    """
+    import os
+    import signal as _signal
+
+    def crash_worker_func(a: int, b: int) -> int:
+        """Function that crashes the worker by raising from a non-preprocessor context."""
+        raise RuntimeError("Worker crash!")
+
+    manager = ExecutionManager({
+        "pool": (ThreadPool, {"num_workers": 2}),
+    })
+    async with manager:
+        await manager.send_function("pool", 0, "crash", crash_worker_func)
+        await manager.send_function("pool", 1, "crash", crash_worker_func)
+        await manager.send_function("pool", 0, "add", add_numbers)
+        await manager.send_function("pool", 1, "add", add_numbers)
+
+        # Worker 0 crashes
+        with pytest.raises(Exception):
+            await asyncio.wait_for(
+                manager.run(
+                    pool_id="pool",
+                    worker_id=0,
+                    func_import_path_or_key="crash",
+                    send_channel=False,
+                    func_args=(1, 2),
+                    func_kwargs={},
+                ),
+                timeout=5.0,
+            )
+
+        # Worker 1 should still be functional
+        result = await asyncio.wait_for(
+            manager.run(
+                pool_id="pool",
+                worker_id=1,
+                func_import_path_or_key="add",
+                send_channel=False,
+                func_args=(10, 20),
+                func_kwargs={},
+            ),
+            timeout=5.0,
+        )
+        assert result.result == 30
+
+# %%
+await test_worker_crash_does_not_kill_other_workers();

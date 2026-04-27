@@ -389,6 +389,31 @@ class BasePool(ABC):
         _check_error_and_raise(msg)
         return msg
 
+    async def recv_raw(self, timeout: float | None = None) -> WorkerMessage:
+        """Like recv() but returns error messages instead of raising.
+
+        Used by ExecutionManager to handle worker errors gracefully
+        without killing the pool's central message receiver. Error messages
+        (WorkerCrashed, WorkerException, etc.) are returned as normal
+        WorkerMessage objects for the caller to route appropriately.
+        """
+        if not self._running:
+            raise PoolNotStarted("Pool has not been started")
+        self._start_recv_tasks()
+        try:
+            if timeout is None:
+                msg = await self._recv_queue.get()
+            else:
+                msg = await asyncio.wait_for(
+                    self._recv_queue.get(),
+                    timeout=timeout,
+                )
+        except (TimeoutError, asyncio.TimeoutError):
+            from netrun.rpc.base import RecvTimeout
+            raise RecvTimeout(f"Receive timed out after {timeout}s")
+        self._last_message_time[msg.worker_id] = time.monotonic()
+        return msg
+
     async def try_recv(self) -> WorkerMessage | None:
         """Non-blocking receive from any worker.
 
