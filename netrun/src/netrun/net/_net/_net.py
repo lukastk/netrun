@@ -444,6 +444,36 @@ class Net:
             if node_config.execution_config is not None:
                 self._node_execution_configs[node_config.name] = node_config.execution_config
 
+        # Validate depends_on: check for cycles and invalid references
+        all_node_names = {nc.name for nc in self._config_resolved.graph.nodes}
+        for node_name, exec_config in self._node_execution_configs.items():
+            if exec_config.depends_on:
+                for dep in exec_config.depends_on:
+                    if dep not in all_node_names:
+                        raise ValueError(
+                            f"Node '{node_name}' depends_on '{dep}' which does not exist in the graph"
+                        )
+        # Topological cycle check for depends_on
+        visited: set[str] = set()
+        path: set[str] = set()
+        def _check_cycle(node: str) -> None:
+            if node in path:
+                raise ValueError(
+                    f"Circular dependency detected involving node '{node}'. "
+                    f"depends_on must form a DAG (no cycles)."
+                )
+            if node in visited:
+                return
+            path.add(node)
+            config = self._node_execution_configs.get(node)
+            if config and config.depends_on:
+                for dep in config.depends_on:
+                    _check_cycle(dep)
+            path.remove(node)
+            visited.add(node)
+        for node_name in self._node_execution_configs:
+            _check_cycle(node_name)
+
         # Disabled nodes set (populated from config, mutated at runtime)
         self._disabled_nodes: set[str] = set()
         for node_name, exec_config in self._node_execution_configs.items():

@@ -7805,3 +7805,96 @@ async def test_resources_undefined_raises():
 
 # %%
 asyncio.get_event_loop().run_until_complete(test_resources_undefined_raises())
+
+# %% [markdown]
+# ## Validation tests
+
+# %%
+#|export
+def test_depends_on_circular_raises():
+    """Test that circular depends_on raises ValueError at construction."""
+    def noop(ctx, packets):
+        pass
+
+    def make_node(name, depends_on=None):
+        return NodeConfig(
+            name=name,
+            in_ports={"in": PortConfig()},
+            in_salvo_conditions={
+                "default": SalvoConditionConfig(
+                    max_salvos=MaxSalvosFiniteConfig(max=1),
+                    ports={"in": PacketCountAllConfig()},
+                    term=SalvoConditionTermPortConfig(
+                        port_name="in",
+                        state=PortStateNonEmptyConfig(),
+                    ),
+                ),
+            },
+            execution_config=NodeExecutionConfig(
+                node_name=name,
+                pools=["main"],
+                exec_node_func=noop,
+                depends_on=depends_on,
+            ),
+        )
+
+    graph_config = GraphConfig(
+        nodes=[
+            make_node("A", depends_on=["B"]),
+            make_node("B", depends_on=["A"]),
+        ],
+        edges=[],
+    )
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    with pytest.raises(ValueError, match="[Cc]ircular"):
+        Net(config)
+
+# %%
+test_depends_on_circular_raises()
+
+# %%
+#|export
+def test_depends_on_invalid_node_raises():
+    """Test that depends_on referencing non-existent node raises ValueError."""
+    def noop(ctx, packets):
+        pass
+
+    graph_config = GraphConfig(
+        nodes=[
+            NodeConfig(
+                name="A",
+                in_ports={"in": PortConfig()},
+                in_salvo_conditions={
+                    "default": SalvoConditionConfig(
+                        max_salvos=MaxSalvosFiniteConfig(max=1),
+                        ports={"in": PacketCountAllConfig()},
+                        term=SalvoConditionTermPortConfig(
+                            port_name="in",
+                            state=PortStateNonEmptyConfig(),
+                        ),
+                    ),
+                },
+                execution_config=NodeExecutionConfig(
+                    node_name="A",
+                    pools=["main"],
+                    exec_node_func=noop,
+                    depends_on=["NonExistentNode"],
+                ),
+            ),
+        ],
+        edges=[],
+    )
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=graph_config,
+    )
+
+    with pytest.raises(ValueError, match="NonExistentNode"):
+        Net(config)
+
+# %%
+test_depends_on_invalid_node_raises()
