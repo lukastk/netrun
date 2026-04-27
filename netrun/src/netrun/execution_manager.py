@@ -17,7 +17,6 @@ import pickle
 import random
 import functools
 
-from .rpc.base import RPCChannel
 from .pool.base import POOL_UP_ERROR_KEYS, _check_error_and_raise
 from .pool.thread import ThreadPool
 from .pool.multiprocess import MultiprocessPool
@@ -26,28 +25,18 @@ from .pool.remote import RemotePoolClient
 
 # %% pts/netrun/05_execution_manager.pct.py 5
 async def _async_func_runner(
-    channel: RPCChannel,
     func: Callable[..., Awaitable[Any]],
-    send_channel: bool,
     args: tuple,
     kwargs: dict,
 ) -> Any:
     if asyncio.iscoroutinefunction(func):
-        if send_channel:
-            return await func(channel, *args, **kwargs)
-        else:
-            return await func(*args, **kwargs)
+        return await func(*args, **kwargs)
     else:
-        if send_channel:
-            return func(channel, *args, **kwargs)
-        else:
-            return func(*args, **kwargs)
+        return func(*args, **kwargs)
 
 # %% pts/netrun/05_execution_manager.pct.py 6
 def _func_runner(
-    channel: RPCChannel,
     func: Callable[..., Any],
-    send_channel: bool,
     args: tuple,
     kwargs: dict,
     shared_loop: asyncio.AbstractEventLoop | None = None,
@@ -58,13 +47,8 @@ def _func_runner(
     async dispatch internally. When called directly without a preprocessor,
     async functions are submitted to the shared event loop.
     """
-    if send_channel:
-        call_args = (channel, *args)
-    else:
-        call_args = args
-
     if asyncio.iscoroutinefunction(func):
-        coro = func(*call_args, **kwargs)
+        coro = func(*args, **kwargs)
         if shared_loop is not None:
             future = asyncio.run_coroutine_threadsafe(coro, shared_loop)
             return future.result()
@@ -76,7 +60,7 @@ def _func_runner(
             finally:
                 loop.close()
     else:
-        return func(*call_args, **kwargs)
+        return func(*args, **kwargs)
 
 # %% pts/netrun/05_execution_manager.pct.py 8
 _worker_state = threading.local()
@@ -106,19 +90,13 @@ class ExecutionManagerProtocolKeys(Enum):
     RUN = "exec-manager:run"
     """
     Run a function.
-    Args: msg_id, func_import_path_or_key, run_id, send_channel, args, kwargs
-    """
-
-    UP_RUN_STARTED = "exec-manager-up:run-started"
-    """
-    Notification from the worker that a run has been submitted and started. 
-    Args: msg_id, timestamp_utc_started
+    Args: msg_id, func_import_path_or_key, run_id, args, kwargs
     """
 
     UP_RUN_RESPONSE = "exec-manager-up:run-response"
     """
     Response to RUN from the worker.
-    Args: msg_id, converted_to_str, _res
+    Args: msg_id, timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res
     """
 
     SEND_FUNCTION = "exec-manager:send-function"
@@ -166,9 +144,8 @@ def _worker_func(
         key, data = channel.recv()
         # RUN
         if key == ExecutionManagerProtocolKeys.RUN.value:
-            msg_id, func_import_path_or_key, run_id, send_channel, args, kwargs = data
+            msg_id, func_import_path_or_key, run_id, args, kwargs = data
             timestamp_utc_started = None
-            started_sent = False
             try:
                 if func_import_path_or_key in registered_functions:
                     func = registered_functions[func_import_path_or_key]
@@ -181,12 +158,8 @@ def _worker_func(
                     func = func_preprocessor.call_for_sync_worker(func)
 
                 timestamp_utc_started = get_timestamp_utc()
-                channel.send(ExecutionManagerProtocolKeys.UP_RUN_STARTED.value, (msg_id, timestamp_utc_started))
-                started_sent = True
                 res = _func_runner(
-                    channel=channel,
                     func=func,
-                    send_channel=send_channel,
                     args=args,
                     kwargs=kwargs,
                     shared_loop=shared_loop,
@@ -194,10 +167,7 @@ def _worker_func(
 
                 # Call done callback if provided
                 if func_done_callback is not None:
-                    if send_channel:
-                        func_done_callback(channel, *args, **kwargs, result=res)
-                    else:
-                        func_done_callback(*args, **kwargs, result=res)
+                    func_done_callback(*args, **kwargs, result=res)
 
                 timestamp_utc_completed = get_timestamp_utc()
                 if is_in_main_process:
@@ -212,8 +182,6 @@ def _worker_func(
                 if timestamp_utc_started is None:
                     timestamp_utc_started = timestamp_utc_error
                 try:
-                    if not started_sent:
-                        channel.send(ExecutionManagerProtocolKeys.UP_RUN_STARTED.value, (msg_id, timestamp_utc_started))
                     channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_error, False, e))
                 except Exception:
                     pass  # Worker loop must survive
@@ -246,26 +214,19 @@ async def _async_worker_func(
     """
     registered_functions: dict[str, Callable[..., Awaitable] | Callable[..., None]] = {}
 
-    async def _handle_run(msg_id, func, send_channel, args, kwargs):
+    async def _handle_run(msg_id, func, args, kwargs):
         """Execute a single RUN request and send the response."""
         timestamp_utc_started = get_timestamp_utc()
         try:
-            await channel.send(ExecutionManagerProtocolKeys.UP_RUN_STARTED.value, (msg_id, timestamp_utc_started))
-
             res = await _async_func_runner(
-                channel=channel,
                 func=func,
-                send_channel=send_channel,
                 args=args,
                 kwargs=kwargs,
             )
 
             # Call done callback if provided
             if func_done_callback is not None:
-                if send_channel:
-                    callback_result = func_done_callback(channel, *args, **kwargs, result=res)
-                else:
-                    callback_result = func_done_callback(*args, **kwargs, result=res)
+                callback_result = func_done_callback(*args, **kwargs, result=res)
                 # Await if the callback is async
                 if asyncio.iscoroutine(callback_result):
                     await callback_result
@@ -289,7 +250,7 @@ async def _async_worker_func(
             key, data = await channel.recv()
             # RUN
             if key == ExecutionManagerProtocolKeys.RUN.value:
-                msg_id, func_import_path_or_key, run_id, send_channel, args, kwargs = data
+                msg_id, func_import_path_or_key, run_id, args, kwargs = data
                 if func_import_path_or_key in registered_functions:
                     func = registered_functions[func_import_path_or_key]
                 else:
@@ -301,7 +262,7 @@ async def _async_worker_func(
                     func = func_preprocessor(func)
 
                 # Spawn as concurrent task instead of awaiting inline
-                task = asyncio.create_task(_handle_run(msg_id, func, send_channel, args, kwargs))
+                task = asyncio.create_task(_handle_run(msg_id, func, args, kwargs))
                 pending_tasks.add(task)
                 task.add_done_callback(pending_tasks.discard)
             # SEND_FUNCTION
@@ -627,7 +588,6 @@ class ExecutionManager:
         pool_id: str,
         worker_id: str,
         func_import_path_or_key: str,
-        send_channel: bool,
         func_args,
         func_kwargs,
     ) -> JobResult:
@@ -638,7 +598,6 @@ class ExecutionManager:
             pool_id: The ID of the pool to run the function in.
             worker_id: The ID of the worker to run the function on.
             func_import_path_or_key: The import path or key of the function to run (for the latter, use send_function to register the function first)
-            send_channel: Whether to send the worker RPC channel to the function.
             func_args: The arguments to pass to the function.
             func_kwargs: The keyword arguments to pass to the function.
 
@@ -668,25 +627,22 @@ class ExecutionManager:
                 pool_id=pool_id,
                 worker_id=worker_id,
                 key=ExecutionManagerProtocolKeys.RUN.value,
-                data=(func_import_path_or_key, run_id, send_channel, func_args, func_kwargs),
+                data=(func_import_path_or_key, run_id, func_args, func_kwargs),
             )
 
-            # Wait for UP_RUN_STARTED
-            started_msg = await self._recv_msg(pool_id, msg_id, expect=ExecutionManagerProtocolKeys.UP_RUN_STARTED, close_msg_queue=False)
-            job_info.timestamp_utc_started = started_msg.data[0]  # timestamp_utc_started
-
-            # Wait for UP_RUN_RESPONSE
+            # Wait for UP_RUN_RESPONSE (single response containing all timestamps)
             msg = await self._recv_msg(pool_id, msg_id, expect=ExecutionManagerProtocolKeys.UP_RUN_RESPONSE, close_msg_queue=True)
             msg_id = None  # Already cleaned up by close_msg_queue=True
 
             self._worker_jobs[(pool_id, worker_id)].remove(job_info)
 
             timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res = msg.data
+            job_info.timestamp_utc_started = timestamp_utc_started
             if isinstance(_res, Exception):
                 raise _res
             return JobResult(
                 timestamp_utc_submitted=job_info.timestamp_utc_submitted,
-                timestamp_utc_started=job_info.timestamp_utc_started,
+                timestamp_utc_started=timestamp_utc_started,
                 timestamp_utc_completed=timestamp_utc_completed,
                 func_import_path_or_key=job_info.func_import_path_or_key,
                 pool_id=job_info.pool_id,
@@ -709,7 +665,6 @@ class ExecutionManager:
         pool_worker_ids: list[str | tuple[str, str]],
         allocation_method: RunAllocationMethod,
         func_import_path_or_key: str,
-        send_channel: bool,
         func_args,
         func_kwargs,
     ) -> JobResult:
@@ -755,7 +710,6 @@ class ExecutionManager:
             pool_id=pool_id,
             worker_id=worker_id,
             func_import_path_or_key=func_import_path_or_key,
-            send_channel=send_channel,
             func_args=func_args,
             func_kwargs=func_kwargs,
         )

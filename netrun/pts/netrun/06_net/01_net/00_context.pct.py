@@ -26,7 +26,6 @@ import traceback
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from enum import Enum
 from typing import Any, NoReturn, get_origin
 from collections.abc import Callable
 import importlib
@@ -38,47 +37,6 @@ from netrun.net.config._nodes import resolve_effective_exec_field, INHERITABLE_E
 from netrun._iutils import get_timestamp_utc
 from netrun.packets import LazyPacketValueSpec
 from netrun.execution_manager import _worker_state
-
-# %% [markdown]
-# ## Net Protocol Keys
-#
-# Communication keys for Net <-> Worker messages.
-
-# %%
-#|export
-class NetProtocolKeys(Enum):
-    """Protocol keys for Net <-> Worker communication."""
-
-    # Upstream (Worker -> Net) - sent via channel when send_channel=True
-    UP_CREATE_PACKET = "net:create-packet"
-    """Create a new packet. Args: (epoch_id, value_or_lazy)"""
-
-    UP_CREATE_PACKET_RESPONSE = "net:create-packet-response"
-    """Response with packet ID. Args: (packet_id,)"""
-
-    UP_CONSUME_PACKET = "net:consume-packet"
-    """Consume a packet. Args: (epoch_id, packet_id)"""
-
-    UP_CONSUME_PACKET_RESPONSE = "net:consume-packet-response"
-    """Response with packet value. Args: (value,)"""
-
-    UP_LOAD_OUTPUT_PORT = "net:load-output-port"
-    """Load packet into output port. Args: (epoch_id, port_name, packet_id)"""
-
-    UP_LOAD_OUTPUT_PORT_RESPONSE = "net:load-output-port-response"
-    """Acknowledgement. Args: ()"""
-
-    UP_SEND_OUTPUT_SALVO = "net:send-salvo"
-    """Send output salvo. Args: (epoch_id, salvo_condition_name)"""
-
-    UP_SEND_OUTPUT_SALVO_RESPONSE = "net:send-salvo-response"
-    """Acknowledgement. Args: ()"""
-
-    UP_CANCEL_EPOCH = "net:cancel-epoch"
-    """Cancel the current epoch. Args: (epoch_id,)"""
-
-    UP_PRINT_BUFFER = "net:print-buffer"
-    """Send captured print output. Args: (epoch_id, buffer: list[str])"""
 
 # %% [markdown]
 # ## Structured Logging Data Models

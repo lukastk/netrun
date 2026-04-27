@@ -25,7 +25,6 @@ from dataclasses import dataclass
 
 from netrun.net._net import (
     Net,
-    NetProtocolKeys,
     NodeExecutionContext,
     NodeExecutionResult,
     NodeFailureContext,
@@ -59,37 +58,6 @@ from netrun.net.config import (
 )
 from netrun.execution_manager import RunAllocationMethod
 from netrun.packets import LazyPacketValueSpec
-
-# %% [markdown]
-# ## NetProtocolKeys Tests
-
-# %%
-#|export
-def test_net_protocol_keys_values():
-    """Test that NetProtocolKeys have expected string values."""
-    assert NetProtocolKeys.UP_CREATE_PACKET.value == "net:create-packet"
-    assert NetProtocolKeys.UP_CREATE_PACKET_RESPONSE.value == "net:create-packet-response"
-    assert NetProtocolKeys.UP_CONSUME_PACKET.value == "net:consume-packet"
-    assert NetProtocolKeys.UP_CONSUME_PACKET_RESPONSE.value == "net:consume-packet-response"
-    assert NetProtocolKeys.UP_LOAD_OUTPUT_PORT.value == "net:load-output-port"
-    assert NetProtocolKeys.UP_LOAD_OUTPUT_PORT_RESPONSE.value == "net:load-output-port-response"
-    assert NetProtocolKeys.UP_SEND_OUTPUT_SALVO.value == "net:send-salvo"
-    assert NetProtocolKeys.UP_SEND_OUTPUT_SALVO_RESPONSE.value == "net:send-salvo-response"
-    assert NetProtocolKeys.UP_CANCEL_EPOCH.value == "net:cancel-epoch"
-    assert NetProtocolKeys.UP_PRINT_BUFFER.value == "net:print-buffer"
-
-# %%
-test_net_protocol_keys_values()
-
-# %%
-#|export
-def test_net_protocol_keys_uniqueness():
-    """Test that all protocol keys have unique values."""
-    values = [key.value for key in NetProtocolKeys]
-    assert len(values) == len(set(values)), "Protocol keys must have unique values"
-
-# %%
-test_net_protocol_keys_uniqueness()
 
 # %% [markdown]
 # ## NodeExecutionContext Tests

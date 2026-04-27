@@ -122,7 +122,7 @@ async def test_send_function_and_run():
             pool_id="pool",
             worker_id=0,
             func_import_path_or_key="add",
-            send_channel=False,
+
             func_args=(3, 4),
             func_kwargs={},
         )
@@ -150,7 +150,7 @@ async def test_send_function_to_pool():
                 pool_id="pool",
                 worker_id=worker_id,
                 func_import_path_or_key="multiply",
-                send_channel=False,
+    
                 func_args=(worker_id + 1, 10),
                 func_kwargs={},
             )
@@ -173,7 +173,7 @@ async def test_job_result_timestamps():
             pool_id="pool",
             worker_id=0,
             func_import_path_or_key="slow",
-            send_channel=False,
+
             func_args=(0.1,),
             func_kwargs={},
         )
@@ -201,7 +201,7 @@ async def test_function_with_kwargs():
             pool_id="pool",
             worker_id=0,
             func_import_path_or_key="kwargs_fn",
-            send_channel=False,
+
             func_args=(1,),
             func_kwargs={},
         )
@@ -212,7 +212,7 @@ async def test_function_with_kwargs():
             pool_id="pool",
             worker_id=0,
             func_import_path_or_key="kwargs_fn",
-            send_channel=False,
+
             func_args=(5,),
             func_kwargs={"b": 20, "c": 200},
         )
@@ -236,7 +236,7 @@ async def test_round_robin_allocation():
                 pool_worker_ids=["pool"],
                 allocation_method=RunAllocationMethod.ROUND_ROBIN,
                 func_import_path_or_key="add",
-                send_channel=False,
+    
                 func_args=(i, 1),
                 func_kwargs={},
             )
@@ -263,7 +263,7 @@ async def test_random_allocation():
                 pool_worker_ids=["pool"],
                 allocation_method=RunAllocationMethod.RANDOM,
                 func_import_path_or_key="add",
-                send_channel=False,
+    
                 func_args=(i, 1),
                 func_kwargs={},
             )
@@ -290,7 +290,7 @@ async def test_allocation_with_specific_workers():
                 pool_worker_ids=[("pool", 0), ("pool", 2)],
                 allocation_method=RunAllocationMethod.ROUND_ROBIN,
                 func_import_path_or_key="add",
-                send_channel=False,
+    
                 func_args=(i, 1),
                 func_kwargs={},
             )
@@ -315,7 +315,7 @@ async def test_empty_workers_raises():
                 pool_worker_ids=[],
                 allocation_method=RunAllocationMethod.ROUND_ROBIN,
                 func_import_path_or_key="add",
-                send_channel=False,
+    
                 func_args=(1, 2),
                 func_kwargs={},
             )
@@ -350,7 +350,7 @@ async def test_multiple_pools():
             pool_id="fast",
             worker_id=0,
             func_import_path_or_key="add",
-            send_channel=False,
+
             func_args=(5, 3),
             func_kwargs={},
         )
@@ -360,7 +360,7 @@ async def test_multiple_pools():
             pool_id="slow",
             worker_id=0,
             func_import_path_or_key="multiply",
-            send_channel=False,
+
             func_args=(4, 7),
             func_kwargs={},
         )
@@ -389,7 +389,7 @@ async def test_concurrent_jobs():
                     pool_worker_ids=["pool"],
                     allocation_method=RunAllocationMethod.ROUND_ROBIN,
                     func_import_path_or_key="add",
-                    send_channel=False,
+        
                     func_args=(i, i),
                     func_kwargs={},
                 )
@@ -417,7 +417,7 @@ async def test_async_function():
             pool_id="pool",
             worker_id=0,
             func_import_path_or_key="async_add",
-            send_channel=False,
+
             func_args=(10, 20),
             func_kwargs={},
         )
@@ -469,7 +469,7 @@ async def test_flush_pool_stdout():
             pool_id="mp_pool",
             worker_id=0,
             func_import_path_or_key="mp_print",
-            send_channel=False,
+
             func_args=("hello",),
             func_kwargs={},
         )
@@ -517,7 +517,7 @@ async def test_flush_all_pool_stdout():
             pool_id="mp_pool",
             worker_id=0,
             func_import_path_or_key="mp_print",
-            send_channel=False,
+
             func_args=("proc0",),
             func_kwargs={},
         )
@@ -525,7 +525,7 @@ async def test_flush_all_pool_stdout():
             pool_id="mp_pool",
             worker_id=1,
             func_import_path_or_key="mp_print",
-            send_channel=False,
+
             func_args=("proc1",),
             func_kwargs={},
         )

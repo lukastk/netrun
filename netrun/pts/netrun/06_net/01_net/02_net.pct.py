@@ -2430,7 +2430,6 @@ class Net:
                 pool_worker_ids=config.pools,
                 allocation_method=allocation_method,
                 func_import_path_or_key=func_key,
-                send_channel=False,  # Deferred mode doesn't need channel
                 func_args=(epoch_id, node_name, packets, packet_values),
                 func_kwargs={
                     "retry_count": retry_count,

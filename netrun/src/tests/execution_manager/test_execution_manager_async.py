@@ -121,7 +121,7 @@ async def test_send_function_and_run():
             pool_id="pool",
             worker_id=0,
             func_import_path_or_key="add",
-            send_channel=False,
+
             func_args=(3, 4),
             func_kwargs={},
         )
@@ -148,7 +148,7 @@ async def test_send_function_to_pool():
             pool_id="pool",
             worker_id=0,
             func_import_path_or_key="multiply",
-            send_channel=False,
+
             func_args=(5, 10),
             func_kwargs={},
         )
@@ -170,7 +170,7 @@ async def test_job_result_timestamps():
             pool_id="pool",
             worker_id=0,
             func_import_path_or_key="slow",
-            send_channel=False,
+
             func_args=(0.1,),
             func_kwargs={},
         )
@@ -197,7 +197,7 @@ async def test_non_serializable_result():
             pool_id="pool",
             worker_id=0,
             func_import_path_or_key="nonserialized",
-            send_channel=False,
+
             func_args=(),
             func_kwargs={},
         )
@@ -224,7 +224,7 @@ async def test_function_with_kwargs():
             pool_id="pool",
             worker_id=0,
             func_import_path_or_key="kwargs_fn",
-            send_channel=False,
+
             func_args=(1,),
             func_kwargs={},
         )
@@ -235,7 +235,7 @@ async def test_function_with_kwargs():
             pool_id="pool",
             worker_id=0,
             func_import_path_or_key="kwargs_fn",
-            send_channel=False,
+
             func_args=(5,),
             func_kwargs={"b": 20, "c": 200},
         )
@@ -259,7 +259,7 @@ async def test_round_robin_allocation():
                 pool_worker_ids=["pool"],
                 allocation_method=RunAllocationMethod.ROUND_ROBIN,
                 func_import_path_or_key="add",
-                send_channel=False,
+    
                 func_args=(i, 1),
                 func_kwargs={},
             )
@@ -284,7 +284,7 @@ async def test_empty_workers_raises():
                 pool_worker_ids=[],
                 allocation_method=RunAllocationMethod.ROUND_ROBIN,
                 func_import_path_or_key="add",
-                send_channel=False,
+    
                 func_args=(1, 2),
                 func_kwargs={},
             )
@@ -319,7 +319,7 @@ async def test_multiple_pools():
             pool_id="pool_a",
             worker_id=0,
             func_import_path_or_key="add",
-            send_channel=False,
+
             func_args=(5, 3),
             func_kwargs={},
         )
@@ -329,7 +329,7 @@ async def test_multiple_pools():
             pool_id="pool_b",
             worker_id=0,
             func_import_path_or_key="multiply",
-            send_channel=False,
+
             func_args=(4, 7),
             func_kwargs={},
         )
@@ -354,7 +354,7 @@ async def test_async_function():
             pool_id="pool",
             worker_id=0,
             func_import_path_or_key="async_add",
-            send_channel=False,
+
             func_args=(10, 20),
             func_kwargs={},
         )
@@ -376,7 +376,7 @@ async def test_pool_class_directly():
             pool_id="pool",
             worker_id=0,
             func_import_path_or_key="add",
-            send_channel=False,
+
             func_args=(100, 200),
             func_kwargs={},
         )
@@ -415,7 +415,7 @@ async def test_concurrent_async_execution():
                     pool_id="pool",
                     worker_id=0,
                     func_import_path_or_key="slow",
-                    send_channel=False,
+        
                     func_args=(0.2,),
                     func_kwargs={},
                 )
@@ -456,7 +456,7 @@ async def test_worker_exception_does_not_hang():
                     pool_id="pool",
                     worker_id=0,
                     func_import_path_or_key="error_fn",
-                    send_channel=False,
+        
                     func_args=(),
                     func_kwargs={},
                 ),
@@ -469,7 +469,7 @@ async def test_worker_exception_does_not_hang():
             pool_id="pool",
             worker_id=0,
             func_import_path_or_key="add",
-            send_channel=False,
+
             func_args=(10, 20),
             func_kwargs={},
         )
