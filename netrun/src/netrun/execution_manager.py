@@ -79,6 +79,16 @@ def _func_runner(
         return func(*call_args, **kwargs)
 
 # %% pts/netrun/05_execution_manager.pct.py 8
+_worker_state = threading.local()
+"""Thread-local state for worker threads.
+
+Attributes set by _worker_func on startup:
+    shared_loop: The shared event loop for async function dispatch.
+        Read by NetFuncPreprocessor.call_for_sync_worker() to submit
+        async user functions via run_coroutine_threadsafe().
+"""
+
+# %% pts/netrun/05_execution_manager.pct.py 10
 def _convert_to_str_if_not_serializable(obj: Any) -> tuple[bool, Any]:
     """Convert an object to string if it's not pickle-serializable.
 
@@ -91,7 +101,7 @@ def _convert_to_str_if_not_serializable(obj: Any) -> tuple[bool, Any]:
     except (pickle.PicklingError, TypeError, AttributeError):
         return (True, str(obj))
 
-# %% pts/netrun/05_execution_manager.pct.py 10
+# %% pts/netrun/05_execution_manager.pct.py 12
 class ExecutionManagerProtocolKeys(Enum):
     RUN = "exec-manager:run"
     """
@@ -123,7 +133,7 @@ class ExecutionManagerProtocolKeys(Enum):
     Args: msg_id
     """
 
-# %% pts/netrun/05_execution_manager.pct.py 11
+# %% pts/netrun/05_execution_manager.pct.py 13
 def _worker_func(
     is_in_main_process: bool,
     channel,
@@ -144,9 +154,11 @@ def _worker_func(
         shared_loop: Shared event loop for async function dispatch. Async user
             functions are submitted to this loop via run_coroutine_threadsafe().
     """
-    # Set shared loop on preprocessor so its sync wrapper can dispatch async functions
-    if func_preprocessor is not None and shared_loop is not None:
-        func_preprocessor._shared_loop = shared_loop
+    # Set shared loop on thread-local so the preprocessor's sync wrapper can
+    # dispatch async functions via run_coroutine_threadsafe(). This avoids
+    # mutating the preprocessor instance (which must stay picklable for
+    # multiprocess pools).
+    _worker_state.shared_loop = shared_loop
 
     registered_functions: dict[str, Callable[..., Awaitable] | Callable[..., None]] = {}
 
@@ -213,7 +225,7 @@ def _worker_func(
         else:
             raise ValueError(f"Unknown execution manager protocol key: '{key}'.")
 
-# %% pts/netrun/05_execution_manager.pct.py 12
+# %% pts/netrun/05_execution_manager.pct.py 14
 async def _async_worker_func(
     channel,
     worker_id,
@@ -306,7 +318,7 @@ async def _async_worker_func(
         if pending_tasks:
             await asyncio.gather(*pending_tasks, return_exceptions=True)
 
-# %% pts/netrun/05_execution_manager.pct.py 14
+# %% pts/netrun/05_execution_manager.pct.py 16
 def remote_execution_manager_worker(
     channel,
     worker_id: int,
@@ -323,7 +335,7 @@ def remote_execution_manager_worker(
         shared_loop=shared_loop,
     )
 
-# %% pts/netrun/05_execution_manager.pct.py 15
+# %% pts/netrun/05_execution_manager.pct.py 17
 def create_execution_manager_server(
     worker_name: str = "execution_manager",
     func_preprocessor: Callable | None = None,
@@ -393,7 +405,7 @@ def create_execution_manager_server(
     server.register_worker(worker_name, worker_fn)
     return server
 
-# %% pts/netrun/05_execution_manager.pct.py 17
+# %% pts/netrun/05_execution_manager.pct.py 19
 @dataclass
 class JobResult:
     """Result of a job execution."""
@@ -422,7 +434,7 @@ class RunAllocationMethod(Enum):
     RANDOM = "random"
     LEAST_BUSY = "least-busy"
 
-# %% pts/netrun/05_execution_manager.pct.py 18
+# %% pts/netrun/05_execution_manager.pct.py 20
 PoolType = ThreadPool | MultiprocessPool | SingleWorkerPool | RemotePoolClient
 
 class ExecutionManager:

@@ -78,6 +78,14 @@ async def main():
         print()
         print(f"  Elapsed: {elapsed:.2f}s")
 
+        # Show all node print logs (includes multiprocess workers whose
+        # ctx.print output doesn't echo to stdout directly)
+        # Print all captured node output (includes multiprocess workers
+        # whose ctx.print doesn't echo to terminal directly)
+        print()
+        print("All Node Output (via ctx.print):")
+        net.logs.print_all()
+
         # Show structured logs
         print()
         print("Structured Logs:")
@@ -87,6 +95,7 @@ async def main():
 
         # Show resource usage worked (at most 2 concurrent HTTP connections)
         print()
+        print(f"  Pool types: main (SingleWorkerPool), scrape (ThreadPool x3), compute (MultiprocessPool x1)")
         print(f"  Resource capacities: {net._resource_capacities}")
         print(f"  Resource usage (should be 0 after completion): {net._resource_usage}")
 

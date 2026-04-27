@@ -169,7 +169,12 @@ def analyze(ctx, joined: dict) -> dict:
     structured logging (ctx.log), retries.
 
     On first attempt, builds an analysis from the joined data and stores it
-    in ctx.state. On retry, reuses the cached result.
+    in ctx.state. On retry, reuses the cached result instead of recomputing.
+
+    Note: ctx.state works best with thread pools (same process, shared memory).
+    With multiprocess pools, the dict is pickled per retry — mutations within
+    a single attempt work, but cross-retry persistence requires thread pools.
+
     Input port: 'joined'. Output port: 'out'.
     """
     # Use ctx.state to cache the expensive computation across retries

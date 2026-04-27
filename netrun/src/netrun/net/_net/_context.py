@@ -19,6 +19,7 @@ from ...net.config import NodeExecutionConfig, NodeVariable, PortConfig, PortTyp
 from ...net.config._nodes import resolve_effective_exec_field, INHERITABLE_EXEC_FIELDS
 from ..._iutils import get_timestamp_utc
 from ...packets import LazyPacketValueSpec
+from ...execution_manager import _worker_state
 
 # %% pts/netrun/06_net/01_net/00_context.pct.py 5
 class NetProtocolKeys(Enum):
@@ -1129,8 +1130,12 @@ class NetFuncPreprocessor:
     Provides two wrapper modes:
     - __call__: returns async wrapper (for SingleWorkerPool / async contexts)
     - call_for_sync_worker: returns sync wrapper (for ThreadPool / MultiprocessPool)
-      Async user functions are dispatched to _shared_loop via run_coroutine_threadsafe.
+      Async user functions are dispatched to the shared event loop (read from
+      thread-local _worker_state.shared_loop) via run_coroutine_threadsafe.
       Sync user functions run directly in the calling thread.
+
+    No execution state is stored on this object — it stays fully picklable.
+    The shared event loop reference lives on the worker thread-local, not here.
     """
 
     def __init__(
@@ -1145,8 +1150,6 @@ class NetFuncPreprocessor:
         self._node_configs = node_configs
         # Worker-local cache for resolved factory functions
         self._resolved_funcs: dict[str, Callable] = {}
-        # Shared event loop for async dispatch (set by worker on startup)
-        self._shared_loop: asyncio.AbstractEventLoop | None = None
 
     def _resolve_factory(self, node_name: str) -> Callable | None:
         """Resolve factory function on worker (lazy).
@@ -1334,13 +1337,14 @@ class NetFuncPreprocessor:
             try:
                 ctx._validate_input_packets(packets)
                 if asyncio.iscoroutinefunction(actual_func):
-                    if preprocessor_self._shared_loop is None:
+                    shared_loop = getattr(_worker_state, 'shared_loop', None)
+                    if shared_loop is None:
                         raise RuntimeError(
                             f"Async node function '{node_name}' requires a shared event loop, "
-                            "but none was set on the preprocessor. This is a netrun internal error."
+                            "but none was set on the worker thread. This is a netrun internal error."
                         )
                     coro = actual_func(ctx, packets)
-                    future = asyncio.run_coroutine_threadsafe(coro, preprocessor_self._shared_loop)
+                    future = asyncio.run_coroutine_threadsafe(coro, shared_loop)
                     func_result = future.result()
                 else:
                     func_result = actual_func(ctx, packets)

@@ -105,6 +105,20 @@ def _func_runner(
         return func(*call_args, **kwargs)
 
 # %% [markdown]
+# ## Worker thread-local state
+
+# %%
+#|export
+_worker_state = threading.local()
+"""Thread-local state for worker threads.
+
+Attributes set by _worker_func on startup:
+    shared_loop: The shared event loop for async function dispatch.
+        Read by NetFuncPreprocessor.call_for_sync_worker() to submit
+        async user functions via run_coroutine_threadsafe().
+"""
+
+# %% [markdown]
 # ## Helpers
 
 # %%
@@ -181,9 +195,11 @@ def _worker_func(
         shared_loop: Shared event loop for async function dispatch. Async user
             functions are submitted to this loop via run_coroutine_threadsafe().
     """
-    # Set shared loop on preprocessor so its sync wrapper can dispatch async functions
-    if func_preprocessor is not None and shared_loop is not None:
-        func_preprocessor._shared_loop = shared_loop
+    # Set shared loop on thread-local so the preprocessor's sync wrapper can
+    # dispatch async functions via run_coroutine_threadsafe(). This avoids
+    # mutating the preprocessor instance (which must stay picklable for
+    # multiprocess pools).
+    _worker_state.shared_loop = shared_loop
 
     registered_functions: dict[str, Callable[..., Awaitable] | Callable[..., None]] = {}
 
