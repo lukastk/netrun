@@ -454,14 +454,33 @@ class RunAllocationMethod(Enum):
 PoolType = ThreadPool | MultiprocessPool | SingleWorkerPool | RemotePoolClient
 
 class ExecutionManager:
+    """High-level orchestrator for executing functions across pools.
+
+    Wraps one or more pools (`ThreadPool`, `MultiprocessPool`, `SingleWorkerPool`,
+    `RemotePoolClient`) and routes function execution requests to specific
+    workers, tracking per-job lifecycle.
+
+    Each submitted job produces exactly one terminal event (`UP_RUN_RESPONSE`),
+    which carries the result, both timestamps (started, completed), and any
+    captured print output. Worker crashes are isolated: a crashed worker only
+    fails the jobs targeting it, leaving the rest of the pool intact.
+
+    Async functions dispatched to thread/multiprocess workers run on a single
+    **shared event loop** owned by the manager (one daemon thread per process
+    scope). Sync functions run directly on the worker thread/process. This
+    makes `asyncio.create_subprocess_exec`, nested awaits, and cross-node
+    `asyncio.Lock` work without per-worker loop hacks.
+    """
+
     def __init__(self, pool_configs: dict[str, tuple[type[PoolType], dict[str, Any]]]):
         """
         Create an ExecutionManager with the given pool configurations.
 
         Args:
             pool_configs: A dictionary mapping pool_id to (pool_type, pool_init_kwargs).
-                pool_type can be "thread", "multiprocess", "remote", or "main".
-                pool_init_kwargs are passed to the pool constructor (excluding worker_fn).
+                pool_type can be `ThreadPool`, `MultiprocessPool`, `SingleWorkerPool`,
+                or `RemotePoolClient`. pool_init_kwargs are passed to the pool
+                constructor (excluding worker_fn).
         """
         self._pool_configs = pool_configs
         self._pools: dict[str, PoolType] = {}
@@ -647,17 +666,30 @@ class ExecutionManager:
         func_kwargs,
     ) -> JobResult:
         """
-        Run a function in a pool.
+        Run a function on a specific worker and wait for the result.
+
+        Sends a `RUN` request to the target worker and waits for the single
+        `UP_RUN_RESPONSE` terminal event, which carries the result and timing
+        metadata. Worker crashes are surfaced as exceptions on the affected
+        job without disturbing the rest of the pool.
 
         Args:
-            pool_id: The ID of the pool to run the function in.
-            worker_id: The ID of the worker to run the function on.
-            func_import_path_or_key: The import path or key of the function to run (for the latter, use send_function to register the function first)
-            func_args: The arguments to pass to the function.
-            func_kwargs: The keyword arguments to pass to the function.
+            pool_id: The pool to run on.
+            worker_id: The specific worker (within the pool) to run on.
+            func_import_path_or_key: Either an importable dotted path
+                (e.g. `"my_pkg.my_func"`), or a key previously registered via
+                `send_function()` / `send_function_to_pool()`.
+            func_args: Positional arguments tuple.
+            func_kwargs: Keyword arguments dict.
 
         Returns:
-            The result of the function.
+            A `JobResult` with submitted/started/completed timestamps, the
+            return value, pool/worker IDs, and a flag indicating whether the
+            result was string-converted (for non-serializable returns from
+            multiprocess/remote pools).
+
+        Raises:
+            Whatever the user function raises, propagated to the caller.
         """
         pool = self._pools[pool_id]
 
@@ -723,6 +755,26 @@ class ExecutionManager:
         func_args,
         func_kwargs,
     ) -> JobResult:
+        """
+        Pick a worker from the candidate list using `allocation_method`, then run.
+
+        Args:
+            pool_worker_ids: Candidate workers. Each entry is either a pool ID
+                (which expands to all workers in that pool) or a `(pool_id,
+                worker_id)` tuple targeting a specific worker.
+            allocation_method: `ROUND_ROBIN` (rotates across candidates),
+                `RANDOM` (uniform pick), or `LEAST_BUSY` (worker with fewest
+                in-flight jobs; ties broken by round-robin).
+            func_import_path_or_key: See `run()`.
+            func_args: Positional arguments tuple.
+            func_kwargs: Keyword arguments dict.
+
+        Returns:
+            A `JobResult` from the selected worker.
+
+        Raises:
+            ValueError: If the candidate list is empty.
+        """
         worker_ids: list[tuple[str, int]] = []
         # Convert pool_worker_ids to a list of (pool_id, worker_id) tuples
         for _id in pool_worker_ids:

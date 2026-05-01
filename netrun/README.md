@@ -6,13 +6,18 @@ A flow-based development (FBD) runtime for Python. Define networks of interconne
 
 - **Flow-based execution** — Define graphs of nodes connected by ports and edges; packets flow automatically based on salvo conditions
 - **Multiple pool types** — Execute nodes across threads, processes, or remote workers via WebSockets
-- **Node factories** — Create nodes from regular Python functions (`function` factory) or fan-out patterns (`broadcast` factory)
+- **Node factories** — Create nodes from regular Python functions (`function` factory), fan-out patterns (`broadcast`), and joins (`join`)
+- **Scheduling constraints** — `depends_on` for node ordering, `resources` for semaphore-style coordination (mutual exclusion, bounded concurrency)
+- **Retry-persistent state** — `ctx.state` dict survives retries so expensive precomputation isn't redone
+- **Shared event loop** — Async nodes run on a single asyncio loop per process; subprocess calls and cross-node `asyncio.Lock` work cleanly
+- **Worker crash isolation** — A crashed worker fails only its own jobs; the pool stays alive
 - **Signals and controls** — Pause, resume, and control network execution at runtime
 - **Caching and storage** — Cache epoch results, store packet data to local/S3/SSH/GCS backends
 - **Node variables** — Typed, inheritable configuration variables with environment variable support
 - **Output queues** — Collect results from terminal nodes
-- **CLI** — Validate configs, inspect graphs, convert formats, and query factory info
 - **Config formats** — Define networks in JSON or TOML with `NetConfig.from_file()`
+
+The CLI is shipped as a separate package: see [netrun-cli](../netrun-cli/).
 
 ## Installation
 
@@ -66,7 +71,6 @@ asyncio.run(main())
 ## Documentation
 
 - [CLAUDE.md](../CLAUDE.md) — Full module documentation and API reference
-- [PROJECT_SPEC.md](PROJECT_SPEC.md) — Detailed project specification
 - [NBLITE_INSTRUCTIONS.md](NBLITE_INSTRUCTIONS.md) — How to write code (nblite workflow)
 
 ## Development

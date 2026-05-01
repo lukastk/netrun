@@ -257,7 +257,6 @@ class NodeExecutionConfig(VarResolvableModel):
     close_node_func: NodeStopFunc | str | VarRef | None = Field(default=None, description="Function called when the node closes.")
     on_node_failure: OnNodeFailureFunc | str | VarRef | None = Field(default=None, description="Callback when node execution fails.")
 
-    # Additional execution options (from PROJECT_SPEC.md)
     defer_init: bool | VarRef = Field(default=False, description="Defer init_node_func until the node's first epoch instead of during Net.init().")
 
     run_on_init: bool | VarRef = Field(default=False, description="Execute this node once during Net.init(). Requires a satisfied input salvo condition with zero input packets.")

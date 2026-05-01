@@ -1,0 +1,43 @@
+{
+    "pools": {
+        "main": {"spec": {"type": "main"}}
+    },
+    "output_queues": {
+        "all_done": {
+            "ports": [
+                ["step_a", "out"],
+                ["step_b", "out"],
+                ["step_c", "out"]
+            ]
+        }
+    },
+    "graph": {
+        "nodes": [
+            {
+                "name": "step_a",
+                "factory": "netrun.node_factories.from_function",
+                "factory_args": {"func": "nodes.step_a"},
+                "execution_config": {"pools": ["main"]}
+            },
+            {
+                "name": "step_b",
+                "factory": "netrun.node_factories.from_function",
+                "factory_args": {"func": "nodes.step_b"},
+                "execution_config": {
+                    "pools": ["main"],
+                    "depends_on": ["step_a"]
+                }
+            },
+            {
+                "name": "step_c",
+                "factory": "netrun.node_factories.from_function",
+                "factory_args": {"func": "nodes.step_c"},
+                "execution_config": {
+                    "pools": ["main"],
+                    "depends_on": ["step_b"]
+                }
+            }
+        ],
+        "edges": []
+    }
+}

@@ -368,8 +368,19 @@ class NetLogQuery:
 class Net:
     """Main orchestrator for flow-based network execution.
 
-    The Net class bridges netrun-sim (packet flow simulation) with actual node
-    function execution via ExecutionManager.
+    Bridges netrun-sim (packet flow simulation) with actual node function
+    execution via ExecutionManager. Owns pool lifecycle, scheduling
+    (`depends_on`, `resources`), retries (with persistent `ctx.state`),
+    timeouts, cache and file-storage replay, output queues, signals/controls,
+    structured logging, and lifecycle callbacks.
+
+    Async nodes execute on a single shared event loop owned by the
+    ExecutionManager (one daemon thread per process scope). Sync nodes run
+    directly on the worker's thread/process. Worker crashes are isolated to
+    the affected jobs.
+
+    Use `async with Net(config) as net:` (or the sync `with` variant). The
+    context manager calls `init()` / `close()` automatically.
     """
 
     def __init__(self, config: NetConfig, run_init_nodes: bool = True):

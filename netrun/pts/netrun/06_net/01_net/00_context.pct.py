@@ -375,11 +375,29 @@ class EpochError(Exception):
 class NodeExecutionContext:
     """Context object passed to node execution functions.
 
-    This is the primary interface for nodes to interact with the Net during execution.
-    All operations are deferred and committed when the function completes.
+    Primary interface for nodes to interact with the Net during execution.
+    Most operations (create/consume packets, load output ports, send output
+    salvos) are deferred and committed atomically when the epoch finishes
+    successfully — so a partially-completed function can fail without leaving
+    half-applied side effects in the graph.
 
-    Packet operations (create, consume, load_output_port, send_output_salvo) are
-    queued locally and executed atomically when the epoch completes successfully.
+    Mutable retry state via `ctx.state`:
+        `state` is a per-epoch dict that persists across retry attempts. Use it
+        to cache expensive precomputation (e.g. loaded DataFrames, parsed
+        configs) so retries don't redo the work. The same dict instance is
+        reused on every retry; it is cleared when the epoch succeeds or
+        permanently fails. Unlike the deferred packet operations, mutations
+        to `state` survive failed attempts.
+
+        Locality: the dict lives wherever the node runs (thread, process, or
+        remote worker). For multiprocess/remote pools, each worker process
+        keeps its own copy — values must be picklable if you set them.
+
+    Example:
+        async def main(ctx, ad_ids):
+            if "texts" not in ctx.state:
+                ctx.state["texts"] = pd.read_parquet(big_path)  # only on first try
+            ...
     """
 
     # Identity
