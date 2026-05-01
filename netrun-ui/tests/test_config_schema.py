@@ -100,7 +100,7 @@ class TestSchemaClassification:
 
     def test_complex_field(self):
         schema = get_model_schema(NetConfig, "NetConfig")
-        field = next(f for f in schema.fields if f.name == "dead_letter_callback")
+        field = next(f for f in schema.fields if f.name == "default_signals")
         assert field.category == FieldCategory.COMPLEX
 
     def test_str_or_null_field(self):
