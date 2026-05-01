@@ -7,7 +7,7 @@
 # ---
 
 # %%
-#|default_exp cli._graph
+#|default_exp _graph
 
 # %%
 #|hide
@@ -22,7 +22,7 @@ from typing import Annotated, Any, Optional
 
 import typer
 
-from netrun.cli._helpers import (
+from netrun_cli._helpers import (
     ConfigOpt,
     PrettyOpt,
     find_config,

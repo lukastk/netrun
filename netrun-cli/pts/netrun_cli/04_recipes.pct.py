@@ -7,7 +7,7 @@
 # ---
 
 # %%
-#|default_exp cli._recipes
+#|default_exp _recipes
 
 # %%
 #|hide
@@ -21,7 +21,7 @@ from typing import Annotated, Optional
 
 import typer
 
-from netrun.cli._helpers import ConfigOpt, PrettyOpt, load_raw_data, output_json
+from netrun_cli._helpers import ConfigOpt, PrettyOpt, load_raw_data, output_json
 from netrun.tools._helpers import get_recipes
 from netrun.tools._recipes import execute_recipe, get_recipe_prompts
 

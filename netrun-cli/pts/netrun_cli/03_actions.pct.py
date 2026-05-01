@@ -7,7 +7,7 @@
 # ---
 
 # %%
-#|default_exp cli._actions
+#|default_exp _actions
 
 # %%
 #|hide
@@ -20,7 +20,7 @@ from typing import Annotated, Optional
 
 import typer
 
-from netrun.cli._helpers import ConfigOpt, PrettyOpt, load_config, output_json, get_node_by_name
+from netrun_cli._helpers import ConfigOpt, PrettyOpt, load_config, output_json, get_node_by_name
 from netrun.tools._helpers import (
     get_available_actions,
     build_action_context,

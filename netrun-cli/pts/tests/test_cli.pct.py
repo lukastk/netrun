@@ -7,7 +7,7 @@
 # ---
 
 # %%
-#|default_exp cli.test_cli
+#|default_exp test_cli
 
 # %%
 #|hide
@@ -22,13 +22,13 @@ from pathlib import Path
 import pytest
 from typer.testing import CliRunner
 
-from netrun.cli._app import app
+from netrun_cli._app import app
 
 # %%
 #|export
 runner = CliRunner()
 
-SAMPLE_DIR = Path(__file__).resolve().parent.parent.parent.parent.parent / "sample_projects"
+SAMPLE_DIR = Path(__file__).resolve().parent.parent.parent.parent / "sample_projects"
 BASIC_CONFIG = str(SAMPLE_DIR / "00_basic_net_project" / "main.netrun.json")
 POOLS_CONFIG = str(SAMPLE_DIR / "01_thread_and_process_pools" / "main.netrun.json")
 
@@ -302,7 +302,7 @@ def test_download_agents_success(tmp_path):
     mock_fn = _make_mock_urlopen(tree, file_contents)
     out_dir = str(tmp_path / "agents")
 
-    with patch("netrun.cli._download_agents.urllib.request.urlopen", side_effect=mock_fn):
+    with patch("netrun_cli._download_agents.urllib.request.urlopen", side_effect=mock_fn):
         result = runner.invoke(app, ["download-agents", out_dir])
 
     assert result.exit_code == 0
@@ -319,7 +319,7 @@ def test_download_agents_no_files(tmp_path):
     mock_fn = _make_mock_urlopen(tree)
     out_dir = str(tmp_path / "agents")
 
-    with patch("netrun.cli._download_agents.urllib.request.urlopen", side_effect=mock_fn):
+    with patch("netrun_cli._download_agents.urllib.request.urlopen", side_effect=mock_fn):
         result = runner.invoke(app, ["download-agents", out_dir])
 
     assert result.exit_code == 1
@@ -330,7 +330,7 @@ def test_download_agents_network_error(tmp_path):
     out_dir = str(tmp_path / "agents")
 
     with patch(
-        "netrun.cli._download_agents.urllib.request.urlopen",
+        "netrun_cli._download_agents.urllib.request.urlopen",
         side_effect=urllib.error.URLError("connection refused"),
     ):
         result = runner.invoke(app, ["download-agents", out_dir])
@@ -344,7 +344,7 @@ def test_download_agents_branch_option(tmp_path):
     mock_fn = _make_mock_urlopen(tree, {"agents/INSTRUCTIONS.md": b"instructions"})
     out_dir = str(tmp_path / "agents")
 
-    with patch("netrun.cli._download_agents.urllib.request.urlopen", side_effect=mock_fn) as _:
+    with patch("netrun_cli._download_agents.urllib.request.urlopen", side_effect=mock_fn) as _:
         result = runner.invoke(app, ["download-agents", out_dir, "-b", "dev"])
 
     assert result.exit_code == 0
@@ -384,7 +384,7 @@ def test_download_agents_partial_failure(tmp_path):
 
     out_dir = str(tmp_path / "agents")
 
-    with patch("netrun.cli._download_agents.urllib.request.urlopen", side_effect=mock_urlopen):
+    with patch("netrun_cli._download_agents.urllib.request.urlopen", side_effect=mock_urlopen):
         result = runner.invoke(app, ["download-agents", out_dir])
 
     assert result.exit_code == 0
@@ -410,6 +410,7 @@ def test_help():
     assert "actions" in result.stdout
     assert "recipes" in result.stdout
     assert "download-agents" in result.stdout
+    assert "dry-run" in result.stdout
 
 # %% [markdown]
 # ## Regression: validate reports resolution failures
@@ -458,3 +459,156 @@ def test_validate_reports_resolution_failure():
         "resolution" in str(m).lower() or "module" in str(m).lower()
         for m in all_messages
     ), f"validate silently swallowed resolution failure: {data}"
+
+# %% [markdown]
+# ## Test node --edges
+
+# %%
+#|export
+def test_node_edges_incoming():
+    result = runner.invoke(app, ["node", "add", "--edges", "-c", BASIC_CONFIG, "--pretty"])
+    assert result.exit_code == 0
+    data = json.loads(result.stdout)
+    assert "edges" in data
+    assert "incoming" in data["edges"]
+    assert "outgoing" in data["edges"]
+    # "add" has an incoming edge from "double"
+    incoming = data["edges"]["incoming"]
+    assert len(incoming) >= 1
+    assert any(e["source"] == "double.out" and e["port"] == "a" for e in incoming)
+
+
+def test_node_edges_outgoing():
+    result = runner.invoke(app, ["node", "double", "--edges", "-c", BASIC_CONFIG, "--pretty"])
+    assert result.exit_code == 0
+    data = json.loads(result.stdout)
+    outgoing = data["edges"]["outgoing"]
+    assert len(outgoing) == 1
+    assert outgoing[0]["port"] == "out"
+    assert outgoing[0]["target"] == "add.a"
+
+
+def test_node_edges_none():
+    """Node with no connected edges returns empty lists."""
+    result = runner.invoke(app, ["node", "analyze", "--edges", "-c", BASIC_CONFIG, "--pretty"])
+    assert result.exit_code == 0
+    data = json.loads(result.stdout)
+    assert data["edges"]["incoming"] == []
+    assert data["edges"]["outgoing"] == []
+
+
+def test_node_no_edges_by_default():
+    result = runner.invoke(app, ["node", "add", "-c", BASIC_CONFIG, "--pretty"])
+    assert result.exit_code == 0
+    data = json.loads(result.stdout)
+    assert "edges" not in data
+
+# %% [markdown]
+# ## Test structure --format mermaid
+
+# %%
+#|export
+def test_structure_mermaid():
+    result = runner.invoke(app, ["structure", "-c", BASIC_CONFIG, "--format", "mermaid"])
+    assert result.exit_code == 0
+    lines = result.stdout.strip().split("\n")
+    assert lines[0] == "graph LR"
+    # Node declarations
+    assert any('double["double"]' in line for line in lines)
+    assert any('add["add"]' in line for line in lines)
+    # Edge with label
+    assert any('double -->|"out → a"| add' in line for line in lines)
+
+
+def test_structure_json_default():
+    """Existing JSON output still works without --format."""
+    result = runner.invoke(app, ["structure", "-c", BASIC_CONFIG])
+    assert result.exit_code == 0
+    data = json.loads(result.stdout)
+    assert "nodes" in data
+    assert "edges" in data
+
+
+def test_structure_bad_format():
+    result = runner.invoke(app, ["structure", "-c", BASIC_CONFIG, "--format", "xml"])
+    assert result.exit_code == 1
+
+# %% [markdown]
+# ## Test dry-run
+
+# %%
+#|export
+def test_dry_run_basic():
+    result = runner.invoke(app, ["dry-run", "-c", BASIC_CONFIG, "--pretty"])
+    assert result.exit_code == 0
+    data = json.loads(result.stdout)
+    assert "source_nodes" in data
+    assert "sink_nodes" in data
+    assert "execution_order" in data
+    assert data["total_nodes"] == 4
+    assert data["total_edges"] == 2
+    # double and analyze have no incoming edges → source nodes
+    assert "double" in data["source_nodes"]
+    assert "analyze" in data["source_nodes"]
+
+
+def test_dry_run_execution_order():
+    result = runner.invoke(app, ["dry-run", "-c", BASIC_CONFIG])
+    assert result.exit_code == 0
+    data = json.loads(result.stdout)
+    order = [e["node"] for e in data["execution_order"]]
+    # double must come before add (double→add edge), add before format_result
+    assert order.index("double") < order.index("add")
+    assert order.index("add") < order.index("format_result")
+
+
+def test_dry_run_sink_nodes():
+    result = runner.invoke(app, ["dry-run", "-c", BASIC_CONFIG])
+    assert result.exit_code == 0
+    data = json.loads(result.stdout)
+    # format_result and analyze have no outgoing data edges
+    assert "format_result" in data["sink_nodes"]
+    assert "analyze" in data["sink_nodes"]
+
+
+def test_dry_run_depends_on_and_resources(tmp_path):
+    """Test dry-run output includes depends_on and resources metadata."""
+    config_data = {
+        "graph": {
+            "nodes": [
+                {
+                    "name": "A",
+                    "in_ports": {"in": {}},
+                    "out_ports": {"out": {}},
+                    "execution_config": {"pools": ["main"]},
+                },
+                {
+                    "name": "B",
+                    "in_ports": {"in": {}},
+                    "out_ports": {"out": {}},
+                    "execution_config": {
+                        "pools": ["main"],
+                        "depends_on": ["A"],
+                        "resources": {"gpu": 1},
+                    },
+                },
+            ],
+            "edges": [],
+        },
+        "pools": {"main": {"spec": {"type": "main"}}},
+    }
+    config_path = tmp_path / "test.netrun.json"
+    config_path.write_text(json.dumps(config_data))
+
+    result = runner.invoke(app, ["dry-run", "-c", str(config_path), "--pretty"])
+    assert result.exit_code == 0
+    data = json.loads(result.stdout)
+
+    order = [e["node"] for e in data["execution_order"]]
+    # A must come before B because of depends_on
+    assert order.index("A") < order.index("B")
+
+    # B should have depends_on and resources in its entry
+    b_entry = next(e for e in data["execution_order"] if e["node"] == "B")
+    assert b_entry["depends_on"] == ["A"]
+    assert b_entry["resources"] == {"gpu": 1}
