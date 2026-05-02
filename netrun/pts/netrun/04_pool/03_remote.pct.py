@@ -88,6 +88,8 @@ from netrun.pool.base import (
     PoolNotStarted,
     WorkerException,
     WorkerCrashed,
+    POOL_UP_ERROR_EXCEPTION,
+    POOL_UP_ERROR_CRASHED,
 )
 from netrun.pool.multiprocess import MultiprocessPool, OutputBuffer
 
@@ -659,6 +661,38 @@ class RemotePoolClient:
                 raise WorkerException(worker_id, data)
         elif msg_type == "pool_error":
             raise PoolError(f"Server error: {data}")
+
+        return WorkerMessage(
+            worker_id=data["worker_id"],
+            key=data["key"],
+            data=data["data"],
+        )
+
+    async def recv_raw(self, timeout: float | None = None) -> WorkerMessage:
+        """Like recv() but returns error messages instead of raising.
+
+        Error messages are returned as WorkerMessage with POOL_UP_ERROR_* keys.
+        """
+        if not self._running:
+            raise PoolNotStarted("Pool not created")
+
+        try:
+            if timeout is None:
+                item = await self._recv_queue.get()
+            else:
+                item = await asyncio.wait_for(self._recv_queue.get(), timeout=timeout)
+        except TimeoutError:
+            raise RecvTimeout(f"Receive timed out after {timeout}s")
+
+        msg_type, data = item
+        if msg_type == "error":
+            worker_id = data.get("worker_id", -1)
+            if data.get("type") == "WorkerCrashed":
+                return WorkerMessage(worker_id=worker_id, key=POOL_UP_ERROR_CRASHED, data=data)
+            else:
+                return WorkerMessage(worker_id=worker_id, key=POOL_UP_ERROR_EXCEPTION, data=data)
+        elif msg_type == "pool_error":
+            return WorkerMessage(worker_id=-1, key=POOL_UP_ERROR_CRASHED, data={"reason": f"Server error: {data}"})
 
         return WorkerMessage(
             worker_id=data["worker_id"],

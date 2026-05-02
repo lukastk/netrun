@@ -1,0 +1,9 @@
+[project]
+name = "ctx-state-sample"
+version = "0.1.0"
+description = "Demonstrates ctx.state for retry-persistent caching"
+requires-python = ">=3.11"
+dependencies = ["netrun"]
+
+[tool.uv.sources]
+netrun = { path = "../../netrun", editable = true }

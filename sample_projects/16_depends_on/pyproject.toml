@@ -1,0 +1,9 @@
+[project]
+name = "depends-on-sample"
+version = "0.1.0"
+description = "Demonstrates depends_on for node ordering without data edges"
+requires-python = ">=3.11"
+dependencies = ["netrun"]
+
+[tool.uv.sources]
+netrun = { path = "../../netrun", editable = true }

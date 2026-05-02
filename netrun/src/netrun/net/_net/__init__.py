@@ -1,6 +1,5 @@
 # Re-export from _context
 from ._context import (
-    NetProtocolKeys,
     EpochCancelled,
     MaxEpochsExceeded,
     PacketTypeMismatch,

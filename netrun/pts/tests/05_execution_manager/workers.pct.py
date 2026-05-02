@@ -49,6 +49,21 @@ def function_with_error() -> None:
     raise ValueError("Intentional error")
 
 
+def function_with_unpicklable_error() -> None:
+    """A function that raises an exception holding an unpicklable attribute.
+
+    Used to regression-test Bug #2: a worker error path that sends `e` raw
+    over a multiprocess channel hangs forever when pickle fails.
+    """
+    class _UnpicklableExc(Exception):
+        def __init__(self):
+            super().__init__("intentional unpicklable error")
+            # Lambdas cannot be pickled; this is the same trap real code hits
+            # via traceback objects, generators, open files, …
+            self.bad = lambda: None
+    raise _UnpicklableExc()
+
+
 def function_returns_non_serializable():
     """A function that returns something non-serializable."""
     return lambda x: x  # Lambdas can't be pickled
@@ -89,3 +104,31 @@ def slow_printing_function(iterations: int, delay: float) -> str:
         print(f"Step {i}")
         time.sleep(delay)
     return "done"
+
+
+async def async_subprocess_function() -> str:
+    """Async function that runs a subprocess via asyncio.create_subprocess_exec.
+
+    This was hanging on per-thread event loops that lacked child watchers.
+    With the shared event loop, it should work correctly.
+    """
+    proc = await asyncio.create_subprocess_exec(
+        sys.executable, "-c", "print('subprocess_output')",
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+    )
+    stdout, _ = await proc.communicate()
+    return stdout.decode().strip()
+
+
+async def nested_async_function() -> str:
+    """Async function with nested await chain.
+
+    Tests that natural await semantics work (no nested run_until_complete).
+    """
+    async def inner():
+        await asyncio.sleep(0.01)
+        return "inner_result"
+
+    result = await inner()
+    return f"outer_{result}"

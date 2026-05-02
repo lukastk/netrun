@@ -1,0 +1,148 @@
+{
+  "extra": {
+    "description": "Web scraping pipeline demonstrating all major netrun features: async on thread pools, ctx.state, depends_on, resources, broadcast/join factories, retries, structured logging, node variables, and output queues."
+  },
+
+  "pools": {
+    "main": {"spec": {"type": "main"}},
+    "scrape": {"spec": {"type": "thread", "num_workers": 3}},
+    "compute": {"spec": {"type": "multiprocess", "num_processes": 1, "threads_per_process": 1}}
+  },
+
+  "resources": {
+    "http_conn": 2
+  },
+
+  "node_vars": {
+    "news_url": {"type": "str", "value": "https://example.com/news"},
+    "weather_url": {"type": "str", "value": "https://example.com/weather"},
+    "stocks_url": {"type": "str", "value": "https://example.com/stocks"}
+  },
+
+  "retries": 0,
+  "print_echo_stdout": true,
+  "propagate_exceptions": true,
+  "retain_epoch_logs": true,
+
+  "default_signals": ["epoch_finished", "epoch_failed"],
+
+  "output_queues": {
+    "results": {
+      "ports": [["export_report", "out"]]
+    }
+  },
+
+  "graph": {
+    "nodes": [
+      {
+        "name": "load_config",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {"func": "nodes.load_config"},
+        "execution_config": {
+          "pools": ["main"],
+          "run_on_init": true
+        }
+      },
+      {
+        "name": "validate_config",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {"func": "nodes.validate_config"},
+        "execution_config": {
+          "pools": ["main"]
+        }
+      },
+      {
+        "name": "broadcast_config",
+        "factory": "netrun.node_factories.broadcast",
+        "factory_args": {"num_outputs": 3},
+        "execution_config": {
+          "pools": ["main"]
+        }
+      },
+      {
+        "name": "scrape_news",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {"func": "nodes.scrape_news"},
+        "execution_config": {
+          "pools": ["scrape"],
+          "resources": {"http_conn": 1},
+          "retries": 1,
+          "retry_wait": 0.1
+        }
+      },
+      {
+        "name": "scrape_weather",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {"func": "nodes.scrape_weather"},
+        "execution_config": {
+          "pools": ["scrape"],
+          "resources": {"http_conn": 1},
+          "retries": 1,
+          "retry_wait": 0.1
+        }
+      },
+      {
+        "name": "scrape_stocks",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {"func": "nodes.scrape_stocks"},
+        "execution_config": {
+          "pools": ["scrape"],
+          "resources": {"http_conn": 1},
+          "retries": 2,
+          "retry_wait": 0.2
+        }
+      },
+      {
+        "name": "join_results",
+        "factory": "netrun.node_factories.join",
+        "factory_args": {"ports": ["news", "weather", "stocks"]},
+        "execution_config": {
+          "pools": ["main"]
+        }
+      },
+      {
+        "name": "analyze",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {"func": "nodes.analyze"},
+        "execution_config": {
+          "pools": ["compute"],
+          "retries": 2,
+          "retry_wait": 0.0
+        }
+      },
+      {
+        "name": "setup_output",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {"func": "nodes.setup_output"},
+        "execution_config": {
+          "pools": ["main"],
+          "depends_on": ["load_config"]
+        }
+      },
+      {
+        "name": "export_report",
+        "factory": "netrun.node_factories.from_function",
+        "factory_args": {"func": "nodes.export_report"},
+        "execution_config": {
+          "pools": ["main"],
+          "depends_on": ["setup_output"]
+        }
+      }
+    ],
+    "edges": [
+      {"source_node": "load_config", "source_port": "out", "target_node": "validate_config", "target_port": "config"},
+      {"source_node": "validate_config", "source_port": "out", "target_node": "broadcast_config", "target_port": "in_0"},
+
+      {"source_node": "broadcast_config", "source_port": "out_0", "target_node": "scrape_news", "target_port": "config"},
+      {"source_node": "broadcast_config", "source_port": "out_1", "target_node": "scrape_weather", "target_port": "config"},
+      {"source_node": "broadcast_config", "source_port": "out_2", "target_node": "scrape_stocks", "target_port": "config"},
+
+      {"source_node": "scrape_news", "source_port": "out", "target_node": "join_results", "target_port": "news"},
+      {"source_node": "scrape_weather", "source_port": "out", "target_node": "join_results", "target_port": "weather"},
+      {"source_node": "scrape_stocks", "source_port": "out", "target_node": "join_results", "target_port": "stocks"},
+
+      {"source_node": "join_results", "source_port": "out", "target_node": "analyze", "target_port": "joined"},
+      {"source_node": "analyze", "source_port": "out", "target_node": "export_report", "target_port": "report"}
+    ]
+  }
+}

@@ -4,7 +4,7 @@ This repository contains the **netrun** project, a flow-based development (FBD) 
 
 ## Project Structure
 
-The project is split into two main components:
+The project is split into the following components:
 
 ### netrun-sim (Simulation Engine)
 
@@ -21,16 +21,19 @@ This separation of concerns allows the actual execution and data storage to be i
 - Worker pool management (threads, processes, remote)
 - High-level execution orchestration via `ExecutionManager`
 - Node factories for creating nodes from functions or broadcast patterns
-- CLI for validation, inspection, and config conversion
 - Tools for template resolution, action execution, and recipe management
-
-**See `netrun/PROJECT_SPEC.md` for the full specification.**
 
 **Important:** The `netrun` package uses **nblite** for literate programming. Before writing any code for `netrun`, you **must** read `netrun/NBLITE_INSTRUCTIONS.md` carefully. Key points:
 - Source code lives in `.pct.py` files (percent notebooks), not in the exported Python modules
 - Never edit files in `src/netrun/` directly - they are auto-generated
 - After editing `.pct.py` files, run `nbl export --reverse` then `nbl export`
 - **nblite does NOT auto-generate `__init__.py` files.** You must create `__init__.py` files manually in `src/` for any package that needs re-exports. These manual `__init__.py` files are not overwritten by `nbl export`.
+
+### netrun-cli (CLI)
+
+`netrun-cli` is a separate package that provides the `netrun` command-line tool. It depends on `netrun` for config models and tools, but is shipped independently so the runtime stays free of CLI dependencies (typer, tomli-w).
+
+It uses the same nblite workflow as `netrun`. Source files live in `netrun-cli/pts/netrun_cli/`. The package installs the `netrun` command via `[project.scripts]`. See **netrun-cli specifics** below for details.
 
 ### netrun-ui (Visual Editor)
 
@@ -89,7 +92,6 @@ repo/
 │       │   └── netrun_sim/
 │       └── examples/       # Python examples
 ├── netrun/                 # Runtime (pure Python, nblite project)
-│   ├── PROJECT_SPEC.md     # Full specification
 │   ├── NBLITE_INSTRUCTIONS.md  # How to write code (READ THIS FIRST)
 │   ├── nblite.toml         # nblite configuration
 │   ├── nbs/                # Jupyter notebooks (.ipynb)
@@ -101,6 +103,15 @@ repo/
 │   └── src/                # Auto-generated code (DO NOT EDIT)
 │       ├── netrun/         # Generated Python package
 │       └── tests/          # Generated test files
+├── netrun-cli/             # CLI (separate package, nblite project)
+│   ├── nblite.toml         # nblite configuration
+│   ├── pyproject.toml      # Defines `netrun` command via [project.scripts]
+│   ├── pts/
+│   │   ├── netrun_cli/     # CLI source percent notebooks
+│   │   └── tests/          # CLI test percent notebooks
+│   └── src/
+│       ├── netrun_cli/     # Generated CLI package
+│       └── tests/          # Generated CLI tests
 └── netrun-ui/              # Visual editor (SvelteKit + FastAPI)
     ├── src/                # Frontend source (Svelte 5, SvelteFlow)
     └── netrun_ui_backend/  # Python backend (FastAPI)
@@ -120,10 +131,11 @@ All major modules are fully implemented:
 4. **RPC Layer** (`netrun.rpc`) - Bidirectional message-passing channels
 5. **Pool Layer** (`netrun.pool`) - Worker pool management
 6. **ExecutionManager** (`netrun.execution_manager`) - High-level execution orchestration
-7. **Node Factories** (`netrun.node_factories`) - Function and broadcast factories
-8. **CLI** (`netrun.cli`) - Validation, inspection, conversion commands
-9. **Tools** (`netrun.tools`) - Template resolution, action execution, recipes
-10. **Core** (`netrun.core`) - Convenience re-exports of Net, NetConfig, etc.
+7. **Node Factories** (`netrun.node_factories`) - Function, broadcast, join factories
+8. **Tools** (`netrun.tools`) - Template resolution, action execution, recipes
+9. **Core** (`netrun.core`) - Convenience re-exports of Net, NetConfig, etc.
+
+The CLI lives in the separate **`netrun-cli`** package — see "netrun-cli specifics" below.
 
 ---
 
@@ -253,21 +265,22 @@ async with manager:
         pool_id="thread_pool",
         worker_id=0,
         func_import_path_or_key="my_func",
-        send_channel=False,
         func_args=(1, 2),
         func_kwargs={"x": 3},
     )
 
     print(result.result)  # Function return value
-    print(result.print_buffer)  # Captured print statements
 ```
 
+**Async dispatch model**: Async functions dispatched to thread/multiprocess workers run on a single shared event loop owned by the manager (one daemon thread per process scope). Sync functions run directly on the worker. This makes `asyncio.create_subprocess_exec`, nested awaits, and cross-node `asyncio.Lock` work without per-worker loop hacks.
+
+**Worker crash isolation**: A crashed worker only fails the jobs targeting it; the rest of the pool stays alive.
+
 **ExecutionManager Protocol Keys**:
-- `RUN` - Execute a function
-- `SEND_FUNCTION` - Register a function by key
-- `UP_RUN_STARTED` - Confirmation function started
-- `UP_RUN_RESPONSE` - Return result
-- `UP_PRINT_BUFFER` - Captured print statements
+- `RUN` - Execute a function on a worker
+- `SEND_FUNCTION` - Register a function by key on a worker
+- `UP_RUN_RESPONSE` - Single terminal event with result and timestamps
+- `UP_SEND_FUNCTION_RESPONSE` - Acknowledgment of SEND_FUNCTION
 
 ### Net Module (`netrun.net`)
 
@@ -275,15 +288,15 @@ The Net module provides flow-based network execution by integrating with netrun-
 
 **Key Classes**:
 - `Net` - Main orchestrator: manages pools, executes epochs, routes packets
-- `NetConfig` - Top-level configuration (pools, graph, output queues, storage)
+- `NetConfig` - Top-level configuration (pools, graph, output queues, storage, **`resources`**)
 - `NodeConfig` - Node definition (ports, salvo conditions, factory, execution config)
-- `NodeExecutionConfig` - Execution settings (pools, retries, rate limiting, type checking)
+- `NodeExecutionConfig` - Execution settings (pools, retries, type checking, **`depends_on`**, **`resources`**)
 - `GraphConfig` - Graph topology (nodes, edges, output queues)
 - `PortConfig` - Port definition with optional type annotation
 - `EdgeConfig` - Connection between ports (`source_node`, `source_port`, `target_node`, `target_port`)
 - `SalvoConditionConfig` - Rules for triggering epochs or sending output
 - `OutputQueueConfig` - Collects packets from unconnected output ports
-- `NodeExecutionContext` - Context passed to node functions (consume/create packets, print, etc.)
+- `NodeExecutionContext` - Context passed to node functions (`ctx.create_packet`, `ctx.print`, **`ctx.state`**, etc.)
 - `TargetInputSalvo` - Target-based execution support
 
 **Net Lifecycle**:
@@ -321,19 +334,49 @@ remove = net.on_epoch_end(callback, node="fetch")
 
 Both sync and async callbacks are supported. `on_epoch_end` receives the `EpochLog` (with `was_cancelled`, `ended_at`, `started_at`, `logs`, etc.).
 
-**Features**: signals, controls, pause/resume, rate limiting, retries, type checking, print capture, output queues, caching, file storage, epoch lifecycle callbacks.
+**Features**: signals, controls, pause/resume, rate limiting, retries, type checking, print capture, output queues, caching, file storage, epoch lifecycle callbacks, scheduling constraints (`depends_on`, `resources`), retry-persistent state (`ctx.state`).
 
-### CLI (`netrun.cli`)
+#### Scheduling: `depends_on` and `resources`
 
-Command-line interface (Typer-based) for working with netrun configs:
+`NodeExecutionConfig.depends_on: list[str] | None` — Names of nodes that must complete at least one epoch before this node can fire. Provides directional ordering without requiring data edges. Validated at Net construction: cycles and references to non-existent nodes raise `ValueError`.
 
-- `validate` - Validate a config file
-- `structure` - Output graph topology as JSON
-- `convert` - Convert between config formats (JSON/TOML)
-- `factory-info` - Show factory parameters and ports
-- `info` - Show net information
-- `nodes` - List all nodes
-- `node` - Show specific node details
+`NodeExecutionConfig.resources: dict[str, int] | None` — Named semaphore-style requirements. The node acquires the listed slots before its epoch starts and releases them when the epoch finishes, fails, or is cancelled. Resources must be declared at the net level via `NetConfig.resources: dict[str, int]` (resource name → total capacity).
+
+```python
+# Net-level capacities
+NetConfig(
+    resources={"gpu": 1, "http_conn": 4},
+    graph=GraphConfig(nodes=[...]),
+)
+
+# Node-level requirements
+NodeConfig(
+    name="train",
+    execution_config=NodeExecutionConfig(
+        pools=["main"],
+        depends_on=["preprocess"],   # waits for preprocess to complete first
+        resources={"gpu": 1},        # holds the GPU slot during epoch
+    ),
+)
+```
+
+Common patterns:
+- **Mutual exclusion** between two nodes: declare a 1-slot resource and have both nodes require 1 slot.
+- **Bounded concurrency** (e.g. max 4 HTTP connections): declare a 4-slot resource and have N HTTP nodes each require 1 slot.
+
+#### Retry-persistent state: `ctx.state`
+
+`NodeExecutionContext.state: dict[str, Any]` — Mutable dict that persists across retry attempts of the same epoch. Use it to cache expensive precomputation so retries don't redo the work.
+
+```python
+async def main(ctx, ad_ids):
+    if "texts_df" not in ctx.state:
+        ctx.state["texts_df"] = pd.read_parquet(big_path)  # loaded once, even on retry
+    texts_df = ctx.state["texts_df"]
+    ...
+```
+
+Lifecycle: cleared when the epoch succeeds or permanently fails. The dict lives wherever the node runs — for multiprocess / remote pools, each worker process keeps its own copy and values must be picklable.
 
 ### Tools (`netrun.tools`)
 
@@ -348,6 +391,55 @@ Utilities for action execution and recipe management:
 
 Convenience re-exports of the most commonly used classes:
 `Net`, `NetConfig`, `NodeConfig`, `NodeExecutionConfig`, `PoolConfig`, `PortConfig`, `EdgeConfig`, `GraphConfig`, `SalvoConditionConfig`, `OutputQueueConfig`, `TargetInputSalvo`, `EnvVar`.
+
+---
+
+## netrun-cli specifics
+
+The CLI is a separate package at `netrun-cli/`. Source files live in `netrun-cli/pts/netrun_cli/`; tests live in `netrun-cli/pts/tests/`. It uses the same nblite workflow as `netrun`.
+
+**Editing the CLI:**
+1. Edit `.pct.py` files in `netrun-cli/pts/netrun_cli/` or `netrun-cli/pts/tests/`
+2. From `netrun-cli/`: `nbl export --reverse && nbl export`
+3. Run tests: `cd netrun-cli && uv run pytest src/tests/ -v`
+
+**Installing the CLI command:**
+
+```bash
+cd netrun-cli && uv sync
+.venv/bin/netrun --help
+```
+
+The `netrun` script is registered via `[project.scripts]` in `netrun-cli/pyproject.toml` and points to `netrun_cli._app:app_main`. `netrun-cli` depends on `netrun` (editable in dev) for config models and tools.
+
+**Available commands:**
+
+| Command | Description |
+|---------|-------------|
+| `validate` | Validate a config file (catches resolution failures) |
+| `structure` | Output graph topology (`--format json` or `--format mermaid`) |
+| `convert` | Convert between `.netrun.json` and `.netrun.toml` |
+| `factory-info <path>` | Inspect a factory's parameters |
+| `info` | Summary stats (nodes, edges, pools, factories, recipes) |
+| `nodes` | List all nodes with port names |
+| `node <name>` | Detailed node info; pass `--edges` to include incoming/outgoing edges |
+| `dry-run` | Show topological execution order, source/sink nodes, and scheduling constraints |
+| `add-node` / `remove-node` / `edit-node` | Mutate graph nodes |
+| `add-edge` / `remove-edge` | Mutate edges |
+| `actions list/run` | Inspect and run actions |
+| `recipes list/run` | Inspect and run recipes |
+| `download-agents` | Pull agent docs from the netrun GitHub repo |
+
+**Adding a new command:**
+
+1. Add a Typer command function to one of `netrun-cli/pts/netrun_cli/0X_*.pct.py` (or create a new module)
+2. Register it in `00_app.pct.py` via `app.command("name")(fn)`
+3. Add tests to `netrun-cli/pts/tests/test_cli.pct.py`
+4. Re-export and run tests
+
+The CLI imports from `netrun.net.config`, `netrun.tools`, etc. — these are already external dependencies through the `netrun` package, so no special setup is required.
+
+---
 
 ### Node Variables (`NodeVariable`)
 

@@ -31,9 +31,12 @@ from tests.execution_manager.workers import (
     add_numbers,
     multiply_numbers,
     slow_function,
+    function_with_error,
     function_returns_non_serializable,
     async_add,
     function_with_kwargs,
+    async_subprocess_function,
+    nested_async_function,
 )
 
 # %% [markdown]
@@ -216,7 +219,7 @@ async def test_send_function_and_run():
             pool_id="pool",
             worker_id=0,
             func_import_path_or_key="add",
-            send_channel=False,
+
             func_args=(3, 4),
             func_kwargs={},
         )
@@ -249,7 +252,7 @@ async def test_send_function_to_pool():
                 pool_id="pool",
                 worker_id=worker_id,
                 func_import_path_or_key="multiply",
-                send_channel=False,
+    
                 func_args=(worker_id + 1, 10),
                 func_kwargs={},
             )
@@ -280,7 +283,7 @@ async def test_job_result_timestamps():
             pool_id="pool",
             worker_id=0,
             func_import_path_or_key="slow",
-            send_channel=False,
+
             func_args=(0.1,),
             func_kwargs={},
         )
@@ -312,7 +315,7 @@ async def test_non_serializable_result_for_main_process():
             pool_id="pool",
             worker_id=0,
             func_import_path_or_key="nonserialized",
-            send_channel=False,
+
             func_args=(),
             func_kwargs={},
         )
@@ -343,7 +346,7 @@ async def test_function_with_kwargs():
             pool_id="pool",
             worker_id=0,
             func_import_path_or_key="kwargs_fn",
-            send_channel=False,
+
             func_args=(1,),
             func_kwargs={},
         )
@@ -354,7 +357,7 @@ async def test_function_with_kwargs():
             pool_id="pool",
             worker_id=0,
             func_import_path_or_key="kwargs_fn",
-            send_channel=False,
+
             func_args=(5,),
             func_kwargs={"b": 20, "c": 200},
         )
@@ -385,7 +388,7 @@ async def test_round_robin_allocation():
                 pool_worker_ids=["pool"],
                 allocation_method=RunAllocationMethod.ROUND_ROBIN,
                 func_import_path_or_key="add",
-                send_channel=False,
+    
                 func_args=(i, 1),
                 func_kwargs={},
             )
@@ -416,7 +419,7 @@ async def test_random_allocation():
                 pool_worker_ids=["pool"],
                 allocation_method=RunAllocationMethod.RANDOM,
                 func_import_path_or_key="add",
-                send_channel=False,
+    
                 func_args=(i, 1),
                 func_kwargs={},
             )
@@ -447,7 +450,7 @@ async def test_allocation_with_specific_workers():
                 pool_worker_ids=[("pool", 0), ("pool", 2)],
                 allocation_method=RunAllocationMethod.ROUND_ROBIN,
                 func_import_path_or_key="add",
-                send_channel=False,
+    
                 func_args=(i, 1),
                 func_kwargs={},
             )
@@ -476,7 +479,7 @@ async def test_empty_workers_raises():
                 pool_worker_ids=[],
                 allocation_method=RunAllocationMethod.ROUND_ROBIN,
                 func_import_path_or_key="add",
-                send_channel=False,
+    
                 func_args=(1, 2),
                 func_kwargs={},
             )
@@ -525,7 +528,7 @@ async def test_multiple_pools():
             pool_id="fast",
             worker_id=0,
             func_import_path_or_key="add",
-            send_channel=False,
+
             func_args=(5, 3),
             func_kwargs={},
         )
@@ -535,7 +538,7 @@ async def test_multiple_pools():
             pool_id="slow",
             worker_id=0,
             func_import_path_or_key="multiply",
-            send_channel=False,
+
             func_args=(4, 7),
             func_kwargs={},
         )
@@ -571,7 +574,7 @@ async def test_concurrent_jobs():
                     pool_worker_ids=["pool"],
                     allocation_method=RunAllocationMethod.ROUND_ROBIN,
                     func_import_path_or_key="add",
-                    send_channel=False,
+        
                     func_args=(i, i),
                     func_kwargs={},
                 )
@@ -606,7 +609,7 @@ async def test_async_function():
             pool_id="pool",
             worker_id=0,
             func_import_path_or_key="async_add",
-            send_channel=False,
+
             func_args=(10, 20),
             func_kwargs={},
         )
@@ -635,7 +638,7 @@ async def test_main_pool():
             pool_id="main",
             worker_id=0,
             func_import_path_or_key="add",
-            send_channel=False,
+
             func_args=(100, 200),
             func_kwargs={},
         )
@@ -644,3 +647,361 @@ async def test_main_pool():
 
 # %%
 await test_main_pool();
+
+# %% [markdown]
+# ## Regression: Worker jobs cleanup on cancellation
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_worker_jobs_cleanup_on_cancellation():
+    """Test that _worker_jobs is cleaned up when run() is cancelled by timeout.
+
+    Regression test: worker jobs leak on timeout/cancellation causing
+    incorrect LEAST_BUSY worker selection.
+    """
+    manager = ExecutionManager({
+        "pool": (ThreadPool, {"num_workers": 2}),
+    })
+    async with manager:
+        await manager.send_function_to_pool("pool", "slow", slow_function)
+
+        # Start a slow job and cancel it via timeout
+        with pytest.raises((asyncio.TimeoutError, asyncio.CancelledError)):
+            await asyncio.wait_for(
+                manager.run(
+                    pool_id="pool",
+                    worker_id=0,
+                    func_import_path_or_key="slow",
+        
+                    func_args=(30.0,),  # 30s — will be cancelled long before
+                    func_kwargs={},
+                ),
+                timeout=0.05,
+            )
+
+        # _worker_jobs should be empty after cancellation
+        assert len(manager._worker_jobs[("pool", 0)]) == 0, (
+            "worker_jobs leaked after cancellation"
+        )
+
+        # msg queue should also be cleaned up
+        pool_msgs = manager._msgs.get("pool", {})
+        assert len(pool_msgs) == 0, (
+            f"msg queue leaked after cancellation: {list(pool_msgs.keys())}"
+        )
+
+        # LEAST_BUSY allocation should still work correctly
+        await manager.send_function_to_pool("pool", "add", add_numbers)
+        result = await manager.run_allocate(
+            pool_worker_ids=["pool"],
+            allocation_method=RunAllocationMethod.LEAST_BUSY,
+            func_import_path_or_key="add",
+
+            func_args=(1, 2),
+            func_kwargs={},
+        )
+        assert result.result == 3
+
+# %%
+await test_worker_jobs_cleanup_on_cancellation();
+
+# %% [markdown]
+# ## Regression: Worker exception does not crash worker loop
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_worker_exception_does_not_crash_loop():
+    """Test that an exception in a sync worker doesn't crash the worker loop.
+
+    Regression test: exception in _func_runner crashes the while True loop
+    in _worker_func, killing the entire worker.
+    """
+    manager = ExecutionManager({
+        "pool": (ThreadPool, {"num_workers": 1}),
+    })
+    async with manager:
+        await manager.send_function("pool", 0, "error_fn", function_with_error)
+        await manager.send_function("pool", 0, "add", add_numbers)
+
+        # First call: should get an error, not hang or crash the worker
+        with pytest.raises(Exception):
+            await asyncio.wait_for(
+                manager.run(
+                    pool_id="pool",
+                    worker_id=0,
+                    func_import_path_or_key="error_fn",
+        
+                    func_args=(),
+                    func_kwargs={},
+                ),
+                timeout=5.0,
+            )
+
+        # Worker should still be alive. Second call should succeed:
+        result = await manager.run(
+            pool_id="pool",
+            worker_id=0,
+            func_import_path_or_key="add",
+
+            func_args=(1, 2),
+            func_kwargs={},
+        )
+        assert result.result == 3
+
+# %%
+await test_worker_exception_does_not_crash_loop();
+
+# %% [markdown]
+# ## Shared Event Loop Tests
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_async_subprocess_in_thread_pool():
+    """Test that async subprocess works on ThreadPool via shared event loop.
+
+    Previously, per-thread event loops lacked child watchers, causing
+    asyncio.create_subprocess_exec to hang forever. The shared event loop
+    fixes this.
+    """
+    manager = ExecutionManager({
+        "pool": (ThreadPool, {"num_workers": 1}),
+    })
+    async with manager:
+        await manager.send_function("pool", 0, "subprocess_fn", async_subprocess_function)
+
+        result = await asyncio.wait_for(
+            manager.run(
+                pool_id="pool",
+                worker_id=0,
+                func_import_path_or_key="subprocess_fn",
+    
+                func_args=(),
+                func_kwargs={},
+            ),
+            timeout=10.0,
+        )
+        assert result.result == "subprocess_output"
+
+# %%
+await test_async_subprocess_in_thread_pool();
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_nested_async_in_thread_pool():
+    """Test that nested async calls work on ThreadPool.
+
+    Previously, nested run_until_complete calls were fragile. The shared
+    event loop provides natural await semantics.
+    """
+    manager = ExecutionManager({
+        "pool": (ThreadPool, {"num_workers": 1}),
+    })
+    async with manager:
+        await manager.send_function("pool", 0, "nested", nested_async_function)
+
+        result = await manager.run(
+            pool_id="pool",
+            worker_id=0,
+            func_import_path_or_key="nested",
+
+            func_args=(),
+            func_kwargs={},
+        )
+        assert result.result == "outer_inner_result"
+
+# %%
+await test_nested_async_in_thread_pool();
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_sync_function_unaffected_by_shared_loop():
+    """Regression test: sync functions still work correctly on ThreadPool.
+
+    Sync functions should run directly in the worker thread, not through
+    the shared event loop.
+    """
+    import time
+
+    def cpu_bound_sync(n: int) -> int:
+        """Sync function that does CPU work."""
+        total = 0
+        for i in range(n):
+            total += i
+        return total
+
+    manager = ExecutionManager({
+        "pool": (ThreadPool, {"num_workers": 2}),
+    })
+    async with manager:
+        await manager.send_function_to_pool("pool", "cpu", cpu_bound_sync)
+
+        # Run two sync functions concurrently on different workers
+        start = time.monotonic()
+        tasks = [
+            asyncio.create_task(
+                manager.run(
+                    pool_id="pool",
+                    worker_id=i,
+                    func_import_path_or_key="cpu",
+        
+                    func_args=(100_000,),
+                    func_kwargs={},
+                )
+            )
+            for i in range(2)
+        ]
+        results = await asyncio.gather(*tasks)
+
+        # Both should complete with correct results
+        expected = sum(range(100_000))
+        for r in results:
+            assert r.result == expected
+
+# %%
+await test_sync_function_unaffected_by_shared_loop();
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_asyncio_event_across_workers():
+    """Test that asyncio primitives work across ThreadPool workers.
+
+    Two async functions on different workers of the same pool share an
+    asyncio.Event. One sets it, the other waits on it. This verifies
+    cross-worker async coordination via the shared event loop.
+    """
+    shared_event = asyncio.Event()
+
+    async def setter(delay: float) -> str:
+        await asyncio.sleep(delay)
+        shared_event.set()
+        return "set"
+
+    async def waiter() -> str:
+        await asyncio.wait_for(shared_event.wait(), timeout=5.0)
+        return "received"
+
+    manager = ExecutionManager({
+        "pool": (ThreadPool, {"num_workers": 2}),
+    })
+    async with manager:
+        await manager.send_function("pool", 0, "setter", setter)
+        await manager.send_function("pool", 1, "waiter", waiter)
+
+        # Start both concurrently
+        setter_task = asyncio.create_task(
+            manager.run(
+                pool_id="pool",
+                worker_id=0,
+                func_import_path_or_key="setter",
+    
+                func_args=(0.1,),
+                func_kwargs={},
+            )
+        )
+        waiter_task = asyncio.create_task(
+            manager.run(
+                pool_id="pool",
+                worker_id=1,
+                func_import_path_or_key="waiter",
+    
+                func_args=(),
+                func_kwargs={},
+            )
+        )
+
+        setter_result, waiter_result = await asyncio.gather(setter_task, waiter_task)
+        assert setter_result.result == "set"
+        assert waiter_result.result == "received"
+
+# %%
+await test_asyncio_event_across_workers();
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_shared_loop_cleanup():
+    """Test that the shared event loop is properly cleaned up on close."""
+    import threading
+
+    manager = ExecutionManager({
+        "pool": (ThreadPool, {"num_workers": 1}),
+    })
+    async with manager:
+        # The shared loop thread should be alive
+        assert manager._shared_loop is not None
+        assert manager._shared_loop_thread is not None
+        assert manager._shared_loop_thread.is_alive()
+        loop_thread = manager._shared_loop_thread
+
+    # After close, the loop thread should have stopped
+    assert not loop_thread.is_alive()
+    assert manager._shared_loop is None
+
+# %%
+await test_shared_loop_cleanup();
+
+# %% [markdown]
+# ## Worker crash isolation tests
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_worker_crash_does_not_kill_other_workers():
+    """Test that a worker crash doesn't prevent other workers from functioning.
+
+    Previously, a worker crash killed the _msg_recv_task_func for the entire
+    pool, making all workers unreachable. Now, the error is routed only to
+    the affected job and the receiver continues.
+    """
+    import os
+    import signal as _signal
+
+    def crash_worker_func(a: int, b: int) -> int:
+        """Function that crashes the worker by raising from a non-preprocessor context."""
+        raise RuntimeError("Worker crash!")
+
+    manager = ExecutionManager({
+        "pool": (ThreadPool, {"num_workers": 2}),
+    })
+    async with manager:
+        await manager.send_function("pool", 0, "crash", crash_worker_func)
+        await manager.send_function("pool", 1, "crash", crash_worker_func)
+        await manager.send_function("pool", 0, "add", add_numbers)
+        await manager.send_function("pool", 1, "add", add_numbers)
+
+        # Worker 0 crashes
+        with pytest.raises(Exception):
+            await asyncio.wait_for(
+                manager.run(
+                    pool_id="pool",
+                    worker_id=0,
+                    func_import_path_or_key="crash",
+        
+                    func_args=(1, 2),
+                    func_kwargs={},
+                ),
+                timeout=5.0,
+            )
+
+        # Worker 1 should still be functional
+        result = await asyncio.wait_for(
+            manager.run(
+                pool_id="pool",
+                worker_id=1,
+                func_import_path_or_key="add",
+    
+                func_args=(10, 20),
+                func_kwargs={},
+            ),
+            timeout=5.0,
+        )
+        assert result.result == 30
+
+# %%
+await test_worker_crash_does_not_kill_other_workers();

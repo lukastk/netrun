@@ -26,7 +26,6 @@ import traceback
 import uuid
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from enum import Enum
 from typing import Any, NoReturn, get_origin
 from collections.abc import Callable
 import importlib
@@ -37,47 +36,7 @@ from netrun.net.config import NodeExecutionConfig, NodeVariable, PortConfig, Por
 from netrun.net.config._nodes import resolve_effective_exec_field, INHERITABLE_EXEC_FIELDS
 from netrun._iutils import get_timestamp_utc
 from netrun.packets import LazyPacketValueSpec
-
-# %% [markdown]
-# ## Net Protocol Keys
-#
-# Communication keys for Net <-> Worker messages.
-
-# %%
-#|export
-class NetProtocolKeys(Enum):
-    """Protocol keys for Net <-> Worker communication."""
-
-    # Upstream (Worker -> Net) - sent via channel when send_channel=True
-    UP_CREATE_PACKET = "net:create-packet"
-    """Create a new packet. Args: (epoch_id, value_or_lazy)"""
-
-    UP_CREATE_PACKET_RESPONSE = "net:create-packet-response"
-    """Response with packet ID. Args: (packet_id,)"""
-
-    UP_CONSUME_PACKET = "net:consume-packet"
-    """Consume a packet. Args: (epoch_id, packet_id)"""
-
-    UP_CONSUME_PACKET_RESPONSE = "net:consume-packet-response"
-    """Response with packet value. Args: (value,)"""
-
-    UP_LOAD_OUTPUT_PORT = "net:load-output-port"
-    """Load packet into output port. Args: (epoch_id, port_name, packet_id)"""
-
-    UP_LOAD_OUTPUT_PORT_RESPONSE = "net:load-output-port-response"
-    """Acknowledgement. Args: ()"""
-
-    UP_SEND_OUTPUT_SALVO = "net:send-salvo"
-    """Send output salvo. Args: (epoch_id, salvo_condition_name)"""
-
-    UP_SEND_OUTPUT_SALVO_RESPONSE = "net:send-salvo-response"
-    """Acknowledgement. Args: ()"""
-
-    UP_CANCEL_EPOCH = "net:cancel-epoch"
-    """Cancel the current epoch. Args: (epoch_id,)"""
-
-    UP_PRINT_BUFFER = "net:print-buffer"
-    """Send captured print output. Args: (epoch_id, buffer: list[str])"""
+from netrun.execution_manager import _worker_state, to_picklable_exception
 
 # %% [markdown]
 # ## Structured Logging Data Models
@@ -416,11 +375,32 @@ class EpochError(Exception):
 class NodeExecutionContext:
     """Context object passed to node execution functions.
 
-    This is the primary interface for nodes to interact with the Net during execution.
-    All operations are deferred and committed when the function completes.
+    Primary interface for nodes to interact with the Net during execution.
+    Most operations (create/consume packets, load output ports, send output
+    salvos) are deferred and committed atomically when the epoch finishes
+    successfully — so a partially-completed function can fail without leaving
+    half-applied side effects in the graph.
 
-    Packet operations (create, consume, load_output_port, send_output_salvo) are
-    queued locally and executed atomically when the epoch completes successfully.
+    Mutable retry state via `ctx.state`:
+        `state` is a per-epoch dict that persists across retry attempts. Use it
+        to cache expensive precomputation (e.g. loaded DataFrames, parsed
+        configs) so retries don't redo the work. Mutations made during an
+        attempt are visible to the next retry of the same epoch; the dict is
+        cleared when the epoch succeeds or permanently fails. Unlike the
+        deferred packet operations, mutations to `state` survive failed
+        attempts.
+
+        Locality: on thread pools the same dict instance is shared by
+        reference. On multiprocess/remote pools the parent round-trips the
+        post-attempt state back through `NodeExecutionResult.state`, so
+        retries observe the same logical state — but values must be picklable
+        and large objects pay the serialization cost on every attempt.
+
+    Example:
+        async def main(ctx, ad_ids):
+            if "texts" not in ctx.state:
+                ctx.state["texts"] = pd.read_parquet(big_path)  # only on first try
+            ...
     """
 
     # Identity
@@ -431,6 +411,11 @@ class NodeExecutionContext:
     retry_count: int = 0
     retry_timestamps: list[datetime] = field(default_factory=list)
     retry_exceptions: list[Exception] = field(default_factory=list)
+
+    # Mutable state preserved across retries for the same epoch.
+    # Empty dict on first attempt; same dict instance reused on retries.
+    # Cleared when the epoch succeeds or permanently fails.
+    state: dict[str, Any] = field(default_factory=dict)
 
     # Internal (not for user access)
     _config: NodeExecutionConfig = field(repr=False, default=None)
@@ -809,6 +794,7 @@ class NodeExecutionContext:
             created_packets=self._created_packets.copy(),
             consumed_packets=self._consumed_packets.copy(),
             structured_log_buffer=self._structured_log_buffer.copy(),
+            state=dict(self.state),
         )
 
 # %% [markdown]
@@ -848,6 +834,10 @@ class NodeExecutionResult:
 
     exception: Exception | None = None
     """Exception raised by the node function (if any)."""
+
+    state: dict[str, Any] = field(default_factory=dict)
+    """Final value of ctx.state after the attempt. Round-tripped to the parent
+    so retries on multiprocess/remote pools see prior-attempt mutations."""
 
 # %% [markdown]
 # ## NodeFailureContext
@@ -949,6 +939,11 @@ class _EpochState:
     worker_id: int | None = None
     was_cache_hit: bool = False
     was_file_storage_hit: bool = False
+
+    # Consolidated from previously-separate dicts:
+    structured_logs: list = field(default_factory=list)  # was _epoch_log_buffers[epoch_id]
+    net_actions: list = field(default_factory=list)       # was _epoch_net_actions[epoch_id]
+    retry_state: dict = field(default_factory=dict)       # was _epoch_states[epoch_id] (ctx.state)
 
     @classmethod
     def from_epoch(cls, epoch) -> "_EpochState":
@@ -1077,7 +1072,7 @@ EpochRecord = _EpochState
 # %% [markdown]
 # ## Deferred Action Queue
 #
-# For `defer_net_actions=True`, packet operations are queued and only committed on success.
+# Packet operations are queued during node execution and committed on success or discarded on failure.
 
 # %%
 #|export
@@ -1142,9 +1137,6 @@ class NetFuncPreprocessorNodeConfig:
     """Input port configs (serialized as dicts for pickling)."""
 
     # Copy of NodeExecutionConfig fields needed for context creation
-    capture_prints: bool = True
-    print_flush_interval: float = 0.1
-    print_buffer_max_size: int | None = None
     print_echo_stdout: bool = False
     retries: int = 0
     retry_wait: float = 0.0
@@ -1184,9 +1176,6 @@ class NetFuncPreprocessorNodeConfig:
             factory_args=factory_args,
             in_ports={name: port.model_dump() for name, port in in_ports.items()},
             out_ports={name: port.model_dump() for name, port in out_ports.items()},
-            capture_prints=exec_config.capture_prints,
-            print_flush_interval=exec_config.print_flush_interval,
-            print_buffer_max_size=exec_config.print_buffer_max_size,
             print_echo_stdout=ef.get("print_echo_stdout", False),
             retries=ef.get("retries", 0),
             retry_wait=ef.get("retry_wait", 0.0),
@@ -1202,6 +1191,16 @@ class NetFuncPreprocessor:
 
     Unlike the closure-based version, this class can be pickled for multiprocess pools.
     It resolves factory-based node functions lazily on each worker.
+
+    Provides two wrapper modes:
+    - __call__: returns async wrapper (for SingleWorkerPool / async contexts)
+    - call_for_sync_worker: returns sync wrapper (for ThreadPool / MultiprocessPool)
+      Async user functions are dispatched to the shared event loop (read from
+      thread-local _worker_state.shared_loop) via run_coroutine_threadsafe.
+      Sync user functions run directly in the calling thread.
+
+    No execution state is stored on this object — it stays fully picklable.
+    The shared event loop reference lives on the worker thread-local, not here.
     """
 
     def __init__(
@@ -1243,13 +1242,102 @@ class NetFuncPreprocessor:
         self._resolved_funcs[node_name] = exec_func
         return exec_func
 
-    def __call__(self, exec_node_func: Callable) -> Callable:
-        """Transform exec_node_func -> wrapped function.
+    def _setup_context(
+        self,
+        exec_node_func: Callable,
+        epoch_id: str,
+        node_name: str,
+        packets: dict[str, list[str]],
+        packet_values: dict[str, Any],
+        retry_count: int,
+        retry_timestamps: list[datetime] | None,
+        retry_exceptions: list[Exception] | None,
+        state: dict[str, Any] | None = None,
+    ) -> tuple[NodeExecutionContext, Callable]:
+        """Common setup for both sync and async wrappers.
 
-        If exec_node_func is a _FactoryPlaceholder, resolves the actual function
-        from the factory on this worker.
+        Returns:
+            (ctx, actual_func) — the execution context and resolved function.
         """
-        preprocessor_self = self  # Capture for inner function
+        config = self._node_configs.get(node_name)
+        in_ports = {}
+        out_ports = {}
+        if config:
+            in_ports = {
+                name: PortConfig.model_validate(port_dict)
+                for name, port_dict in config.in_ports.items()
+            }
+            out_ports = {
+                name: PortConfig.model_validate(port_dict)
+                for name, port_dict in config.out_ports.items()
+            }
+
+        # Create execution config for context (with essential fields)
+        exec_config = None
+        if config:
+            exec_config = NodeExecutionConfig(
+                print_echo_stdout=config.print_echo_stdout,
+                retries=config.retries,
+                retry_wait=config.retry_wait,
+                timeout=config.timeout,
+            )
+
+        # Reconstruct NodeVariable objects from serialized dicts
+        _node_vars = None
+        if config and config.node_vars:
+            _node_vars = {
+                n: NodeVariable.model_validate(v)
+                for n, v in config.node_vars.items()
+            }
+
+        # Get type checking enabled flag (default True if no config)
+        type_checking_enabled = config.type_checking_enabled if config else True
+
+        ctx = NodeExecutionContext(
+            epoch_id=epoch_id,
+            node_name=node_name,
+            retry_count=retry_count,
+            retry_timestamps=retry_timestamps or [],
+            retry_exceptions=retry_exceptions or [],
+            state=state if state is not None else {},
+            _config=exec_config,
+            _input_packet_values=packet_values,
+            _in_ports=in_ports,
+            _out_ports=out_ports,
+            _node_vars=_node_vars,
+            _type_checking_enabled=type_checking_enabled,
+        )
+
+        # Determine the actual function to call
+        actual_func = exec_node_func
+        if isinstance(exec_node_func, _FactoryPlaceholder):
+            resolved = self._resolve_factory(node_name)
+            if resolved is None:
+                raise RuntimeError(
+                    f"Failed to resolve factory function for node '{node_name}'"
+                )
+            actual_func = resolved
+
+        return ctx, actual_func
+
+    @staticmethod
+    def _build_result(
+        ctx: NodeExecutionContext,
+        func_result: Any,
+        exception: Exception | None,
+    ) -> NodeExecutionResult:
+        """Build NodeExecutionResult from context and execution outcome."""
+        result = ctx._get_execution_result()
+        result.func_result = func_result
+        result.exception = exception
+        return result
+
+    def __call__(self, exec_node_func: Callable) -> Callable:
+        """Return an async wrapper for SingleWorkerPool (async context).
+
+        The wrapper awaits async user functions and calls sync ones directly.
+        """
+        preprocessor_self = self
 
         async def wrapped(
             epoch_id: str,
@@ -1259,91 +1347,82 @@ class NetFuncPreprocessor:
             retry_count: int = 0,
             retry_timestamps: list[datetime] | None = None,
             retry_exceptions: list[Exception] | None = None,
+            state: dict[str, Any] | None = None,
         ) -> NodeExecutionResult:
-            config = preprocessor_self._node_configs.get(node_name)
-            in_ports = {}
-            out_ports = {}
-            if config:
-                in_ports = {
-                    name: PortConfig.model_validate(port_dict)
-                    for name, port_dict in config.in_ports.items()
-                }
-                out_ports = {
-                    name: PortConfig.model_validate(port_dict)
-                    for name, port_dict in config.out_ports.items()
-                }
-
-            # Create execution config for context (with essential fields)
-            exec_config = None
-            if config:
-                exec_config = NodeExecutionConfig(
-                    capture_prints=config.capture_prints,
-                    print_flush_interval=config.print_flush_interval,
-                    print_buffer_max_size=config.print_buffer_max_size,
-                    print_echo_stdout=config.print_echo_stdout,
-                    retries=config.retries,
-                    retry_wait=config.retry_wait,
-                    timeout=config.timeout,
-                )
-
-            # Reconstruct NodeVariable objects from serialized dicts
-            _node_vars = None
-            if config and config.node_vars:
-                _node_vars = {
-                    n: NodeVariable.model_validate(v)
-                    for n, v in config.node_vars.items()
-                }
-
-            # Get type checking enabled flag (default True if no config)
-            type_checking_enabled = config.type_checking_enabled if config else True
-
-            ctx = NodeExecutionContext(
-                epoch_id=epoch_id,
-                node_name=node_name,
-                retry_count=retry_count,
-                retry_timestamps=retry_timestamps or [],
-                retry_exceptions=retry_exceptions or [],
-                _config=exec_config,
-                _input_packet_values=packet_values,
-                _in_ports=in_ports,
-                _out_ports=out_ports,
-                _node_vars=_node_vars,
-                _type_checking_enabled=type_checking_enabled,
+            ctx, actual_func = preprocessor_self._setup_context(
+                exec_node_func, epoch_id, node_name, packets, packet_values,
+                retry_count, retry_timestamps, retry_exceptions, state=state,
             )
-
-            # Determine the actual function to call
-            actual_func = exec_node_func
-            if isinstance(exec_node_func, _FactoryPlaceholder):
-                # Resolve factory function on this worker
-                resolved = preprocessor_self._resolve_factory(node_name)
-                if resolved is None:
-                    raise RuntimeError(
-                        f"Failed to resolve factory function for node '{node_name}'"
-                    )
-                actual_func = resolved
 
             func_result = None
             exception = None
 
             try:
-                # Validate input packet types before executing the node function
                 ctx._validate_input_packets(packets)
                 if asyncio.iscoroutinefunction(actual_func):
                     func_result = await actual_func(ctx, packets)
                 else:
                     func_result = actual_func(ctx, packets)
             except EpochCancelled:
-                # Expected when ctx.cancel_epoch() is called
                 pass
             except Exception as e:
-                exception = e
+                # Sanitize so the resulting NodeExecutionResult is always
+                # picklable across multiprocess/remote pool boundaries.
+                exception = to_picklable_exception(e)
 
-            # Get the execution result with all deferred actions
-            result = ctx._get_execution_result()
-            result.func_result = func_result
-            result.exception = exception
+            return preprocessor_self._build_result(ctx, func_result, exception)
 
-            return result
+        return wrapped
+
+    def call_for_sync_worker(self, exec_node_func: Callable) -> Callable:
+        """Return a sync wrapper for ThreadPool/MultiprocessPool (sync context).
+
+        Sync user functions run directly in the calling worker thread.
+        Async user functions are dispatched to the shared event loop via
+        run_coroutine_threadsafe and the worker thread blocks on the result.
+        """
+        preprocessor_self = self
+
+        def wrapped(
+            epoch_id: str,
+            node_name: str,
+            packets: dict[str, list[str]],
+            packet_values: dict[str, Any],
+            retry_count: int = 0,
+            retry_timestamps: list[datetime] | None = None,
+            retry_exceptions: list[Exception] | None = None,
+            state: dict[str, Any] | None = None,
+        ) -> NodeExecutionResult:
+            ctx, actual_func = preprocessor_self._setup_context(
+                exec_node_func, epoch_id, node_name, packets, packet_values,
+                retry_count, retry_timestamps, retry_exceptions, state=state,
+            )
+
+            func_result = None
+            exception = None
+
+            try:
+                ctx._validate_input_packets(packets)
+                if asyncio.iscoroutinefunction(actual_func):
+                    shared_loop = getattr(_worker_state, 'shared_loop', None)
+                    if shared_loop is None:
+                        raise RuntimeError(
+                            f"Async node function '{node_name}' requires a shared event loop, "
+                            "but none was set on the worker thread. This is a netrun internal error."
+                        )
+                    coro = actual_func(ctx, packets)
+                    future = asyncio.run_coroutine_threadsafe(coro, shared_loop)
+                    func_result = future.result()
+                else:
+                    func_result = actual_func(ctx, packets)
+            except EpochCancelled:
+                pass
+            except Exception as e:
+                # Sanitize so the resulting NodeExecutionResult is always
+                # picklable across multiprocess/remote pool boundaries.
+                exception = to_picklable_exception(e)
+
+            return preprocessor_self._build_result(ctx, func_result, exception)
 
         return wrapped
 

@@ -1,0 +1,9 @@
+[project]
+name = "resources-sample"
+version = "0.1.0"
+description = "Demonstrates `resources` as a named semaphore"
+requires-python = ">=3.11"
+dependencies = ["netrun"]
+
+[tool.uv.sources]
+netrun = { path = "../../netrun", editable = true }

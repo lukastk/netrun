@@ -1,0 +1,22 @@
+{
+    "pools": {
+        "main": {"spec": {"type": "main"}}
+    },
+    "output_queues": {
+        "results": {"ports": [["pipeline", "out"]]}
+    },
+    "graph": {
+        "nodes": [
+            {
+                "name": "pipeline",
+                "factory": "netrun.node_factories.from_function",
+                "factory_args": {"func": "nodes.expensive_pipeline"},
+                "execution_config": {
+                    "pools": ["main"],
+                    "retries": 2
+                }
+            }
+        ],
+        "edges": []
+    }
+}

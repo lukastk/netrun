@@ -3024,14 +3024,13 @@ test_resolve_env_vars_missing_no_default()
 # %%
 #|export
 def test_resolve_env_vars_nested_models(monkeypatch):
-    """PoolConfig containing ThreadPoolConfig with EnvVar."""
-    monkeypatch.setenv("FLUSH_INTERVAL", "0.5")
-    cfg = PoolConfig(
-        print_flush_interval=EnvVar(env="FLUSH_INTERVAL"),
-        spec=ThreadPoolConfig(num_workers=2),
+    """NodeExecutionConfig with EnvVar in nested field."""
+    monkeypatch.setenv("RETRY_WAIT", "2.5")
+    cfg = NodeExecutionConfig(
+        retry_wait=EnvVar(env="RETRY_WAIT"),
     )
     resolved = cfg.resolve_env_vars()
-    assert resolved.print_flush_interval == 0.5
+    assert resolved.retry_wait == 2.5
 
 # %%
 test_resolve_env_vars_nested_models()
@@ -3104,15 +3103,14 @@ test_resolve_env_vars_no_envvars_returns_self()
 # %%
 #|export
 def test_netconfig_resolve_env_vars_before_imports(monkeypatch):
-    """Full NetConfig.resolve() with env var in dead_letter_callback."""
-    monkeypatch.setenv("DL_CALLBACK", "json.loads")
+    """Full NetConfig.resolve() with env var in print_echo_stdout."""
+    monkeypatch.setenv("ECHO_STDOUT", "false")
     nc = NetConfig(
         graph=GraphConfig(nodes=[]),
-        dead_letter_callback=EnvVar(env="DL_CALLBACK"),
+        print_echo_stdout=EnvVar(env="ECHO_STDOUT"),
     )
     resolved = nc.resolve()
-    import json as json_mod
-    assert resolved.dead_letter_callback is json_mod.loads
+    assert resolved.print_echo_stdout is False
 
 # %%
 test_netconfig_resolve_env_vars_before_imports()

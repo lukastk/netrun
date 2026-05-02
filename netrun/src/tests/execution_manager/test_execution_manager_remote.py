@@ -133,12 +133,8 @@ async def test_remote_pool_run_function():
         await client.send(
             worker_id=0,
             key=ExecutionManagerProtocolKeys.RUN.value,
-            data=("msg_2", "add", "run_1", False, (3, 4), {})
+            data=("msg_2", "add", "run_1", (3, 4), {})
         )
-
-        # Get RUN_STARTED
-        msg = await client.recv(timeout=10.0)
-        assert msg.key == ExecutionManagerProtocolKeys.UP_RUN_STARTED.value
 
         # Get result
         msg = await client.recv(timeout=10.0)
@@ -171,22 +167,18 @@ async def test_remote_pool_multiple_workers():
             await client.send(
                 worker_id=worker_id,
                 key=ExecutionManagerProtocolKeys.RUN.value,
-                data=(f"msg_run_{worker_id}", "multiply", f"run_{worker_id}", False, (worker_id + 1, 10), {})
+                data=(f"msg_run_{worker_id}", "multiply", f"run_{worker_id}", (worker_id + 1, 10), {})
             )
 
-        # Collect results (2 RUN_STARTED + 2 RUN_RESPONSE)
-        started_count = 0
+        # Collect results (2 RUN_RESPONSE)
         results = {}
-        for _ in range(4):
+        for _ in range(2):
             msg = await client.recv(timeout=10.0)
-            if msg.key == ExecutionManagerProtocolKeys.UP_RUN_STARTED.value:
-                started_count += 1
-            elif msg.key == ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value:
-                msg_id = msg.data[0]
-                result = msg.data[4]
-                results[msg_id] = result
+            assert msg.key == ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value
+            msg_id = msg.data[0]
+            result = msg.data[4]
+            results[msg_id] = result
 
-        assert started_count == 2
         assert results["msg_run_0"] == 10  # 1 * 10
         assert results["msg_run_1"] == 20  # 2 * 10
 
@@ -210,12 +202,8 @@ async def test_remote_pool_function_with_kwargs():
         await client.send(
             worker_id=0,
             key=ExecutionManagerProtocolKeys.RUN.value,
-            data=("msg_2", "kwargs_fn", "run_1", False, (5,), {"b": 20, "c": 200})
+            data=("msg_2", "kwargs_fn", "run_1", (5,), {"b": 20, "c": 200})
         )
-
-        # Get RUN_STARTED
-        msg = await client.recv(timeout=10.0)
-        assert msg.key == ExecutionManagerProtocolKeys.UP_RUN_STARTED.value
 
         # Get result
         msg = await client.recv(timeout=10.0)
@@ -246,22 +234,18 @@ async def test_remote_pool_concurrent_runs():
             await client.send(
                 worker_id=i,
                 key=ExecutionManagerProtocolKeys.RUN.value,
-                data=(f"msg_run_{i}", "add", f"run_{i}", False, (i, i), {})
+                data=(f"msg_run_{i}", "add", f"run_{i}", (i, i), {})
             )
 
-        # Collect all results (4 RUN_STARTED + 4 RUN_RESPONSE)
-        started_count = 0
+        # Collect all results (4 RUN_RESPONSE)
         results = {}
-        for _ in range(8):
+        for _ in range(4):
             msg = await client.recv(timeout=10.0)
-            if msg.key == ExecutionManagerProtocolKeys.UP_RUN_STARTED.value:
-                started_count += 1
-            elif msg.key == ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value:
-                msg_id = msg.data[0]
-                result = msg.data[4]
-                results[msg_id] = result
+            assert msg.key == ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value
+            msg_id = msg.data[0]
+            result = msg.data[4]
+            results[msg_id] = result
 
-        assert started_count == 4
         # Verify results
         for i in range(4):
             assert results[f"msg_run_{i}"] == i + i
@@ -277,7 +261,7 @@ async def test_execution_manager_with_remote_pool():
             pool_id="remote",
             worker_id=0,
             func_import_path_or_key="add",
-            send_channel=False,
+
             func_args=(3, 4),
             func_kwargs={},
         )
@@ -300,7 +284,7 @@ async def test_execution_manager_remote_multiple_workers():
                 pool_id="remote",
                 worker_id=worker_id,
                 func_import_path_or_key="multiply",
-                send_channel=False,
+    
                 func_args=(worker_id + 1, 10),
                 func_kwargs={},
             )
@@ -328,7 +312,7 @@ async def test_execution_manager_remote_kwargs():
             pool_id="remote",
             worker_id=0,
             func_import_path_or_key="kwargs_fn",
-            send_channel=False,
+
             func_args=(5,),
             func_kwargs={"b": 20, "c": 200},
         )
@@ -346,7 +330,7 @@ async def test_execution_manager_remote_timestamps():
             pool_id="remote",
             worker_id=0,
             func_import_path_or_key="slow",
-            send_channel=False,
+
             func_args=(0.05,),
             func_kwargs={},
         )

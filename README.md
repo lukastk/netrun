@@ -6,7 +6,11 @@ A flow-based development (FBD) runtime system. Define networks of interconnected
 
 ### [netrun](netrun/) — Runtime
 
-A pure Python package built on netrun-sim. Provides flow-based network execution (`Net`), RPC channels, worker pools (thread/process/remote), node factories, caching, file storage, a CLI, and more.
+A pure Python package built on netrun-sim. Provides flow-based network execution (`Net`), RPC channels, worker pools (thread/process/remote), node factories, caching, file storage, scheduling constraints (`depends_on`, `resources`), and retry-persistent state (`ctx.state`).
+
+### [netrun-cli](netrun-cli/) — CLI
+
+A separate Python package providing the `netrun` command-line tool. Validates configs, inspects graphs, converts formats, runs actions and recipes, mutates graphs, and emits Mermaid topology diagrams. Depends on `netrun` for config models.
 
 ### [netrun-sim](netrun-sim/) — Simulation Engine
 
@@ -24,6 +28,9 @@ repo/
 │   ├── core/               # Rust library (netrun-sim crate)
 │   └── python/             # Python bindings (PyO3 + Maturin)
 ├── netrun/                 # Runtime (pure Python, nblite project)
+│   ├── pts/                # Source code (.pct.py files)
+│   └── src/                # Auto-generated Python modules
+├── netrun-cli/             # CLI (separate Python package, nblite)
 │   ├── pts/                # Source code (.pct.py files)
 │   └── src/                # Auto-generated Python modules
 └── netrun-ui/              # Visual editor
@@ -59,6 +66,18 @@ uv sync
 uv run pytest src/tests/ -v
 ```
 
+### netrun-cli
+
+```bash
+cd netrun-cli
+uv sync
+.venv/bin/netrun --help
+
+# Try it on a sample project
+.venv/bin/netrun structure --format mermaid -c ../sample_projects/00_basic_net_project/main.netrun.json
+.venv/bin/netrun dry-run -c ../sample_projects/00_basic_net_project/main.netrun.json
+```
+
 ### netrun-ui
 
 ```bash
@@ -85,7 +104,6 @@ netrun-ui --dev
 - [netrun-sim/README.md](netrun-sim/README.md) — Simulation engine docs
 - [netrun/README.md](netrun/README.md) — Runtime docs
 - [netrun-ui/README.md](netrun-ui/README.md) — Visual editor docs
-- [netrun/PROJECT_SPEC.md](netrun/PROJECT_SPEC.md) — Runtime specification
 
 ## License
 

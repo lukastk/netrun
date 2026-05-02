@@ -31,6 +31,7 @@ from tests.execution_manager.workers import (
     multiply_numbers,
     slow_function,
     function_with_kwargs,
+    function_with_unpicklable_error,
     async_add,
     mp_stdout_function,
 )
@@ -167,7 +168,7 @@ async def test_send_function_and_run():
             pool_id="pool",
             worker_id=0,
             func_import_path_or_key="add",
-            send_channel=False,
+
             func_args=(3, 4),
             func_kwargs={},
         )
@@ -199,7 +200,7 @@ async def test_send_function_to_pool():
                 pool_id="pool",
                 worker_id=worker_id,
                 func_import_path_or_key="multiply",
-                send_channel=False,
+    
                 func_args=(worker_id + 1, 10),
                 func_kwargs={},
             )
@@ -229,7 +230,7 @@ async def test_job_result_timestamps():
             pool_id="pool",
             worker_id=0,
             func_import_path_or_key="slow",
-            send_channel=False,
+
             func_args=(0.1,),
             func_kwargs={},
         )
@@ -264,7 +265,7 @@ async def test_function_with_kwargs():
             pool_id="pool",
             worker_id=0,
             func_import_path_or_key="kwargs_fn",
-            send_channel=False,
+
             func_args=(1,),
             func_kwargs={},
         )
@@ -275,7 +276,7 @@ async def test_function_with_kwargs():
             pool_id="pool",
             worker_id=0,
             func_import_path_or_key="kwargs_fn",
-            send_channel=False,
+
             func_args=(5,),
             func_kwargs={"b": 20, "c": 200},
         )
@@ -306,7 +307,7 @@ async def test_round_robin_allocation():
                 pool_worker_ids=["pool"],
                 allocation_method=RunAllocationMethod.ROUND_ROBIN,
                 func_import_path_or_key="add",
-                send_channel=False,
+    
                 func_args=(i, 1),
                 func_kwargs={},
             )
@@ -337,7 +338,7 @@ async def test_random_allocation():
                 pool_worker_ids=["pool"],
                 allocation_method=RunAllocationMethod.RANDOM,
                 func_import_path_or_key="add",
-                send_channel=False,
+    
                 func_args=(i, 1),
                 func_kwargs={},
             )
@@ -368,7 +369,7 @@ async def test_allocation_with_specific_workers():
                 pool_worker_ids=[("pool", 0), ("pool", 2)],
                 allocation_method=RunAllocationMethod.ROUND_ROBIN,
                 func_import_path_or_key="add",
-                send_channel=False,
+    
                 func_args=(i, 1),
                 func_kwargs={},
             )
@@ -397,7 +398,7 @@ async def test_empty_workers_raises():
                 pool_worker_ids=[],
                 allocation_method=RunAllocationMethod.ROUND_ROBIN,
                 func_import_path_or_key="add",
-                send_channel=False,
+    
                 func_args=(1, 2),
                 func_kwargs={},
             )
@@ -446,7 +447,7 @@ async def test_multiple_pools():
             pool_id="fast",
             worker_id=0,
             func_import_path_or_key="add",
-            send_channel=False,
+
             func_args=(5, 3),
             func_kwargs={},
         )
@@ -456,7 +457,7 @@ async def test_multiple_pools():
             pool_id="slow",
             worker_id=0,
             func_import_path_or_key="multiply",
-            send_channel=False,
+
             func_args=(4, 7),
             func_kwargs={},
         )
@@ -492,7 +493,7 @@ async def test_concurrent_jobs():
                     pool_worker_ids=["pool"],
                     allocation_method=RunAllocationMethod.ROUND_ROBIN,
                     func_import_path_or_key="add",
-                    send_channel=False,
+        
                     func_args=(i, i),
                     func_kwargs={},
                 )
@@ -527,7 +528,7 @@ async def test_async_function():
             pool_id="pool",
             worker_id=0,
             func_import_path_or_key="async_add",
-            send_channel=False,
+
             func_args=(10, 20),
             func_kwargs={},
         )
@@ -594,7 +595,7 @@ async def test_flush_pool_stdout():
             pool_id="mp_pool",
             worker_id=0,
             func_import_path_or_key="mp_print",
-            send_channel=False,
+
             func_args=("hello",),
             func_kwargs={},
         )
@@ -650,7 +651,7 @@ async def test_flush_all_pool_stdout():
             pool_id="mp_pool",
             worker_id=0,
             func_import_path_or_key="mp_print",
-            send_channel=False,
+
             func_args=("proc0",),
             func_kwargs={},
         )
@@ -658,7 +659,7 @@ async def test_flush_all_pool_stdout():
             pool_id="mp_pool",
             worker_id=1,
             func_import_path_or_key="mp_print",
-            send_channel=False,
+
             func_args=("proc1",),
             func_kwargs={},
         )
@@ -694,6 +695,46 @@ async def test_flush_all_pool_stdout_raises_for_non_multiprocess():
     async with manager:
         with pytest.raises(ValueError, match="not a MultiprocessPool"):
             await manager.flush_all_pool_stdout("thread_pool")
+
+# %% [markdown]
+# ## Regression: non-picklable exception must not hang the worker
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_unpicklable_exception_does_not_hang():
+    """Bug #2 regression: a worker raising an exception with non-picklable
+    state used to deadlock the parent because the inner channel.send(e) blew
+    up on PicklingError, the bare-except swallowed it, and no terminal
+    UP_RUN_RESPONSE ever arrived. The fix sanitises the exception via
+    `to_picklable_exception()` before sending. The caller should now see a
+    `RuntimeError` carrying the original type name, in well under the test
+    timeout."""
+    manager = ExecutionManager({
+        "pool": (MultiprocessPool, {"num_processes": 1, "threads_per_process": 1}),
+    })
+
+    async with manager:
+        with pytest.raises(Exception) as excinfo:
+            await asyncio.wait_for(
+                manager.run(
+                    pool_id="pool",
+                    worker_id=0,
+                    func_import_path_or_key="tests.execution_manager.workers.function_with_unpicklable_error",
+                    func_args=(),
+                    func_kwargs={},
+                ),
+                timeout=10.0,
+            )
+
+        # The original BadExc isn't picklable, so the worker substitutes a
+        # RuntimeError that preserves the type name and message.
+        assert "_UnpicklableExc" in str(excinfo.value) or "unpicklable" in str(excinfo.value).lower()
+        assert not isinstance(excinfo.value, asyncio.TimeoutError), \
+            "manager.run() must not hang on non-picklable exceptions"
+
+# %%
+await test_unpicklable_exception_does_not_hang();
 
 # %%
 await test_flush_all_pool_stdout_raises_for_non_multiprocess();

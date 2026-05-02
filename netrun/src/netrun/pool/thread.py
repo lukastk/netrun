@@ -15,6 +15,7 @@ from ..rpc.thread import (
     create_thread_channel_pair,
 )
 from ..pool.base import (
+    BasePool,
     WorkerId,
     WorkerFn,
     WorkerMessage,
@@ -26,18 +27,14 @@ from ..pool.base import (
 )
 
 # %% pts/netrun/04_pool/01_thread.pct.py 5
-class ThreadPool:
+class ThreadPool(BasePool):
     """A pool of worker threads.
 
     Each worker runs a user-provided function that receives messages
     via a sync channel and can send responses back.
     """
 
-    def __init__(
-        self,
-        worker_fn: WorkerFn,
-        num_workers: int,
-    ):
+    def __init__(self, worker_fn: WorkerFn, num_workers: int, **kwargs):
         """Create a thread pool.
 
         Args:
@@ -46,43 +43,21 @@ class ThreadPool:
         """
         if num_workers < 1:
             raise ValueError("num_workers must be at least 1")
-
+        super().__init__(num_workers=num_workers, **kwargs)
         self._worker_fn = worker_fn
-        self._num_workers = num_workers
-        self._running = False
-
-        # Will be populated on start()
         self._channels: list[ThreadChannel] = []
         self._threads: list[threading.Thread] = []
-        self._recv_queue: asyncio.Queue = asyncio.Queue()
-        self._recv_tasks: list[asyncio.Task] = []
-        self._monitor_task: asyncio.Task | None = None
-        self._dead_workers: set[int] = set()  # Track workers we've already reported as dead
+        self._dead_workers: set[int] = set()
 
-    @property
-    def num_workers(self) -> int:
-        """Total number of workers in the pool."""
-        return self._num_workers
-
-    @property
-    def is_running(self) -> bool:
-        """Whether the pool has been started."""
-        return self._running
-
-    async def start(self) -> None:
-        """Start all workers in the pool."""
-        if self._running:
-            raise PoolAlreadyStarted("Pool is already running")
-
+    async def _do_start(self) -> None:
         self._channels = []
         self._threads = []
+        self._dead_workers = set()
 
         for worker_id in range(self._num_workers):
-            # Create channel pair
             parent_channel, child_queues = create_thread_channel_pair()
             self._channels.append(parent_channel)
 
-            # Create and start worker thread
             thread = threading.Thread(
                 target=self._run_worker,
                 args=(child_queues, worker_id),
@@ -92,72 +67,24 @@ class ThreadPool:
             thread.start()
             self._threads.append(thread)
 
-        self._running = True
-        self._dead_workers = set()
-        self._monitor_task = asyncio.create_task(self._monitor_workers())
-
-    async def _monitor_workers(self) -> None:
-        """Background task to detect dead worker threads."""
-        while self._running:
-            for worker_id, thread in enumerate(self._threads):
-                if worker_id not in self._dead_workers and not thread.is_alive():
-                    # Thread died - send crash notification
-                    self._dead_workers.add(worker_id)
-                    await self._recv_queue.put(WorkerMessage(
-                        worker_id=worker_id,
-                        key=POOL_UP_ERROR_CRASHED,
-                        data={"reason": "Thread exited unexpectedly"}
-                    ))
-            await asyncio.sleep(0.5)  # Check every 500ms
-
     def _run_worker(self, child_queues: tuple, worker_id: WorkerId) -> None:
         """Run the worker function in a thread."""
         send_q, recv_q = child_queues
         channel = SyncThreadChannel(send_q, recv_q)
-
         try:
             self._worker_fn(channel, worker_id)
         except ChannelClosed:
             pass
         except Exception as e:
-            # Try to send exception object back (no serialization needed for threads)
             try:
                 channel.send(POOL_UP_ERROR_EXCEPTION, e)
             except Exception:
                 pass
 
-    async def close(self, timeout: float | None = None) -> None:
-        """Shut down all workers and clean up resources.
-
-        Args:
-            timeout: Max seconds to wait for each worker to finish gracefully.
-                     If None, wait indefinitely.
-        """
-        if not self._running:
-            return
-
-        self._running = False
-
-        # Cancel monitor task
-        if self._monitor_task and not self._monitor_task.done():
-            self._monitor_task.cancel()
-            try:
-                await self._monitor_task
-            except asyncio.CancelledError:
-                pass
-
-        # Close channels first - this unblocks any recv() calls
+    async def _do_close(self, timeout: float | None = None) -> None:
+        # Close channels first — unblocks any recv() calls in workers
         for channel in self._channels:
             await channel.close()
-
-        # Now cancel recv tasks (they should exit quickly since channels are closed)
-        for task in self._recv_tasks:
-            if not task.done():
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
 
         # Wait for threads to finish
         for thread in self._threads:
@@ -165,120 +92,58 @@ class ThreadPool:
 
         self._channels = []
         self._threads = []
-        self._recv_queue = asyncio.Queue()
-        self._recv_tasks = []
-        self._monitor_task = None
         self._dead_workers = set()
 
-    async def send(self, worker_id: WorkerId, key: str, data: Any) -> None:
-        """Send a message to a specific worker."""
-        if not self._running:
-            raise PoolNotStarted("Pool has not been started")
+    def _create_recv_loops(self) -> list:
+        loops = []
+        for worker_id, channel in enumerate(self._channels):
+            async def recv_loop(_worker_id=worker_id, _channel=channel):
+                try:
+                    while self._running:
+                        key, data = await _channel.recv()
+                        await self._recv_queue.put(
+                            WorkerMessage(worker_id=_worker_id, key=key, data=data)
+                        )
+                except (ChannelClosed, asyncio.CancelledError):
+                    pass
+                except Exception as e:
+                    logging.getLogger("netrun.pool").error(
+                        f"recv_loop for worker {_worker_id} crashed: {e}", exc_info=True
+                    )
+                    await self._recv_queue.put(WorkerMessage(
+                        worker_id=_worker_id, key=POOL_UP_ERROR_CRASHED,
+                        data={"reason": f"recv_loop exception: {e}"},
+                    ))
+            loops.append(recv_loop())
+        return loops
 
-        if worker_id < 0 or worker_id >= self._num_workers:
-            raise ValueError(f"worker_id {worker_id} out of range [0, {self._num_workers})")
-
-        await self._channels[worker_id].send(key, data)
-
-    def _start_recv_tasks(self) -> None:
-        """Start background tasks that forward messages to the queue."""
-        if self._recv_tasks:
-            return
-
-        async def recv_loop(worker_id: WorkerId, channel: ThreadChannel):
-            try:
-                while self._running:
-                    key, data = await channel.recv()
-                    msg = WorkerMessage(worker_id=worker_id, key=key, data=data)
-                    await self._recv_queue.put(msg)
-            except (ChannelClosed, asyncio.CancelledError):
-                pass
-            except Exception as e:
-                logging.getLogger("netrun.pool").error(
-                    f"recv_loop for worker {worker_id} crashed: {e}", exc_info=True
-                )
+    async def _check_worker_health(self) -> None:
+        for worker_id, thread in enumerate(self._threads):
+            if worker_id not in self._dead_workers and not thread.is_alive():
+                self._dead_workers.add(worker_id)
                 await self._recv_queue.put(WorkerMessage(
-                    worker_id=worker_id,
-                    key=POOL_UP_ERROR_CRASHED,
-                    data={"reason": f"recv_loop exception: {e}"}
+                    worker_id=worker_id, key=POOL_UP_ERROR_CRASHED,
+                    data={"reason": "Thread exited unexpectedly"},
                 ))
 
-        for worker_id, channel in enumerate(self._channels):
-            task = asyncio.create_task(recv_loop(worker_id, channel))
-            self._recv_tasks.append(task)
-
-    async def recv(self, timeout: float | None = None) -> WorkerMessage:
-        """Receive a message from any worker.
-
-        Raises:
-            WorkerException: If the worker raised an exception
-            WorkerCrashed: If the worker died unexpectedly
-            WorkerTimeout: If the worker timed out
-            RecvTimeout: If this recv() call times out
-        """
-        if not self._running:
-            raise PoolNotStarted("Pool has not been started")
-
-        self._start_recv_tasks()
-
-        try:
-            if timeout is None:
-                msg = await self._recv_queue.get()
-            else:
-                msg = await asyncio.wait_for(
-                    self._recv_queue.get(),
-                    timeout=timeout,
-                )
-        except TimeoutError:
-            raise RecvTimeout(f"Receive timed out after {timeout}s")
-
-        _check_error_and_raise(msg)
-        return msg
-
-    async def try_recv(self) -> WorkerMessage | None:
-        """Non-blocking receive from any worker.
-
-        Raises:
-            WorkerException: If the worker raised an exception
-            WorkerCrashed: If the worker died unexpectedly
-            WorkerTimeout: If the worker timed out
-        """
-        if not self._running:
-            raise PoolNotStarted("Pool has not been started")
-
-        # If recv tasks are running, check the queue first
-        if self._recv_tasks:
-            try:
-                msg = self._recv_queue.get_nowait()
-                _check_error_and_raise(msg)
-                return msg
-            except asyncio.QueueEmpty:
-                return None
-
-        # Otherwise, read directly from channels
+    async def _try_recv_direct(self) -> WorkerMessage | None:
+        """Read directly from channels (when recv tasks aren't running)."""
         for worker_id, channel in enumerate(self._channels):
             result = await channel.try_recv()
             if result is not None:
                 key, data = result
-                msg = WorkerMessage(worker_id=worker_id, key=key, data=data)
-                _check_error_and_raise(msg)
-                return msg
-
+                return WorkerMessage(worker_id=worker_id, key=key, data=data)
         return None
 
-    async def broadcast(self, key: str, data: Any) -> None:
-        """Send a message to all workers."""
+    async def send(self, worker_id: WorkerId, key: str, data: Any) -> None:
         if not self._running:
             raise PoolNotStarted("Pool has not been started")
+        if worker_id < 0 or worker_id >= self._num_workers:
+            raise ValueError(f"worker_id {worker_id} out of range [0, {self._num_workers})")
+        await self._channels[worker_id].send(key, data)
 
-        for worker_id in range(self._num_workers):
-            await self._channels[worker_id].send(key, data)
-
-    async def __aenter__(self) -> "ThreadPool":
-        """Context manager entry - starts the pool."""
-        await self.start()
-        return self
-
-    async def __aexit__(self, exc_type, exc_val, exc_tb) -> None:
-        """Context manager exit - closes the pool."""
-        await self.close()
+    async def broadcast(self, key: str, data: Any) -> None:
+        if not self._running:
+            raise PoolNotStarted("Pool has not been started")
+        for channel in self._channels:
+            await channel.send(key, data)

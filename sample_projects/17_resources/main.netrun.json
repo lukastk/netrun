@@ -1,0 +1,49 @@
+{
+    "pools": {
+        "threads": {"spec": {"type": "thread", "num_workers": 3}}
+    },
+    "resources": {
+        "gpu": 1
+    },
+    "output_queues": {
+        "results": {
+            "ports": [
+                ["job_1", "out"],
+                ["job_2", "out"],
+                ["job_3", "out"]
+            ]
+        }
+    },
+    "graph": {
+        "nodes": [
+            {
+                "name": "job_1",
+                "factory": "netrun.node_factories.from_function",
+                "factory_args": {"func": "nodes.gpu_job_1"},
+                "execution_config": {
+                    "pools": ["threads"],
+                    "resources": {"gpu": 1}
+                }
+            },
+            {
+                "name": "job_2",
+                "factory": "netrun.node_factories.from_function",
+                "factory_args": {"func": "nodes.gpu_job_2"},
+                "execution_config": {
+                    "pools": ["threads"],
+                    "resources": {"gpu": 1}
+                }
+            },
+            {
+                "name": "job_3",
+                "factory": "netrun.node_factories.from_function",
+                "factory_args": {"func": "nodes.gpu_job_3"},
+                "execution_config": {
+                    "pools": ["threads"],
+                    "resources": {"gpu": 1}
+                }
+            }
+        ],
+        "edges": []
+    }
+}

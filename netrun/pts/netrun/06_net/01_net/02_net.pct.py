@@ -394,8 +394,19 @@ class NetLogQuery:
 class Net:
     """Main orchestrator for flow-based network execution.
 
-    The Net class bridges netrun-sim (packet flow simulation) with actual node
-    function execution via ExecutionManager.
+    Bridges netrun-sim (packet flow simulation) with actual node function
+    execution via ExecutionManager. Owns pool lifecycle, scheduling
+    (`depends_on`, `resources`), retries (with persistent `ctx.state`),
+    timeouts, cache and file-storage replay, output queues, signals/controls,
+    structured logging, and lifecycle callbacks.
+
+    Async nodes execute on a single shared event loop owned by the
+    ExecutionManager (one daemon thread per process scope). Sync nodes run
+    directly on the worker's thread/process. Worker crashes are isolated to
+    the affected jobs.
+
+    Use `async with Net(config) as net:` (or the sync `with` variant). The
+    context manager calls `init()` / `close()` automatically.
     """
 
     def __init__(self, config: NetConfig, run_init_nodes: bool = True):
@@ -434,12 +445,15 @@ class Net:
         # Running epoch tracking
         self._running_epochs: set[str] = set()
 
-        # Epoch state (persists after epoch finishes in netsim)
-        self._epochs: dict[str, _EpochState] = {}  # epoch_id -> _EpochState
+        # Scheduling constraint tracking
+        self._node_has_completed: set[str] = set()  # Nodes that have completed at least one epoch
+        self._resource_usage: dict[str, int] = {}  # Current resource slot usage per resource name
+        self._resource_capacities: dict[str, int] = dict(self._config_resolved.resources) if self._config_resolved.resources else {}
 
-        # Per-epoch buffers for structured logs and net actions (populated during execution)
-        self._epoch_log_buffers: dict[str, list[NodeLogEntry]] = {}
-        self._epoch_net_actions: dict[str, list[NetActionLog]] = {}
+        # Epoch state (persists after epoch finishes in netsim).
+        # Consolidated: structured_logs, net_actions, and retry_state (ctx.state)
+        # are all stored on each _EpochState object.
+        self._epochs: dict[str, _EpochState] = {}  # epoch_id -> _EpochState
 
         # Per run_step buffers (cleared at start of each run_step)
         self._step_net_actions: list[NetActionLog] = []
@@ -467,11 +481,69 @@ class Net:
             if node_config.execution_config is not None:
                 self._node_execution_configs[node_config.name] = node_config.execution_config
 
+        # Validate depends_on: check for cycles and invalid references
+        all_node_names = {nc.name for nc in self._config_resolved.graph.nodes}
+        for node_name, exec_config in self._node_execution_configs.items():
+            if exec_config.depends_on:
+                for dep in exec_config.depends_on:
+                    if dep not in all_node_names:
+                        raise ValueError(
+                            f"Node '{node_name}' depends_on '{dep}' which does not exist in the graph"
+                        )
+        # Topological cycle check for depends_on
+        visited: set[str] = set()
+        path: set[str] = set()
+        def _check_cycle(node: str) -> None:
+            if node in path:
+                raise ValueError(
+                    f"Circular dependency detected involving node '{node}'. "
+                    f"depends_on must form a DAG (no cycles)."
+                )
+            if node in visited:
+                return
+            path.add(node)
+            config = self._node_execution_configs.get(node)
+            if config and config.depends_on:
+                for dep in config.depends_on:
+                    _check_cycle(dep)
+            path.remove(node)
+            visited.add(node)
+        for node_name in self._node_execution_configs:
+            _check_cycle(node_name)
+
         # Disabled nodes set (populated from config, mutated at runtime)
         self._disabled_nodes: set[str] = set()
         for node_name, exec_config in self._node_execution_configs.items():
             if not exec_config.enabled:
                 self._disabled_nodes.add(node_name)
+
+        # Validate node-level resources references against NetConfig.resources.
+        # Without this check the resource gate in _get_allowed_epochs() is
+        # silently skipped when NetConfig.resources is empty/None, so undeclared
+        # resource keys are ignored at runtime.
+        for node_name, exec_config in self._node_execution_configs.items():
+            if exec_config.resources:
+                for res_name in exec_config.resources:
+                    if res_name not in self._resource_capacities:
+                        raise ValueError(
+                            f"Node '{node_name}' requires resource '{res_name}' "
+                            f"which is not defined in NetConfig.resources"
+                        )
+
+        # Warn if any node depends_on a node that is disabled at construction
+        # time. The dependent will hang forever unless the dependency is
+        # enabled at runtime via a control epoch — the user is unlikely to
+        # want this silently.
+        for node_name, exec_config in self._node_execution_configs.items():
+            if exec_config.depends_on:
+                disabled_deps = [d for d in exec_config.depends_on if d in self._disabled_nodes]
+                if disabled_deps:
+                    import logging
+                    logging.getLogger("netrun.net").warning(
+                        "Node '%s' depends_on disabled node(s) %s — '%s' will not run "
+                        "until those are enabled at runtime.",
+                        node_name, disabled_deps, node_name,
+                    )
 
         # Control handler dispatch table
         self._control_handlers: dict[str, Callable] = {
@@ -1259,6 +1331,15 @@ class Net:
         if self._initialized:
             raise RuntimeError("Net already initialized")
 
+        # Enable faulthandler for debugging (SIGUSR1 -> stack dump of all threads)
+        import faulthandler
+        try:
+            faulthandler.enable()
+            if hasattr(signal, 'SIGUSR1'):
+                faulthandler.register(signal.SIGUSR1, all_threads=True)
+        except (OSError, ValueError, IOError):
+            pass  # stderr may not support fileno (mocked in tests), or signal unavailable
+
         await self._execution_manager.start()
 
         # Register node functions with all workers
@@ -1565,8 +1646,8 @@ class Net:
         self._step_net_actions.append(net_action)
 
         # Add to epoch buffer if attributed
-        if epoch_id and epoch_id in self._epoch_net_actions:
-            self._epoch_net_actions[epoch_id].append(net_action)
+        if epoch_id and epoch_id in self._epochs:
+            self._epochs[epoch_id].net_actions.append(net_action)
 
         # Retain if configured
         if self._config_resolved.retain_net_action_logs:
@@ -1877,6 +1958,8 @@ class Net:
         allowed = []
         # Track how many new epochs we're allowing per node (within this batch)
         new_per_node: dict[str, int] = {}
+        # Track resource slots claimed by newly-allowed epochs (within this batch)
+        new_resource_usage: dict[str, int] = {}
 
         for epoch_id in epoch_ids:
             epoch = self._netsim.get_epoch(epoch_id)
@@ -1903,7 +1986,34 @@ class Net:
                 if current >= max_parallel:
                     continue  # Skip — at the limit
 
+            # Check depends_on: all dependency nodes must have completed at least one epoch
+            if config and config.depends_on:
+                if not all(dep in self._node_has_completed for dep in config.depends_on):
+                    continue  # Skip — dependency not yet satisfied
+
+            # Check resources: all required resource slots must be available.
+            # Construction-time validation (in __init__) guarantees every
+            # res_name here is declared in NetConfig.resources, so the
+            # capacity lookup below cannot return None.
+            if config and config.resources:
+                can_acquire = True
+                for res_name, needed in config.resources.items():
+                    capacity = self._resource_capacities[res_name]
+                    current_usage = (
+                        self._resource_usage.get(res_name, 0)
+                        + new_resource_usage.get(res_name, 0)
+                    )
+                    if current_usage + needed > capacity:
+                        can_acquire = False
+                        break
+                if not can_acquire:
+                    continue  # Skip — resource limit reached
+
             new_per_node[node_name] = new_per_node.get(node_name, 0) + 1
+            # Track resource usage within this batch
+            if config and config.resources:
+                for res_name, needed in config.resources.items():
+                    new_resource_usage[res_name] = new_resource_usage.get(res_name, 0) + needed
             allowed.append(epoch_id)
 
         return allowed
@@ -1982,6 +2092,8 @@ class Net:
         self._do_action(netrun_sim.NetAction.finish_epoch(epoch_id), epoch_id=epoch_id, detail={"node_name": node_name})
         self._epochs[epoch_id].ended_at = get_timestamp_utc()
         self._epochs[epoch_id].state = netrun_sim.EpochState.Finished
+        self._epochs[epoch_id].retry_state.clear()  # Clear cross-retry state on success
+        self._node_has_completed.add(node_name)  # Mark node as having completed (for depends_on)
         await self._fire_epoch_end(node_name, epoch_id, retry_count=retry_count)
 
     def _consume_epoch_inputs(self, epoch_id: str, node_name: str, packets: dict[str, list[str]], consumed_ports: set[str] | list[str]) -> None:
@@ -2160,8 +2272,6 @@ class Net:
         epoch = self._netsim.get_epoch(epoch_id)
         node_name = epoch.node_name
         self._epochs[epoch_id] = _EpochState.from_epoch(epoch)
-        self._epoch_log_buffers[epoch_id] = []
-        self._epoch_net_actions[epoch_id] = []
         config = self._get_node_execution_config(node_name)
 
         # Check if this is a control epoch
@@ -2269,6 +2379,12 @@ class Net:
 
         # Transition epoch to Running
         self._running_epochs.add(epoch_id)
+
+        # Acquire resources for this epoch
+        if config.resources:
+            for res_name, needed in config.resources.items():
+                self._resource_usage[res_name] = self._resource_usage.get(res_name, 0) + needed
+
         await self._start_epoch_lifecycle(epoch_id, node_name)
 
         try:
@@ -2301,6 +2417,10 @@ class Net:
             raise
         finally:
             self._running_epochs.discard(epoch_id)
+            # Release resources
+            if config.resources:
+                for res_name, needed in config.resources.items():
+                    self._resource_usage[res_name] = self._resource_usage.get(res_name, 0) - needed
 
     async def _execute_epoch_with_retry(
         self,
@@ -2347,12 +2467,12 @@ class Net:
                 pool_worker_ids=config.pools,
                 allocation_method=allocation_method,
                 func_import_path_or_key=func_key,
-                send_channel=False,  # Deferred mode doesn't need channel
                 func_args=(epoch_id, node_name, packets, packet_values),
                 func_kwargs={
                     "retry_count": retry_count,
                     "retry_timestamps": retry_timestamps,
                     "retry_exceptions": retry_exceptions,
+                    "state": self._epochs[epoch_id].retry_state,
                 },
             )
             effective_timeout = resolve_effective_exec_field("timeout", config, self._config_resolved)
@@ -2380,6 +2500,13 @@ class Net:
         # Extract NodeExecutionResult from job result
         execution_result: NodeExecutionResult = job_result.result
 
+        # Round-trip ctx.state mutations back into retry_state so the next retry
+        # observes them on cross-process pools (thread pools share the dict by
+        # reference, but multiprocess/remote workers operate on a pickled copy).
+        retry_state = self._epochs[epoch_id].retry_state
+        retry_state.clear()
+        retry_state.update(execution_result.state)
+
         # Record which pool/worker ran this epoch
         self._epochs[epoch_id].pool_id = job_result.pool_id
         self._epochs[epoch_id].worker_id = job_result.worker_id
@@ -2390,7 +2517,7 @@ class Net:
 
         # Handle structured log buffer
         if execution_result.structured_log_buffer:
-            self._epoch_log_buffers.setdefault(epoch_id, []).extend(
+            self._epochs[epoch_id].structured_logs.extend(
                 execution_result.structured_log_buffer
             )
 
@@ -2934,6 +3061,24 @@ class Net:
             if effective_retry_wait > 0:
                 await asyncio.sleep(effective_retry_wait)
 
+            # Force garbage collection to reclaim resources from the failed attempt
+            import gc
+            gc.collect()
+
+            # Log peak RSS for debugging memory issues during retries
+            try:
+                import resource
+                import platform as _platform
+                import logging
+                rss_raw = resource.getrusage(resource.RUSAGE_SELF).ru_maxrss
+                rss_mb = rss_raw / (1024 * 1024) if _platform.system() == "Darwin" else rss_raw / 1024
+                logging.getLogger("netrun.net").debug(
+                    "Retry %d/%d for node '%s' (epoch %s), peak RSS: %.1f MB",
+                    retry_count + 1, effective_retries, node_name, epoch_id, rss_mb,
+                )
+            except ImportError:
+                pass  # resource module not available (Windows)
+
             # Retry (deferred actions were discarded, so we start fresh)
             return await self._execute_epoch_with_retry(
                 epoch_id=epoch_id,
@@ -2959,6 +3104,7 @@ class Net:
             record.was_cancelled = True
             record.ended_at = get_timestamp_utc()
             record.destroyed_packets = list(response.destroyed_packets)
+            self._epochs[epoch_id].retry_state.clear()  # Clear cross-retry state on permanent failure
             await self._fire_epoch_end(node_name, epoch_id, error=error, retry_count=retry_count)
 
             # Store in dead letter queue
@@ -4096,8 +4242,8 @@ class Net:
 
         # Assemble EpochLog
         epoch_log = record.to_log(
-            node_log_entries=self._epoch_log_buffers.get(epoch_id, []),
-            net_actions=self._epoch_net_actions.get(epoch_id, []),
+            node_log_entries=record.structured_logs,
+            net_actions=record.net_actions,
             factory=factory,
             retry_count=retry_count,
             error=error,
@@ -4115,10 +4261,6 @@ class Net:
             ts = epoch_log.timestamp.strftime("%H:%M:%S.%f")[:-3]
             import builtins
             builtins.print(f"[{ts}] [{node_name}] {_format_epoch_log(epoch_log)}", flush=True)
-
-        # Clean up per-epoch buffers
-        self._epoch_log_buffers.pop(epoch_id, None)
-        self._epoch_net_actions.pop(epoch_id, None)
 
         # Clean up epoch state when not retaining logs
         if not self._config_resolved.retain_epoch_logs:
