@@ -31,6 +31,7 @@ from tests.execution_manager.workers import (
     multiply_numbers,
     slow_function,
     function_with_kwargs,
+    function_with_unpicklable_error,
     async_add,
     mp_stdout_function,
 )
@@ -694,6 +695,46 @@ async def test_flush_all_pool_stdout_raises_for_non_multiprocess():
     async with manager:
         with pytest.raises(ValueError, match="not a MultiprocessPool"):
             await manager.flush_all_pool_stdout("thread_pool")
+
+# %% [markdown]
+# ## Regression: non-picklable exception must not hang the worker
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_unpicklable_exception_does_not_hang():
+    """Bug #2 regression: a worker raising an exception with non-picklable
+    state used to deadlock the parent because the inner channel.send(e) blew
+    up on PicklingError, the bare-except swallowed it, and no terminal
+    UP_RUN_RESPONSE ever arrived. The fix sanitises the exception via
+    `to_picklable_exception()` before sending. The caller should now see a
+    `RuntimeError` carrying the original type name, in well under the test
+    timeout."""
+    manager = ExecutionManager({
+        "pool": (MultiprocessPool, {"num_processes": 1, "threads_per_process": 1}),
+    })
+
+    async with manager:
+        with pytest.raises(Exception) as excinfo:
+            await asyncio.wait_for(
+                manager.run(
+                    pool_id="pool",
+                    worker_id=0,
+                    func_import_path_or_key="tests.execution_manager.workers.function_with_unpicklable_error",
+                    func_args=(),
+                    func_kwargs={},
+                ),
+                timeout=10.0,
+            )
+
+        # The original BadExc isn't picklable, so the worker substitutes a
+        # RuntimeError that preserves the type name and message.
+        assert "_UnpicklableExc" in str(excinfo.value) or "unpicklable" in str(excinfo.value).lower()
+        assert not isinstance(excinfo.value, asyncio.TimeoutError), \
+            "manager.run() must not hang on non-picklable exceptions"
+
+# %%
+await test_unpicklable_exception_does_not_hang();
 
 # %%
 await test_flush_all_pool_stdout_raises_for_non_multiprocess();

@@ -517,6 +517,34 @@ class Net:
             if not exec_config.enabled:
                 self._disabled_nodes.add(node_name)
 
+        # Validate node-level resources references against NetConfig.resources.
+        # Without this check the resource gate in _get_allowed_epochs() is
+        # silently skipped when NetConfig.resources is empty/None, so undeclared
+        # resource keys are ignored at runtime.
+        for node_name, exec_config in self._node_execution_configs.items():
+            if exec_config.resources:
+                for res_name in exec_config.resources:
+                    if res_name not in self._resource_capacities:
+                        raise ValueError(
+                            f"Node '{node_name}' requires resource '{res_name}' "
+                            f"which is not defined in NetConfig.resources"
+                        )
+
+        # Warn if any node depends_on a node that is disabled at construction
+        # time. The dependent will hang forever unless the dependency is
+        # enabled at runtime via a control epoch — the user is unlikely to
+        # want this silently.
+        for node_name, exec_config in self._node_execution_configs.items():
+            if exec_config.depends_on:
+                disabled_deps = [d for d in exec_config.depends_on if d in self._disabled_nodes]
+                if disabled_deps:
+                    import logging
+                    logging.getLogger("netrun.net").warning(
+                        "Node '%s' depends_on disabled node(s) %s — '%s' will not run "
+                        "until those are enabled at runtime.",
+                        node_name, disabled_deps, node_name,
+                    )
+
         # Control handler dispatch table
         self._control_handlers: dict[str, Callable] = {
             "start_epoch":       self._control_start_epoch,
@@ -1963,16 +1991,14 @@ class Net:
                 if not all(dep in self._node_has_completed for dep in config.depends_on):
                     continue  # Skip — dependency not yet satisfied
 
-            # Check resources: all required resource slots must be available
-            if config and config.resources and self._resource_capacities:
+            # Check resources: all required resource slots must be available.
+            # Construction-time validation (in __init__) guarantees every
+            # res_name here is declared in NetConfig.resources, so the
+            # capacity lookup below cannot return None.
+            if config and config.resources:
                 can_acquire = True
                 for res_name, needed in config.resources.items():
-                    capacity = self._resource_capacities.get(res_name)
-                    if capacity is None:
-                        raise ValueError(
-                            f"Node '{node_name}' requires resource '{res_name}' "
-                            f"which is not defined in NetConfig.resources"
-                        )
+                    capacity = self._resource_capacities[res_name]
                     current_usage = (
                         self._resource_usage.get(res_name, 0)
                         + new_resource_usage.get(res_name, 0)
@@ -2473,6 +2499,13 @@ class Net:
 
         # Extract NodeExecutionResult from job result
         execution_result: NodeExecutionResult = job_result.result
+
+        # Round-trip ctx.state mutations back into retry_state so the next retry
+        # observes them on cross-process pools (thread pools share the dict by
+        # reference, but multiprocess/remote workers operate on a pickled copy).
+        retry_state = self._epochs[epoch_id].retry_state
+        retry_state.clear()
+        retry_state.update(execution_result.state)
 
         # Record which pool/worker ran this epoch
         self._epochs[epoch_id].pool_id = job_result.pool_id

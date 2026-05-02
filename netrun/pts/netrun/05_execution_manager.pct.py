@@ -27,6 +27,7 @@ from collections.abc import Callable, Awaitable
 from netrun._iutils import get_timestamp_utc
 from datetime import datetime
 import asyncio
+import logging
 import threading
 from enum import Enum
 from dataclasses import dataclass
@@ -118,6 +119,28 @@ def _convert_to_str_if_not_serializable(obj: Any) -> tuple[bool, Any]:
         return (False, obj)
     except (pickle.PicklingError, TypeError, AttributeError):
         return (True, str(obj))
+
+# %%
+#|export
+def to_picklable_exception(e: BaseException) -> BaseException:
+    """Return `e` unchanged if it's pickle-serializable, otherwise a serializable
+    proxy.
+
+    Worker error paths must always send a terminal `UP_RUN_RESPONSE` so the client
+    doesn't hang. If the user (or some library) raises an exception that holds an
+    unpicklable attribute (lambda, generator, traceback, open file handle, …), the
+    raw exception cannot cross a multiprocess boundary. We replace it with a
+    `RuntimeError` whose message preserves the original type name and `repr`, so
+    the caller still gets an `Exception` it can `raise`.
+    """
+    try:
+        pickle.dumps(e)
+        return e
+    except (pickle.PicklingError, TypeError, AttributeError) as pickle_err:
+        return RuntimeError(
+            f"<unpicklable {type(e).__name__}: {e!r}> "
+            f"(pickle error: {pickle_err!r})"
+        )
 
 # %% [markdown]
 # ## Workers
@@ -218,14 +241,25 @@ def _worker_func(
 
                 channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res))
             except Exception as e:
-                # Send error response so the client doesn't hang forever
+                # Send error response so the client doesn't hang forever.
+                # Sanitize first: a non-picklable exception would otherwise
+                # blow up channel.send() across a multiprocess boundary, the
+                # except below would swallow the PicklingError, and the caller
+                # would block forever waiting for UP_RUN_RESPONSE.
                 timestamp_utc_error = get_timestamp_utc()
                 if timestamp_utc_started is None:
                     timestamp_utc_started = timestamp_utc_error
+                err = to_picklable_exception(e)
                 try:
-                    channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_error, False, e))
-                except Exception:
-                    pass  # Worker loop must survive
+                    channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_error, False, err))
+                except Exception as send_err:
+                    # Last-ditch: the channel itself is broken. Log so this
+                    # doesn't manifest as a silent hang.
+                    _logger = logging.getLogger("netrun.execution_manager")
+                    _logger.error(
+                        "Worker %s failed to deliver error response for run %s: %r",
+                        worker_id, run_id, send_err,
+                    )
         # SEND_FUNCTION
         elif key == ExecutionManagerProtocolKeys.SEND_FUNCTION.value:
             msg_id, func_key, func = data
@@ -278,12 +312,19 @@ async def _async_worker_func(
 
             await channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_completed, converted_to_str, _res))
         except Exception as e:
-            # Send error response so the client doesn't hang forever
+            # Send error response so the client doesn't hang forever.
+            # See to_picklable_exception() — sanitize before sending across
+            # process boundaries.
             timestamp_utc_error = get_timestamp_utc()
+            err = to_picklable_exception(e)
             try:
-                await channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_error, False, e))
-            except Exception:
-                pass  # If we can't send the error, the client will eventually timeout
+                await channel.send(ExecutionManagerProtocolKeys.UP_RUN_RESPONSE.value, (msg_id, timestamp_utc_started, timestamp_utc_error, False, err))
+            except Exception as send_err:
+                _logger = logging.getLogger("netrun.execution_manager")
+                _logger.error(
+                    "Async worker %s failed to deliver error response for msg %s: %r",
+                    worker_id, msg_id, send_err,
+                )
 
     pending_tasks: set[asyncio.Task] = set()
 

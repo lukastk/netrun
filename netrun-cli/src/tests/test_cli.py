@@ -359,10 +359,10 @@ def test_help():
 import tempfile
 
 def test_validate_reports_resolution_failure():
-    """Test that validate reports resolution errors instead of silently swallowing them.
+    """Test that validate reports resolution errors as hard failures.
 
-    Regression test: netrun validate suppresses resolution failures by catching
-    all exceptions and setting resolved=None, reporting valid=True.
+    Regression test: an earlier version routed broken factory imports to
+    `warnings` and returned exit 0, hiding real config breakage in CI.
     """
     config_data = {
         "graph": {
@@ -387,17 +387,12 @@ def test_validate_reports_resolution_failure():
         f.flush()
         result = runner.invoke(app, ["validate", "-c", f.name])
 
-    # Resolution failures are reported as warnings (not errors, since resolution
-    # depends on Python path at runtime). The key requirement: the failure must
-    # NOT be silently swallowed — it must appear in the output.
+    assert result.exit_code != 0, f"validate must return non-zero on resolution failure, got: {result.stdout}"
     data = json.loads(result.stdout)
-    warnings = data.get("warnings", [])
+    assert data.get("valid") is False
     errors = data.get("errors", [])
-    all_messages = warnings + errors
-    assert any(
-        "resolution" in str(m).lower() or "module" in str(m).lower()
-        for m in all_messages
-    ), f"validate silently swallowed resolution failure: {data}"
+    assert any("Resolution error" in str(e) for e in errors), \
+        f"resolution failure must appear in errors (not warnings): {data}"
 
 # %% pts/tests/test_cli.pct.py 29
 def test_node_edges_incoming():

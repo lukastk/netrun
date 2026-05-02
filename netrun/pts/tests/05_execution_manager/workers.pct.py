@@ -49,6 +49,21 @@ def function_with_error() -> None:
     raise ValueError("Intentional error")
 
 
+def function_with_unpicklable_error() -> None:
+    """A function that raises an exception holding an unpicklable attribute.
+
+    Used to regression-test Bug #2: a worker error path that sends `e` raw
+    over a multiprocess channel hangs forever when pickle fails.
+    """
+    class _UnpicklableExc(Exception):
+        def __init__(self):
+            super().__init__("intentional unpicklable error")
+            # Lambdas cannot be pickled; this is the same trap real code hits
+            # via traceback objects, generators, open files, …
+            self.bad = lambda: None
+    raise _UnpicklableExc()
+
+
 def function_returns_non_serializable():
     """A function that returns something non-serializable."""
     return lambda x: x  # Lambdas can't be pickled

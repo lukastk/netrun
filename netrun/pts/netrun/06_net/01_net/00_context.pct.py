@@ -36,7 +36,7 @@ from netrun.net.config import NodeExecutionConfig, NodeVariable, PortConfig, Por
 from netrun.net.config._nodes import resolve_effective_exec_field, INHERITABLE_EXEC_FIELDS
 from netrun._iutils import get_timestamp_utc
 from netrun.packets import LazyPacketValueSpec
-from netrun.execution_manager import _worker_state
+from netrun.execution_manager import _worker_state, to_picklable_exception
 
 # %% [markdown]
 # ## Structured Logging Data Models
@@ -384,14 +384,17 @@ class NodeExecutionContext:
     Mutable retry state via `ctx.state`:
         `state` is a per-epoch dict that persists across retry attempts. Use it
         to cache expensive precomputation (e.g. loaded DataFrames, parsed
-        configs) so retries don't redo the work. The same dict instance is
-        reused on every retry; it is cleared when the epoch succeeds or
-        permanently fails. Unlike the deferred packet operations, mutations
-        to `state` survive failed attempts.
+        configs) so retries don't redo the work. Mutations made during an
+        attempt are visible to the next retry of the same epoch; the dict is
+        cleared when the epoch succeeds or permanently fails. Unlike the
+        deferred packet operations, mutations to `state` survive failed
+        attempts.
 
-        Locality: the dict lives wherever the node runs (thread, process, or
-        remote worker). For multiprocess/remote pools, each worker process
-        keeps its own copy — values must be picklable if you set them.
+        Locality: on thread pools the same dict instance is shared by
+        reference. On multiprocess/remote pools the parent round-trips the
+        post-attempt state back through `NodeExecutionResult.state`, so
+        retries observe the same logical state — but values must be picklable
+        and large objects pay the serialization cost on every attempt.
 
     Example:
         async def main(ctx, ad_ids):
@@ -791,6 +794,7 @@ class NodeExecutionContext:
             created_packets=self._created_packets.copy(),
             consumed_packets=self._consumed_packets.copy(),
             structured_log_buffer=self._structured_log_buffer.copy(),
+            state=dict(self.state),
         )
 
 # %% [markdown]
@@ -830,6 +834,10 @@ class NodeExecutionResult:
 
     exception: Exception | None = None
     """Exception raised by the node function (if any)."""
+
+    state: dict[str, Any] = field(default_factory=dict)
+    """Final value of ctx.state after the attempt. Round-tripped to the parent
+    so retries on multiprocess/remote pools see prior-attempt mutations."""
 
 # %% [markdown]
 # ## NodeFailureContext
@@ -1358,7 +1366,9 @@ class NetFuncPreprocessor:
             except EpochCancelled:
                 pass
             except Exception as e:
-                exception = e
+                # Sanitize so the resulting NodeExecutionResult is always
+                # picklable across multiprocess/remote pool boundaries.
+                exception = to_picklable_exception(e)
 
             return preprocessor_self._build_result(ctx, func_result, exception)
 
@@ -1408,7 +1418,9 @@ class NetFuncPreprocessor:
             except EpochCancelled:
                 pass
             except Exception as e:
-                exception = e
+                # Sanitize so the resulting NodeExecutionResult is always
+                # picklable across multiprocess/remote pool boundaries.
+                exception = to_picklable_exception(e)
 
             return preprocessor_self._build_result(ctx, func_result, exception)
 

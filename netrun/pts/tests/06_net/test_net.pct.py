@@ -7526,6 +7526,62 @@ async def test_ctx_state_cleared_on_success():
 # %%
 asyncio.get_event_loop().run_until_complete(test_ctx_state_cleared_on_success())
 
+# %% [markdown]
+# ### Bug #1 regression: ctx.state across MP retries
+#
+# `ctx.state` mutations made inside a multiprocess worker live in a pickled
+# copy of the dict; without the round-trip fix, the parent's view stays empty
+# and every retry sees `count == 1` forever. The node below increments a
+# counter until 3, so a clean run requires that mutations survive across
+# retries on a multiprocess pool.
+
+# %%
+#|export
+def _mp_ctx_state_increment_until_three(ctx, x: int, print) -> int:
+    """Module-level node used by test_ctx_state_persists_across_retries_multiprocess.
+
+    Picklable for `MultiprocessPool` because it isn't a closure. Increments
+    `ctx.state["count"]` and fails until count reaches 3.
+    """
+    count = ctx.state.get("count", 0) + 1
+    ctx.state["count"] = count
+    print(f"attempt {count}")
+    if count < 3:
+        raise RuntimeError(f"forced fail at count={count}")
+    return count
+
+# %%
+#|export
+@pytest.mark.asyncio
+async def test_ctx_state_persists_across_retries_multiprocess():
+    """Bug #1 regression: ctx.state must survive cross-process retries."""
+    config = NetConfig.model_validate({
+        "pools": {"procs": {"spec": {"type": "multiprocess", "num_processes": 1, "threads_per_process": 1}}},
+        "output_queues": {"results": {"ports": [["pipeline", "out"]]}},
+        "graph": {
+            "nodes": [
+                {
+                    "name": "pipeline",
+                    "factory": "netrun.node_factories.from_function",
+                    "factory_args": {"func": "tests.net.test_net._mp_ctx_state_increment_until_three"},
+                    "execution_config": {"pools": ["procs"], "retries": 5, "retry_wait": 0.0,
+                                         "propagate_exceptions": False},
+                }
+            ],
+            "edges": [],
+        },
+    })
+    async with Net(config) as net:
+        net.inject_data("pipeline", "x", [1])
+        await net.run_until_blocked()
+        results = net.flush_output_queue("results")
+    assert results == [3], f"expected [3] (state persisted across MP retries), got {results}"
+    # No DLQ entry — the node ultimately succeeded
+    assert len(net._dead_letter_queue) == 0
+
+# %%
+asyncio.get_event_loop().run_until_complete(test_ctx_state_persists_across_retries_multiprocess())
+
 # %%
 #|export
 @pytest.mark.asyncio
@@ -7766,10 +7822,11 @@ async def test_resources_undefined_raises():
         graph=graph_config,
     )
 
-    async with Net(config) as net:
-        net.inject_data("BadNode", "in", [1])
-        with pytest.raises(ValueError, match="nonexistent_resource"):
-            await net.run_until_blocked()
+    # Validation now fires at Net construction so undeclared resource refs
+    # cannot silently pass the runtime gate when NetConfig.resources is empty
+    # or contains different names.
+    with pytest.raises(ValueError, match="nonexistent_resource"):
+        Net(config)
 
 # %%
 asyncio.get_event_loop().run_until_complete(test_resources_undefined_raises())
@@ -7866,3 +7923,51 @@ def test_depends_on_invalid_node_raises():
 
 # %%
 test_depends_on_invalid_node_raises()
+
+# %%
+#|export
+def test_depends_on_disabled_node_warns(caplog):
+    """Footgun #4 regression: depending on a disabled node must surface a
+    warning at construction time so the dependent doesn't silently hang."""
+    import logging
+    def noop(ctx, packets):
+        pass
+
+    def make_node(name, *, enabled=True, depends_on=None):
+        return NodeConfig(
+            name=name,
+            in_ports={"in": PortConfig()},
+            in_salvo_conditions={
+                "default": SalvoConditionConfig(
+                    max_salvos=MaxSalvosFiniteConfig(max=1),
+                    ports={"in": PacketCountAllConfig()},
+                    term=SalvoConditionTermPortConfig(
+                        port_name="in",
+                        state=PortStateNonEmptyConfig(),
+                    ),
+                ),
+            },
+            execution_config=NodeExecutionConfig(
+                node_name=name,
+                pools=["main"],
+                exec_node_func=noop,
+                enabled=enabled,
+                depends_on=depends_on,
+            ),
+        )
+
+    config = NetConfig(
+        pools={"main": PoolConfig(spec=MainPoolConfig())},
+        graph=GraphConfig(
+            nodes=[make_node("A", enabled=False), make_node("B", depends_on=["A"])],
+            edges=[],
+        ),
+    )
+
+    with caplog.at_level(logging.WARNING, logger="netrun.net"):
+        Net(config)
+
+    matching = [r for r in caplog.records if "depends_on disabled node" in r.getMessage()]
+    assert matching, f"expected a warning about disabled deps, got: {[r.getMessage() for r in caplog.records]}"
+    assert "B" in matching[0].getMessage()
+    assert "A" in matching[0].getMessage()

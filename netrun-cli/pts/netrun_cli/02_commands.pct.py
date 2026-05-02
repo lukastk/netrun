@@ -80,12 +80,39 @@ def validate(
     for err in config_errors:
         errors.append(f"{err.type}: {err.msg}")
 
-    # Step 3: Post-resolution validation via Rust (only if resolve succeeds)
+    # Step 3: Post-resolution validation via Rust (only if resolve succeeds).
+    # Temporarily add the config's project_root_path to sys.path so dotted
+    # imports relative to the project root (e.g. "nodes.double") resolve the
+    # same way they will at runtime under Net.
+    import sys as _sys
+    project_root = str(net_config.project_root_path)
+    _added_to_path = False
+    if project_root and project_root not in _sys.path:
+        _sys.path.insert(0, project_root)
+        _added_to_path = True
     try:
         resolved = net_config.resolve()
     except Exception as e:
+        # Resolution failures (broken factory imports, missing files, etc.)
+        # are real errors — they would crash any actual run. Surface them with
+        # a non-zero exit so CI/UI can act on them.
         resolved = None
-        warnings.append(f"Resolution error: {e}")
+        errors.append(f"Resolution error: {e}")
+    finally:
+        if _added_to_path:
+            try:
+                _sys.path.remove(project_root)
+            except ValueError:
+                pass
+            # Drop modules imported from this project so a subsequent validate
+            # of a different config doesn't get a cached version with the wrong
+            # symbols (matters for tests that validate multiple sample projects
+            # in one process).
+            for mod_name in list(_sys.modules):
+                mod = _sys.modules[mod_name]
+                mod_file = getattr(mod, "__file__", None)
+                if mod_file and mod_file.startswith(project_root):
+                    del _sys.modules[mod_name]
 
     if resolved is not None:
         try:
